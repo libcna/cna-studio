@@ -8,7 +8,7 @@
  * whole file would compile unchanged against any CNA build.
  */
 
-#include "CNA/Editor/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -34,7 +34,7 @@
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

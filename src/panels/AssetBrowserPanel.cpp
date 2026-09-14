@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/AssetBrowserPanel.hpp"
+#include "CNA/Studio/Panels/AssetBrowserPanel.hpp"
 
 #include <filesystem>
 
-#include "CNA/Editor/Assets/AssetCommands.hpp"
-#include "CNA/Editor/Assets/MaterialDocument.hpp"
+#include "CNA/Studio/Assets/AssetCommands.hpp"
+#include "CNA/Studio/Assets/MaterialDocument.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -12,10 +12,10 @@
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/Assets/AssetCommands.hpp"
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/Assets/AssetCommands.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void AssetBrowserPanel::draw()
     {
@@ -241,9 +241,9 @@ namespace CNA::Editor
         float width = kThumbnailExtent;
         float height = kThumbnailExtent;
 
-        const EditorVector2 pixels =
+        const StudioVector2 pixels =
             PropertyValue::fromJson(record.importerSettings["pixelSize"], PropertyType::Vector2)
-                .get<EditorVector2>();
+                .get<StudioVector2>();
 
         if (pixels.x > 0.0f && pixels.y > 0.0f)
         {

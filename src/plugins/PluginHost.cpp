@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Plugins/Plugin.hpp"
+#include "CNA/Studio/Plugins/Plugin.hpp"
 
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -17,9 +17,9 @@
 #include <sstream>
 #include <unordered_set>
 
-#include "CNA/Editor/Core/Json.hpp"
+#include "CNA/Studio/Core/Json.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     std::optional<PluginManifest> PluginManifest::loadFromFile(const std::string& path, std::string* errorMessage)
     {
@@ -52,7 +52,7 @@ namespace CNA::Editor
         manifest.version = parsed.value["version"].asString("0.0.0");
         manifest.description = parsed.value["description"].asString();
         manifest.author = parsed.value["author"].asString();
-        manifest.editorApiVersion = parsed.value["editorApiVersion"].asInt(0);
+        manifest.studioApiVersion = parsed.value["editorApiVersion"].asInt(0);
         manifest.library = parsed.value["library"].asString();
 
         for (const JsonValue& dependency : parsed.value["dependencies"].getElements())
@@ -120,8 +120,8 @@ namespace CNA::Editor
                 if (!entry.manifest.isCompatible())
                 {
                     entry.error = "built against editor API version "
-                                + std::to_string(entry.manifest.editorApiVersion) + ", this editor speaks "
-                                + std::to_string(kEditorPluginApiVersion);
+                                + std::to_string(entry.manifest.studioApiVersion) + ", this editor speaks "
+                                + std::to_string(kStudioPluginApiVersion);
                 }
                 else if (entry.manifest.library.empty())
                 {
@@ -162,7 +162,7 @@ namespace CNA::Editor
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -246,7 +246,7 @@ namespace CNA::Editor
         std::string id;
         DynamicLibrary library;
 
-        EditorPlugin* plugin = nullptr;
+        StudioPlugin* plugin = nullptr;
         DestroyPluginFunction destroy = nullptr;
 
         /** @brief Index into `plugins_`, so a failure can be reported against the right entry. */
@@ -257,7 +257,7 @@ namespace CNA::Editor
 
     PluginHost::~PluginHost()
     {
-        // Deliberately *not* calling shutdown here: that needs an EditorContext, and a destructor
+        // Deliberately *not* calling shutdown here: that needs an StudioContext, and a destructor
         // has none. Closing the libraries without it would run each plugin's destructor against a
         // context that may already be gone. So the handles are simply released, and the editor is
         // expected to call unloadAll while it still has a context -- which the application does.
@@ -266,7 +266,7 @@ namespace CNA::Editor
 
     std::size_t PluginHost::getActiveCount() const { return open_.size(); }
 
-    bool PluginHost::activate(EditorContext& context, std::size_t index)
+    bool PluginHost::activate(StudioContext& context, std::size_t index)
     {
         if (index >= plugins_.size()) { return false; }
 
@@ -289,22 +289,22 @@ namespace CNA::Editor
         }
 
         auto create =
-            reinterpret_cast<CreatePluginFunction>(opened->library.symbol("cnaEditorCreatePlugin"));
+            reinterpret_cast<CreatePluginFunction>(opened->library.symbol("cnaStudioCreatePlugin"));
         opened->destroy =
-            reinterpret_cast<DestroyPluginFunction>(opened->library.symbol("cnaEditorDestroyPlugin"));
+            reinterpret_cast<DestroyPluginFunction>(opened->library.symbol("cnaStudioDestroyPlugin"));
 
         if (create == nullptr || opened->destroy == nullptr)
         {
             // Both or neither. A library exporting only the creator would leak every plugin object
             // it ever made, and the leak would be invisible until a hot-reload loop found it.
-            entry.error = "does not export cnaEditorCreatePlugin and cnaEditorDestroyPlugin";
+            entry.error = "does not export cnaStudioCreatePlugin and cnaStudioDestroyPlugin";
             entry.active = false;
             return false;
         }
 
         try
         {
-            opened->plugin = create(kEditorPluginApiVersion);
+            opened->plugin = create(kStudioPluginApiVersion);
         }
         catch (const std::exception& thrown)
         {
@@ -344,7 +344,7 @@ namespace CNA::Editor
         return true;
     }
 
-    void PluginHost::deactivate(EditorContext& context, Open& entry)
+    void PluginHost::deactivate(StudioContext& context, Open& entry)
     {
         // Order matters and reversing it crashes. shutdown() first, while the plugin's code is
         // still mapped and its registrations can be removed; then destroy through the plugin's own
@@ -377,7 +377,7 @@ namespace CNA::Editor
         if (entry.index < plugins_.size()) { plugins_[entry.index].active = false; }
     }
 
-    std::size_t PluginHost::loadAll(EditorContext& context)
+    std::size_t PluginHost::loadAll(StudioContext& context)
     {
         for (std::size_t index = 0; index < plugins_.size(); ++index)
         {
@@ -388,7 +388,7 @@ namespace CNA::Editor
         return open_.size();
     }
 
-    void PluginHost::unloadAll(EditorContext& context)
+    void PluginHost::unloadAll(StudioContext& context)
     {
         // Reverse load order, for the reason dependency order exists: a plugin that depends on
         // another has to let go before that other one is unmapped.
@@ -400,7 +400,7 @@ namespace CNA::Editor
         open_.clear();
     }
 
-    bool PluginHost::reload(EditorContext& context, const std::string& pluginId)
+    bool PluginHost::reload(StudioContext& context, const std::string& pluginId)
     {
         for (auto entry = open_.begin(); entry != open_.end(); ++entry)
         {

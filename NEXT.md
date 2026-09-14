@@ -5,7 +5,7 @@
 > This file records what is true *right now*: what just landed, what is half-done, what is known
 > broken, and where to start.
 
-**Branch:** `claude/cna-editor-architecture-plan-l4jza7` — push only, no pull request (owner's call).
+**Branch:** `claude/cna-studio-architecture-plan-l4jza7` — push only, no pull request (owner's call).
 
 ---
 
@@ -14,7 +14,7 @@
 | | |
 |---|---|
 | Build (standalone, no CNA) | ✅ clean at `-Wall -Wextra -Wpedantic -Werror` |
-| Build (`-DCNA_EDITOR_WITH_CNA=ON`) | ✅ clean |
+| Build (`-DCNA_STUDIO_WITH_CNA=ON`) | ✅ clean |
 | Unit tests | ✅ 442 / 442 (also under Clang Release) |
 | CTest (standalone) | ✅ 12 / 12 |
 | CTest (CNA config) | ✅ 17 / 17 |
@@ -44,7 +44,7 @@ finally designable because ED-403 gave it a material asset to list) and the **tw
    repository except where it says so.
 
 **Standing constraints** (owner's, still in force): develop and push only on
-`claude/cna-editor-architecture-plan-l4jza7`; **no pull request**; everything in this repository is
+`claude/cna-studio-architecture-plan-l4jza7`; **no pull request**; everything in this repository is
 written in English; do not bump a `formatVersion` without the owner's say-so; do not open issues or
 pull requests against `openeggbert/cna` — the CNA gaps G-01…G-04 stay documented here.
 
@@ -57,7 +57,7 @@ the owner reacted to after the wireframe screenshots, and it is verified by scre
 the example crate is a shaded box where it was a cage.
 
 **1. The split follows the wireframe's, and it is what made the task checkable.**
-`SceneModels.hpp` in `cna-editor-scene` decides *what* to draw, *where*, and *lit by what*; it is
+`SceneModels.hpp` in `cna-studio-scene` decides *what* to draw, *where*, and *lit by what*; it is
 CNA-free and tested in CI with no device. `CnaModelPass` in the viewport uploads and draws it. The
 things most likely to be wrong in a model pass — the world matrix, which mirror is applied, whether
 an entity is lit from the right side — are all arithmetic, and a screenshot is a poor instrument
@@ -224,12 +224,12 @@ crash rather than an error message (D-11). This is what went behind that gate.
   can fix are different problems.
 - **Unload order is the thing that crashes when reversed**, so it is stated where it happens:
   `shutdown()` while the code is still mapped, destroy through the plugin's *own* function so
-  allocation and deallocation land in one runtime, then close the library. `EditorApplication`
+  allocation and deallocation land in one runtime, then close the library. `StudioApplication`
   gained its only destructor because a plugin's `shutdown` is handed the context.
 - **A plugin must not link the editor's static libraries.** It would get its own copy of every
   registry, so the component it registered would go into a `ComponentRegistry` the editor has never
   heard of — a failure that reads as "initialize ran and nothing happened". It leaves the symbols
-  undefined and the host resolves them, which is why `cna-editor` is built with `ENABLE_EXPORTS`.
+  undefined and the host resolves them, which is why `cna-studio` is built with `ENABLE_EXPORTS`.
   Found by running it: a perfectly good plugin failing with "undefined symbol" naming a function
   the editor plainly contains.
 - **ED-412's six extension points needed three answers.** Component types and importer settings
@@ -319,7 +319,7 @@ appended rather than inserted.
 
 **1. ED-400, the 3D viewport.**
 
-- **`EditorMatrix` and `EditorCamera3D`.** The repository had no matrix type and not one vector
+- **`StudioMatrix` and `StudioCamera3D`.** The repository had no matrix type and not one vector
   operation before this -- an orthographic view of a plane gets by on scalars. Both mirror XNA's
   conventions exactly (row-major, row vectors on the left, right-handed, depth to [0, 1]), because
   a camera that agreed with itself but not with the runtime would show the scene mirrored the
@@ -384,7 +384,7 @@ order that turn was composed in.
 **Icons, so the 3D view is not ten identical cubes.** A camera, a light and an audio source all
 draw nothing and were all the same wire box. Each has a badge now — camera body and lens, point
 with four rays, cone with a wavefront, flat-drawn cube for a model — sized in *pixels*, like the 2D
-viewport's icons and for the same reason, and keyed off the same `getEditorIconKind` so the two
+viewport's icons and for the same reason, and keyed off the same `getStudioIconKind` so the two
 views cannot disagree about what an entity is.
 
 **3. Input forwarding into the running player** (the owner's second choice). State, not events,
@@ -401,7 +401,7 @@ Inspector. Zero means "use the visible grid", which is what an older project mea
 
 **5. Documentation, smoke tests and two loose ends.** `docs/FORMATS.md` gained `gridSnap`; the README gained a
 command-line options table (it had none, despite using the flags in its own examples).
-`EditorMatrix::transpose` was removed as dead code, and `PlayerInputSnapshot::middleButton` -- on
+`StudioMatrix::transpose` was removed as dead code, and `PlayerInputSnapshot::middleButton` -- on
 the wire, compared, printed, and never set -- is now filled from the interaction. ctest gained
 three cases for the 3D path: headless, against a real device, and `--view=isometric`, which must
 fail rather than start quietly in 2D.
@@ -433,25 +433,25 @@ Nothing in that list changed a file format. Every format is still at version 1.
 ```bash
 # Standalone: no CNA checkout, no GPU, no window.
 cmake -S . -B build && cmake --build build -j8
-./build/tests/cna-editor-tests
+./build/tests/cna-studio-tests
 ctest --test-dir build
 
 # With CNA. Needs ../cna, ../sharp-runtime, ../easy-gl, ../meta-gl and CNA's SDL submodules
 # (git -C ../cna submodule update --init --depth 1).
-cmake -S . -B build-cna -DCNA_EDITOR_WITH_CNA=ON -DCNA_DEVICES=ON -GNinja
-cmake --build build-cna -j8 --target cna-editor cna-editor-tests cna-player
-ctest --test-dir build-cna -R "CnaEditor|CnaPlayer|CnaScene"
+cmake -S . -B build-cna -DCNA_STUDIO_WITH_CNA=ON -DCNA_DEVICES=ON -GNinja
+cmake --build build-cna -j8 --target cna-studio cna-studio-tests cna-player
+ctest --test-dir build-cna -R "CnaStudio|CnaPlayer|CnaScene"
 
 # The CNA-config ctest has one test labelled needs-display. Configure the display it should use:
-#   cmake -S . -B build-cna -DCNA_EDITOR_TEST_DISPLAY=:99
+#   cmake -S . -B build-cna -DCNA_STUDIO_TEST_DISPLAY=:99
 # and have a server there:  Xvfb :99 -screen 0 1600x900x24 &
 # `xvfb-run -a` works for one-off runs but picks its own display, which that test will not see.
 
 # Two backends, and the comparison between them. The second player is a full CNA build, so this
 # is minutes rather than seconds.
-cmake -S . -B build-cna -DCNA_EDITOR_WITH_CNA=ON -DCNA_EDITOR_PLAYER_BACKENDS="SOFTWARE" -GNinja
+cmake -S . -B build-cna -DCNA_STUDIO_WITH_CNA=ON -DCNA_STUDIO_PLAYER_BACKENDS="SOFTWARE" -GNinja
 cmake --build build-cna -j8 --target cna-player-backends
-DISPLAY=:99 ./build-cna/cna-editor --compare-backends \
+DISPLAY=:99 ./build-cna/cna-studio --compare-backends \
     --project=examples/HelloSprites/HelloSprites.cnaproject
 # Exit 5 when they differ, 0 when they agree. --tolerance=N sets how close counts as the same.
 
@@ -460,8 +460,8 @@ DISPLAY=:99 ./build-cna/cna-player-easygl --project=examples/HelloSprites/HelloS
     --frames=20 --screenshot=/tmp/player.png
 
 # Headless smoke, and a screenshot of the real window.
-./build/cna-editor --headless --project=examples/HelloSprites/HelloSprites.cnaproject
-DISPLAY=:99 ./build-cna/cna-editor --project=examples/HelloSprites/HelloSprites.cnaproject \
+./build/cna-studio --headless --project=examples/HelloSprites/HelloSprites.cnaproject
+DISPLAY=:99 ./build-cna/cna-studio --project=examples/HelloSprites/HelloSprites.cnaproject \
     --frames=40 --screenshot=/tmp/editor.png
 
 # A docked panel that shares a tab bar cannot be photographed unless it is brought forward:
@@ -470,7 +470,7 @@ DISPLAY=:99 ./build-cna/cna-editor --project=examples/HelloSprites/HelloSprites.
 # The 3D viewport (ED-400). --view=3d exists so this picture can be taken at all, and
 # --orbit=YAW,PITCH (ED-405) so it can be taken from an angle -- head-on is the one pose in which
 # a real mesh and a flat sprite look alike, so it cannot show whether models arrived.
-DISPLAY=:99 ./build-cna/cna-editor --project=examples/HelloSprites/HelloSprites.cnaproject \
+DISPLAY=:99 ./build-cna/cna-studio --project=examples/HelloSprites/HelloSprites.cnaproject \
     --view=3d --orbit=35,25 --frames=40 --screenshot=/tmp/editor3d.png
 # Since ED-402 the Crate is a *solid, lit* box rather than a cage -- that is what this picture is
 # for. A crate that comes back as a wireframe outline with nothing inside means the model pass
@@ -506,7 +506,7 @@ the same Y mirror the rest of the 3D view uses. XNA's 3D side is Y-up, this came
 model pass that skipped the mirror would put models upside down relative to the grid, the gizmos
 and every sprite around them.
 
-**Where to start**, concretely: ED-405 is an *importer*, so it lands in `cna-editor-assets` beside
+**Where to start**, concretely: ED-405 is an *importer*, so it lands in `cna-studio-assets` beside
 the existing ones and produces an asset record plus a sidecar, exactly as textures do. Read
 `AssetImporters.hpp` first. The mesh data it produces then needs a home the CNA-linking viewport
 can read — that is the seam to design before writing the parser, because getting it wrong means
@@ -518,10 +518,10 @@ writing ED-402 twice.
 
 | Question | Answer |
 |----------|--------|
-| Phase 3, given that CNA ships `BasicEffect`, `VertexBuffer` and the rest | **Start ED-400**: perspective/orthographic viewport camera with orbit and fly navigation. Do the maths CNA-free first, as `EditorCamera2D` was done — it needs no model pipeline. ED-402/ED-404 still wait. |
+| Phase 3, given that CNA ships `BasicEffect`, `VertexBuffer` and the rest | **Start ED-400**: perspective/orthographic viewport camera with orbit and fly navigation. Do the maths CNA-free first, as `StudioCamera2D` was done — it needs no model pipeline. ED-402/ED-404 still wait. |
 | Additive fields in `.cnaproject` / `.cnascene` / `.cnaasset` | **Allowed without asking**, exactly as `layers` was added: no `formatVersion` bump, old files still open, and a round-trip test proving it. Changing or removing an existing field, or bumping a version, still waits for the owner. |
 | How far play mode goes | **Add input forwarding**: keyboard and mouse reach the running player and the editor reports what it sees. No scripting or behaviour hook — that question shapes the document model and stays closed. |
-| Branch and pull request | Unchanged: `claude/cna-editor-architecture-plan-l4jza7`, **no pull request**. |
+| Branch and pull request | Unchanged: `claude/cna-studio-architecture-plan-l4jza7`, **no pull request**. |
 | CI | Unchanged: standalone configuration only — no sibling checkouts, no Xvfb, no backend-comparison job. |
 | CNA gaps G-01…G-04 | Unchanged: documented here, **no issues or pull requests against `openeggbert/cna`**. |
 | Verification | Keep screenshot-verifying UI work on EASYGL under Xvfb. |
@@ -550,7 +550,7 @@ writing ED-402 twice.
 - **File formats stay backward compatible.** `formatVersion` is not bumped without the owner's
   say-so; ED-902's migration work reads old versions rather than writing new ones. If a breaking
   change ever looks necessary, it goes here and in `plan.md` prominently, and waits.
-- **`cna-editor-viewport` is the only module that may link CNA** (D-03). The build graph enforces
+- **`cna-studio-viewport` is the only module that may link CNA** (D-03). The build graph enforces
   it: a stray `#include <Microsoft/Xna/...>` anywhere else fails to compile.
 
 ---
@@ -620,7 +620,7 @@ Newest first. Each is a single commit on the branch.
   same *gesture*", because two drags of one field are identical by everything it can see and differ
   only in that the user let go in between.
   `endInteraction()` marks that boundary, and the application calls it once per frame on every frame
-  where no widget is active. The signal is new: `EditorUi::isAnyItemActive()`, answered by ImGui's
+  where no widget is active. The signal is new: `StudioUi::isAnyItemActive()`, answered by ImGui's
   own `IsAnyItemActive()` -- which already covers viewport drags, since the viewport image is an
   ImGui item and stays active for the whole of one. The gizmos have always opened a new entry on the
   first edit of a drag; this is the same rule for every other continuous control, including ones
@@ -638,7 +638,7 @@ Newest first. Each is a single commit on the branch.
   user had just excluded, where they were not looking.
   Ctrl+click on the scene adds and removes from the selection; Ctrl on empty space does nothing,
   since clearing a half-assembled selection is the one thing that cannot have been meant.
-- **ED-513** per-backend player builds from one configure. `CNA_EDITOR_PLAYER_BACKENDS="SOFTWARE"`
+- **ED-513** per-backend player builds from one configure. `CNA_STUDIO_PLAYER_BACKENDS="SOFTWARE"`
   now builds the second player itself instead of leaving it to a hand-run CMake in a scratch
   directory. A *nested* build per backend, because `CNA_GRAPHICS_BACKEND` is a cache variable of
   CNA's own build: one value per build tree, and no arrangement of targets in this one can change
@@ -646,7 +646,7 @@ Newest first. Each is a single commit on the branch.
   backend list so it cannot spawn children of its own. Empty by default and minutes per entry when
   it is not, since each one compiles CNA again; but without it ED-510 has nothing to compare and
   play mode's backend picker has exactly one entry.
-- **ED-511** the conformance harness. `cna-editor --compare-backends` runs *exactly* what the
+- **ED-511** the conformance harness. `cna-studio --compare-backends` runs *exactly* what the
   Backends panel runs -- `ComparisonPanel::startComparison`, called directly, not a second path that
   could pass while the panel was broken -- prints one line per backend, and **exits non-zero when
   they disagree**. The exit code is the assertion; a build server reads none of the output.
@@ -661,7 +661,7 @@ Newest first. Each is a single commit on the branch.
   frame over the bridge and compares what comes back against the first to answer. It needed no new
   architecture, exactly as `plan.md` predicted: play mode already spawns and supervises a player, so
   this is that, several times over.
-  The pixel arithmetic is `ImageDiff` in `cna-editor-core` -- CNA-free and tested against images the
+  The pixel arithmetic is `ImageDiff` in `cna-studio-core` -- CNA-free and tested against images the
   test builds itself. Decoding a capture is *injected* (`ImageReader`/`ImageWriter`, supplied by the
   viewport), because turning a PNG back into pixels needs a graphics API and one module may have one.
   **The tolerance is the load-bearing detail.** Two backends drawing the same scene are not required
@@ -723,7 +723,7 @@ Newest first. Each is a single commit on the branch.
   and the panel draws every frame.
 - **ED-304** audio. The preview plays through CNA's *public* `SoundEffect(path)` constructor, so
   unlike the sprite-font preview there was nothing forbidden in the way -- worth checking before
-  assuming a second G-04. `EditorAudio` sits beside `EditorViewport` in the one CNA-linking module.
+  assuming a second G-04. `StudioAudio` sits beside `StudioViewport` in the one CNA-linking module.
   The component preview uses the component's own volume, pitch and pan; the asset preview uses
   neutral ones, because that is the file as imported rather than as some entity plays it.
   `CNA.AudioListener` takes its position from the Transform rather than repeating it, and a second
@@ -749,10 +749,10 @@ Newest first. Each is a single commit on the branch.
   same arithmetic the tilemap already does, and far smaller to author. The frame list is an
   ordinary `List<Integer>`, so reordering and adding frames needed no new widget. Playback is a
   plain value the inspector owns and throws away, never the document's (D-07), and the clock is
-  passed in so the test steps it exactly. `EditorUi::imageRegion` is new: it draws one sub-rectangle
+  passed in so the test steps it exactly. `StudioUi::imageRegion` is new: it draws one sub-rectangle
   of a sheet, in texels, because everything on this side of the boundary already speaks texels.
   The viewport draws the previewed frame too: the inspector publishes the *result* through
-  `EditorActions` while keeping the playback itself, which is the same shape the selection already
+  `StudioActions` while keeping the playback itself, which is the same shape the selection already
   uses and for the same reason. An animated sprite is sized by its frame rather than by its sheet,
   or a sixteen-frame walk cycle would be sixteen times too wide to click and Frame Selected would
   zoom out to fit a strip nobody is looking at.
@@ -770,7 +770,7 @@ Newest first. Each is a single commit on the branch.
 - **ED-301** tilemaps. Flat `List<Integer>` grid on an ordinary component, so no new serialised
   structure and nothing else had to learn a new type. A stroke is one undo entry and the merge key
   carries the *stroke id* -- entity + property alone cannot tell two drags apart. Painting is an
-  `EditorTool`, not a `GizmoMode`, and while a brush is active it suppresses both the gizmo and
+  `StudioTool`, not a `GizmoMode`, and while a brush is active it suppresses both the gizmo and
   click-to-select: a tilemap's gizmo sits over its own first tiles, so the first stroke would
   otherwise drag the map instead of painting it. That was a real bug the test caught.
   Rendering shares the sprite pass, with viewport culling -- a 200x200 map is forty thousand draw
@@ -796,7 +796,7 @@ Newest first. Each is a single commit on the branch.
   level) and drive `CNA.Layer`'s choices by re-registering the descriptor. Renaming a layer leaves
   entities holding the old name deliberately -- which of the remaining layers they meant is the
   user's decision -- and the new `unknown-enum-value` validation rule reports it. Tags are their own
-  component holding a `List<String>`. `SetProjectLayersCommand` lives in `cna-editor-context`
+  component holding a `List<String>`. `SetProjectLayersCommand` lives in `cna-studio-context`
   because it has to touch both the project and the registry, and neither of those modules may
   depend on the other. The idle Inspector now edits project settings instead of saying "Nothing
   selected". No `formatVersion` bump: `layers` is an additive field, and there is a test that a
@@ -811,7 +811,7 @@ Newest first. Each is a single commit on the branch.
   emptying a field in the one case the descriptor system promises to survive. Inference now only
   calls a short array a vector when every element is a number.
 - **ED-306 / ED-307** live editing into the running player. One hook does the property half:
-  every document change goes through a command (D-06), so `EditorContext`'s new command observer
+  every document change goes through a command (D-06), so `StudioContext`'s new command observer
   sees all of them and the application mirrors the `SetPropertyCommand`s. Undo and redo mirror too,
   and the value is read from the *document* rather than from the command, because after an undo the
   live value is the old one. Assets are sent by id, and the player rescans before looking the id up.
@@ -833,7 +833,7 @@ Newest first. Each is a single commit on the branch.
   session's unsaved hours. Format documented in `docs/FORMATS.md`.
 - **ED-905** undo history panel. Rows are *positions*, not entries -- one more row than there are
   commands, and the extra one is the document as opened, which is what someone asking to put it
-  back is aiming at. Clicking navigates through `EditorApplication::undo/redo`, so a jump prunes
+  back is aiming at. Clicking navigates through `StudioApplication::undo/redo`, so a jump prunes
   the selection the way Ctrl+Z does.
 - **ED-310** scene validation. `SceneValidation.hpp` holds the structural rules -- duplicate
   primary cameras, inverted camera planes, zero scale, empty entities, a missing Transform, a
@@ -860,7 +860,7 @@ Newest first. Each is a single commit on the branch.
   implementations with three failure modes, each still needing a polling fallback for the network
   and container mounts where a team's assets often live. The clock is passed in, so tests advance
   time exactly and never sleep. A change drops the viewport's cached texture via
-  `EditorViewport::invalidateAsset`, which also clears the failed-load memory so a file that comes
+  `StudioViewport::invalidateAsset`, which also clears the failed-load memory so a file that comes
   back gets another attempt.
 - **ED-222 / ED-221 (part)** importer settings. An importer's settings are declared as a
   `ComponentDescriptor`, so the inspector needed no new code. Texture dimensions are read from the
@@ -869,8 +869,8 @@ Newest first. Each is a single commit on the branch.
 - **ED-224** missing-reference report and relink. Answers a different question from
   `AssetDatabase::getMissingAssets()`: which *entities* point at something that will not load.
   `RelinkAssetCommand` rewrites every reference as one undo entry.
-- **ED-210** panel split. `EditorApplication.cpp` went from 1207 lines to 523; six panel classes
-  under `src/panels/`, reaching the editor through the narrow `EditorActions` interface.
+- **ED-210** panel split. `StudioApplication.cpp` went from 1207 lines to 523; six panel classes
+  under `src/panels/`, reaching the editor through the narrow `StudioActions` interface.
 - **ED-200 / ED-208 / ED-114** hierarchy editing, asset drag-and-drop onto slots, console filter.
 - **ED-118** rotations as Euler degrees, in XNA's own `CreateFromYawPitchRoll` convention.
 - **ED-204** icons for entities the viewport cannot draw.
@@ -904,12 +904,12 @@ owner picked sprites in the 3D view as what follows.
 ## Known problems and limitations
 
 - **The backend comparison needs two player builds, and a default build produces one.** ED-513 makes
-  the second one a configure option (`CNA_EDITOR_PLAYER_BACKENDS`) rather than a hand-run CMake, but
+  the second one a configure option (`CNA_STUDIO_PLAYER_BACKENDS`) rather than a hand-run CMake, but
   it is off by default because each entry compiles CNA again -- minutes, not seconds. Anyone who
   presses Compare on a default build will be told it needs another build, which is correct and still
   worth knowing before it happens.
 - **A red `needs-display` ctest usually means Xvfb died, not that the editor did.** Twice in one
-  session `CnaEditorWindowSmoke` and `CnaSceneLoaderDemo` failed together with "Subprocess aborted"
+  session `CnaStudioWindowSmoke` and `CnaSceneLoaderDemo` failed together with "Subprocess aborted"
   in hundredths of a second; both times the X server was simply gone (`pgrep Xvfb`), and restarting
   it made all twelve pass. Check that before reading the diff.
 - **Image dimensions are read for PNG, BMP and JPEG only.** Anything else reports unknown, and the
@@ -925,7 +925,7 @@ owner picked sprites in the 3D view as what follows.
 |----|-----|-------------|
 | G-01 | `Microsoft::Xna::Framework::Color` has no default constructor | `std::vector<Color>::resize(n)` does not compile. XNA's `Color` *is* default-constructible, so this is a real behavioural difference. Worked around with `assign`. |
 | G-02 | `CNA::Devices::Clipboard` sits inside `#ifdef CNA_DEVICES`, default OFF | An editor built against a default CNA has no clipboard. Degrades cleanly and is reported. |
-| G-03 | `RenderTarget2D` sampled as a texture is not origin-normalised across backends | EASYGL renders it flipped, SOFTWARE does not. Worked around by `EditorViewport::isRenderTextureFlippedVertically()`, which is a compile-time constant per backend. |
+| G-03 | `RenderTarget2D` sampled as a texture is not origin-normalised across backends | EASYGL renders it flipped, SOFTWARE does not. Worked around by `StudioViewport::isRenderTextureFlippedVertically()`, which is a compile-time constant per backend. |
 | G-05 | `PbrEffect` draws nothing on EASYGL, silently | The 3D model pass cannot use PBR (ED-402). It constructs, accepts every parameter, issues its draw calls and puts no pixels on screen; `BasicEffect` renders the same geometry, matrices and lights correctly in the same frame. Culling and an unbound sampler were both ruled out first. Second bug in the same place: `FillGpuDrawParams` sets `textureEnabled` unconditionally while binding `texture0` only when a texture exists, so a base-colour factor with no map samples nothing — worked around with a white texel. The PBR path here is complete and off behind `kPreferPbrEffect` |
 | G-04 | No public way to build a `SpriteFont` | `SpriteFont`'s constructor takes an already-built glyph atlas, and the only reader that produces one is `CNA::Internal::Xnb::SpriteFontReader` -- which D-01 forbids the editor from touching. So the editor can describe a `.spritefont` but not preview its glyphs (ED-302). A public `ContentManager::Load<SpriteFont>` specialisation, or a public font builder, would close it. |
 
@@ -940,11 +940,11 @@ them as assumptions because the questions had gone out unanswered, and that draf
 |----------|--------|
 | Which effect draws a model? | **`PbrEffect`, falling back to `BasicEffect`** where the backend or build has none. Needs additive `MeshMaterial` fields -- metallic, roughness, and paths for the normal, ORM and emissive maps -- which the glTF importer currently reads and throws away because ED-405 assumed `BasicEffect`. Additive fields are pre-approved, so no `formatVersion` bump and a test that an older `.cnaasset` still opens. |
 | Where does light come from? | **Scene `CNA.Light` entities, with XNA's three-point default when the scene has no enabled light.** This pulls ED-404 forward into ED-402. A scene with no lights must not be black: that reads as a broken renderer rather than an unlit scene. |
-| Does the game render 3D, or only the editor? | **Editor viewport only**, for now. `CNA.Camera` and `cna-player` stay 2D. The consequence has to be *visible in the UI*: a `ModelRenderer` that is there while authoring and gone when the game runs is exactly the silent difference this editor exists to prevent, so the viewport says so rather than leaving it to be discovered. |
+| Does the game render 3D, or only the editor? | **Studio viewport only**, for now. `CNA.Camera` and `cna-player` stay 2D. The consequence has to be *visible in the UI*: a `ModelRenderer` that is there while authoring and gone when the game runs is exactly the silent difference this editor exists to prevent, so the viewport says so rather than leaving it to be discovered. |
 | What follows ED-402? | **Sprites drawn correctly in the 3D view.** Not a plan row yet; add one. Today the 3D view shows no sprites at all, because `SpriteBatch` cannot draw the trapezoid a sprite becomes when seen from an angle -- but once a `VertexBuffer` path exists for models, a sprite is a textured quad through the same path. Without it the 3D view shows the models rather than the scene. |
 
 **Not a decision, and not negotiable:** the model pass must apply the *same* Y mirror as the rest of
-the 3D view (`EditorCamera3D`'s projection flip). XNA's 3D side is Y-up and this camera is Y-down,
+the 3D view (`StudioCamera3D`'s projection flip). XNA's 3D side is Y-up and this camera is Y-down,
 so a pass that skips the mirror renders models upside down relative to the grid, the gizmos and
 every sprite around them. It is already stated in `plan.md`; it is repeated here because it is the
 first thing ED-402 can get wrong and the last thing anyone would suspect.

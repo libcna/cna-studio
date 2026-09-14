@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneLighting.hpp"
+#include "CNA/Studio/Scene/SceneLighting.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
-#include "CNA/Editor/Scene/SceneTransform.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -26,22 +26,22 @@ namespace CNA::Editor
         }
 
         /** @brief Returns @p color scaled by @p intensity and @p falloff, in 0..1 components. */
-        EditorVector3 toLinearScaled(const EditorColor& color, float intensity, float falloff)
+        StudioVector3 toLinearScaled(const StudioColor& color, float intensity, float falloff)
         {
             const float factor = std::max(0.0f, intensity) * std::max(0.0f, falloff) / 255.0f;
-            return EditorVector3{static_cast<float>(color.r) * factor,
+            return StudioVector3{static_cast<float>(color.r) * factor,
                                  static_cast<float>(color.g) * factor,
                                  static_cast<float>(color.b) * factor};
         }
 
         /** @brief Returns how much of @p light reaches @p targetWorld, in 0..1. */
-        float falloffAt(const SceneLight& light, const EditorVector3& targetWorld)
+        float falloffAt(const SceneLight& light, const StudioVector3& targetWorld)
         {
             // A directional light is the sun: it does not get further away.
             if (light.kind == SceneLightKind::Directional) { return 1.0f; }
 
             const float range = std::max(light.range, 1e-4f);
-            const EditorVector3 offset = subtract(targetWorld, light.position);
+            const StudioVector3 offset = subtract(targetWorld, light.position);
             const float distance = std::sqrt(dot(offset, offset));
             if (distance >= range) { return 0.0f; }
 
@@ -54,14 +54,14 @@ namespace CNA::Editor
         }
 
         /** @brief Returns the direction @p light illuminates @p targetWorld from. */
-        EditorVector3 directionAt(const SceneLight& light, const EditorVector3& targetWorld)
+        StudioVector3 directionAt(const SceneLight& light, const StudioVector3& targetWorld)
         {
             if (light.kind == SceneLightKind::Directional) { return light.direction; }
 
             // A point or spot light aimed at the thing being drawn -- which is what makes the
             // approximation work at all, and also its limit: the whole object is lit as though it
             // sat at the point this was resolved against.
-            const EditorVector3 offset = subtract(targetWorld, light.position);
+            const StudioVector3 offset = subtract(targetWorld, light.position);
             const float length = std::sqrt(dot(offset, offset));
             if (length < 1e-4f) { return light.direction; }
 
@@ -69,7 +69,7 @@ namespace CNA::Editor
         }
 
         /** @brief Returns the perceptual weight of a colour, for ranking lights against each other. */
-        float brightnessOf(const EditorVector3& color)
+        float brightnessOf(const StudioVector3& color)
         {
             // Rec. 601 luma. Any monotonic weighting would order lights the same way most of the
             // time; this one at least orders a green light above a blue one of the same numbers,
@@ -92,11 +92,11 @@ namespace CNA::Editor
     {
         std::vector<SceneLight> lights;
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (!entity.isEnabled()) { continue; }
 
-            const EditorComponent* component = entity.findComponent(BuiltinComponentIds::kLight);
+            const StudioComponent* component = entity.findComponent(BuiltinComponentIds::kLight);
             if (component == nullptr) { continue; }
 
             const std::optional<WorldTransform> transform =
@@ -109,8 +109,8 @@ namespace CNA::Editor
                 component->getProperty("kind").get<PropertyValue::EnumValue>().name);
             light.position = transform->position;
             light.direction =
-                normalize(rotate(transform->rotation, EditorVector3{0.0f, 0.0f, 1.0f}));
-            light.color = component->getProperty("color").get<EditorColor>();
+                normalize(rotate(transform->rotation, StudioVector3{0.0f, 0.0f, 1.0f}));
+            light.color = component->getProperty("color").get<StudioColor>();
             light.intensity = component->getProperty("intensity").get<float>();
             light.range = component->getProperty("range").get<float>();
 
@@ -121,7 +121,7 @@ namespace CNA::Editor
     }
 
     EffectLighting computeEffectLighting(const std::vector<SceneLight>& lights,
-                                         const EditorVector3& targetWorld)
+                                         const StudioVector3& targetWorld)
     {
         EffectLighting lighting;
 
@@ -139,7 +139,7 @@ namespace CNA::Editor
             const float falloff = falloffAt(light, targetWorld);
             if (falloff <= 0.0f) { continue; }
 
-            const EditorVector3 color = toLinearScaled(light.color, light.intensity, falloff);
+            const StudioVector3 color = toLinearScaled(light.color, light.intensity, falloff);
             const float brightness = brightnessOf(color);
             if (brightness <= 0.0f) { continue; }
 

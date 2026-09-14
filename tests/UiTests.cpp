@@ -4,54 +4,54 @@
  * @brief Tests for the toolkit boundary: UiDrawData, UiInputState, and the ImGui implementation.
  *
  * The ImGui cases here are the payoff of ANALYSIS.md decision D-14. They run the *real*
- * EditorApplication over the *real* Dear ImGui implementation of EditorUi, on a build machine with
+ * StudioApplication over the *real* Dear ImGui implementation of StudioUi, on a build machine with
  * no window and no GPU, and assert on the geometry that comes out. Everything the CNA renderer
  * will be handed at run time is therefore already exercised in CI.
  */
 
 #include "TestHarness.hpp"
 
-#include "CNA/Editor/EditorApplication.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Ui/UiDrawData.hpp"
-#include "CNA/Editor/Ui/UiInputState.hpp"
+#include "CNA/Studio/StudioApplication.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Ui/UiDrawData.hpp"
+#include "CNA/Studio/Ui/UiInputState.hpp"
 
-#if defined(CNA_EDITOR_HAS_IMGUI)
-#    include "CNA/Editor/Ui/ImGuiEditorUi.hpp"
+#if defined(CNA_STUDIO_HAS_IMGUI)
+#    include "CNA/Studio/Ui/ImGuiStudioUi.hpp"
 #endif
 
-using namespace CNA::Editor;
+using namespace CNA::Studio;
 
-CNA_EDITOR_TEST(UiClipRectIntersectionNormalisesEmptyResults)
+CNA_STUDIO_TEST(UiClipRectIntersectionNormalisesEmptyResults)
 {
     const UiClipRect a{0.0f, 0.0f, 100.0f, 100.0f};
     const UiClipRect b{50.0f, 50.0f, 150.0f, 150.0f};
 
     const UiClipRect overlap = a.intersect(b);
-    CNA_EDITOR_EXPECT_EQ(overlap.left, 50.0f);
-    CNA_EDITOR_EXPECT_EQ(overlap.right, 100.0f);
-    CNA_EDITOR_EXPECT(!overlap.isEmpty());
+    CNA_STUDIO_EXPECT_EQ(overlap.left, 50.0f);
+    CNA_STUDIO_EXPECT_EQ(overlap.right, 100.0f);
+    CNA_STUDIO_EXPECT(!overlap.isEmpty());
 
     // Disjoint rectangles would otherwise come out inverted (right < left), which every consumer
     // would have to special-case. Normalising here means isEmpty() is the only check needed.
     const UiClipRect disjoint = a.intersect(UiClipRect{200.0f, 200.0f, 300.0f, 300.0f});
-    CNA_EDITOR_EXPECT(disjoint.isEmpty());
-    CNA_EDITOR_EXPECT(disjoint.right >= disjoint.left);
-    CNA_EDITOR_EXPECT(disjoint.bottom >= disjoint.top);
+    CNA_STUDIO_EXPECT(disjoint.isEmpty());
+    CNA_STUDIO_EXPECT(disjoint.right >= disjoint.left);
+    CNA_STUDIO_EXPECT(disjoint.bottom >= disjoint.top);
 }
 
-CNA_EDITOR_TEST(UiClipRectClampsToTheFramebuffer)
+CNA_STUDIO_TEST(UiClipRectClampsToTheFramebuffer)
 {
     const UiClipRect wild{-50.0f, -50.0f, 5000.0f, 5000.0f};
     const UiClipRect clamped = wild.clampTo(800.0f, 600.0f);
 
-    CNA_EDITOR_EXPECT_EQ(clamped.left, 0.0f);
-    CNA_EDITOR_EXPECT_EQ(clamped.top, 0.0f);
-    CNA_EDITOR_EXPECT_EQ(clamped.right, 800.0f);
-    CNA_EDITOR_EXPECT_EQ(clamped.bottom, 600.0f);
+    CNA_STUDIO_EXPECT_EQ(clamped.left, 0.0f);
+    CNA_STUDIO_EXPECT_EQ(clamped.top, 0.0f);
+    CNA_STUDIO_EXPECT_EQ(clamped.right, 800.0f);
+    CNA_STUDIO_EXPECT_EQ(clamped.bottom, 600.0f);
 }
 
-CNA_EDITOR_TEST(UiDrawDataValidationAcceptsAWellFormedList)
+CNA_STUDIO_TEST(UiDrawDataValidationAcceptsAWellFormedList)
 {
     UiDrawData drawData;
     UiDrawList list;
@@ -66,13 +66,13 @@ CNA_EDITOR_TEST(UiDrawDataValidationAcceptsAWellFormedList)
     drawData.lists.push_back(std::move(list));
 
     const UiDrawDataValidation result = validate(drawData);
-    CNA_EDITOR_EXPECT(result.valid);
-    CNA_EDITOR_EXPECT_EQ(result.problems.size(), std::size_t{0});
-    CNA_EDITOR_EXPECT_EQ(drawData.getTotalVertexCount(), std::size_t{4});
-    CNA_EDITOR_EXPECT_EQ(drawData.getTotalIndexCount(), std::size_t{6});
+    CNA_STUDIO_EXPECT(result.valid);
+    CNA_STUDIO_EXPECT_EQ(result.problems.size(), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(drawData.getTotalVertexCount(), std::size_t{4});
+    CNA_STUDIO_EXPECT_EQ(drawData.getTotalIndexCount(), std::size_t{6});
 }
 
-CNA_EDITOR_TEST(UiDrawDataValidationCatchesOutOfRangeIndices)
+CNA_STUDIO_TEST(UiDrawDataValidationCatchesOutOfRangeIndices)
 {
     // A renderer fed one bad index reads out of bounds, and an out-of-bounds read in the UI
     // renderer is a crash the user sees rather than a test failure.
@@ -88,11 +88,11 @@ CNA_EDITOR_TEST(UiDrawDataValidationCatchesOutOfRangeIndices)
     drawData.lists.push_back(std::move(list));
 
     const UiDrawDataValidation result = validate(drawData);
-    CNA_EDITOR_EXPECT(!result.valid);
-    CNA_EDITOR_EXPECT_EQ(result.problems.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(!result.valid);
+    CNA_STUDIO_EXPECT_EQ(result.problems.size(), std::size_t{1});
 }
 
-CNA_EDITOR_TEST(UiDrawDataValidationCatchesIndexRunsPastTheBuffer)
+CNA_STUDIO_TEST(UiDrawDataValidationCatchesIndexRunsPastTheBuffer)
 {
     UiDrawData drawData;
     UiDrawList list;
@@ -105,10 +105,10 @@ CNA_EDITOR_TEST(UiDrawDataValidationCatchesIndexRunsPastTheBuffer)
     list.commands.push_back(command);
     drawData.lists.push_back(std::move(list));
 
-    CNA_EDITOR_EXPECT(!validate(drawData).valid);
+    CNA_STUDIO_EXPECT(!validate(drawData).valid);
 }
 
-CNA_EDITOR_TEST(UiDrawDataValidationRequiresTriangleLists)
+CNA_STUDIO_TEST(UiDrawDataValidationRequiresTriangleLists)
 {
     UiDrawData drawData;
     UiDrawList list;
@@ -120,10 +120,10 @@ CNA_EDITOR_TEST(UiDrawDataValidationRequiresTriangleLists)
     list.commands.push_back(command);
     drawData.lists.push_back(std::move(list));
 
-    CNA_EDITOR_EXPECT(!validate(drawData).valid);
+    CNA_STUDIO_EXPECT(!validate(drawData).valid);
 }
 
-CNA_EDITOR_TEST(UiDrawDataValidationHonoursVertexOffset)
+CNA_STUDIO_TEST(UiDrawDataValidationHonoursVertexOffset)
 {
     // VtxOffset lets one draw list exceed 65535 vertices while keeping 16-bit indices. Validation
     // must add it before bounds-checking, or every large list would look broken.
@@ -138,13 +138,13 @@ CNA_EDITOR_TEST(UiDrawDataValidationHonoursVertexOffset)
     list.commands.push_back(command);
     drawData.lists.push_back(std::move(list));
 
-    CNA_EDITOR_EXPECT(validate(drawData).valid);
+    CNA_STUDIO_EXPECT(validate(drawData).valid);
 
     drawData.lists[0].commands[0].vertexOffset = 8;
-    CNA_EDITOR_EXPECT(!validate(drawData).valid);
+    CNA_STUDIO_EXPECT(!validate(drawData).valid);
 }
 
-CNA_EDITOR_TEST(UiDrawDataValidationChecksTextureRequests)
+CNA_STUDIO_TEST(UiDrawDataValidationChecksTextureRequests)
 {
     UiDrawData drawData;
 
@@ -158,39 +158,39 @@ CNA_EDITOR_TEST(UiDrawDataValidationChecksTextureRequests)
     const std::vector<std::uint8_t> pixels(64, 0xFFu);
     request.pixels = pixels.data();
     drawData.textureRequests.push_back(request);
-    CNA_EDITOR_EXPECT(validate(drawData).valid);
+    CNA_STUDIO_EXPECT(validate(drawData).valid);
 
     // A pitch too small for the region would make the renderer walk off the end of each row.
     drawData.textureRequests[0].pitch = 4;
-    CNA_EDITOR_EXPECT(!validate(drawData).valid);
+    CNA_STUDIO_EXPECT(!validate(drawData).valid);
 
     drawData.textureRequests[0].pitch = 16;
     drawData.textureRequests[0].updateX = 3;
-    CNA_EDITOR_EXPECT(!validate(drawData).valid);
+    CNA_STUDIO_EXPECT(!validate(drawData).valid);
 }
 
-CNA_EDITOR_TEST(UiInputStateConvertsUtf8ToUtf16IncludingSurrogates)
+CNA_STUDIO_TEST(UiInputStateConvertsUtf8ToUtf16IncludingSurrogates)
 {
     UiInputState input;
     input.appendUtf8("aZ");
-    CNA_EDITOR_EXPECT_EQ(input.characters.size(), std::size_t{2});
-    CNA_EDITOR_EXPECT_EQ(static_cast<int>(input.characters[0]), static_cast<int>(u'a'));
+    CNA_STUDIO_EXPECT_EQ(input.characters.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(static_cast<int>(input.characters[0]), static_cast<int>(u'a'));
 
     input.characters.clear();
     input.appendUtf8("\xC4\x8D");  // U+010D, 'c' with caron
-    CNA_EDITOR_EXPECT_EQ(input.characters.size(), std::size_t{1});
-    CNA_EDITOR_EXPECT_EQ(static_cast<int>(input.characters[0]), 0x010D);
+    CNA_STUDIO_EXPECT_EQ(input.characters.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(static_cast<int>(input.characters[0]), 0x010D);
 
     input.characters.clear();
     input.appendUtf8("\xF0\x9F\x8E\xAE");  // U+1F3AE, above the basic multilingual plane
     // CNA's TextInputEXT delivers UTF-16 code units, so a supplementary code point must arrive
     // here as a surrogate pair, exactly as it would from the real platform layer.
-    CNA_EDITOR_EXPECT_EQ(input.characters.size(), std::size_t{2});
-    CNA_EDITOR_EXPECT(input.characters[0] >= 0xD800 && input.characters[0] <= 0xDBFF);
-    CNA_EDITOR_EXPECT(input.characters[1] >= 0xDC00 && input.characters[1] <= 0xDFFF);
+    CNA_STUDIO_EXPECT_EQ(input.characters.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(input.characters[0] >= 0xD800 && input.characters[0] <= 0xDBFF);
+    CNA_STUDIO_EXPECT(input.characters[1] >= 0xDC00 && input.characters[1] <= 0xDFFF);
 }
 
-CNA_EDITOR_TEST(UiInputStateClearsEventsButKeepsHeldState)
+CNA_STUDIO_TEST(UiInputStateClearsEventsButKeepsHeldState)
 {
     UiInputState input;
     input.setMouseDown(UiMouseButton::Left, true);
@@ -202,13 +202,13 @@ CNA_EDITOR_TEST(UiInputStateClearsEventsButKeepsHeldState)
 
     // Wheel and characters are events; button and key state are absolute and must survive, or
     // every held button would read as a release the moment input stopped arriving.
-    CNA_EDITOR_EXPECT_EQ(input.wheelY, 0.0f);
-    CNA_EDITOR_EXPECT_EQ(input.characters.size(), std::size_t{0});
-    CNA_EDITOR_EXPECT(input.isMouseDown(UiMouseButton::Left));
-    CNA_EDITOR_EXPECT(input.isKeyDown(UiKey::Z));
+    CNA_STUDIO_EXPECT_EQ(input.wheelY, 0.0f);
+    CNA_STUDIO_EXPECT_EQ(input.characters.size(), std::size_t{0});
+    CNA_STUDIO_EXPECT(input.isMouseDown(UiMouseButton::Left));
+    CNA_STUDIO_EXPECT(input.isKeyDown(UiKey::Z));
 }
 
-#if defined(CNA_EDITOR_HAS_IMGUI)
+#if defined(CNA_STUDIO_HAS_IMGUI)
 
 namespace
 {
@@ -226,20 +226,20 @@ namespace
 
 }
 
-CNA_EDITOR_TEST(ImGuiUiProducesValidDrawDataForTheWholeEditor)
+CNA_STUDIO_TEST(ImGuiUiProducesValidDrawDataForTheWholeStudio)
 {
-    // The real EditorApplication, the real ImGui, no window, no GPU.
-    EditorApplication application{std::make_unique<ImGuiEditorUi>(),
-                                  std::make_unique<NullEditorViewport>()};
+    // The real StudioApplication, the real ImGui, no window, no GPU.
+    StudioApplication application{std::make_unique<ImGuiStudioUi>(),
+                                  std::make_unique<NullStudioViewport>()};
 
-    EditorOptions options;
+    StudioOptions options;
     options.headless = true;
-    CNA_EDITOR_EXPECT(application.initialize(options));
+    CNA_STUDIO_EXPECT(application.initialize(options));
 
-    auto& ui = static_cast<ImGuiEditorUi&>(application.getUi());
+    auto& ui = static_cast<ImGuiStudioUi&>(application.getUi());
     ui.setInput(makeIdleInput());
 
-    CNA_EDITOR_EXPECT(ui.beginFrame());
+    CNA_STUDIO_EXPECT(ui.beginFrame());
     application.renderFrame();
     ui.endFrame();
 
@@ -247,31 +247,31 @@ CNA_EDITOR_TEST(ImGuiUiProducesValidDrawDataForTheWholeEditor)
 
     // Every panel drew something: an empty draw list would mean the editor rendered a blank
     // window, which is exactly the failure this test exists to catch.
-    CNA_EDITOR_EXPECT(!drawData.isEmpty());
-    CNA_EDITOR_EXPECT(drawData.getTotalVertexCount() > 0);
-    CNA_EDITOR_EXPECT(drawData.getTotalCommandCount() > 0);
-    CNA_EDITOR_EXPECT_EQ(drawData.displayWidth, 1280.0f);
-    CNA_EDITOR_EXPECT_EQ(drawData.displayHeight, 720.0f);
+    CNA_STUDIO_EXPECT(!drawData.isEmpty());
+    CNA_STUDIO_EXPECT(drawData.getTotalVertexCount() > 0);
+    CNA_STUDIO_EXPECT(drawData.getTotalCommandCount() > 0);
+    CNA_STUDIO_EXPECT_EQ(drawData.displayWidth, 1280.0f);
+    CNA_STUDIO_EXPECT_EQ(drawData.displayHeight, 720.0f);
 
     const UiDrawDataValidation validation = validate(drawData);
     if (!validation.valid)
     {
         for (const std::string& problem : validation.problems)
         {
-            ::CnaEditorTest::reportFailure(__FILE__, __LINE__, problem);
+            ::CnaStudioTest::reportFailure(__FILE__, __LINE__, problem);
         }
     }
-    CNA_EDITOR_EXPECT(validation.valid);
+    CNA_STUDIO_EXPECT(validation.valid);
 }
 
-CNA_EDITOR_TEST(ImGuiUiRequestsItsFontAtlasThroughTheTextureProtocol)
+CNA_STUDIO_TEST(ImGuiUiRequestsItsFontAtlasThroughTheTextureProtocol)
 {
     // ImGui 1.92 owns font atlas lifetime and asks the renderer to create and grow textures.
     // Getting this wrong shows up as an editor that renders geometry but no text.
-    ImGuiEditorUi ui;
+    ImGuiStudioUi ui;
     ui.setInput(makeIdleInput());
 
-    CNA_EDITOR_EXPECT(ui.beginFrame());
+    CNA_STUDIO_EXPECT(ui.beginFrame());
     ui.beginDockSpace();
     if (ui.beginPanel("Probe", DockSide::Left)) { ui.text("Some text forces the atlas to exist."); }
     ui.endPanel();
@@ -279,18 +279,18 @@ CNA_EDITOR_TEST(ImGuiUiRequestsItsFontAtlasThroughTheTextureProtocol)
     ui.endFrame();
 
     const UiDrawData& drawData = ui.getDrawData();
-    CNA_EDITOR_EXPECT(drawData.textureRequests.size() >= std::size_t{1});
+    CNA_STUDIO_EXPECT(drawData.textureRequests.size() >= std::size_t{1});
 
     const UiTextureRequest& request = drawData.textureRequests.front();
-    CNA_EDITOR_EXPECT(request.action == UiTextureAction::Create);
-    CNA_EDITOR_EXPECT(request.width > 0);
-    CNA_EDITOR_EXPECT(request.height > 0);
-    CNA_EDITOR_EXPECT(request.pixels != nullptr);
-    CNA_EDITOR_EXPECT_EQ(request.pitch, request.width * 4);
-    CNA_EDITOR_EXPECT(validate(drawData).valid);
+    CNA_STUDIO_EXPECT(request.action == UiTextureAction::Create);
+    CNA_STUDIO_EXPECT(request.width > 0);
+    CNA_STUDIO_EXPECT(request.height > 0);
+    CNA_STUDIO_EXPECT(request.pixels != nullptr);
+    CNA_STUDIO_EXPECT_EQ(request.pitch, request.width * 4);
+    CNA_STUDIO_EXPECT(validate(drawData).valid);
 
     // The id arrives already allocated, so the renderer never has to report one back.
-    CNA_EDITOR_EXPECT(request.texture != kUiTextureNone);
+    CNA_STUDIO_EXPECT(request.texture != kUiTextureNone);
 
     // The atlas must never be *re-created* on a later frame. Incremental Update requests are
     // expected and correct -- ImGui rasterises glyphs lazily, so text it has not seen before adds
@@ -301,7 +301,7 @@ CNA_EDITOR_TEST(ImGuiUiRequestsItsFontAtlasThroughTheTextureProtocol)
     for (int frame = 0; frame < 3; ++frame)
     {
         ui.setInput(makeIdleInput());
-        CNA_EDITOR_EXPECT(ui.beginFrame());
+        CNA_STUDIO_EXPECT(ui.beginFrame());
         ui.beginDockSpace();
         if (ui.beginPanel("Probe", DockSide::Left)) { ui.text("Frame " + std::to_string(frame)); }
         ui.endPanel();
@@ -310,30 +310,30 @@ CNA_EDITOR_TEST(ImGuiUiRequestsItsFontAtlasThroughTheTextureProtocol)
 
         for (const UiTextureRequest& later : ui.getDrawData().textureRequests)
         {
-            CNA_EDITOR_EXPECT(later.action == UiTextureAction::Update);
-            CNA_EDITOR_EXPECT(later.texture == atlasId);
+            CNA_STUDIO_EXPECT(later.action == UiTextureAction::Update);
+            CNA_STUDIO_EXPECT(later.texture == atlasId);
         }
-        CNA_EDITOR_EXPECT(validate(ui.getDrawData()).valid);
+        CNA_STUDIO_EXPECT(validate(ui.getDrawData()).valid);
     }
 }
 
-CNA_EDITOR_TEST(ImGuiUiStaysValidAcrossManyFramesWithInput)
+CNA_STUDIO_TEST(ImGuiUiStaysValidAcrossManyFramesWithInput)
 {
-    EditorApplication application{std::make_unique<ImGuiEditorUi>(),
-                                  std::make_unique<NullEditorViewport>()};
+    StudioApplication application{std::make_unique<ImGuiStudioUi>(),
+                                  std::make_unique<NullStudioViewport>()};
 
-    EditorOptions options;
+    StudioOptions options;
     options.headless = true;
-    CNA_EDITOR_EXPECT(application.initialize(options));
+    CNA_STUDIO_EXPECT(application.initialize(options));
 
-    auto& ui = static_cast<ImGuiEditorUi&>(application.getUi());
-    EditorContext& context = application.getContext();
+    auto& ui = static_cast<ImGuiStudioUi&>(application.getUi());
+    StudioContext& context = application.getContext();
 
     // Enough entities that the hierarchy panel scrolls and ImGui exercises its clipping paths.
     for (int index = 0; index < 200; ++index)
     {
-        EditorEntity entity{Uuid::generate(), "Entity " + std::to_string(index)};
-        entity.addComponent(EditorComponent{BuiltinComponentIds::kTransform});
+        StudioEntity entity{Uuid::generate(), "Entity " + std::to_string(index)};
+        entity.addComponent(StudioComponent{BuiltinComponentIds::kTransform});
         context.getScene().addEntity(std::move(entity));
     }
     context.select(context.getScene().getRootEntities().front());
@@ -357,52 +357,52 @@ CNA_EDITOR_TEST(ImGuiUiStaysValidAcrossManyFramesWithInput)
         const UiDrawDataValidation validation = validate(ui.getDrawData());
         if (!validation.valid)
         {
-            ::CnaEditorTest::reportFailure(__FILE__, __LINE__,
+            ::CnaStudioTest::reportFailure(__FILE__, __LINE__,
                                            "frame " + std::to_string(frame) + ": " + validation.problems.front());
         }
-        CNA_EDITOR_EXPECT(!ui.getDrawData().isEmpty());
+        CNA_STUDIO_EXPECT(!ui.getDrawData().isEmpty());
     }
 }
 
-CNA_EDITOR_TEST(ImGuiUiExitsWhenTheWindowIsClosed)
+CNA_STUDIO_TEST(ImGuiUiExitsWhenTheWindowIsClosed)
 {
-    ImGuiEditorUi ui;
+    ImGuiStudioUi ui;
 
     UiInputState input = makeIdleInput();
     input.quitRequested = true;
     ui.setInput(input);
 
-    CNA_EDITOR_EXPECT(!ui.beginFrame());
-    CNA_EDITOR_EXPECT(!ui.isRunning());
+    CNA_STUDIO_EXPECT(!ui.beginFrame());
+    CNA_STUDIO_EXPECT(!ui.isRunning());
 }
 
-CNA_EDITOR_TEST(ImGuiUiRoutesLogMessagesAndBoundsThem)
+CNA_STUDIO_TEST(ImGuiUiRoutesLogMessagesAndBoundsThem)
 {
-    ImGuiEditorUi ui;
+    ImGuiStudioUi ui;
     ui.log(LogSeverity::Info, "hello");
     ui.log(LogSeverity::Error, "boom");
 
-    CNA_EDITOR_EXPECT_EQ(ui.getLog().size(), std::size_t{2});
-    CNA_EDITOR_EXPECT(ui.getLog()[1].first == LogSeverity::Error);
+    CNA_STUDIO_EXPECT_EQ(ui.getLog().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(ui.getLog()[1].first == LogSeverity::Error);
 
     // A game logging every frame through the runtime bridge must not grow editor memory forever.
     for (int index = 0; index < 12000; ++index) { ui.log(LogSeverity::Trace, "spam"); }
-    CNA_EDITOR_EXPECT(ui.getLog().size() <= std::size_t{10000});
+    CNA_STUDIO_EXPECT(ui.getLog().size() <= std::size_t{10000});
 }
 
-#endif  // CNA_EDITOR_HAS_IMGUI
+#endif  // CNA_STUDIO_HAS_IMGUI
 
-CNA_EDITOR_TEST(ImGuiUiEmitsAQuadForEveryVisibleGlyph)
+CNA_STUDIO_TEST(ImGuiUiEmitsAQuadForEveryVisibleGlyph)
 {
     // Diagnostic turned regression test. A screenshot of the hosted editor showed tab labels
     // reading "iewport" and "nspector" -- the capitals V and I appear nowhere else in the UI, so
     // the suspicion was that those glyphs were missing from the font atlas. This settles it
     // without a window: every printable character must contribute one textured quad, so a string
     // of N distinct characters must produce 4N vertices.
-    ImGuiEditorUi ui;
+    ImGuiStudioUi ui;
     ui.setInput(makeIdleInput());
 
-    CNA_EDITOR_EXPECT(ui.beginFrame());
+    CNA_STUDIO_EXPECT(ui.beginFrame());
     ui.beginDockSpace();
     if (ui.beginPanel("Glyphs", DockSide::Left)) { ui.text("VIVID"); }
     ui.endPanel();
@@ -413,7 +413,7 @@ CNA_EDITOR_TEST(ImGuiUiEmitsAQuadForEveryVisibleGlyph)
     for (int frame = 0; frame < 3; ++frame)
     {
         ui.setInput(makeIdleInput());
-        CNA_EDITOR_EXPECT(ui.beginFrame());
+        CNA_STUDIO_EXPECT(ui.beginFrame());
         ui.beginDockSpace();
         if (ui.beginPanel("Glyphs", DockSide::Left)) { ui.text("VIVID"); }
         ui.endPanel();
@@ -424,7 +424,7 @@ CNA_EDITOR_TEST(ImGuiUiEmitsAQuadForEveryVisibleGlyph)
     const std::size_t withText = ui.getDrawData().getTotalVertexCount();
 
     ui.setInput(makeIdleInput());
-    CNA_EDITOR_EXPECT(ui.beginFrame());
+    CNA_STUDIO_EXPECT(ui.beginFrame());
     ui.beginDockSpace();
     if (ui.beginPanel("Glyphs", DockSide::Left)) { }
     ui.endPanel();
@@ -434,10 +434,10 @@ CNA_EDITOR_TEST(ImGuiUiEmitsAQuadForEveryVisibleGlyph)
     const std::size_t withoutText = ui.getDrawData().getTotalVertexCount();
 
     // "VIVID" is five characters; four vertices each.
-    CNA_EDITOR_EXPECT_EQ(withText - withoutText, std::size_t{20});
+    CNA_STUDIO_EXPECT_EQ(withText - withoutText, std::size_t{20});
 }
 
-CNA_EDITOR_TEST(ImGuiUiRequestsAnUpdateWhenNewGlyphsAppear)
+CNA_STUDIO_TEST(ImGuiUiRequestsAnUpdateWhenNewGlyphsAppear)
 {
     // Regression guard for the bug that made uppercase V and I invisible in the editor's tab
     // labels. Dear ImGui rasterises glyphs lazily and marks the atlas dirty when it does; because
@@ -449,11 +449,11 @@ CNA_EDITOR_TEST(ImGuiUiRequestsAnUpdateWhenNewGlyphsAppear)
     //
     // This asserts the half of the contract that is observable headless: characters ImGui has not
     // seen before must produce an Update request against the existing atlas.
-    ImGuiEditorUi ui;
+    ImGuiStudioUi ui;
 
     const auto drawFrame = [&ui](const std::string& text) {
         ui.setInput(makeIdleInput());
-        CNA_EDITOR_EXPECT(ui.beginFrame());
+        CNA_STUDIO_EXPECT(ui.beginFrame());
         ui.beginDockSpace();
         if (ui.beginPanel("Glyphs", DockSide::Left)) { ui.text(text); }
         ui.endPanel();
@@ -485,11 +485,11 @@ CNA_EDITOR_TEST(ImGuiUiRequestsAnUpdateWhenNewGlyphsAppear)
         sawUpdate = true;
 
         // An update that a renderer could not act on would be just as bad as a missing one.
-        CNA_EDITOR_EXPECT(request.texture == atlasId);
-        CNA_EDITOR_EXPECT(request.pixels != nullptr);
-        CNA_EDITOR_EXPECT(request.updateWidth > 0);
-        CNA_EDITOR_EXPECT(request.updateHeight > 0);
+        CNA_STUDIO_EXPECT(request.texture == atlasId);
+        CNA_STUDIO_EXPECT(request.pixels != nullptr);
+        CNA_STUDIO_EXPECT(request.updateWidth > 0);
+        CNA_STUDIO_EXPECT(request.updateHeight > 0);
     }
-    CNA_EDITOR_EXPECT(sawUpdate);
-    CNA_EDITOR_EXPECT(validate(ui.getDrawData()).valid);
+    CNA_STUDIO_EXPECT(sawUpdate);
+    CNA_STUDIO_EXPECT(validate(ui.getDrawData()).valid);
 }

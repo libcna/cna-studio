@@ -14,7 +14,7 @@ given up.
 
 ## The options
 
-### A — A loader shipped from `cna-editor`
+### A — A loader shipped from `cna-studio`
 
 A header the game includes, which reads the scene through CNA's public API. The game gains a
 dependency on this repository; CNA gains nothing.
@@ -55,22 +55,22 @@ generator emitting the same structure is an optimisation, not a redesign.
 
 ### What this costs
 
-A game using scenes gains a dependency on `cna-editor` — specifically on `cna-editor-core`, five
+A game using scenes gains a dependency on `cna-studio` — specifically on `cna-studio-core`, five
 CNA-free files under the same MS-PL licence as everything else here. The owner accepted this cost
 explicitly when choosing option A.
 
 ## Shape
 
 ```
-include/CNA/Editor/Runtime/SceneLoader.hpp     the whole loader, header-only
+include/CNA/Studio/Runtime/SceneLoader.hpp     the whole loader, header-only
 ```
 
 The game writes:
 
 ```cpp
-#include "CNA/Editor/Runtime/SceneLoader.hpp"
+#include "CNA/Studio/Runtime/SceneLoader.hpp"
 
-namespace Runtime = CNA::Editor::Runtime;
+namespace Runtime = CNA::Studio::Runtime;
 
 // Once, after the graphics device exists.
 Runtime::SceneLoadResult loaded = Runtime::loadScene("Scenes/Level01.cnascene", getGraphicsDeviceProperty(), ".");
@@ -84,7 +84,7 @@ spriteBatch.End();
 
 ### Why one header and not a header-only *everything*
 
-The loader parses with the editor's own `JsonValue`, which lives in `cna-editor-core` and is
+The loader parses with the editor's own `JsonValue`, which lives in `cna-studio-core` and is
 compiled, not inlined. Writing a second JSON reader so that the header could stand entirely alone
 was considered and rejected: the editor's writer and the game's reader would then be two
 implementations of one format, free to drift, and *a scene that loads in the editor and not in the

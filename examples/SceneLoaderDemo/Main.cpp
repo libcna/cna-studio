@@ -23,11 +23,11 @@
 #include "Microsoft/Xna/Framework/Graphics/SpriteBatch.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SpriteSortMode.hpp"
 
-#include "CNA/Editor/Runtime/SceneLoader.hpp"
+#include "CNA/Studio/Runtime/SceneLoader.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
-namespace Runtime = CNA::Editor::Runtime;
+namespace Runtime = CNA::Studio::Runtime;
 
 namespace
 {

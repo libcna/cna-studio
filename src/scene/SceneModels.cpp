@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneModels.hpp"
+#include "CNA/Studio/Scene/SceneModels.hpp"
 
 #include <algorithm>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
-#include "CNA/Editor/Scene/SceneTransform.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -24,7 +24,7 @@ namespace CNA::Editor
          * catching -- rotate-then-scale instead of scale-then-rotate, which is invisible until an
          * entity is both rotated and non-uniformly scaled.
          */
-        EditorMatrix toWorldMatrix(const WorldTransform& transform)
+        StudioMatrix toWorldMatrix(const WorldTransform& transform)
         {
             return multiply(multiply(createScale(transform.scale),
                                      createFromQuaternion(transform.rotation)),
@@ -32,7 +32,7 @@ namespace CNA::Editor
         }
     }
 
-    SceneModelBatch buildSceneModelBatch(const SceneDocument& scene, const EditorCamera3D& camera,
+    SceneModelBatch buildSceneModelBatch(const SceneDocument& scene, const StudioCamera3D& camera,
                                          const MeshProvider& meshProvider,
                                          const std::vector<Uuid>& selection,
                                          const MaterialProvider& materialProvider)
@@ -42,10 +42,10 @@ namespace CNA::Editor
         batch.viewProjection = camera.getViewProjectionMatrix();
         batch.view = camera.getViewMatrix();
 
-        // The mirror lives in the projection (EditorCamera3D::getViewProjectionMatrix says why),
+        // The mirror lives in the projection (StudioCamera3D::getViewProjectionMatrix says why),
         // so it has to be folded in here too or the split would not multiply back to the product.
         batch.projection = multiply(camera.getProjectionMatrix(),
-                                    createScale(EditorVector3{1.0f, -1.0f, 1.0f}));
+                                    createScale(StudioVector3{1.0f, -1.0f, 1.0f}));
 
         if (!meshProvider) { return batch; }
 
@@ -54,11 +54,11 @@ namespace CNA::Editor
         // would make a scene of a hundred models cost a hundred walks of itself.
         const std::vector<SceneLight> lights = collectSceneLights(scene);
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (!entity.isEnabled()) { continue; }
 
-            const EditorComponent* renderer = entity.findComponent(BuiltinComponentIds::kModelRenderer);
+            const StudioComponent* renderer = entity.findComponent(BuiltinComponentIds::kModelRenderer);
             if (renderer == nullptr) { continue; }
 
             const Uuid modelId = renderer->getProperty("model").get<PropertyValue::AssetReference>().id;
@@ -87,7 +87,7 @@ namespace CNA::Editor
             // level -- a cave is dark -- so it belongs to the scene rather than to whichever
             // lights happen to be in it.
             draw.lighting.ambientColor =
-                EditorVector3{static_cast<float>(scene.getEnvironment().ambientColor.r) / 255.0f,
+                StudioVector3{static_cast<float>(scene.getEnvironment().ambientColor.r) / 255.0f,
                               static_cast<float>(scene.getEnvironment().ambientColor.g) / 255.0f,
                               static_cast<float>(scene.getEnvironment().ambientColor.b) / 255.0f};
             // The override, when the entity names one and it can be resolved. An entity pointing at

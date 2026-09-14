@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/BuildPanel.hpp"
+#include "CNA/Studio/Panels/BuildPanel.hpp"
 
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     BuildRequest BuildPanel::makeRequest() const
     {

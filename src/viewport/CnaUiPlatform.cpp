@@ -8,7 +8,7 @@
  * `CNA::Internal::*` header.
  */
 
-#include "CNA/Editor/Viewport/CnaUiPlatform.hpp"
+#include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
 
 #include <mutex>
 #include <vector>
@@ -30,7 +30,7 @@
 
 namespace XnaInput = Microsoft::Xna::Framework::Input;
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -31,13 +31,13 @@ namespace CNA::Editor
             // need a special case. Making it non-removable is cheaper than making it optional.
             descriptor.required = true;
             descriptor.properties = {
-                makeProperty("position", "Position", PropertyType::Vector3, PropertyValue{EditorVector3{}},
+                makeProperty("position", "Position", PropertyType::Vector3, PropertyValue{StudioVector3{}},
                              "Local position relative to the parent entity."),
-                makeProperty("rotation", "Rotation", PropertyType::Quaternion, PropertyValue{EditorQuaternion{}},
+                makeProperty("rotation", "Rotation", PropertyType::Quaternion, PropertyValue{StudioQuaternion{}},
                              "Local rotation. The inspector presents this as Euler angles; the "
                              "stored value is always a quaternion."),
                 makeProperty("scale", "Scale", PropertyType::Vector3,
-                             PropertyValue{EditorVector3{1.0f, 1.0f, 1.0f}}, "Local scale."),
+                             PropertyValue{StudioVector3{1.0f, 1.0f, 1.0f}}, "Local scale."),
             };
             return descriptor;
         }
@@ -68,11 +68,11 @@ namespace CNA::Editor
             descriptor.properties = {
                 std::move(texture),
                 makeProperty("sourceRectangle", "Source Rectangle", PropertyType::Rectangle,
-                             PropertyValue{EditorRectangle{}},
+                             PropertyValue{StudioRectangle{}},
                              "Sub-region of the texture to draw. An empty rectangle means the whole texture."),
-                makeProperty("tint", "Tint", PropertyType::Color, PropertyValue{EditorColor{}},
+                makeProperty("tint", "Tint", PropertyType::Color, PropertyValue{StudioColor{}},
                              "Multiplied into the sampled texel, like SpriteBatch::Draw's color parameter."),
-                makeProperty("origin", "Origin", PropertyType::Vector2, PropertyValue{EditorVector2{}},
+                makeProperty("origin", "Origin", PropertyType::Vector2, PropertyValue{StudioVector2{}},
                              "Rotation and scaling pivot, in texels."),
                 std::move(layerDepth),
                 std::move(flip),
@@ -107,7 +107,7 @@ namespace CNA::Editor
                 makeProperty("nearPlane", "Near Plane", PropertyType::Float, PropertyValue{0.1f}),
                 makeProperty("farPlane", "Far Plane", PropertyType::Float, PropertyValue{1000.0f}),
                 makeProperty("clearColor", "Clear Color", PropertyType::Color,
-                             PropertyValue{EditorColor{100, 149, 237, 255}},
+                             PropertyValue{StudioColor{100, 149, 237, 255}},
                              "Defaults to XNA's CornflowerBlue, because of course it does."),
                 makeProperty("isPrimary", "Primary", PropertyType::Boolean, PropertyValue{true},
                              "The camera the game starts with. Exactly one should be primary."),
@@ -219,7 +219,7 @@ namespace CNA::Editor
 
             descriptor.properties = {
                 std::move(kind),
-                makeProperty("color", "Color", PropertyType::Color, PropertyValue{EditorColor{}}),
+                makeProperty("color", "Color", PropertyType::Color, PropertyValue{StudioColor{}}),
                 makeProperty("intensity", "Intensity", PropertyType::Float, PropertyValue{1.0f}),
                 makeProperty("range", "Range", PropertyType::Float, PropertyValue{10.0f},
                              "Point and Spot only."),
@@ -234,7 +234,7 @@ namespace CNA::Editor
             descriptor.displayName = "Tags";
             descriptor.category = "Core";
 
-            // Its own component rather than a field on EditorEntity. A tag is a *game* concept,
+            // Its own component rather than a field on StudioEntity. A tag is a *game* concept,
             // and the entity type is deliberately not one (D-04); an entity that never needed a
             // tag should not carry an empty list of them into every scene file.
             PropertyDescriptor tags = makeProperty(
@@ -258,7 +258,7 @@ namespace CNA::Editor
             // the one the scene draws is the transform. Only velocity is its own field, because
             // nothing else in the editor carries it.
             descriptor.properties = {
-                makeProperty("velocity", "Velocity", PropertyType::Vector3, PropertyValue{EditorVector3{}},
+                makeProperty("velocity", "Velocity", PropertyType::Vector3, PropertyValue{StudioVector3{}},
                              "For Doppler. The listener's position and orientation come from the "
                              "entity's Transform."),
                 makeProperty("dopplerScale", "Doppler Scale", PropertyType::Float, PropertyValue{1.0f},

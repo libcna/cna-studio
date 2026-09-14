@@ -20,15 +20,15 @@
 #include <string>
 #include <thread>
 
-#include "CNA/Editor/Player/PlayerHost.hpp"
-#include "CNA/Editor/RuntimeBridge/MessageChannel.hpp"
+#include "CNA/Studio/Player/PlayerHost.hpp"
+#include "CNA/Studio/RuntimeBridge/MessageChannel.hpp"
 
 // Asked through the viewport module rather than by including CNA directly: that keeps CNA a
 // private link dependency of exactly one module, which is what makes the layering rule
 // (ANALYSIS.md decision D-03) checkable by the build graph.
-#if defined(CNA_EDITOR_HAS_CNA)
-#    include "CNA/Editor/Viewport/CnaPlayerHost.hpp"
-#    include "CNA/Editor/Viewport/CnaUiRenderer.hpp"
+#if defined(CNA_STUDIO_HAS_CNA)
+#    include "CNA/Studio/Viewport/CnaPlayerHost.hpp"
+#    include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
 #endif
 
 namespace
@@ -39,7 +39,7 @@ namespace
         std::string scenePath;
         std::string requestedBackend;
         std::string screenshotPath;
-        std::uint16_t editorPort = 0;
+        std::uint16_t studioPort = 0;
         int frameLimit = 0;
         bool headless = false;
         bool showHelp = false;
@@ -75,13 +75,13 @@ namespace
                 if (name == "--project") { options.projectPath = value; continue; }
                 if (name == "--scene") { options.scenePath = value; continue; }
                 if (name == "--graphics") { options.requestedBackend = value; continue; }
-                if (name == "--editor-port")
+                if (name == "--studio-port")
                 {
-                    try { options.editorPort = static_cast<std::uint16_t>(std::stoi(value)); }
+                    try { options.studioPort = static_cast<std::uint16_t>(std::stoi(value)); }
                     catch (const std::exception&)
                     {
                         options.hasError = true;
-                        options.errorMessage = "--editor-port expects a number, got '" + value + "'";
+                        options.errorMessage = "--studio-port expects a number, got '" + value + "'";
                     }
                     continue;
                 }
@@ -113,7 +113,7 @@ namespace
     const char* usage()
     {
         return
-            "cna-player -- runs a CNA game under cna-editor's control\n"
+            "cna-player -- runs a CNA game under cna-studio's control\n"
             "\n"
             "Usage:\n"
             "  cna-player --project=PATH [options]\n"
@@ -124,7 +124,7 @@ namespace
             "  --graphics=NAME      The backend this build is expected to provide. Verified, not\n"
             "                       selected: CNA fixes its backend at compile time, so each\n"
             "                       cna-player binary supports exactly one.\n"
-            "  --editor-port=N      Connect to cna-editor on 127.0.0.1:N. Without it the player\n"
+            "  --studio-port=N      Connect to cna-studio on 127.0.0.1:N. Without it the player\n"
             "                       runs standalone, with no bridge.\n"
             "  --frames=N           Exit after N frames. Used by tests.\n"
             "  --screenshot=PATH    Write a PNG of the final frame. Needs --frames, so there is a\n"
@@ -136,8 +136,8 @@ namespace
     /** @brief Returns the CNA backend this binary was compiled against. */
     std::string compiledBackendName()
     {
-#if defined(CNA_EDITOR_HAS_CNA)
-        return CNA::Editor::CnaUiRenderer::getBackendName();
+#if defined(CNA_STUDIO_HAS_CNA)
+        return CNA::Studio::CnaUiRenderer::getBackendName();
 #else
         // Built without CNA: the protocol and state machine are exercised, nothing is drawn.
         // This is the configuration the editor's own tests run against.
@@ -178,7 +178,7 @@ int main(int argc, char** argv)
         }
     }
 
-    CNA::Editor::PlayerHost host;
+    CNA::Studio::PlayerHost host;
     if (!host.openProject(options.projectPath))
     {
         std::cerr << "cna-player: " << host.getError() << "\n";
@@ -189,10 +189,10 @@ int main(int argc, char** argv)
               << ", scene '" << host.getScene().getName() << "' ("
               << host.getScene().getEntityCount() << " entities)\n";
 
-    CNA::Editor::MessageChannel channel;
-    if (options.editorPort != 0)
+    CNA::Studio::MessageChannel channel;
+    if (options.studioPort != 0)
     {
-        if (!channel.connect(options.editorPort))
+        if (!channel.connect(options.studioPort))
         {
             std::cerr << "cna-player: " << channel.getError() << "\n";
             return 4;
@@ -208,9 +208,9 @@ int main(int argc, char** argv)
     //
     // Returns false when the session should end: the editor asked, or it went away.
     const auto pumpBridge = [&]() -> bool {
-        if (options.editorPort != 0)
+        if (options.studioPort != 0)
         {
-            const std::vector<CNA::Editor::EditorMessage> incoming = channel.poll();
+            const std::vector<CNA::Studio::StudioMessage> incoming = channel.poll();
 
             if (channel.isConnected() && !announced)
             {
@@ -218,11 +218,11 @@ int main(int argc, char** argv)
                 announced = true;
             }
 
-            CNA::Editor::PlayerHost::Outbox outbox;
-            for (const CNA::Editor::EditorMessage& message : incoming) { host.handle(message, outbox); }
-            for (const CNA::Editor::EditorMessage& reply : outbox) { channel.send(reply); }
+            CNA::Studio::PlayerHost::Outbox outbox;
+            for (const CNA::Studio::StudioMessage& message : incoming) { host.handle(message, outbox); }
+            for (const CNA::Studio::StudioMessage& reply : outbox) { channel.send(reply); }
 
-            if (channel.getState() == CNA::Editor::ChannelState::Failed)
+            if (channel.getState() == CNA::Studio::ChannelState::Failed)
             {
                 // The editor went away. A player that kept running would be an orphan window the
                 // user has to hunt down and close.
@@ -236,24 +236,24 @@ int main(int argc, char** argv)
     // Screenshots without a device. The graphics build takes them for real; this one has to answer
     // anyway, because an editor waiting for a reply that never comes is worse off than one told no.
     const auto refuseScreenshots = [&]() {
-        for (const CNA::Editor::PlayerHost::ScreenshotRequest& request : host.takeScreenshotRequests())
+        for (const CNA::Studio::PlayerHost::ScreenshotRequest& request : host.takeScreenshotRequests())
         {
-            channel.send(CNA::Editor::PlayerHost::makeScreenshotReply(
+            channel.send(CNA::Studio::PlayerHost::makeScreenshotReply(
                 request, "this cna-player build has no graphics device to capture from"));
         }
     };
 
-#if defined(CNA_EDITOR_HAS_CNA)
+#if defined(CNA_STUDIO_HAS_CNA)
     if (!options.headless)
     {
-        CNA::Editor::CnaPlayerHostOptions hostOptions;
+        CNA::Studio::CnaPlayerHostOptions hostOptions;
         hostOptions.windowTitle = "cna-player -- " + host.getProject().getName() + " (" + backend + ")";
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.screenshotPath = options.screenshotPath;
 
-        const CNA::Editor::CnaPlayerHostResult result = CNA::Editor::runPlayerInWindow(
+        const CNA::Studio::CnaPlayerHostResult result = CNA::Studio::runPlayerInWindow(
             hostOptions, host, pumpBridge,
-            [&](const CNA::Editor::EditorMessage& message) { channel.send(message); });
+            [&](const CNA::Studio::StudioMessage& message) { channel.send(message); });
 
         if (result.errorMessage.empty())
         {
@@ -291,7 +291,7 @@ int main(int argc, char** argv)
             ++framesRun;
             if (options.frameLimit > 0 && framesRun >= options.frameLimit) { break; }
         }
-        else if (options.frameLimit > 0 && host.getPlayState() == CNA::Editor::PlayState::Paused)
+        else if (options.frameLimit > 0 && host.getPlayState() == CNA::Studio::PlayState::Paused)
         {
             // Paused with a frame limit set means a test is driving this; do not spin forever
             // waiting for a step that will never come.
@@ -301,7 +301,7 @@ int main(int argc, char** argv)
         // Idling rather than spinning: a paused player must not burn a core while the user reads
         // the inspector.
         std::this_thread::sleep_for(std::chrono::milliseconds(
-            host.getPlayState() == CNA::Editor::PlayState::Paused ? 16 : 1));
+            host.getPlayState() == CNA::Studio::PlayState::Paused ? 16 : 1));
     }
 
     std::cout << "cna-player: ran " << host.getFrameCount() << " frames\n";

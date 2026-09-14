@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/ViewportPanel.hpp"
+#include "CNA/Studio/Panels/ViewportPanel.hpp"
 
-#include "CNA/Editor/Scene/SceneModels.hpp"
-#include "CNA/Editor/Scene/SceneSprites3D.hpp"
+#include "CNA/Studio/Scene/SceneModels.hpp"
+#include "CNA/Studio/Scene/SceneSprites3D.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,23 +13,23 @@
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/Tilemap.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneCommands.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/Tilemap.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
-    const char* toString(EditorTool tool)
+    const char* toString(StudioTool tool)
     {
         switch (tool)
         {
-            case EditorTool::Select: return "Select";
-            case EditorTool::PaintTiles: return "Paint Tiles";
-            case EditorTool::EraseTiles: return "Erase Tiles";
-            case EditorTool::PickTile: return "Pick Tile";
-            case EditorTool::FillTiles: return "Fill Tiles";
+            case StudioTool::Select: return "Select";
+            case StudioTool::PaintTiles: return "Paint Tiles";
+            case StudioTool::EraseTiles: return "Erase Tiles";
+            case StudioTool::PickTile: return "Pick Tile";
+            case StudioTool::FillTiles: return "Fill Tiles";
         }
         return "Select";
     }
@@ -130,8 +130,8 @@ namespace CNA::Editor
 
     UiTextureId ViewportPanel::drawThreeDimensionalView(int width, int height)
     {
-        EditorCamera3D& camera = actions_.getViewport().getCamera3D();
-        camera.setViewportSize(EditorVector2{static_cast<float>(width), static_cast<float>(height)});
+        StudioCamera3D& camera = actions_.getViewport().getCamera3D();
+        camera.setViewportSize(StudioVector2{static_cast<float>(width), static_cast<float>(height)});
 
         // Built here and drawn there: which lines to draw is a decision, and decisions live in the
         // CNA-free scene module where they are tested (SceneWireframe.hpp). The viewport is handed
@@ -214,7 +214,7 @@ namespace CNA::Editor
 
     void ViewportPanel::handleInteraction(const UiImageInteraction& interaction)
     {
-        const EditorVector2 cursor{interaction.localMouseX, interaction.localMouseY};
+        const StudioVector2 cursor{interaction.localMouseX, interaction.localMouseY};
 
         // The 3D view shares nothing with the 2D one below: no gizmo, no tile brush, and a camera
         // with three more degrees of freedom. Branching here rather than threading a mode through
@@ -231,7 +231,7 @@ namespace CNA::Editor
 
         // A tool outranks the gizmo. A tilemap's gizmo sits directly over its own first tiles, so
         // without this the opening press of every stroke would drag the map instead of painting it.
-        const bool toolActive = actions_.getEditorTool() != EditorTool::Select;
+        const bool toolActive = actions_.getStudioTool() != StudioTool::Select;
         if (toolActive) { applyToolInput(interaction, cursor); }
 
         // The gizmo outranks the picker: a press on a handle is a manipulation, and must not also
@@ -264,7 +264,7 @@ namespace CNA::Editor
         }
     }
 
-    bool ViewportPanel::updateActiveDrag(const UiImageInteraction& interaction, const EditorVector2& cursor)
+    bool ViewportPanel::updateActiveDrag(const UiImageInteraction& interaction, const StudioVector2& cursor)
     {
         if (isGizmoDragActive())
         {
@@ -298,39 +298,39 @@ namespace CNA::Editor
         return false;
     }
 
-    void ViewportPanel::applyToolInput(const UiImageInteraction& interaction, const EditorVector2& cursor)
+    void ViewportPanel::applyToolInput(const UiImageInteraction& interaction, const StudioVector2& cursor)
     {
-        switch (actions_.getEditorTool())
+        switch (actions_.getStudioTool())
         {
-            case EditorTool::PaintTiles:
-            case EditorTool::EraseTiles:
+            case StudioTool::PaintTiles:
+            case StudioTool::EraseTiles:
                 if (interaction.leftPressed) { paintTileAt(cursor, true); }
                 else if (interaction.leftDown) { paintTileAt(cursor, false); }
                 return;
 
-            case EditorTool::PickTile:
+            case StudioTool::PickTile:
                 if (interaction.leftPressed) { pickTileAt(cursor); }
                 return;
 
-            case EditorTool::FillTiles:
+            case StudioTool::FillTiles:
                 if (interaction.leftPressed) { fillStart_ = tileUnder(cursor, true); }
                 return;
 
-            case EditorTool::Select:
+            case StudioTool::Select:
                 return;
         }
     }
 
-    void ViewportPanel::updateMulti3DDrag(const EditorVector2& cursor, const GizmoSnap& snap)
+    void ViewportPanel::updateMulti3DDrag(const StudioVector2& cursor, const GizmoSnap& snap)
     {
         const SceneDocument& scene = context_.getScene();
-        const EditorCamera3D& camera = actions_.getViewport().getCamera3D();
+        const StudioCamera3D& camera = actions_.getViewport().getCamera3D();
 
         std::vector<EntityTransformEdit> edits;
 
         if (translate3DDrag_.isActive())
         {
-            const std::optional<EditorVector3> delta = translate3DDrag_.getWorldDelta(camera, cursor, snap);
+            const std::optional<StudioVector3> delta = translate3DDrag_.getWorldDelta(camera, cursor, snap);
             if (!delta) { return; }
             edits = multi3DDrag_.translate(scene, *delta);
         }
@@ -355,8 +355,8 @@ namespace CNA::Editor
 
             // Only the grabbed axis, or all three for the centre handle: the same rule the single
             // entity follows, applied to a set.
-            EditorVector3 factors{1.0f, 1.0f, 1.0f};
-            if (axis == GizmoAxis3D::All) { factors = EditorVector3{factor, factor, factor}; }
+            StudioVector3 factors{1.0f, 1.0f, 1.0f};
+            if (axis == GizmoAxis3D::All) { factors = StudioVector3{factor, factor, factor}; }
             else if (axis == GizmoAxis3D::X) { factors.x = factor; }
             else if (axis == GizmoAxis3D::Y) { factors.y = factor; }
             else { factors.z = factor; }
@@ -377,7 +377,7 @@ namespace CNA::Editor
         gizmoDragHasEdited_ = true;
     }
 
-    std::optional<EditorVector3> ViewportPanel::getGizmo3DPivot() const
+    std::optional<StudioVector3> ViewportPanel::getGizmo3DPivot() const
     {
         // The pivot captured when the drag began, not a fresh centroid: the entities are moving as
         // the drag proceeds, and a centre recomputed from them would chase itself.
@@ -404,7 +404,7 @@ namespace CNA::Editor
     }
 
     bool ViewportPanel::beginGizmo3DDrag(const UiImageInteraction& interaction,
-                                         const EditorVector2& cursor)
+                                         const StudioVector2& cursor)
     {
         // Cleared first and every frame, including the frames the pointer is elsewhere: a
         // highlight left behind says the cursor is on a handle it left minutes ago.
@@ -415,7 +415,7 @@ namespace CNA::Editor
         if (!subject.isValid()) { return false; }
 
         const SceneDocument& scene = context_.getScene();
-        const EditorCamera3D& camera = actions_.getViewport().getCamera3D();
+        const StudioCamera3D& camera = actions_.getViewport().getCamera3D();
 
         bool began = false;
 
@@ -467,7 +467,7 @@ namespace CNA::Editor
         // The selection-wide half runs beside the single-entity one, and only when there is more
         // than one thing to move: for a selection of one they would compute the same edit twice,
         // and the multi path's command carries a heavier merge key.
-        if (const std::optional<EditorVector3> pivot = getGizmo3DPivot())
+        if (const std::optional<StudioVector3> pivot = getGizmo3DPivot())
         {
             if (multi3DDrag_.begin(scene, context_.getSelection(), *pivot)) { ++multiDragId_; }
         }
@@ -476,7 +476,7 @@ namespace CNA::Editor
         return true;
     }
 
-    void ViewportPanel::updateGizmo3DDrag(const EditorVector2& cursor, const GizmoSnap& snap)
+    void ViewportPanel::updateGizmo3DDrag(const StudioVector2& cursor, const GizmoSnap& snap)
     {
         if (multi3DDrag_.isActive())
         {
@@ -485,7 +485,7 @@ namespace CNA::Editor
         }
 
         const SceneDocument& scene = context_.getScene();
-        const EditorCamera3D& camera = actions_.getViewport().getCamera3D();
+        const StudioCamera3D& camera = actions_.getViewport().getCamera3D();
 
         if (rotate3DDrag_.isActive())
         {
@@ -540,9 +540,9 @@ namespace CNA::Editor
     }
 
     void ViewportPanel::handleInteraction3D(const UiImageInteraction& interaction,
-                                            const EditorVector2& cursor)
+                                            const StudioVector2& cursor)
     {
-        EditorCamera3D& camera = actions_.getViewport().getCamera3D();
+        StudioCamera3D& camera = actions_.getViewport().getCamera3D();
 
         // A drag in progress outranks everything, and deliberately ignores hover: a drag that
         // wandered off the panel must keep going and end on release, or the entity is dropped
@@ -575,7 +575,7 @@ namespace CNA::Editor
 
         if (interaction.dragging)
         {
-            const EditorVector2 delta{interaction.dragDeltaX, interaction.dragDeltaY};
+            const StudioVector2 delta{interaction.dragDeltaX, interaction.dragDeltaY};
 
             // Radians per pixel. A full turn across a 900-pixel panel is the rate every 3D editor
             // has converged on, and it is deliberately independent of the panel's size: a rate
@@ -600,7 +600,7 @@ namespace CNA::Editor
             // is on screen whether the camera is inside a room or above a level.
             const float step = std::max(0.05f, camera.getDistance() * 0.04f);
 
-            EditorVector3 move;
+            StudioVector3 move;
             if (ui_.isKeyDown(UiKey::W)) { move.z += step; }
             if (ui_.isKeyDown(UiKey::S)) { move.z -= step; }
             if (ui_.isKeyDown(UiKey::D)) { move.x += step; }
@@ -608,7 +608,7 @@ namespace CNA::Editor
             if (ui_.isKeyDown(UiKey::E)) { move.y += step; }
             if (ui_.isKeyDown(UiKey::Q)) { move.y -= step; }
 
-            if (move != EditorVector3{}) { camera.moveLocal(move); }
+            if (move != StudioVector3{}) { camera.moveLocal(move); }
         }
 
         if (!interaction.clicked) { return; }
@@ -628,9 +628,9 @@ namespace CNA::Editor
         context_.select(picked);
     }
 
-    void ViewportPanel::updateCamera(const UiImageInteraction& interaction, const EditorVector2& cursor)
+    void ViewportPanel::updateCamera(const UiImageInteraction& interaction, const StudioVector2& cursor)
     {
-        EditorCamera2D& camera = actions_.getViewport().getCamera();
+        StudioCamera2D& camera = actions_.getViewport().getCamera();
 
         if (interaction.wheel != 0.0f)
         {
@@ -642,7 +642,7 @@ namespace CNA::Editor
 
         if (interaction.dragging)
         {
-            camera.panByScreenDelta(EditorVector2{interaction.dragDeltaX, interaction.dragDeltaY});
+            camera.panByScreenDelta(StudioVector2{interaction.dragDeltaX, interaction.dragDeltaY});
         }
     }
 
@@ -689,22 +689,22 @@ namespace CNA::Editor
 
     void ViewportPanel::drawToolbar()
     {
-        static const std::array<EditorTool, 5> kOrder{EditorTool::Select, EditorTool::PaintTiles,
-                                                      EditorTool::EraseTiles, EditorTool::PickTile,
-                                                      EditorTool::FillTiles};
+        static const std::array<StudioTool, 5> kOrder{StudioTool::Select, StudioTool::PaintTiles,
+                                                      StudioTool::EraseTiles, StudioTool::PickTile,
+                                                      StudioTool::FillTiles};
 
         std::vector<std::string> names;
         names.reserve(kOrder.size());
-        for (const EditorTool tool : kOrder) { names.emplace_back(toString(tool)); }
+        for (const StudioTool tool : kOrder) { names.emplace_back(toString(tool)); }
 
         ui_.setNextItemWidth(130.0f);
-        PropertyValue chosen{PropertyValue::EnumValue{toString(actions_.getEditorTool())}};
+        PropertyValue chosen{PropertyValue::EnumValue{toString(actions_.getStudioTool())}};
         if (ui_.propertyField("##tool", chosen, names))
         {
             const std::string name = chosen.get<PropertyValue::EnumValue>().name;
             for (std::size_t index = 0; index < kOrder.size(); ++index)
             {
-                if (names[index] == name) { actions_.setEditorTool(kOrder[index]); }
+                if (names[index] == name) { actions_.setStudioTool(kOrder[index]); }
             }
         }
 
@@ -784,8 +784,8 @@ namespace CNA::Editor
         // Only where it means something. A tile index beside the Select tool is a control that
         // does nothing, which is worse than one that is not there. The eraser has no index either;
         // the eyedropper sets one rather than reading it.
-        const EditorTool active = actions_.getEditorTool();
-        if (active != EditorTool::PaintTiles && active != EditorTool::FillTiles) { return; }
+        const StudioTool active = actions_.getStudioTool();
+        if (active != StudioTool::PaintTiles && active != StudioTool::FillTiles) { return; }
 
         ui_.sameLine();
         ui_.setNextItemWidth(90.0f);
@@ -796,12 +796,12 @@ namespace CNA::Editor
         }
     }
 
-    std::optional<TileCoordinate> ViewportPanel::tileUnder(const EditorVector2& cursor,
+    std::optional<TileCoordinate> ViewportPanel::tileUnder(const StudioVector2& cursor,
                                                            bool reportWhenMissing)
     {
         const Uuid selectedId = context_.getPrimarySelection();
-        const EditorEntity* entity = context_.getScene().findEntity(selectedId);
-        const EditorComponent* tilemap =
+        const StudioEntity* entity = context_.getScene().findEntity(selectedId);
+        const StudioComponent* tilemap =
             entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTilemap) : nullptr;
 
         if (tilemap == nullptr)
@@ -823,7 +823,7 @@ namespace CNA::Editor
         const ComponentDescriptor* descriptor =
             context_.getComponentRegistry().find(BuiltinComponentIds::kTilemap);
 
-        const EditorVector2 world = actions_.getViewport().getCamera().screenToWorld(cursor);
+        const StudioVector2 world = actions_.getViewport().getCamera().screenToWorld(cursor);
         return worldToTile(
             *transform,
             static_cast<int>(tilemap->getPropertyOrDefault(TilemapKeys::kTileWidth, descriptor)
@@ -833,7 +833,7 @@ namespace CNA::Editor
             world);
     }
 
-    void ViewportPanel::paintTileAt(const EditorVector2& cursor, bool startStroke)
+    void ViewportPanel::paintTileAt(const StudioVector2& cursor, bool startStroke)
     {
         const std::optional<TileCoordinate> cell = tileUnder(cursor, startStroke);
         if (!cell) { return; }
@@ -845,7 +845,7 @@ namespace CNA::Editor
         }
 
         const std::int64_t value =
-            actions_.getEditorTool() == EditorTool::EraseTiles ? kEmptyTile : actions_.getPaintTile();
+            actions_.getStudioTool() == StudioTool::EraseTiles ? kEmptyTile : actions_.getPaintTile();
 
         auto command = std::make_unique<PaintTilesCommand>(context_.getScene(),
                                                            context_.getComponentRegistry(),
@@ -860,13 +860,13 @@ namespace CNA::Editor
         context_.execute(std::move(command), policy);
     }
 
-    void ViewportPanel::pickTileAt(const EditorVector2& cursor)
+    void ViewportPanel::pickTileAt(const StudioVector2& cursor)
     {
         const std::optional<TileCoordinate> cell = tileUnder(cursor, true);
         if (!cell) { return; }
 
         const Uuid selectedId = context_.getPrimarySelection();
-        const EditorComponent* tilemap =
+        const StudioComponent* tilemap =
             context_.getScene().findEntity(selectedId)->findComponent(BuiltinComponentIds::kTilemap);
 
         const TilemapGrid grid = readTilemapGrid(
@@ -885,11 +885,11 @@ namespace CNA::Editor
 
         // Straight back to painting, which is what every editor does and what makes the eyedropper
         // worth reaching for: picking a tile is never the goal, painting with it is.
-        actions_.setEditorTool(EditorTool::PaintTiles);
+        actions_.setStudioTool(StudioTool::PaintTiles);
         context_.log(LogSeverity::Info, "Brush set to tile " + std::to_string(picked) + ".");
     }
 
-    void ViewportPanel::fillTilesTo(const EditorVector2& cursor)
+    void ViewportPanel::fillTilesTo(const StudioVector2& cursor)
     {
         if (!fillStart_) { return; }
 
@@ -935,7 +935,7 @@ namespace CNA::Editor
         multiDrag_.end();
     }
 
-    std::optional<EditorVector2> ViewportPanel::getGizmoPivot() const
+    std::optional<StudioVector2> ViewportPanel::getGizmoPivot() const
     {
         const std::vector<Uuid>& selection = context_.getSelection();
         if (selection.empty()) { return std::nullopt; }
@@ -943,20 +943,20 @@ namespace CNA::Editor
         {
             const std::optional<WorldTransform> world = computeWorldTransform(context_.getScene(), selection.front());
             if (!world) { return std::nullopt; }
-            return EditorVector2{world->position.x, world->position.y};
+            return StudioVector2{world->position.x, world->position.y};
         }
         return computeSelectionPivot(context_.getScene(), selection);
     }
 
-    bool ViewportPanel::beginGizmoDrag(const EditorVector2& cursor)
+    bool ViewportPanel::beginGizmoDrag(const StudioVector2& cursor)
     {
         const Uuid selectedId = context_.getPrimarySelection();
         const SceneDocument& scene = context_.getScene();
-        const EditorCamera2D& camera = actions_.getViewport().getCamera();
+        const StudioCamera2D& camera = actions_.getViewport().getCamera();
 
         // The shared pivot, when several entities are selected. Where the gizmo is *drawn* is where
         // it must be grabbed, and the renderer places it the same way.
-        const std::optional<EditorVector2> pivot =
+        const std::optional<StudioVector2> pivot =
             context_.getSelection().size() > 1 ? getGizmoPivot() : std::nullopt;
 
         // Only the manipulator that is actually drawn can be grabbed. Hit-testing the others would
@@ -1013,7 +1013,7 @@ namespace CNA::Editor
         multiDrag_.end();
         if (context_.getSelection().size() > 1)
         {
-            if (const std::optional<EditorVector2> pivot = getGizmoPivot())
+            if (const std::optional<StudioVector2> pivot = getGizmoPivot())
             {
                 multiDrag_.begin(scene, context_.getSelection(), *pivot);
                 ++multiDragId_;
@@ -1025,10 +1025,10 @@ namespace CNA::Editor
     void ViewportPanel::commitGizmoEdit(const Uuid& entityId, const std::string& property,
                                         const PropertyValue& value)
     {
-        const EditorEntity* entity = context_.getScene().findEntity(entityId);
+        const StudioEntity* entity = context_.getScene().findEntity(entityId);
         if (entity == nullptr) { return; }
 
-        const EditorComponent* transform = entity->findComponent(BuiltinComponentIds::kTransform);
+        const StudioComponent* transform = entity->findComponent(BuiltinComponentIds::kTransform);
         if (transform == nullptr) { return; }
 
         // A drag that has not moved yet must not push anything: a press and release on a handle is
@@ -1067,10 +1067,10 @@ namespace CNA::Editor
         return snap;
     }
 
-    void ViewportPanel::updateMultiDrag(const EditorVector2& cursor, const GizmoSnap& snap)
+    void ViewportPanel::updateMultiDrag(const StudioVector2& cursor, const GizmoSnap& snap)
     {
         const SceneDocument& scene = context_.getScene();
-        const EditorCamera2D& camera = actions_.getViewport().getCamera();
+        const StudioCamera2D& camera = actions_.getViewport().getCamera();
 
         std::vector<EntityTransformEdit> edits;
 
@@ -1097,7 +1097,7 @@ namespace CNA::Editor
             const float factor = scaleDrag_.getFactor(*layout, cursor, snap);
             const GizmoHandle handle = scaleDrag_.getHandle();
             edits = multiDrag_.scale(scene,
-                                     EditorVector2{handle == GizmoHandle::YAxis ? 1.0f : factor,
+                                     StudioVector2{handle == GizmoHandle::YAxis ? 1.0f : factor,
                                                    handle == GizmoHandle::XAxis ? 1.0f : factor});
         }
 
@@ -1115,7 +1115,7 @@ namespace CNA::Editor
         gizmoDragHasEdited_ = true;
     }
 
-    void ViewportPanel::updateGizmoDrag(const EditorVector2& cursor, const GizmoSnap& snap)
+    void ViewportPanel::updateGizmoDrag(const StudioVector2& cursor, const GizmoSnap& snap)
     {
         if (multiDrag_.isActive())
         {
@@ -1124,7 +1124,7 @@ namespace CNA::Editor
         }
 
         const SceneDocument& scene = context_.getScene();
-        const EditorCamera2D& camera = actions_.getViewport().getCamera();
+        const StudioCamera2D& camera = actions_.getViewport().getCamera();
 
         if (translateDrag_.isActive())
         {

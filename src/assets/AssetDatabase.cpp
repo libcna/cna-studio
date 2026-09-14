@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,7 +9,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

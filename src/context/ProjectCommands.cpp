@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/ProjectCommands.hpp"
+#include "CNA/Studio/ProjectCommands.hpp"
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     SetProjectLayersCommand::SetProjectLayersCommand(Project& project,
                                                      ComponentRegistry& registry,

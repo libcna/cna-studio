@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/EditorCommand.hpp"
+#include "CNA/Studio/Core/StudioCommand.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
-    void CommandHistory::execute(std::unique_ptr<EditorCommand> command, MergePolicy policy)
+    void CommandHistory::execute(std::unique_ptr<StudioCommand> command, MergePolicy policy)
     {
         if (!command) { return; }
 
@@ -12,7 +12,7 @@ namespace CNA::Editor
         if (policy == MergePolicy::MergeWithPrevious && mergeChainOpen_ && cursor_ > 0
             && cursor_ == commands_.size())
         {
-            EditorCommand& previous = *commands_[cursor_ - 1];
+            StudioCommand& previous = *commands_[cursor_ - 1];
             const std::string mergeKey = command->getMergeKey();
             if (!mergeKey.empty() && previous.getMergeKey() == mergeKey && previous.mergeWith(*command))
             {
@@ -73,7 +73,7 @@ namespace CNA::Editor
         return index < commands_.size() ? commands_[index]->getDescription() : std::string{};
     }
 
-    const EditorCommand* CommandHistory::getCommandAt(std::size_t index) const
+    const StudioCommand* CommandHistory::getCommandAt(std::size_t index) const
     {
         return index < commands_.size() ? commands_[index].get() : nullptr;
     }

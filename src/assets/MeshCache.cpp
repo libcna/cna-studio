@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
 
-#include "CNA/Editor/Assets/MeshCache.hpp"
+#include "CNA/Studio/Assets/MeshCache.hpp"
 
-#include "CNA/Editor/Core/PropertyValue.hpp"
+#include "CNA/Studio/Core/PropertyValue.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const MeshData* MeshCache::get(const AssetDatabase& assets, const Uuid& assetId)
     {

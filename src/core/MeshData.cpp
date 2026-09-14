@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MS-PL
 
-#include "CNA/Editor/Core/MeshData.hpp"
+#include "CNA/Studio/Core/MeshData.hpp"
 
 #include <algorithm>
 #include <limits>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     bool MeshData::isEmpty() const
     {
@@ -32,8 +32,8 @@ namespace CNA::Editor
         // axis -- which is precisely what `WorldBounds3D::isEmpty` tests. An empty model and a
         // model that happens to sit at the origin must not produce the same bounds.
         constexpr float kInfinity = std::numeric_limits<float>::infinity();
-        data.boundsMin = EditorVector3{kInfinity, kInfinity, kInfinity};
-        data.boundsMax = EditorVector3{-kInfinity, -kInfinity, -kInfinity};
+        data.boundsMin = StudioVector3{kInfinity, kInfinity, kInfinity};
+        data.boundsMax = StudioVector3{-kInfinity, -kInfinity, -kInfinity};
 
         for (const MeshPart& part : data.parts)
         {
@@ -70,7 +70,7 @@ namespace CNA::Editor
             const MeshVertex& v1 = part.vertices[i1];
             const MeshVertex& v2 = part.vertices[i2];
 
-            const EditorVector3 faceNormal = cross(subtract(v1.position, v0.position),
+            const StudioVector3 faceNormal = cross(subtract(v1.position, v0.position),
                                                    subtract(v2.position, v0.position));
 
             // Zero area: three collinear or coincident points have no winding to disagree with.
@@ -79,7 +79,7 @@ namespace CNA::Editor
             constexpr float kDegenerate = 1e-12f;
             if (dot(faceNormal, faceNormal) <= kDegenerate) { continue; }
 
-            const EditorVector3 vertexNormal = add(add(v0.normal, v1.normal), v2.normal);
+            const StudioVector3 vertexNormal = add(add(v0.normal, v1.normal), v2.normal);
             if (dot(vertexNormal, vertexNormal) <= kDegenerate) { continue; }
 
             // Within ninety degrees rather than equal: vertex normals on a curved surface are

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/PrefabDocument.hpp"
+#include "CNA/Studio/Scene/PrefabDocument.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -7,10 +7,10 @@
 #include <sstream>
 #include <system_error>
 
-#include "CNA/Editor/Scene/EntityJson.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/EntityJson.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const FormatMigrator& getPrefabFormatMigrator()
     {
@@ -23,10 +23,10 @@ namespace CNA::Editor
         return entities_.empty() ? Uuid{} : entities_.front().getId();
     }
 
-    const EditorEntity* PrefabDocument::findEntity(const Uuid& id) const
+    const StudioEntity* PrefabDocument::findEntity(const Uuid& id) const
     {
         const auto found = std::find_if(entities_.begin(), entities_.end(),
-                                        [&id](const EditorEntity& entity) { return entity.getId() == id; });
+                                        [&id](const StudioEntity& entity) { return entity.getId() == id; });
         return found == entities_.end() ? nullptr : &*found;
     }
 
@@ -39,7 +39,7 @@ namespace CNA::Editor
 
     bool PrefabDocument::captureFromScene(const SceneDocument& scene, const Uuid& rootId, std::string name)
     {
-        const EditorEntity* root = scene.findEntity(rootId);
+        const StudioEntity* root = scene.findEntity(rootId);
         if (root == nullptr) { return false; }
 
         clear();
@@ -51,10 +51,10 @@ namespace CNA::Editor
         std::vector<Uuid> pending{rootId};
         for (std::size_t index = 0; index < pending.size(); ++index)
         {
-            const EditorEntity* entity = scene.findEntity(pending[index]);
+            const StudioEntity* entity = scene.findEntity(pending[index]);
             if (entity == nullptr) { continue; }
 
-            EditorEntity copy = *entity;
+            StudioEntity copy = *entity;
 
             // The root of a prefab has no parent *within the prefab*. Keeping the scene parent
             // would make the file describe a hierarchy that only exists in the scene it came from.
@@ -79,7 +79,7 @@ namespace CNA::Editor
         root.set("name", JsonValue{name_});
 
         JsonValue entitiesJson = JsonValue::makeArray();
-        for (const EditorEntity& entity : entities_)
+        for (const StudioEntity& entity : entities_)
         {
             entitiesJson.append(entityToJson(entity));
         }
@@ -136,7 +136,7 @@ namespace CNA::Editor
 
         for (const JsonValue& entityJson : document["entities"].getElements())
         {
-            EditorEntity entity = entityFromJson(entityJson, registry, result.warnings);
+            StudioEntity entity = entityFromJson(entityJson, registry, result.warnings);
 
             if (findEntity(entity.getId()) != nullptr)
             {

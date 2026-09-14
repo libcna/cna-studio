@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/Json.hpp"
+#include "CNA/Studio/Core/Json.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -168,7 +168,7 @@ namespace CNA::Editor
                         ++offset_;
                         continue;
                     }
-                    // Editor-friendly relaxation: `//` line comments (see Json::parse docs).
+                    // Studio-friendly relaxation: `//` line comments (see Json::parse docs).
                     if (character == '/' && offset_ + 1 < text_.size() && text_[offset_ + 1] == '/')
                     {
                         while (!atEnd() && text_[offset_] != '\n') { ++offset_; }
@@ -355,7 +355,7 @@ namespace CNA::Editor
                     {
                         ++offset_;
                         skipTrivia();
-                        // Editor-friendly relaxation: a trailing comma before ']' is accepted.
+                        // Studio-friendly relaxation: a trailing comma before ']' is accepted.
                         if (peek() == ']') { ++offset_; break; }
                         continue;
                     }
@@ -392,7 +392,7 @@ namespace CNA::Editor
                     {
                         ++offset_;
                         skipTrivia();
-                        // Editor-friendly relaxation: a trailing comma before '}' is accepted.
+                        // Studio-friendly relaxation: a trailing comma before '}' is accepted.
                         if (peek() == '}') { ++offset_; break; }
                         continue;
                     }

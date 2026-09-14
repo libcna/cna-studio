@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/HistoryPanel.hpp"
+#include "CNA/Studio/Panels/HistoryPanel.hpp"
 
 #include <string>
 
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

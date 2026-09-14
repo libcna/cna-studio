@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/TransformGizmos.hpp"
+#include "CNA/Studio/Scene/TransformGizmos.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <utility>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
         /** @brief Returns the distance from @p point to the segment @p a -- @p b. */
-        float distanceToSegment(const EditorVector2& point, const EditorVector2& a, const EditorVector2& b)
+        float distanceToSegment(const StudioVector2& point, const StudioVector2& a, const StudioVector2& b)
         {
             const float dx = b.x - a.x;
             const float dy = b.y - a.y;
@@ -31,15 +31,15 @@ namespace CNA::Editor
         }
 
         /** @brief Returns true when @p point is inside the square of half-extent @p extent at @p center. */
-        bool insideSquare(const EditorVector2& point, const EditorVector2& center, float extent)
+        bool insideSquare(const StudioVector2& point, const StudioVector2& center, float extent)
         {
             return std::fabs(point.x - center.x) <= extent && std::fabs(point.y - center.y) <= extent;
         }
 
         /** @brief Returns the transform component of @p entityId, or nullptr. */
-        const EditorComponent* transformOf(const SceneDocument& scene, const Uuid& entityId)
+        const StudioComponent* transformOf(const SceneDocument& scene, const Uuid& entityId)
         {
-            const EditorEntity* entity = scene.findEntity(entityId);
+            const StudioEntity* entity = scene.findEntity(entityId);
             if (entity == nullptr) { return nullptr; }
             return entity->findComponent(BuiltinComponentIds::kTransform);
         }
@@ -64,30 +64,30 @@ namespace CNA::Editor
          * angle unchanged. If a rotating camera ever arrives, this is the one place that has to
          * learn about it.
          */
-        std::pair<EditorVector2, EditorVector2> axesForAngle(float angle)
+        std::pair<StudioVector2, StudioVector2> axesForAngle(float angle)
         {
             const float cosine = std::cos(angle);
             const float sine = std::sin(angle);
-            return {EditorVector2{cosine, sine}, EditorVector2{-sine, cosine}};
+            return {StudioVector2{cosine, sine}, StudioVector2{-sine, cosine}};
         }
 
         /** @brief Returns the inverse of the unit quaternion @p rotation. */
-        EditorQuaternion inverseOf(const EditorQuaternion& rotation)
+        StudioQuaternion inverseOf(const StudioQuaternion& rotation)
         {
-            return EditorQuaternion{-rotation.x, -rotation.y, -rotation.z, rotation.w};
+            return StudioQuaternion{-rotation.x, -rotation.y, -rotation.z, rotation.w};
         }
 
         /** @brief Returns the parent's world rotation, or identity for a root entity. */
-        EditorQuaternion parentWorldRotation(const SceneDocument& scene, const Uuid& entityId)
+        StudioQuaternion parentWorldRotation(const SceneDocument& scene, const Uuid& entityId)
         {
-            const EditorEntity* entity = scene.findEntity(entityId);
-            if (entity == nullptr) { return EditorQuaternion{}; }
+            const StudioEntity* entity = scene.findEntity(entityId);
+            if (entity == nullptr) { return StudioQuaternion{}; }
 
             const Uuid parentId = entity->getParentId();
-            if (!parentId.isValid()) { return EditorQuaternion{}; }
+            if (!parentId.isValid()) { return StudioQuaternion{}; }
 
             const std::optional<WorldTransform> parent = computeWorldTransform(scene, parentId);
-            return parent ? parent->rotation : EditorQuaternion{};
+            return parent ? parent->rotation : StudioQuaternion{};
         }
 
         /**
@@ -116,13 +116,13 @@ namespace CNA::Editor
         return space == GizmoSpace::Local ? "Local" : "World";
     }
 
-    EditorVector2 RotateGizmoLayout::getPointAt(float radians) const
+    StudioVector2 RotateGizmoLayout::getPointAt(float radians) const
     {
-        return EditorVector2{origin.x + std::cos(radians) * radius, origin.y + std::sin(radians) * radius};
+        return StudioVector2{origin.x + std::cos(radians) * radius, origin.y + std::sin(radians) * radius};
     }
 
     std::optional<TranslateGizmoLayout> computeTranslateGizmoLayout(const SceneDocument& scene,
-                                                                    const EditorCamera2D& camera,
+                                                                    const StudioCamera2D& camera,
                                                                     const Uuid& entityId,
                                                                     GizmoSpace space)
     {
@@ -132,7 +132,7 @@ namespace CNA::Editor
         if (!world) { return std::nullopt; }
 
         TranslateGizmoLayout layout;
-        layout.origin = camera.worldToScreen(EditorVector2{world->position.x, world->position.y});
+        layout.origin = camera.worldToScreen(StudioVector2{world->position.x, world->position.y});
 
         if (space == GizmoSpace::Local)
         {
@@ -144,7 +144,7 @@ namespace CNA::Editor
     }
 
     std::optional<RotateGizmoLayout> computeRotateGizmoLayout(const SceneDocument& scene,
-                                                              const EditorCamera2D& camera,
+                                                              const StudioCamera2D& camera,
                                                               const Uuid& entityId)
     {
         if (transformOf(scene, entityId) == nullptr) { return std::nullopt; }
@@ -153,13 +153,13 @@ namespace CNA::Editor
         if (!world) { return std::nullopt; }
 
         RotateGizmoLayout layout;
-        layout.origin = camera.worldToScreen(EditorVector2{world->position.x, world->position.y});
+        layout.origin = camera.worldToScreen(StudioVector2{world->position.x, world->position.y});
         layout.angle = zRotationOf(world->rotation);
         return layout;
     }
 
     std::optional<ScaleGizmoLayout> computeScaleGizmoLayout(const SceneDocument& scene,
-                                                            const EditorCamera2D& camera,
+                                                            const StudioCamera2D& camera,
                                                             const Uuid& entityId)
     {
         if (transformOf(scene, entityId) == nullptr) { return std::nullopt; }
@@ -168,7 +168,7 @@ namespace CNA::Editor
         if (!world) { return std::nullopt; }
 
         ScaleGizmoLayout layout;
-        layout.origin = camera.worldToScreen(EditorVector2{world->position.x, world->position.y});
+        layout.origin = camera.worldToScreen(StudioVector2{world->position.x, world->position.y});
 
         // Always local: see GizmoSpace. The arms are the axes the stored numbers actually belong to.
         const auto [xAxis, yAxis] = axesForAngle(zRotationOf(world->rotation));
@@ -177,7 +177,7 @@ namespace CNA::Editor
         return layout;
     }
 
-    GizmoHandle hitTestTranslateGizmo(const TranslateGizmoLayout& layout, const EditorVector2& screenPoint)
+    GizmoHandle hitTestTranslateGizmo(const TranslateGizmoLayout& layout, const StudioVector2& screenPoint)
     {
         // The centre is tested first and wins where it overlaps the arms: it is the smaller target,
         // and it is what a user aiming at the middle expects. The arms stay reachable along the
@@ -196,7 +196,7 @@ namespace CNA::Editor
         return GizmoHandle::None;
     }
 
-    GizmoHandle hitTestRotateGizmo(const RotateGizmoLayout& layout, const EditorVector2& screenPoint)
+    GizmoHandle hitTestRotateGizmo(const RotateGizmoLayout& layout, const StudioVector2& screenPoint)
     {
         // A band around the ring, not a disc: the inside of the circle is where the entity is, and
         // grabbing there would make the sprite itself unclickable at every zoom.
@@ -205,7 +205,7 @@ namespace CNA::Editor
                                                                            : GizmoHandle::None;
     }
 
-    GizmoHandle hitTestScaleGizmo(const ScaleGizmoLayout& layout, const EditorVector2& screenPoint)
+    GizmoHandle hitTestScaleGizmo(const ScaleGizmoLayout& layout, const StudioVector2& screenPoint)
     {
         if (insideSquare(screenPoint, layout.origin, layout.centerExtent)) { return GizmoHandle::Both; }
 
@@ -226,11 +226,11 @@ namespace CNA::Editor
         return GizmoHandle::None;
     }
 
-    EditorVector2 worldDeltaToLocal(const SceneDocument& scene,
+    StudioVector2 worldDeltaToLocal(const SceneDocument& scene,
                                     const Uuid& entityId,
-                                    const EditorVector2& worldDelta)
+                                    const StudioVector2& worldDelta)
     {
-        const EditorEntity* entity = scene.findEntity(entityId);
+        const StudioEntity* entity = scene.findEntity(entityId);
         if (entity == nullptr) { return worldDelta; }
 
         const Uuid parentId = entity->getParentId();
@@ -242,31 +242,31 @@ namespace CNA::Editor
         // Undo the parent's rotation, then its scale -- the inverse of how a local offset becomes a
         // world one in computeWorldTransform. Skipping this gives a gizmo that is exact on root
         // entities and drifts on every child of a rotated or scaled parent.
-        const EditorVector3 unrotated =
-            rotate(inverseOf(parent->rotation), EditorVector3{worldDelta.x, worldDelta.y, 0.0f});
+        const StudioVector3 unrotated =
+            rotate(inverseOf(parent->rotation), StudioVector3{worldDelta.x, worldDelta.y, 0.0f});
 
         const float scaleX = parent->scale.x != 0.0f ? parent->scale.x : 1.0f;
         const float scaleY = parent->scale.y != 0.0f ? parent->scale.y : 1.0f;
-        return EditorVector2{unrotated.x / scaleX, unrotated.y / scaleY};
+        return StudioVector2{unrotated.x / scaleX, unrotated.y / scaleY};
     }
 
     bool TranslateGizmoDrag::begin(const SceneDocument& scene,
-                                   const EditorCamera2D& camera,
+                                   const StudioCamera2D& camera,
                                    const Uuid& entityId,
                                    GizmoHandle handle,
-                                   const EditorVector2& screenPoint,
+                                   const StudioVector2& screenPoint,
                                    GizmoSpace space)
     {
         end();
         if (handle == GizmoHandle::None) { return false; }
 
-        const EditorComponent* transform = transformOf(scene, entityId);
+        const StudioComponent* transform = transformOf(scene, entityId);
         if (transform == nullptr) { return false; }
 
         handle_ = handle;
         entityId_ = entityId;
         grabWorld_ = camera.screenToWorld(screenPoint);
-        startLocalPosition_ = transform->getProperty("position").get<EditorVector3>();
+        startLocalPosition_ = transform->getProperty("position").get<StudioVector3>();
 
         // The constraint is recorded at the press and never recomputed, so nothing that changes the
         // entity's rotation mid-drag can bend the axis it is already moving along.
@@ -276,24 +276,24 @@ namespace CNA::Editor
         return true;
     }
 
-    EditorVector2 TranslateGizmoDrag::getWorldDelta(const EditorCamera2D& camera,
-                                                    const EditorVector2& screenPoint,
+    StudioVector2 TranslateGizmoDrag::getWorldDelta(const StudioCamera2D& camera,
+                                                    const StudioVector2& screenPoint,
                                                     const GizmoSnap& snap) const
     {
-        if (!isActive()) { return EditorVector2{}; }
+        if (!isActive()) { return StudioVector2{}; }
 
         // Measured from where the drag *began*, never accumulated frame to frame. Accumulating is
         // the classic source of gizmo drift: rounding compounds and the object separates from the
         // cursor over a long drag.
-        const EditorVector2 nowWorld = camera.screenToWorld(screenPoint);
-        EditorVector2 worldDelta{nowWorld.x - grabWorld_.x, nowWorld.y - grabWorld_.y};
+        const StudioVector2 nowWorld = camera.screenToWorld(screenPoint);
+        StudioVector2 worldDelta{nowWorld.x - grabWorld_.x, nowWorld.y - grabWorld_.y};
 
         if (handle_ == GizmoHandle::XAxis || handle_ == GizmoHandle::YAxis)
         {
             // Projected onto the arm rather than zeroed component-wise, because in local space the
             // arm is not a coordinate axis. In world space the two are the same arithmetic.
             const float along = worldDelta.x * constraintAxis_.x + worldDelta.y * constraintAxis_.y;
-            worldDelta = EditorVector2{constraintAxis_.x * along, constraintAxis_.y * along};
+            worldDelta = StudioVector2{constraintAxis_.x * along, constraintAxis_.y * along};
         }
 
         // A snapped *world* delta is what a multi-selection needs: rounding each entity's own
@@ -312,24 +312,24 @@ namespace CNA::Editor
         return worldDelta;
     }
 
-    std::optional<EditorVector3> TranslateGizmoDrag::update(const SceneDocument& scene,
-                                                            const EditorCamera2D& camera,
-                                                            const EditorVector2& screenPoint,
+    std::optional<StudioVector3> TranslateGizmoDrag::update(const SceneDocument& scene,
+                                                            const StudioCamera2D& camera,
+                                                            const StudioVector2& screenPoint,
                                                             const GizmoSnap& snap) const
     {
         if (!isActive()) { return std::nullopt; }
 
-        const EditorVector2 nowWorld = camera.screenToWorld(screenPoint);
-        EditorVector2 worldDelta{nowWorld.x - grabWorld_.x, nowWorld.y - grabWorld_.y};
+        const StudioVector2 nowWorld = camera.screenToWorld(screenPoint);
+        StudioVector2 worldDelta{nowWorld.x - grabWorld_.x, nowWorld.y - grabWorld_.y};
 
         if (handle_ == GizmoHandle::XAxis || handle_ == GizmoHandle::YAxis)
         {
             const float along = worldDelta.x * constraintAxis_.x + worldDelta.y * constraintAxis_.y;
-            worldDelta = EditorVector2{constraintAxis_.x * along, constraintAxis_.y * along};
+            worldDelta = StudioVector2{constraintAxis_.x * along, constraintAxis_.y * along};
         }
 
-        const EditorVector2 localDelta = worldDeltaToLocal(scene, entityId_, worldDelta);
-        EditorVector3 position{startLocalPosition_.x + localDelta.x,
+        const StudioVector2 localDelta = worldDeltaToLocal(scene, entityId_, worldDelta);
+        StudioVector3 position{startLocalPosition_.x + localDelta.x,
                                startLocalPosition_.y + localDelta.y,
                                startLocalPosition_.z};
 
@@ -350,7 +350,7 @@ namespace CNA::Editor
     bool RotateGizmoDrag::begin(const SceneDocument& scene,
                                 const RotateGizmoLayout& layout,
                                 const Uuid& entityId,
-                                const EditorVector2& screenPoint)
+                                const StudioVector2& screenPoint)
     {
         end();
 
@@ -375,7 +375,7 @@ namespace CNA::Editor
     }
 
     float RotateGizmoDrag::getDeltaAngle(const RotateGizmoLayout& layout,
-                                         const EditorVector2& screenPoint,
+                                         const StudioVector2& screenPoint,
                                          const GizmoSnap& snap) const
     {
         if (!active_) { return 0.0f; }
@@ -395,8 +395,8 @@ namespace CNA::Editor
         return snapTo(delta, snap.rotate);
     }
 
-    std::optional<EditorQuaternion> RotateGizmoDrag::update(const RotateGizmoLayout& layout,
-                                                            const EditorVector2& screenPoint,
+    std::optional<StudioQuaternion> RotateGizmoDrag::update(const RotateGizmoLayout& layout,
+                                                            const StudioVector2& screenPoint,
                                                             const GizmoSnap& snap) const
     {
         if (!active_) { return std::nullopt; }
@@ -404,7 +404,7 @@ namespace CNA::Editor
         // The turn happens in world space -- the cursor is describing a world angle -- and is then
         // expressed in the parent's frame, since `rotation` is stored relative to the parent. For a
         // root entity the parent term is identity and this is just the world turn.
-        const EditorQuaternion turned =
+        const StudioQuaternion turned =
             multiply(quaternionFromZRotation(getDeltaAngle(layout, screenPoint, snap)), startWorldRotation_);
         return multiply(inverseParentRotation_, turned);
     }
@@ -413,15 +413,15 @@ namespace CNA::Editor
                                const ScaleGizmoLayout& layout,
                                const Uuid& entityId,
                                GizmoHandle handle,
-                               const EditorVector2& screenPoint)
+                               const StudioVector2& screenPoint)
     {
         end();
         if (handle == GizmoHandle::None) { return false; }
 
-        const EditorComponent* transform = transformOf(scene, entityId);
+        const StudioComponent* transform = transformOf(scene, entityId);
         if (transform == nullptr) { return false; }
 
-        const EditorVector2 offset{screenPoint.x - layout.origin.x, screenPoint.y - layout.origin.y};
+        const StudioVector2 offset{screenPoint.x - layout.origin.x, screenPoint.y - layout.origin.y};
 
         // How far out the grab was, measured exactly the way update() measures: along the arm for a
         // single axis, radially for the uniform handle.
@@ -442,17 +442,17 @@ namespace CNA::Editor
         entityId_ = entityId;
         grabDistance_ = distance;
         startLocalScale_ =
-            transform->getProperty("scale").get<EditorVector3>(EditorVector3{1.0f, 1.0f, 1.0f});
+            transform->getProperty("scale").get<StudioVector3>(StudioVector3{1.0f, 1.0f, 1.0f});
         return true;
     }
 
     float ScaleGizmoDrag::getFactor(const ScaleGizmoLayout& layout,
-                                    const EditorVector2& screenPoint,
+                                    const StudioVector2& screenPoint,
                                     const GizmoSnap& snap) const
     {
         if (!isActive()) { return 1.0f; }
 
-        const EditorVector2 offset{screenPoint.x - layout.origin.x, screenPoint.y - layout.origin.y};
+        const StudioVector2 offset{screenPoint.x - layout.origin.x, screenPoint.y - layout.origin.y};
 
         float distance = 0.0f;
         switch (handle_)
@@ -469,13 +469,13 @@ namespace CNA::Editor
         return keepScalable(snapTo(distance / grabDistance_, snap.scale));
     }
 
-    std::optional<EditorVector3> ScaleGizmoDrag::update(const ScaleGizmoLayout& layout,
-                                                        const EditorVector2& screenPoint,
+    std::optional<StudioVector3> ScaleGizmoDrag::update(const ScaleGizmoLayout& layout,
+                                                        const StudioVector2& screenPoint,
                                                         const GizmoSnap& snap) const
     {
         if (!isActive()) { return std::nullopt; }
 
-        const EditorVector2 offset{screenPoint.x - layout.origin.x, screenPoint.y - layout.origin.y};
+        const StudioVector2 offset{screenPoint.x - layout.origin.x, screenPoint.y - layout.origin.y};
 
         float distance = 0.0f;
         switch (handle_)
@@ -487,7 +487,7 @@ namespace CNA::Editor
 
         const float factor = keepScalable(distance / grabDistance_);
 
-        EditorVector3 scale = startLocalScale_;
+        StudioVector3 scale = startLocalScale_;
 
         // The resulting scale is snapped, not the factor: what a user wants from a snapped scale
         // drag is an entity at exactly 2, not one at 1.7 multiplied by a round number.
@@ -502,10 +502,10 @@ namespace CNA::Editor
         return scale;
     }
 
-    std::optional<EditorVector2> computeSelectionPivot(const SceneDocument& scene,
+    std::optional<StudioVector2> computeSelectionPivot(const SceneDocument& scene,
                                                        const std::vector<Uuid>& entityIds)
     {
-        EditorVector2 total;
+        StudioVector2 total;
         std::size_t counted = 0;
 
         for (const Uuid& entityId : entityIds)
@@ -519,7 +519,7 @@ namespace CNA::Editor
         }
 
         if (counted == 0) { return std::nullopt; }
-        return EditorVector2{total.x / static_cast<float>(counted),
+        return StudioVector2{total.x / static_cast<float>(counted),
                              total.y / static_cast<float>(counted)};
     }
 
@@ -533,7 +533,7 @@ namespace CNA::Editor
             // handful of links deep, and the bound is the entity count, so a cycle -- which the
             // document forbids but a hand-edited file could still contain -- cannot hang this.
             bool hasSelectedAncestor = false;
-            const EditorEntity* entity = scene.findEntity(entityId);
+            const StudioEntity* entity = scene.findEntity(entityId);
 
             for (std::size_t step = 0; entity != nullptr && step <= scene.getEntityCount(); ++step)
             {
@@ -555,14 +555,14 @@ namespace CNA::Editor
 
     bool MultiTransformDrag::begin(const SceneDocument& scene,
                                    const std::vector<Uuid>& entityIds,
-                                   const EditorVector2& pivotWorld)
+                                   const StudioVector2& pivotWorld)
     {
         end();
         pivot_ = pivotWorld;
 
         for (const Uuid& entityId : findSelectionRoots(scene, entityIds))
         {
-            const EditorComponent* transform = transformOf(scene, entityId);
+            const StudioComponent* transform = transformOf(scene, entityId);
             if (transform == nullptr) { continue; }
 
             const std::optional<WorldTransform> world = computeWorldTransform(scene, entityId);
@@ -570,12 +570,12 @@ namespace CNA::Editor
 
             Entry entry;
             entry.entityId = entityId;
-            entry.startWorldPosition = EditorVector2{world->position.x, world->position.y};
-            entry.startLocalPosition = transform->getProperty("position").get<EditorVector3>();
+            entry.startWorldPosition = StudioVector2{world->position.x, world->position.y};
+            entry.startLocalPosition = transform->getProperty("position").get<StudioVector3>();
             entry.startWorldRotation = world->rotation;
             entry.inverseParentRotation = inverseOf(parentWorldRotation(scene, entityId));
             entry.startLocalScale =
-                transform->getProperty("scale").get<EditorVector3>(EditorVector3{1.0f, 1.0f, 1.0f});
+                transform->getProperty("scale").get<StudioVector3>(StudioVector3{1.0f, 1.0f, 1.0f});
             entries_.push_back(std::move(entry));
         }
 
@@ -583,7 +583,7 @@ namespace CNA::Editor
     }
 
     std::vector<EntityTransformEdit> MultiTransformDrag::translate(const SceneDocument& scene,
-                                                                   const EditorVector2& worldDelta) const
+                                                                   const StudioVector2& worldDelta) const
     {
         std::vector<EntityTransformEdit> edits;
         edits.reserve(entries_.size());
@@ -592,11 +592,11 @@ namespace CNA::Editor
         {
             // Every entity moves by the same *world* delta and turns it into its own local units,
             // so a selection spanning several parents keeps its shape.
-            const EditorVector2 localDelta = worldDeltaToLocal(scene, entry.entityId, worldDelta);
+            const StudioVector2 localDelta = worldDeltaToLocal(scene, entry.entityId, worldDelta);
 
             EntityTransformEdit edit;
             edit.entityId = entry.entityId;
-            edit.position = EditorVector3{entry.startLocalPosition.x + localDelta.x,
+            edit.position = StudioVector3{entry.startLocalPosition.x + localDelta.x,
                                           entry.startLocalPosition.y + localDelta.y,
                                           entry.startLocalPosition.z};
             edits.push_back(std::move(edit));
@@ -618,16 +618,16 @@ namespace CNA::Editor
             // Carried around the pivot...
             const float offsetX = entry.startWorldPosition.x - pivot_.x;
             const float offsetY = entry.startWorldPosition.y - pivot_.y;
-            const EditorVector2 movedWorld{pivot_.x + offsetX * cosine - offsetY * sine,
+            const StudioVector2 movedWorld{pivot_.x + offsetX * cosine - offsetY * sine,
                                            pivot_.y + offsetX * sine + offsetY * cosine};
 
-            const EditorVector2 worldDelta{movedWorld.x - entry.startWorldPosition.x,
+            const StudioVector2 worldDelta{movedWorld.x - entry.startWorldPosition.x,
                                            movedWorld.y - entry.startWorldPosition.y};
-            const EditorVector2 localDelta = worldDeltaToLocal(scene, entry.entityId, worldDelta);
+            const StudioVector2 localDelta = worldDeltaToLocal(scene, entry.entityId, worldDelta);
 
             EntityTransformEdit edit;
             edit.entityId = entry.entityId;
-            edit.position = EditorVector3{entry.startLocalPosition.x + localDelta.x,
+            edit.position = StudioVector3{entry.startLocalPosition.x + localDelta.x,
                                           entry.startLocalPosition.y + localDelta.y,
                                           entry.startLocalPosition.z};
 
@@ -641,7 +641,7 @@ namespace CNA::Editor
     }
 
     std::vector<EntityTransformEdit> MultiTransformDrag::scale(const SceneDocument& scene,
-                                                               const EditorVector2& factor) const
+                                                               const StudioVector2& factor) const
     {
         std::vector<EntityTransformEdit> edits;
         edits.reserve(entries_.size());
@@ -650,19 +650,19 @@ namespace CNA::Editor
         {
             // Distances from the pivot scale with the entities. Without this, scaling a group up
             // would leave every member in place and overlapping its neighbours.
-            const EditorVector2 movedWorld{pivot_.x + (entry.startWorldPosition.x - pivot_.x) * factor.x,
+            const StudioVector2 movedWorld{pivot_.x + (entry.startWorldPosition.x - pivot_.x) * factor.x,
                                            pivot_.y + (entry.startWorldPosition.y - pivot_.y) * factor.y};
 
-            const EditorVector2 worldDelta{movedWorld.x - entry.startWorldPosition.x,
+            const StudioVector2 worldDelta{movedWorld.x - entry.startWorldPosition.x,
                                            movedWorld.y - entry.startWorldPosition.y};
-            const EditorVector2 localDelta = worldDeltaToLocal(scene, entry.entityId, worldDelta);
+            const StudioVector2 localDelta = worldDeltaToLocal(scene, entry.entityId, worldDelta);
 
             EntityTransformEdit edit;
             edit.entityId = entry.entityId;
-            edit.position = EditorVector3{entry.startLocalPosition.x + localDelta.x,
+            edit.position = StudioVector3{entry.startLocalPosition.x + localDelta.x,
                                           entry.startLocalPosition.y + localDelta.y,
                                           entry.startLocalPosition.z};
-            edit.scale = EditorVector3{keepScalable(entry.startLocalScale.x * factor.x),
+            edit.scale = StudioVector3{keepScalable(entry.startLocalScale.x * factor.x),
                                        keepScalable(entry.startLocalScale.y * factor.y),
                                        entry.startLocalScale.z};
             edits.push_back(std::move(edit));

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Viewport/CnaSceneRenderer.hpp"
+#include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
 
 #include <algorithm>
 #include <array>
@@ -24,19 +24,19 @@
 #include "Microsoft/Xna/Framework/Graphics/SpriteSortMode.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SpriteAnimation.hpp"
-#include "CNA/Editor/Scene/Tilemap.hpp"
-#include "CNA/Editor/Scene/EditorIcons.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
-#include "CNA/Editor/Scene/TransformGizmos.hpp"
-#include "CNA/Editor/Viewport/CnaModelPass.hpp"
-#include "CNA/Editor/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SpriteAnimation.hpp"
+#include "CNA/Studio/Scene/Tilemap.hpp"
+#include "CNA/Studio/Scene/StudioIcons.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/TransformGizmos.hpp"
+#include "CNA/Studio/Viewport/CnaModelPass.hpp"
+#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -58,15 +58,15 @@ namespace CNA::Editor
         const Xna::Color kIconModel{198, 168, 240, 255};
 
         /** @brief Returns the mark colour for @p kind. */
-        const Xna::Color& iconColor(EditorIconKind kind)
+        const Xna::Color& iconColor(StudioIconKind kind)
         {
             switch (kind)
             {
-                case EditorIconKind::Camera: return kIconCamera;
-                case EditorIconKind::Light: return kIconLight;
-                case EditorIconKind::AudioSource: return kIconAudio;
-                case EditorIconKind::Model: return kIconModel;
-                case EditorIconKind::None: break;
+                case StudioIconKind::Camera: return kIconCamera;
+                case StudioIconKind::Light: return kIconLight;
+                case StudioIconKind::AudioSource: return kIconAudio;
+                case StudioIconKind::Model: return kIconModel;
+                case StudioIconKind::None: break;
             }
             return kIconFrame;
         }
@@ -82,7 +82,7 @@ namespace CNA::Editor
         /** @brief Drawn where a sprite's texture is missing, so the entity stays visible. */
         const Xna::Color kMissingTexture{200, 60, 140, 255};
 
-        Xna::Color toXnaColor(const EditorColor& color)
+        Xna::Color toXnaColor(const StudioColor& color)
         {
             return Xna::Color(static_cast<int>(color.r), static_cast<int>(color.g),
                               static_cast<int>(color.b), static_cast<int>(color.a));
@@ -236,7 +236,7 @@ namespace CNA::Editor
          * and a rotated quad is the only way to draw an arm that does not lie along a screen axis
          * -- which is every arm once the gizmo follows the entity's own rotation.
          */
-        void drawLine(const EditorVector2& from, const EditorVector2& to, float thickness,
+        void drawLine(const StudioVector2& from, const StudioVector2& to, float thickness,
                       const Xna::Color& color)
         {
             const float dx = to.x - from.x;
@@ -294,11 +294,11 @@ namespace CNA::Editor
          * artefacts rather than as scene content, which matters because they sit in the same
          * picture as the game's own sprites.
          */
-        void drawEditorIcon(const EditorIconPlacement& icon, bool selected)
+        void drawStudioIcon(const StudioIconPlacement& icon, bool selected)
         {
             const int cx = static_cast<int>(std::round(icon.center.x));
             const int cy = static_cast<int>(std::round(icon.center.y));
-            const int extent = static_cast<int>(kEditorIconExtent);
+            const int extent = static_cast<int>(kStudioIconExtent);
             const Xna::Color& color = iconColor(icon.kind);
 
             const Xna::Rectangle badge{cx - extent, cy - extent, extent * 2, extent * 2};
@@ -307,14 +307,14 @@ namespace CNA::Editor
 
             switch (icon.kind)
             {
-                case EditorIconKind::Camera:
+                case StudioIconKind::Camera:
                     // A body with a lens flaring out of it: the shape of every camera icon since
                     // the first one, and recognisable at thirteen pixels.
                     drawRect(Xna::Rectangle{cx - 8, cy - 5, 9, 10}, color);
                     drawTriangleFrom(cx + 2, cy, 14, 6, +1, color);
                     break;
 
-                case EditorIconKind::Light:
+                case StudioIconKind::Light:
                     drawDiamond(cx, cy, 5, color);
                     // Four rays, so it reads as emitting rather than as a solid object.
                     drawRect(Xna::Rectangle{cx - 1, cy - 9, 2, 3}, color);
@@ -323,29 +323,29 @@ namespace CNA::Editor
                     drawRect(Xna::Rectangle{cx + 7, cy - 1, 3, 2}, color);
                     break;
 
-                case EditorIconKind::AudioSource:
+                case StudioIconKind::AudioSource:
                     drawRect(Xna::Rectangle{cx - 8, cy - 3, 4, 6}, color);
                     drawTriangleFrom(cx - 1, cy, 14, 5, -1, color);
                     drawRect(Xna::Rectangle{cx + 4, cy - 4, 2, 8}, color);
                     drawRect(Xna::Rectangle{cx + 7, cy - 6, 2, 12}, color);
                     break;
 
-                case EditorIconKind::Model:
+                case StudioIconKind::Model:
                     // Two offset squares: the cheapest drawing that reads as a box rather than a
                     // rectangle, and it needs no diagonal.
                     drawOutline(Xna::Rectangle{cx - 7, cy - 3, 10, 10}, color, 1);
                     drawOutline(Xna::Rectangle{cx - 3, cy - 7, 10, 10}, color, 1);
                     break;
 
-                case EditorIconKind::None:
+                case StudioIconKind::None:
                     break;
             }
         }
 
         /** @brief Returns @p point advanced by @p distance along the unit direction @p axis. */
-        static EditorVector2 along(const EditorVector2& point, const EditorVector2& axis, float distance)
+        static StudioVector2 along(const StudioVector2& point, const StudioVector2& axis, float distance)
         {
-            return EditorVector2{point.x + axis.x * distance, point.y + axis.y * distance};
+            return StudioVector2{point.x + axis.x * distance, point.y + axis.y * distance};
         }
 
         /**
@@ -356,31 +356,31 @@ namespace CNA::Editor
          * quads. The crossbars are drawn along the axis's perpendicular, so the head follows a
          * rotated arm exactly as the shaft does.
          */
-        void drawArrowHead(const EditorVector2& tip, const EditorVector2& axis, float length,
+        void drawArrowHead(const StudioVector2& tip, const StudioVector2& axis, float length,
                            float halfWidth, const Xna::Color& color)
         {
-            const EditorVector2 perpendicular{-axis.y, axis.x};
+            const StudioVector2 perpendicular{-axis.y, axis.x};
 
             for (float step = 0.0f; step < length; step += 1.0f)
             {
                 const float half = std::max(1.0f, halfWidth * (length - step) / length);
-                const EditorVector2 center = along(tip, axis, -step);
+                const StudioVector2 center = along(tip, axis, -step);
                 drawLine(along(center, perpendicular, -half), along(center, perpendicular, half), 1.0f,
                          color);
             }
         }
 
         /** @brief Draws a square of half-extent @p extent centred at @p center, rotated by @p axis. */
-        void drawHandleSquare(const EditorVector2& center, const EditorVector2& axis, float extent,
+        void drawHandleSquare(const StudioVector2& center, const StudioVector2& axis, float extent,
                               const Xna::Color& color)
         {
-            const EditorVector2 perpendicular{-axis.y, axis.x};
+            const StudioVector2 perpendicular{-axis.y, axis.x};
 
             // Filled by drawing rows across it: the handle is out at the end of an arm where it
             // hides nothing, and a solid square reads as "grab here" far better than an outline.
             for (float offset = -extent; offset <= extent; offset += 1.0f)
             {
-                const EditorVector2 center2 = along(center, perpendicular, offset);
+                const StudioVector2 center2 = along(center, perpendicular, offset);
                 drawLine(along(center2, axis, -extent), along(center2, axis, extent), 1.0f, color);
             }
         }
@@ -403,7 +403,7 @@ namespace CNA::Editor
             const float armStart = layout.centerExtent + 2.0f;
             const float armEnd = layout.axisLength - kHeadLength;
 
-            const std::array<std::pair<EditorVector2, const Xna::Color*>, 2> arms{
+            const std::array<std::pair<StudioVector2, const Xna::Color*>, 2> arms{
                 std::pair{layout.xAxis, &kGizmoX}, std::pair{layout.yAxis, &kGizmoY}};
 
             for (const auto& [axis, color] : arms)
@@ -449,7 +449,7 @@ namespace CNA::Editor
 
             // A spoke out to the ring plus a blob on it: the spoke says which way is "zero degrees
             // for this entity", the blob is what the eye tracks while dragging.
-            const EditorVector2 mark = layout.getPointAt(layout.angle);
+            const StudioVector2 mark = layout.getPointAt(layout.angle);
             drawLine(layout.origin, mark, 1.0f, kGizmoRing);
             drawDiamond(static_cast<int>(std::round(mark.x)), static_cast<int>(std::round(mark.y)), 5,
                         kGizmoCenter);
@@ -474,7 +474,7 @@ namespace CNA::Editor
             const float armStart = layout.centerExtent + 2.0f;
             const float armEnd = layout.axisLength - layout.handleExtent;
 
-            const std::array<std::pair<EditorVector2, const Xna::Color*>, 2> arms{
+            const std::array<std::pair<StudioVector2, const Xna::Color*>, 2> arms{
                 std::pair{layout.xAxis, &kGizmoX}, std::pair{layout.yAxis, &kGizmoY}};
 
             for (const auto& [axis, color] : arms)
@@ -497,7 +497,7 @@ namespace CNA::Editor
                         kGizmoCenter, 2);
         }
 
-        void drawGrid(const EditorCamera2D& camera, SceneRenderStats& stats)
+        void drawGrid(const StudioCamera2D& camera, SceneRenderStats& stats)
         {
             // Roughly 90 pixels between minor lines: dense enough to judge distance, sparse enough
             // not to become a texture.
@@ -514,7 +514,7 @@ namespace CNA::Editor
             int drawn = 0;
             for (float x = firstX; x <= visible.max.x && drawn < kMaxLines; x += spacing, ++drawn)
             {
-                const int screenX = static_cast<int>(std::round(camera.worldToScreen(EditorVector2{x, 0.0f}).x));
+                const int screenX = static_cast<int>(std::round(camera.worldToScreen(StudioVector2{x, 0.0f}).x));
                 // Every fifth line is emphasised, and the axis itself more so again -- without
                 // that the grid reads as texture rather than as a measurable scale.
                 const bool isMajor = std::fabs(std::fmod(x / spacing, 5.0f)) < 0.001f;
@@ -527,7 +527,7 @@ namespace CNA::Editor
             drawn = 0;
             for (float y = firstY; y <= visible.max.y && drawn < kMaxLines; y += spacing, ++drawn)
             {
-                const int screenY = static_cast<int>(std::round(camera.worldToScreen(EditorVector2{0.0f, y}).y));
+                const int screenY = static_cast<int>(std::round(camera.worldToScreen(StudioVector2{0.0f, y}).y));
                 const bool isMajor = std::fabs(std::fmod(y / spacing, 5.0f)) < 0.001f;
                 const bool isAxis = std::fabs(y) < spacing * 0.001f;
                 drawRect(Xna::Rectangle{0, screenY, targetWidth, 1},
@@ -595,11 +595,11 @@ namespace CNA::Editor
         return impl_->resolveTexture(assetId, ignored);
     }
 
-    EditorVector2 CnaSceneRenderer::getSpriteSize(const Uuid& assetId) const
+    StudioVector2 CnaSceneRenderer::getSpriteSize(const Uuid& assetId) const
     {
         const auto found = impl_->textures.find(assetId);
-        if (found == impl_->textures.end()) { return EditorVector2{}; }
-        return EditorVector2{static_cast<float>(found->second->getWidthProperty()),
+        if (found == impl_->textures.end()) { return StudioVector2{}; }
+        return StudioVector2{static_cast<float>(found->second->getWidthProperty()),
                              static_cast<float>(found->second->getHeightProperty())};
     }
 
@@ -615,7 +615,7 @@ namespace CNA::Editor
     }
 
     SceneRenderStats CnaSceneRenderer::render(const SceneDocument& scene,
-                                              const EditorCamera2D& camera,
+                                              const StudioCamera2D& camera,
                                               int width,
                                               int height,
                                               const std::vector<Uuid>& selection,
@@ -628,7 +628,7 @@ namespace CNA::Editor
     }
 
     SceneRenderStats CnaSceneRenderer::renderGameView(const SceneDocument& scene,
-                                                      const EditorCamera2D& camera,
+                                                      const StudioCamera2D& camera,
                                                       int width,
                                                       int height)
     {
@@ -744,8 +744,8 @@ namespace CNA::Editor
         // A camera framing this model and nothing else, from three-quarters on. Head-on is the one
         // angle at which a cube and a flat square are the same picture, and telling those apart is
         // the entire job of a thumbnail.
-        EditorCamera3D camera;
-        camera.setViewportSize(EditorVector2{static_cast<float>(extent), static_cast<float>(extent)});
+        StudioCamera3D camera;
+        camera.setViewportSize(StudioVector2{static_cast<float>(extent), static_cast<float>(extent)});
         camera.orbit(35.0f, 25.0f);
         camera.frame(WorldBounds3D{mesh.boundsMin, mesh.boundsMax});
 
@@ -753,7 +753,7 @@ namespace CNA::Editor
         batch.viewProjection = camera.getViewProjectionMatrix();
         batch.view = camera.getViewMatrix();
         batch.projection =
-            multiply(camera.getProjectionMatrix(), createScale(EditorVector3{1.0f, -1.0f, 1.0f}));
+            multiply(camera.getProjectionMatrix(), createScale(StudioVector3{1.0f, -1.0f, 1.0f}));
 
         ModelDraw draw;
         draw.modelId = assetId;
@@ -788,7 +788,7 @@ namespace CNA::Editor
     }
 
     SceneRenderStats CnaSceneRenderer::renderPasses(const SceneDocument& scene,
-                                                    const EditorCamera2D& camera,
+                                                    const StudioCamera2D& camera,
                                                     int width,
                                                     int height,
                                                     const std::vector<Uuid>& selection,
@@ -831,11 +831,11 @@ namespace CNA::Editor
 
         const SpriteSizeProvider sizeProvider = makeSizeProvider();
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (!entity.isEnabled()) { ++stats.spritesSkipped; continue; }
 
-            const EditorComponent* sprite = entity.findComponent(BuiltinComponentIds::kSpriteRenderer);
+            const StudioComponent* sprite = entity.findComponent(BuiltinComponentIds::kSpriteRenderer);
             if (sprite == nullptr) { continue; }
 
             const std::optional<WorldTransform> world = computeWorldTransform(scene, entity.getId());
@@ -845,7 +845,7 @@ namespace CNA::Editor
             // current frame replaces the source rectangle. That is what makes the viewport show the
             // same frame the inspector's preview does -- and which frame *is* current comes in as a
             // parameter, because playback is editor state and must never travel in a scene.
-            const EditorComponent* animation =
+            const StudioComponent* animation =
                 entity.findComponent(BuiltinComponentIds::kSpriteAnimation);
 
             SpriteAnimationClip clip;
@@ -873,10 +873,10 @@ namespace CNA::Editor
                     : sprite->getProperty("texture").get<PropertyValue::AssetReference>().id;
             XnaGraphics::Texture2D* texture = impl_->resolveTexture(textureId, stats);
 
-            const EditorVector2 screenPosition =
-                camera.worldToScreen(EditorVector2{world->position.x, world->position.y});
-            const EditorVector2 origin = sprite->getProperty("origin").get<EditorVector2>();
-            const EditorColor tint = sprite->getProperty("tint").get<EditorColor>();
+            const StudioVector2 screenPosition =
+                camera.worldToScreen(StudioVector2{world->position.x, world->position.y});
+            const StudioVector2 origin = sprite->getProperty("origin").get<StudioVector2>();
+            const StudioColor tint = sprite->getProperty("tint").get<StudioColor>();
             const float layerDepth = sprite->getProperty("layerDepth").get<float>(0.5f);
             const float rotation = zRotationOf(world->rotation);
 
@@ -889,8 +889,8 @@ namespace CNA::Editor
                     computeEntityBounds2D(scene, entity.getId(), sizeProvider);
                 if (!bounds) { continue; }
 
-                const EditorVector2 topLeft = camera.worldToScreen(bounds->min);
-                const EditorVector2 bottomRight = camera.worldToScreen(bounds->max);
+                const StudioVector2 topLeft = camera.worldToScreen(bounds->min);
+                const StudioVector2 bottomRight = camera.worldToScreen(bounds->max);
                 impl_->drawRect(Xna::Rectangle{static_cast<int>(topLeft.x), static_cast<int>(topLeft.y),
                                                static_cast<int>(bottomRight.x - topLeft.x),
                                                static_cast<int>(bottomRight.y - topLeft.y)},
@@ -900,8 +900,8 @@ namespace CNA::Editor
             }
 
             std::optional<Xna::Rectangle> sourceRectangle;
-            const EditorRectangle source = animated ? clip.getFrameRectangle(framePosition)
-                                                    : sprite->getProperty("sourceRectangle").get<EditorRectangle>();
+            const StudioRectangle source = animated ? clip.getFrameRectangle(framePosition)
+                                                    : sprite->getProperty("sourceRectangle").get<StudioRectangle>();
             if (!source.isEmpty())
             {
                 sourceRectangle = Xna::Rectangle{source.x, source.y, source.width, source.height};
@@ -928,11 +928,11 @@ namespace CNA::Editor
 
         // Tilemaps share the content pass, so a tile and a sprite at the same layer depth sort
         // against each other exactly as they will at run time.
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (!entity.isEnabled()) { continue; }
 
-            const EditorComponent* tilemap = entity.findComponent(BuiltinComponentIds::kTilemap);
+            const StudioComponent* tilemap = entity.findComponent(BuiltinComponentIds::kTilemap);
             if (tilemap == nullptr) { continue; }
 
             const std::optional<WorldTransform> world = computeWorldTransform(scene, entity.getId());
@@ -961,10 +961,10 @@ namespace CNA::Editor
             // Only the cells the viewport can actually show. A 200x200 map is forty thousand draw
             // calls a frame otherwise, nearly all of them offscreen.
             const TileCoordinate first = worldToTile(*world, tileWidth, tileHeight,
-                                                     camera.screenToWorld(EditorVector2{0.0f, 0.0f}));
+                                                     camera.screenToWorld(StudioVector2{0.0f, 0.0f}));
             const TileCoordinate last =
                 worldToTile(*world, tileWidth, tileHeight,
-                            camera.screenToWorld(EditorVector2{static_cast<float>(width),
+                            camera.screenToWorld(StudioVector2{static_cast<float>(width),
                                                                 static_cast<float>(height)}));
 
             const int minX = std::max(0, std::min(first.x, last.x));
@@ -985,14 +985,14 @@ namespace CNA::Editor
                     const int sheetX = static_cast<int>(tile % sheetColumns) * tileWidth;
                     const int sheetY = static_cast<int>(tile / sheetColumns) * tileHeight;
 
-                    const EditorVector2 cell = camera.worldToScreen(EditorVector2{
+                    const StudioVector2 cell = camera.worldToScreen(StudioVector2{
                         world->position.x + static_cast<float>(x * tileWidth) * world->scale.x,
                         world->position.y + static_cast<float>(y * tileHeight) * world->scale.y});
 
                     impl_->spriteBatch->Draw(*sheet,
                                              Xna::Vector2{cell.x, cell.y},
                                              Xna::Rectangle{sheetX, sheetY, tileWidth, tileHeight},
-                                             toXnaColor(EditorColor{}),
+                                             toXnaColor(StudioColor{}),
                                              0.0f,
                                              Xna::Vector2{0.0f, 0.0f},
                                              Xna::Vector2{scaleX, scaleY},
@@ -1017,14 +1017,14 @@ namespace CNA::Editor
                                   XnaGraphics::BlendState::AlphaBlend);
 
         // Icons first, so a selection outline or the gizmo lands on top of one rather than under.
-        for (const EditorIconPlacement& icon : collectEditorIcons(scene, camera))
+        for (const StudioIconPlacement& icon : collectStudioIcons(scene, camera))
         {
             const bool selected =
                 std::find(selection.begin(), selection.end(), icon.entityId) != selection.end();
 
             // The badge outline is the *only* selection feedback an icon entity gets: a camera has
             // no bounds, so the outline pass below finds nothing to draw around it.
-            impl_->drawEditorIcon(icon, selected);
+            impl_->drawStudioIcon(icon, selected);
             ++stats.iconsDrawn;
         }
 
@@ -1034,8 +1034,8 @@ namespace CNA::Editor
                 computeEntityBounds2D(scene, selectedId, sizeProvider);
             if (!bounds) { continue; }
 
-            const EditorVector2 topLeft = camera.worldToScreen(bounds->min);
-            const EditorVector2 bottomRight = camera.worldToScreen(bounds->max);
+            const StudioVector2 topLeft = camera.worldToScreen(bounds->min);
+            const StudioVector2 bottomRight = camera.worldToScreen(bounds->max);
             impl_->drawOutline(Xna::Rectangle{static_cast<int>(topLeft.x), static_cast<int>(topLeft.y),
                                               static_cast<int>(bottomRight.x - topLeft.x),
                                               static_cast<int>(bottomRight.y - topLeft.y)},
@@ -1054,7 +1054,7 @@ namespace CNA::Editor
             // their positions -- and manipulates all of them about it. The layout is still computed
             // for the primary selection, so its arms follow that entity's rotation in local space;
             // only the origin moves.
-            const std::optional<EditorVector2> pivot =
+            const std::optional<StudioVector2> pivot =
                 selection.size() > 1 ? computeSelectionPivot(scene, selection) : std::nullopt;
 
             switch (gizmoMode)

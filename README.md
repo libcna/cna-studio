@@ -1,10 +1,10 @@
-# CNA Editor
+# CNA Studio
 
-Editor, asset pipeline and tooling for [CNA](https://github.com/openeggbert/cna) — the C++
+Studio, asset pipeline and tooling for [CNA](https://github.com/openeggbert/cna) — the C++
 reimplementation of the XNA 4.0 framework.
 
 > **Status: it edits, it plays, and it draws the game.** Built against a real CNA checkout,
-> `cna-editor` opens a window, docks its panels, and renders them entirely through CNA's *public*
+> `cna-studio` opens a window, docks its panels, and renders them entirely through CNA's *public*
 > API — no internal headers, no authored shader, no per-backend renderer. The scene viewport draws
 > sprites, tilemaps and manipulators; a **3D viewport** draws the same scene as a wireframe with
 > translate, rotate and scale gizmos of its own, and **imports glTF**, so a model renderer draws
@@ -16,7 +16,7 @@ reimplementation of the XNA 4.0 framework.
 > — lighting the imported meshes, materials and lights ([`plan.md`](plan.md) Phase 3, ED-402
 > onward). The geometry is there; nothing is lit yet.
 
-![cna-editor running on the EASYGL backend](docs/images/editor-easygl.png)
+![cna-studio running on the EASYGL backend](docs/images/editor-easygl.png)
 
 The 3D viewport, orbited, with the example project's imported `Crate.gltf` standing in the grid
 beside the two sprites. The crate is the model's own triangles; the flat rectangles are the sprites,
@@ -29,7 +29,7 @@ seen from an angle.
 
 ## The idea
 
-CNA Editor is **not** a new engine, and it is not part of CNA. It is a set of tools *on top of*
+CNA Studio is **not** a new engine, and it is not part of CNA. It is a set of tools *on top of*
 CNA, built against the same public API a game uses:
 
 - a **document editor** — scenes, entities, components, undo;
@@ -65,11 +65,11 @@ Requires a C++23 compiler (GCC 13+, Clang 16+, MSVC 19.38+) and CMake ≥ 3.20.
 Try it against the bundled example project:
 
 ```bash
-./build/cna-editor --headless --project=examples/HelloSprites/HelloSprites.cnaproject
+./build/cna-studio --headless --project=examples/HelloSprites/HelloSprites.cnaproject
 ```
 
 ```
-[info] cna-editor starting (ui=null, viewport=null)
+[info] cna-studio starting (ui=null, viewport=null)
 [info] Opened project 'HelloSprites' (CnaNative) at .../examples/HelloSprites
 [info] Assets: 1 found, 1 new, 0 moved, 0 missing
 [info] Opened scene 'Level01' with 3 entities
@@ -83,13 +83,13 @@ The CNA-backed viewport is opt-in, because CNA needs two sibling checkouts:
 cd ..
 git clone https://github.com/openeggbert/cna.git
 git clone https://github.com/openeggbert/sharp-runtime.git
-cd cna-editor
+cd cna-studio
 
-cmake -S . -B build-cna -DCNA_EDITOR_WITH_CNA=ON -DCNA_DEVICES=ON
+cmake -S . -B build-cna -DCNA_STUDIO_WITH_CNA=ON -DCNA_DEVICES=ON
 cmake --build build-cna -j
 
 # Opens a real window with the editor in it.
-./build-cna/cna-editor --project=examples/HelloSprites/HelloSprites.cnaproject
+./build-cna/cna-studio --project=examples/HelloSprites/HelloSprites.cnaproject
 ```
 
 CNA itself needs SDL3's build dependencies (on Debian/Ubuntu: `libx11-dev libxext-dev
@@ -101,10 +101,10 @@ working clipboard.
 To prove it drew something without looking at it — which is what CI does:
 
 ```bash
-SDL_VIDEODRIVER=dummy ./build-cna/cna-editor \
+SDL_VIDEODRIVER=dummy ./build-cna/cna-studio \
     --project=examples/HelloSprites/HelloSprites.cnaproject \
     --frames=20 --screenshot=editor.png
-# cna-editor: backend SOFTWARE, 56 frames, 1600x900 display, 14 draw calls, 1858 triangles,
+# cna-studio: backend SOFTWARE, 56 frames, 1600x900 display, 14 draw calls, 1858 triangles,
 #             1 textures created, 0 texture updates, 0 commands clipped away
 ```
 
@@ -127,31 +127,31 @@ SDL_VIDEODRIVER=dummy ./build-cna/cna-editor \
 
 | Option | Default | Meaning |
 |--------|:-------:|---------|
-| `CNA_EDITOR_WITH_CNA` | `OFF` | Build the CNA-backed viewport, UI renderer and input platform |
-| `CNA_EDITOR_WITH_IMGUI` | `ON` | Build the Dear ImGui UI (vendored; no system dependencies) |
-| `CNA_EDITOR_BUILD_TESTS` | `ON` | Build the test suite |
-| `CNA_EDITOR_WARNINGS_AS_ERRORS` | `OFF` | `-Werror` / `/WX` |
-| `CNA_EDITOR_CNA_ROOT` | `../cna` | Where to find the CNA checkout |
-| `CNA_EDITOR_PLAYER_BACKENDS` | *(empty)* | Extra backends to build `cna-player` for, e.g. `SOFTWARE;EASYGL`. Each is a full CNA build |
+| `CNA_STUDIO_WITH_CNA` | `OFF` | Build the CNA-backed viewport, UI renderer and input platform |
+| `CNA_STUDIO_WITH_IMGUI` | `ON` | Build the Dear ImGui UI (vendored; no system dependencies) |
+| `CNA_STUDIO_BUILD_TESTS` | `ON` | Build the test suite |
+| `CNA_STUDIO_WARNINGS_AS_ERRORS` | `OFF` | `-Werror` / `/WX` |
+| `CNA_STUDIO_CNA_ROOT` | `../cna` | Where to find the CNA checkout |
+| `CNA_STUDIO_PLAYER_BACKENDS` | *(empty)* | Extra backends to build `cna-player` for, e.g. `SOFTWARE;EASYGL`. Each is a full CNA build |
 
 ### More than one backend
 
 CNA fixes its graphics backend at compile time, so "run this on Software as well" means "build a
-second `cna-player`". `CNA_EDITOR_PLAYER_BACKENDS` does that: one nested build per backend, each
+second `cna-player`". `CNA_STUDIO_PLAYER_BACKENDS` does that: one nested build per backend, each
 producing a `cna-player-<backend>` beside the editor, which is where discovery looks.
 
 ```bash
-cmake -S . -B build-cna -DCNA_EDITOR_WITH_CNA=ON \
-    -DCNA_GRAPHICS_BACKEND=EASYGL -DCNA_EDITOR_PLAYER_BACKENDS="SOFTWARE"
+cmake -S . -B build-cna -DCNA_STUDIO_WITH_CNA=ON \
+    -DCNA_GRAPHICS_BACKEND=EASYGL -DCNA_STUDIO_PLAYER_BACKENDS="SOFTWARE"
 cmake --build build-cna -j
 
 # Play mode now offers both, and the comparison has something to compare.
-./build-cna/cna-editor --compare-backends \
+./build-cna/cna-studio --compare-backends \
     --project=examples/HelloSprites/HelloSprites.cnaproject
-# cna-editor: backend comparison against 'easygl'
+# cna-studio: backend comparison against 'easygl'
 #   software
 #       496 of 921600 pixels differ, largest channel difference 64
-# cna-editor: the backends do not agree.   (exit 5)
+# cna-studio: the backends do not agree.   (exit 5)
 ```
 
 It is minutes per backend, not seconds — each one compiles CNA again — which is why the list is
@@ -173,17 +173,17 @@ on the editor would be a lie. It is rejected with an explanation rather than sil
 To preview a game on a different backend, launch the matching player build:
 
 ```bash
-cna-player --project=MyGame.cnaproject --graphics=software --editor-port=34781
+cna-player --project=MyGame.cnaproject --graphics=software --studio-port=34781
 ```
 
 This is also why play mode is a separate process (see below), and it is what makes backend
 comparison mode natural rather than exotic.
 
-Run `cna-editor --list-backends` to see the 14 backends and how each is classified:
+Run `cna-studio --list-backends` to see the 14 backends and how each is classified:
 
 | Tier | Backends |
 |------|----------|
-| **Editor Supported** — can host the editor UI | EASYGL, VULKAN, SDL_RENDERER, BGFX, SDL_GPU, D3D11, D3D12 |
+| **Studio Supported** — can host the editor UI | EASYGL, VULKAN, SDL_RENDERER, BGFX, SDL_GPU, D3D11, D3D12 |
 | **Preview Only** — fine for a player, not for a UI | WEBGPU, D3D9, SOFTWARE |
 | **Runtime Only** — ships games only | CANVAS, ASCII, DX3, HEADLESS |
 
@@ -192,39 +192,39 @@ Run `cna-editor --list-backends` to see the 14 backends and how each is classifi
 ## Architecture at a glance
 
 ```
-┌─────────────────────────── cna-editor ────────────────────────────┐
+┌─────────────────────────── cna-studio ────────────────────────────┐
 │  Hierarchy      Viewport            Inspector                     │
 │  Assets         Console                                           │
 └───────────────────────────────────────────────────────────────────┘
                              │
         ┌────────────────────┴────────────────────┐
         ▼                                         ▼
- cna-editor-ui-imgui                      cna-editor-context
+ cna-studio-ui-imgui                      cna-studio-context
  (Dear ImGui)                             (project, scene, registry,
         │                                  assets, undo, selection)
         │  UiDrawData  ▼   ▲  UiInputState
         └──────────────┬───┴──────────────┐
                        ▼                  │
-             cna-editor-viewport ──────────┘
+             cna-studio-viewport ──────────┘
              ← the ONLY module that links CNA
                · CnaUiRenderer   (draws the UI)
                · CnaUiPlatform   (mouse/keys/text)
-               · CnaEditorViewport (draws the scene)
+               · CnaStudioViewport (draws the scene)
 
         ┌────────────────────┬────────────────────┐
         ▼                    ▼                    ▼
- cna-editor-scene    cna-editor-assets    cna-editor-project
+ cna-studio-scene    cna-studio-assets    cna-studio-project
         └────────────────────┼────────────────────┘
                              ▼
-                      cna-editor-core
+                      cna-studio-core
               (Uuid · JSON · PropertyValue ·
            ComponentDescriptor · CommandHistory)
 
- cna-editor-plugins    cna-editor-runtime-bridge    cna-editor-player
+ cna-studio-plugins    cna-studio-runtime-bridge    cna-studio-player
  (manifest, loading)   (protocol, TCP, spawn) ─IPC─▶ (cna-player process)
 ```
 
-Everything except `cna-editor-viewport` is CNA-free. That is enforced by the build graph, not by
+Everything except `cna-studio-viewport` is CNA-free. That is enforced by the build graph, not by
 review: a stray `#include <Microsoft/Xna/...>` elsewhere fails to compile.
 
 The UI is joined to CNA by two plain data types rather than by an interface — `UiDrawData` carries
@@ -234,7 +234,7 @@ claim to re-check by hand.
 
 ### Six things worth knowing
 
-**Undo is a hard rule.** Every document mutation is an `EditorCommand` pushed through
+**Undo is a hard rule.** Every document mutation is an `StudioCommand` pushed through
 `CommandHistory` — from the inspector, from a gizmo, from a plugin, from the bridge. Retrofitting
 undo is the mistake that cannot be repaired incrementally: by the time you notice, every call site
 is a place undo silently does not work. Continuous input merges, so a gizmo drag is one undo step
@@ -269,26 +269,26 @@ in CNA worth finding; two small ones were, and are filed in
 ## Repository layout
 
 ```
-cna-editor/
+cna-studio/
 ├── ANALYSIS.md              Architecture analysis, findings, and the 15 decisions
 ├── plan.md                  Phased task plan, ED-NNN ids
 ├── docs/
 │   ├── FORMATS.md           .cnaproject / .cnascene / .cnaasset / wire protocol
 │   └── SPIKE-IMGUI-CNA.md   Can ImGui render through CNA's public API? (yes)
-├── include/CNA/Editor/      Public headers
-│   ├── Core/                Uuid, Json, EditorMath, PropertyValue,
-│   │                        ComponentDescriptor, EditorCommand
-│   ├── Scene/               EditorEntity, SceneDocument, SceneCommands, BuiltinComponents
+├── include/CNA/Studio/      Public headers
+│   ├── Core/                Uuid, Json, StudioMath, PropertyValue,
+│   │                        ComponentDescriptor, StudioCommand
+│   ├── Scene/               StudioEntity, SceneDocument, SceneCommands, BuiltinComponents
 │   ├── Assets/              AssetDatabase
 │   ├── Project/             Project, backend capability table
-│   ├── Ui/                  EditorUi, NullEditorUi, ImGuiEditorUi,
+│   ├── Ui/                  StudioUi, NullStudioUi, ImGuiStudioUi,
 │   │                        UiDrawData, UiInputState
-│   ├── Viewport/            EditorViewport, CnaUiRenderer, CnaUiPlatform
+│   ├── Viewport/            StudioViewport, CnaUiRenderer, CnaUiPlatform
 │   ├── Plugins/             Plugin manifest and host
-│   ├── RuntimeBridge/       EditorProtocol, MessageChannel, PlayerProcess
+│   ├── RuntimeBridge/       StudioProtocol, MessageChannel, PlayerProcess
 │   ├── Player/              PlayerHost
-│   ├── EditorContext.hpp
-│   └── EditorApplication.hpp
+│   ├── StudioContext.hpp
+│   └── StudioApplication.hpp
 ├── src/                     One directory per module
 ├── third_party/imgui/       Dear ImGui 1.92.9b, core only
 ├── third_party/cgltf/       cgltf 1.15, with its symbols prefixed (see THIRD_PARTY_NOTICES.md)
@@ -308,8 +308,8 @@ House rules, matching CNA's own:
 - C++23, `-Wall -Wextra -Wpedantic` clean.
 - `// SPDX-License-Identifier: MS-PL` at the top of every file.
 - Doxygen `@brief` on every public type and method.
-- Every document mutation goes through an `EditorCommand`.
-- Only `cna-editor-viewport` may include CNA headers.
+- Every document mutation goes through an `StudioCommand`.
+- Only `cna-studio-viewport` may include CNA headers.
 - New behaviour comes with a test. The suite runs headless in about a second — there is no excuse.
 - The UI layer talks to `UiDrawData`/`UiInputState`, never straight to a toolkit or to CNA.
 

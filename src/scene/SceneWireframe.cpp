@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneWireframe.hpp"
+#include "CNA/Studio/Scene/SceneWireframe.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -7,34 +7,34 @@
 #include <limits>
 #include <unordered_set>
 
-#include "CNA/Editor/Core/EditorMatrix.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/EditorCamera2D.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
-#include "CNA/Editor/Scene/SceneLighting.hpp"
-#include "CNA/Editor/Scene/SceneTransform.hpp"
+#include "CNA/Studio/Core/StudioMatrix.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/StudioCamera2D.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneLighting.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
         /** @brief Returns the signed distance from the eye to @p point along the view direction. */
-        float depthOf(const EditorCamera3D& camera, const EditorVector3& point)
+        float depthOf(const StudioCamera3D& camera, const StudioVector3& point)
         {
             return dot(subtract(point, camera.getEye()), camera.getForward());
         }
 
         /** @brief Returns the point @p fraction of the way from @p from to @p to. */
-        EditorVector3 interpolate(const EditorVector3& from, const EditorVector3& to, float fraction)
+        StudioVector3 interpolate(const StudioVector3& from, const StudioVector3& to, float fraction)
         {
             return add(from, scale(subtract(to, from), fraction));
         }
 
         /** @brief Appends the twelve edges of @p bounds to @p out, clipped and projected. */
-        std::size_t appendBox(std::vector<WireSegment>& out, const EditorCamera3D& camera,
-                              const WorldBounds3D& bounds, const EditorColor& color, float thickness)
+        std::size_t appendBox(std::vector<WireSegment>& out, const StudioCamera3D& camera,
+                              const WorldBounds3D& bounds, const StudioColor& color, float thickness)
         {
-            const EditorVector3 corners[8] = {
+            const StudioVector3 corners[8] = {
                 {bounds.min.x, bounds.min.y, bounds.min.z}, {bounds.max.x, bounds.min.y, bounds.min.z},
                 {bounds.max.x, bounds.min.y, bounds.max.z}, {bounds.min.x, bounds.min.y, bounds.max.z},
                 {bounds.min.x, bounds.max.y, bounds.min.z}, {bounds.max.x, bounds.max.y, bounds.min.z},
@@ -47,7 +47,7 @@ namespace CNA::Editor
             std::size_t drawn = 0;
             for (const auto& edge : edges)
             {
-                const std::optional<std::pair<EditorVector2, EditorVector2>> projected =
+                const std::optional<std::pair<StudioVector2, StudioVector2>> projected =
                     projectSegment(camera, corners[edge[0]], corners[edge[1]]);
                 if (!projected) { continue; }
                 out.push_back(WireSegment{projected->first, projected->second, color, thickness});
@@ -63,11 +63,11 @@ namespace CNA::Editor
          * imported yet. All of them mean the same thing to the caller -- draw the badge instead --
          * so they are one return value rather than four.
          */
-        const MeshData* findEntityMesh(const EditorEntity& entity, const MeshProvider& provider)
+        const MeshData* findEntityMesh(const StudioEntity& entity, const MeshProvider& provider)
         {
             if (!provider) { return nullptr; }
 
-            const EditorComponent* renderer = entity.findComponent(BuiltinComponentIds::kModelRenderer);
+            const StudioComponent* renderer = entity.findComponent(BuiltinComponentIds::kModelRenderer);
             if (renderer == nullptr) { return nullptr; }
 
             const Uuid modelId =
@@ -84,9 +84,9 @@ namespace CNA::Editor
          * reason: a light's arrow has to be legible in a scene laid out in hundreds of units and in
          * one laid out in single figures, and only a screen-space size is both.
          */
-        float worldUnitsPerPixelNear(const EditorCamera3D& camera, const EditorVector3& point)
+        float worldUnitsPerPixelNear(const StudioCamera3D& camera, const StudioVector3& point)
         {
-            const EditorVector2 viewport = camera.getViewportSize();
+            const StudioVector2 viewport = camera.getViewportSize();
             if (viewport.y <= 0.0f) { return 1.0f; }
 
             if (camera.getProjection() == CameraProjection::Orthographic)
@@ -100,16 +100,16 @@ namespace CNA::Editor
         }
 
         /** @brief Returns two unit vectors spanning the plane whose normal is @p normal. */
-        std::pair<EditorVector3, EditorVector3> makePlaneBasisForLight(const EditorVector3& normal)
+        std::pair<StudioVector3, StudioVector3> makePlaneBasisForLight(const StudioVector3& normal)
         {
-            const EditorVector3 seed = std::abs(normal.x) < 0.9f ? EditorVector3{1.0f, 0.0f, 0.0f}
-                                                                 : EditorVector3{0.0f, 1.0f, 0.0f};
-            const EditorVector3 planeX = normalize(cross(seed, normal));
+            const StudioVector3 seed = std::abs(normal.x) < 0.9f ? StudioVector3{1.0f, 0.0f, 0.0f}
+                                                                 : StudioVector3{0.0f, 1.0f, 0.0f};
+            const StudioVector3 planeX = normalize(cross(seed, normal));
             return {planeX, normalize(cross(normal, planeX))};
         }
 
         /** @brief Composes @p transform into the matrix that takes model space to world space. */
-        EditorMatrix toWorldMatrix(const WorldTransform& transform)
+        StudioMatrix toWorldMatrix(const WorldTransform& transform)
         {
             // Scale, then rotate, then translate -- the order every transform in this editor
             // composes in, and the one `computeWorldTransform` itself assumes when it accumulates
@@ -122,13 +122,13 @@ namespace CNA::Editor
     }
 
     std::size_t appendLightVisualisation(std::vector<WireSegment>& segments,
-                                        const EditorCamera3D& camera, const SceneLight& light,
-                                        const EditorColor& color, std::size_t budget)
+                                        const StudioCamera3D& camera, const SceneLight& light,
+                                        const StudioColor& color, std::size_t budget)
     {
         if (budget == 0) { return 0; }
 
         std::size_t drawn = 0;
-        const auto append = [&](const EditorVector3& from, const EditorVector3& to)
+        const auto append = [&](const StudioVector3& from, const StudioVector3& to)
         {
             if (drawn >= budget) { return; }
             if (const auto projected = projectSegment(camera, from, to))
@@ -148,13 +148,13 @@ namespace CNA::Editor
         // reads well in a scene measured in metres is invisible in one measured in sprites.
         constexpr float kDirectionPixels = 70.0f;
         const float kDirectionLength = kDirectionPixels * worldUnitsPerPixelNear(camera, light.position);
-        const EditorVector3 tip = add(light.position, scale(light.direction, kDirectionLength));
+        const StudioVector3 tip = add(light.position, scale(light.direction, kDirectionLength));
         append(light.position, tip);
 
         // A small arrowhead, so the line reads as an arrow rather than as an edge of something.
         const auto [armX, armY] = makePlaneBasisForLight(light.direction);
         const float kHead = kDirectionLength * 0.18f;
-        const EditorVector3 back = add(light.position, scale(light.direction, kDirectionLength - kHead));
+        const StudioVector3 back = add(light.position, scale(light.direction, kDirectionLength - kHead));
         append(tip, add(back, scale(armX, kHead * 0.5f)));
         append(tip, add(back, scale(armX, -kHead * 0.5f)));
         append(tip, add(back, scale(armY, kHead * 0.5f)));
@@ -168,12 +168,12 @@ namespace CNA::Editor
         // describe the sphere more completely and would also put two rings edge-on in the view
         // this editor opens in, where they collapse to lines through the middle of the badge.
         constexpr std::size_t kRingSamples = 32;
-        EditorVector3 previous{light.position.x + light.range, light.position.y, light.position.z};
+        StudioVector3 previous{light.position.x + light.range, light.position.y, light.position.z};
         for (std::size_t i = 1; i <= kRingSamples; ++i)
         {
             const float angle = 2.0f * 3.14159265358979323846f * static_cast<float>(i)
                                 / static_cast<float>(kRingSamples);
-            const EditorVector3 point{light.position.x + std::cos(angle) * light.range,
+            const StudioVector3 point{light.position.x + std::cos(angle) * light.range,
                                       light.position.y + std::sin(angle) * light.range,
                                       light.position.z};
             append(previous, point);
@@ -183,9 +183,9 @@ namespace CNA::Editor
         return drawn;
     }
 
-    std::size_t appendMeshEdges(std::vector<WireSegment>& segments, const EditorCamera3D& camera,
-                                const MeshData& mesh, const EditorMatrix& world,
-                                const EditorColor& color, float thickness, std::size_t budget,
+    std::size_t appendMeshEdges(std::vector<WireSegment>& segments, const StudioCamera3D& camera,
+                                const MeshData& mesh, const StudioMatrix& world,
+                                const StudioColor& color, float thickness, std::size_t budget,
                                 bool& outTruncated)
     {
         if (budget == 0)
@@ -237,7 +237,7 @@ namespace CNA::Editor
                         return drawn;
                     }
 
-                    const std::optional<std::pair<EditorVector2, EditorVector2>> projected =
+                    const std::optional<std::pair<StudioVector2, StudioVector2>> projected =
                         projectSegment(camera,
                                        transformPosition(world, part.vertices[from].position),
                                        transformPosition(world, part.vertices[to].position));
@@ -253,9 +253,9 @@ namespace CNA::Editor
         return drawn;
     }
 
-    std::optional<std::pair<EditorVector2, EditorVector2>> projectSegment(const EditorCamera3D& camera,
-                                                                          const EditorVector3& from,
-                                                                          const EditorVector3& to)
+    std::optional<std::pair<StudioVector2, StudioVector2>> projectSegment(const StudioCamera3D& camera,
+                                                                          const StudioVector3& from,
+                                                                          const StudioVector3& to)
     {
         // A hair in front of the near plane, not on it: a point exactly on the plane divides by a
         // w of zero, and the resulting coordinate is an infinity that draws a line to nowhere.
@@ -266,8 +266,8 @@ namespace CNA::Editor
 
         if (fromDepth < nearDistance && toDepth < nearDistance) { return std::nullopt; }
 
-        EditorVector3 clippedFrom = from;
-        EditorVector3 clippedTo = to;
+        StudioVector3 clippedFrom = from;
+        StudioVector3 clippedTo = to;
 
         if (fromDepth < nearDistance)
         {
@@ -278,24 +278,24 @@ namespace CNA::Editor
             clippedTo = interpolate(to, from, (nearDistance - toDepth) / (fromDepth - toDepth));
         }
 
-        const std::optional<EditorVector2> screenFrom = camera.worldToScreen(clippedFrom);
-        const std::optional<EditorVector2> screenTo = camera.worldToScreen(clippedTo);
+        const std::optional<StudioVector2> screenFrom = camera.worldToScreen(clippedFrom);
+        const std::optional<StudioVector2> screenTo = camera.worldToScreen(clippedTo);
         if (!screenFrom || !screenTo) { return std::nullopt; }
 
         return std::make_pair(*screenFrom, *screenTo);
     }
 
-    std::vector<WireSegment> buildIconBadge(EditorIconKind kind, const EditorVector2& screenPoint,
-                                            const EditorColor& color)
+    std::vector<WireSegment> buildIconBadge(StudioIconKind kind, const StudioVector2& screenPoint,
+                                            const StudioColor& color)
     {
         std::vector<WireSegment> segments;
-        if (kind == EditorIconKind::None) { return segments; }
+        if (kind == StudioIconKind::None) { return segments; }
 
-        const float extent = kEditorIconExtent;
+        const float extent = kStudioIconExtent;
         const auto at = [&screenPoint](float x, float y) {
-            return EditorVector2{screenPoint.x + x, screenPoint.y + y};
+            return StudioVector2{screenPoint.x + x, screenPoint.y + y};
         };
-        const auto line = [&segments, &color](const EditorVector2& from, const EditorVector2& to) {
+        const auto line = [&segments, &color](const StudioVector2& from, const StudioVector2& to) {
             segments.push_back(WireSegment{from, to, color, 1.0f});
         };
         const auto box = [&line, &at](float halfWidth, float halfHeight) {
@@ -307,7 +307,7 @@ namespace CNA::Editor
 
         switch (kind)
         {
-            case EditorIconKind::Camera:
+            case StudioIconKind::Camera:
                 // A body and the lens cone beside it: the silhouette everything from a film camera
                 // to a viewport widget uses, and recognisable at thirteen pixels.
                 box(extent * 0.6f, extent * 0.5f);
@@ -316,7 +316,7 @@ namespace CNA::Editor
                 line(at(extent, extent * 0.85f), at(extent * 0.6f, extent * 0.5f));
                 break;
 
-            case EditorIconKind::Light:
+            case StudioIconKind::Light:
                 // A point with rays. Four is enough to read as a light and few enough that a scene
                 // full of them is still a scene rather than a haystack.
                 box(extent * 0.35f, extent * 0.35f);
@@ -326,7 +326,7 @@ namespace CNA::Editor
                 line(at(extent * 0.55f, 0.0f), at(extent, 0.0f));
                 break;
 
-            case EditorIconKind::AudioSource:
+            case StudioIconKind::AudioSource:
                 // A cone opening to the right, with one wavefront in front of it.
                 line(at(-extent * 0.7f, -extent * 0.35f), at(-extent * 0.7f, extent * 0.35f));
                 line(at(-extent * 0.7f, -extent * 0.35f), at(0.0f, -extent * 0.8f));
@@ -335,7 +335,7 @@ namespace CNA::Editor
                 line(at(extent * 0.5f, -extent * 0.5f), at(extent * 0.5f, extent * 0.5f));
                 break;
 
-            case EditorIconKind::Model:
+            case StudioIconKind::Model:
                 // A cube drawn flat: a wireframe box in *screen* space, which reads as "a mesh
                 // belongs here" without pretending to be the mesh, since ED-402 has not landed.
                 box(extent * 0.75f, extent * 0.75f);
@@ -346,7 +346,7 @@ namespace CNA::Editor
                 line(at(extent, extent * 0.35f), at(extent * 0.75f, extent * 0.75f));
                 break;
 
-            case EditorIconKind::None: break;
+            case StudioIconKind::None: break;
         }
 
         return segments;
@@ -362,7 +362,7 @@ namespace CNA::Editor
         return "Scene Plane";
     }
 
-    std::vector<WireSegment> buildSceneGrid(const EditorCamera3D& camera, const WireframeOptions& options)
+    std::vector<WireSegment> buildSceneGrid(const StudioCamera3D& camera, const WireframeOptions& options)
     {
         std::vector<WireSegment> segments;
         if (options.gridHalfExtent <= 0) { return segments; }
@@ -384,7 +384,7 @@ namespace CNA::Editor
         // the loop below never mentions a plane again.
         const bool ground = options.gridPlane == GridPlane::Ground;
         const auto pointAt = [ground](float u, float v) {
-            return ground ? EditorVector3{u, 0.0f, v} : EditorVector3{u, v, 0.0f};
+            return ground ? StudioVector3{u, 0.0f, v} : StudioVector3{u, v, 0.0f};
         };
 
         // Centred on the pivot and snapped to the spacing, so flying across a level does not drag
@@ -411,14 +411,14 @@ namespace CNA::Editor
             // Named for the axis each line *runs along*, which is the axis it is when it passes
             // through the origin: down the middle of the ground plane that is Z, and of the
             // scene's own plane, Y.
-            const EditorColor inPlaneAxis = ground ? WireColors::kAxisZ : WireColors::kAxisY;
+            const StudioColor inPlaneAxis = ground ? WireColors::kAxisZ : WireColors::kAxisY;
 
-            const EditorColor alongV =
+            const StudioColor alongV =
                 uIsAxis ? inPlaneAxis : (isMajor ? WireColors::kGridMajor : WireColors::kGrid);
-            const EditorColor alongU =
+            const StudioColor alongU =
                 vIsAxis ? WireColors::kAxisX : (isMajor ? WireColors::kGridMajor : WireColors::kGrid);
 
-            const std::optional<std::pair<EditorVector2, EditorVector2>> lineAlongV =
+            const std::optional<std::pair<StudioVector2, StudioVector2>> lineAlongV =
                 projectSegment(camera, pointAt(u, centerV - half), pointAt(u, centerV + half));
             if (lineAlongV)
             {
@@ -426,7 +426,7 @@ namespace CNA::Editor
                                                uIsAxis ? 2.0f : 1.0f});
             }
 
-            const std::optional<std::pair<EditorVector2, EditorVector2>> lineAlongU =
+            const std::optional<std::pair<StudioVector2, StudioVector2>> lineAlongU =
                 projectSegment(camera, pointAt(centerU - half, v), pointAt(centerU + half, v));
             if (lineAlongU)
             {
@@ -438,7 +438,7 @@ namespace CNA::Editor
         return segments;
     }
 
-    WireframeResult buildSceneWireframe(const SceneDocument& scene, const EditorCamera3D& camera,
+    WireframeResult buildSceneWireframe(const SceneDocument& scene, const StudioCamera3D& camera,
                                         const std::vector<Uuid>& selection,
                                         const SpriteSizeProvider& sizeProvider,
                                         const WireframeOptions& options)
@@ -461,7 +461,7 @@ namespace CNA::Editor
             }
         }
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (result.segments.size() >= options.maxSegments)
             {
@@ -479,7 +479,7 @@ namespace CNA::Editor
 
             const bool selected =
                 std::find(selection.begin(), selection.end(), entity.getId()) != selection.end();
-            const EditorColor color = selected ? WireColors::kSelected : WireColors::kEntity;
+            const StudioColor color = selected ? WireColors::kSelected : WireColors::kEntity;
 
             // A model that has actually been imported is drawn as itself. This is the first thing
             // in the 3D view that is neither a box nor a badge, and the whole point of ED-405
@@ -519,10 +519,10 @@ namespace CNA::Editor
             // both have the same non-existent size, so boxing them says only "something is here",
             // which is the one thing a scene of them makes obvious anyway. A model renderer with
             // no mesh loaded lands here too, which is the honest picture of it.
-            const EditorIconKind icon = getEditorIconKind(entity);
-            if (icon != EditorIconKind::None)
+            const StudioIconKind icon = getStudioIconKind(entity);
+            if (icon != StudioIconKind::None)
             {
-                const std::optional<EditorVector2> screenPoint =
+                const std::optional<StudioVector2> screenPoint =
                     camera.worldToScreen(bounds->getCenter());
                 if (!screenPoint) { continue; }
 
@@ -578,15 +578,15 @@ namespace CNA::Editor
         return std::max(entry, 0.0f);
     }
 
-    Uuid pickEntityAt3D(const SceneDocument& scene, const EditorCamera3D& camera,
-                        const EditorVector2& screenPoint, const SpriteSizeProvider& sizeProvider)
+    Uuid pickEntityAt3D(const SceneDocument& scene, const StudioCamera3D& camera,
+                        const StudioVector2& screenPoint, const SpriteSizeProvider& sizeProvider)
     {
         const WorldRay ray = camera.screenToRay(screenPoint);
 
         Uuid nearestId;
         float nearestDistance = std::numeric_limits<float>::max();
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (!entity.isEnabled()) { continue; }
 

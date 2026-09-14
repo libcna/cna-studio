@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Assets/AssetWatcher.hpp"
+#include "CNA/Studio/Assets/AssetWatcher.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <system_error>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

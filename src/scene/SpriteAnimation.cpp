@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SpriteAnimation.hpp"
+#include "CNA/Studio/Scene/SpriteAnimation.hpp"
 
 #include <algorithm>
 
-#include "CNA/Editor/Scene/EditorEntity.hpp"
+#include "CNA/Studio/Scene/StudioEntity.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     float SpriteAnimationClip::getFrameDuration(std::size_t position) const
     {
@@ -28,23 +28,23 @@ namespace CNA::Editor
         return total;
     }
 
-    EditorRectangle SpriteAnimationClip::getFrameRectangle(std::size_t position) const
+    StudioRectangle SpriteAnimationClip::getFrameRectangle(std::size_t position) const
     {
         if (position >= frames.size() || frameWidth <= 0 || frameHeight <= 0 || sheetColumns <= 0)
         {
-            return EditorRectangle{};
+            return StudioRectangle{};
         }
 
         const std::int64_t index = frames[position];
-        if (index < 0) { return EditorRectangle{}; }
+        if (index < 0) { return StudioRectangle{}; }
 
         const int columns = sheetColumns;
         const int x = static_cast<int>(index % columns) * frameWidth;
         const int y = static_cast<int>(index / columns) * frameHeight;
-        return EditorRectangle{x, y, frameWidth, frameHeight};
+        return StudioRectangle{x, y, frameWidth, frameHeight};
     }
 
-    SpriteAnimationClip readSpriteAnimationClip(const EditorComponent& component,
+    SpriteAnimationClip readSpriteAnimationClip(const StudioComponent& component,
                                                 const ComponentDescriptor* descriptor)
     {
         SpriteAnimationClip clip;

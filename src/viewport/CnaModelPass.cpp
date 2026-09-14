@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Viewport/CnaModelPass.hpp"
+#include "CNA/Studio/Viewport/CnaModelPass.hpp"
 
 #include <cstdint>
 #include <exception>
@@ -32,12 +32,12 @@
 #include "Microsoft/Xna/Framework/Graphics/VertexBuffer.hpp"
 #include "Microsoft/Xna/Framework/Graphics/VertexPositionNormalTexture.hpp"
 
-#include "CNA/Editor/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -73,12 +73,12 @@ namespace CNA::Editor
         /**
          * @brief Converts one of the editor's matrices to XNA's.
          *
-         * Field for field and nothing else, because `EditorMatrix` was written to mirror
+         * Field for field and nothing else, because `StudioMatrix` was written to mirror
          * `Microsoft::Xna::Framework::Matrix` exactly (ED-400). This function existing at all is
-         * the price of `cna-editor-core` not being allowed to name a CNA type -- not a conversion
+         * the price of `cna-studio-core` not being allowed to name a CNA type -- not a conversion
          * of conventions, which is what makes it safe to read past.
          */
-        Xna::Matrix toXna(const EditorMatrix& matrix)
+        Xna::Matrix toXna(const StudioMatrix& matrix)
         {
             Xna::Matrix result;
             result.M11 = matrix.m11; result.M12 = matrix.m12; result.M13 = matrix.m13; result.M14 = matrix.m14;
@@ -88,7 +88,7 @@ namespace CNA::Editor
             return result;
         }
 
-        Xna::Vector3 toXna(const EditorVector3& vector)
+        Xna::Vector3 toXna(const StudioVector3& vector)
         {
             return Xna::Vector3{vector.x, vector.y, vector.z};
         }
@@ -280,7 +280,7 @@ namespace CNA::Editor
             if (!environment.fogEnabled) { return; }
 
             fog->setFogColorProperty(
-                toXna(EditorVector3{static_cast<float>(environment.fogColor.r) / 255.0f,
+                toXna(StudioVector3{static_cast<float>(environment.fogColor.r) / 255.0f,
                                     static_cast<float>(environment.fogColor.g) / 255.0f,
                                     static_cast<float>(environment.fogColor.b) / 255.0f}));
             fog->setFogStartProperty(environment.fogStart);
@@ -403,9 +403,9 @@ namespace CNA::Editor
          * darken every sprite by an amount that depends on where the sun happens to be. The tint
          * goes in as the emissive colour so it survives lighting being off.
          */
-        void applySpriteMaterial(const EditorColor& tint, XnaGraphics::Texture2D* texture)
+        void applySpriteMaterial(const StudioColor& tint, XnaGraphics::Texture2D* texture)
         {
-            const EditorVector3 colour{static_cast<float>(tint.r) / 255.0f,
+            const StudioVector3 colour{static_cast<float>(tint.r) / 255.0f,
                                        static_cast<float>(tint.g) / 255.0f,
                                        static_cast<float>(tint.b) / 255.0f};
             const float alpha = static_cast<float>(tint.a) / 255.0f;
@@ -428,15 +428,15 @@ namespace CNA::Editor
             basic->setLightingEnabledProperty(false);
             basic->setDiffuseColorProperty(toXna(colour));
             basic->setEmissiveColorProperty(toXna(colour));
-            basic->setSpecularColorProperty(toXna(EditorVector3{0.0f, 0.0f, 0.0f}));
+            basic->setSpecularColorProperty(toXna(StudioVector3{0.0f, 0.0f, 0.0f}));
             basic->setAlphaProperty(alpha);
             basic->setTextureProperty(texture);
             basic->setTextureEnabledProperty(true);
         }
 
         /** @brief Sets the world/view/projection the effect draws @p world with. */
-        void applyMatrices(const EditorMatrix& world, const EditorMatrix& view,
-                           const EditorMatrix& projection)
+        void applyMatrices(const StudioMatrix& world, const StudioMatrix& view,
+                           const StudioMatrix& projection)
         {
             XnaGraphics::IEffectMatrices* matrices =
                 pbr != nullptr ? static_cast<XnaGraphics::IEffectMatrices*>(pbr.get())
@@ -597,7 +597,7 @@ namespace CNA::Editor
 
             const std::array<std::uint32_t, 6> indices{0, 1, 2, 0, 2, 3};
 
-            impl_->applyMatrices(EditorMatrix{}, batch.view, batch.projection);
+            impl_->applyMatrices(StudioMatrix{}, batch.view, batch.projection);
 
             // Sprites are fogged too. A sprite that stayed crisp in a scene where the models faded
             // would look like it was floating in front of the fog rather than standing in it.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Viewport/CnaPlayerHost.hpp"
+#include "CNA/Studio/Viewport/CnaPlayerHost.hpp"
 
 #include <exception>
 #include <memory>
@@ -14,14 +14,14 @@
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Viewport.hpp"
 
-#include "CNA/Editor/Scene/GameCamera.hpp"
-#include "CNA/Editor/Viewport/CnaSceneRenderer.hpp"
-#include "CNA/Editor/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/Scene/GameCamera.hpp"
+#include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
+#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -109,7 +109,7 @@ namespace CNA::Editor
                 // game's picture, so nothing here is the editor's choice.
                 const GameView view = computeGameView(
                     host_.getScene(),
-                    EditorVector2{static_cast<float>(width), static_cast<float>(height)});
+                    StudioVector2{static_cast<float>(width), static_cast<float>(height)});
 
                 device.Clear(Xna::Color(static_cast<int>(view.clearColor.r),
                                         static_cast<int>(view.clearColor.g),

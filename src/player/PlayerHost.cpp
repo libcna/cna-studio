@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Player/PlayerHost.hpp"
+#include "CNA/Studio/Player/PlayerHost.hpp"
 
 #include <algorithm>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const char* toString(PlayState state)
     {
@@ -47,11 +47,11 @@ namespace CNA::Editor
         return true;
     }
 
-    EditorMessage PlayerHost::makeScreenshotReply(const ScreenshotRequest& request,
+    StudioMessage PlayerHost::makeScreenshotReply(const ScreenshotRequest& request,
                                                   const std::string& errorMessage)
     {
-        EditorMessage reply;
-        reply.type = EditorMessageType::ScreenshotReady;
+        StudioMessage reply;
+        reply.type = StudioMessageType::ScreenshotReady;
         reply.requestId = request.requestId;
         reply.payload = JsonValue::makeObject();
         reply.payload.set("path", JsonValue{request.path});
@@ -64,12 +64,12 @@ namespace CNA::Editor
         return reply;
     }
 
-    EditorMessage PlayerHost::makeReady(const std::string& backendName) const
+    StudioMessage PlayerHost::makeReady(const std::string& backendName) const
     {
-        EditorMessage message;
-        message.type = EditorMessageType::Ready;
+        StudioMessage message;
+        message.type = StudioMessageType::Ready;
         message.payload = JsonValue::makeObject();
-        message.payload.set("protocolVersion", JsonValue{kEditorProtocolVersion});
+        message.payload.set("protocolVersion", JsonValue{kStudioProtocolVersion});
         // The backend is what the editor most needs to know: it is fixed at compile time, so this
         // is the only way the editor learns which build it actually got hold of.
         message.payload.set("backend", JsonValue{backendName});
@@ -79,20 +79,20 @@ namespace CNA::Editor
         return message;
     }
 
-    void PlayerHost::handle(const EditorMessage& message, Outbox& outbox)
+    void PlayerHost::handle(const StudioMessage& message, Outbox& outbox)
     {
         switch (message.type)
         {
-            case EditorMessageType::Hello: {
+            case StudioMessageType::Hello: {
                 const int peerVersion = message.payload["protocolVersion"].asInt(0);
-                if (peerVersion != kEditorProtocolVersion)
+                if (peerVersion != kStudioProtocolVersion)
                 {
                     // A version mismatch is reported and the session continues in a degraded
                     // state rather than being torn down: the editor can then tell the user which
                     // build to rebuild, which it could not do from a silently dropped connection.
-                    outbox.push_back(EditorMessage::makeReportLog(
+                    outbox.push_back(StudioMessage::makeReportLog(
                         "error", "protocol version mismatch: editor speaks " + std::to_string(peerVersion)
-                                     + ", this player speaks " + std::to_string(kEditorProtocolVersion)));
+                                     + ", this player speaks " + std::to_string(kStudioProtocolVersion)));
                 }
                 else
                 {
@@ -101,49 +101,49 @@ namespace CNA::Editor
                 break;
             }
 
-            case EditorMessageType::LoadScene:
+            case StudioMessageType::LoadScene:
                 handleLoadScene(message, outbox);
                 break;
 
-            case EditorMessageType::SetProperty:
+            case StudioMessageType::SetProperty:
                 handleSetProperty(message, outbox);
                 break;
 
-            case EditorMessageType::ReloadAsset:
+            case StudioMessageType::ReloadAsset:
                 handleReloadAsset(message, outbox);
                 break;
 
-            case EditorMessageType::Pause:
+            case StudioMessageType::Pause:
                 playState_ = PlayState::Paused;
                 pendingSteps_ = 0;
-                outbox.push_back(EditorMessage::makeReportLog("info", "paused"));
+                outbox.push_back(StudioMessage::makeReportLog("info", "paused"));
                 break;
 
-            case EditorMessageType::Resume:
+            case StudioMessageType::Resume:
                 playState_ = PlayState::Running;
                 pendingSteps_ = 0;
-                outbox.push_back(EditorMessage::makeReportLog("info", "resumed"));
+                outbox.push_back(StudioMessage::makeReportLog("info", "resumed"));
                 break;
 
-            case EditorMessageType::StepFrame:
+            case StudioMessageType::StepFrame:
                 // Stepping while already running is meaningless, and honouring it would make the
                 // game jump a frame ahead of where the user is looking.
                 if (playState_ == PlayState::Paused) { ++pendingSteps_; }
                 break;
 
-            case EditorMessageType::SelectEntity:
+            case StudioMessageType::SelectEntity:
                 highlightedEntity_ = Uuid::parse(message.payload["entityId"].asString());
                 break;
 
-            case EditorMessageType::Input:
+            case StudioMessageType::Input:
                 handleInput(message, outbox);
                 break;
 
-            case EditorMessageType::Quit:
+            case StudioMessageType::Quit:
                 playState_ = PlayState::Stopping;
                 break;
 
-            case EditorMessageType::Screenshot: {
+            case StudioMessageType::Screenshot: {
                 // Queued, not answered. The capture belongs to the CNA-linked main loop, which owns
                 // the device and the back buffer; replying here would tell the editor a file exists
                 // before anything had been written to it, and nothing on the wire would ever
@@ -154,7 +154,7 @@ namespace CNA::Editor
                 if (path.empty())
                 {
                     outbox.push_back(
-                        EditorMessage::makeReportLog("error", "screenshot without a path"));
+                        StudioMessage::makeReportLog("error", "screenshot without a path"));
                     break;
                 }
 
@@ -164,14 +164,14 @@ namespace CNA::Editor
 
             // Player-to-editor messages: a peer sending one of these is confused, but saying so
             // is more useful than silently ignoring it.
-            case EditorMessageType::Ready:
-            case EditorMessageType::ReportException:
-            case EditorMessageType::ReportLog:
-            case EditorMessageType::ReportFrameStats:
-            case EditorMessageType::ScreenshotReady:
-            case EditorMessageType::ReportInput:
-            case EditorMessageType::Unknown:
-                outbox.push_back(EditorMessage::makeReportLog(
+            case StudioMessageType::Ready:
+            case StudioMessageType::ReportException:
+            case StudioMessageType::ReportLog:
+            case StudioMessageType::ReportFrameStats:
+            case StudioMessageType::ScreenshotReady:
+            case StudioMessageType::ReportInput:
+            case StudioMessageType::Unknown:
+                outbox.push_back(StudioMessage::makeReportLog(
                     "warn", std::string{"ignoring unexpected message '"} + toString(message.type) + "'"));
                 break;
         }
@@ -183,7 +183,7 @@ namespace CNA::Editor
         surfaceHeight_ = static_cast<float>(std::max(0, height));
     }
 
-    void PlayerHost::handleInput(const EditorMessage& message, Outbox& outbox)
+    void PlayerHost::handleInput(const StudioMessage& message, Outbox& outbox)
     {
         const PlayerInputSnapshot sent = PlayerInputSnapshot::fromJson(message.payload);
 
@@ -194,17 +194,17 @@ namespace CNA::Editor
         // Answered every time rather than only on a change. The editor sends only when something
         // moved, so the traffic is already bounded, and an unanswered forward would leave the
         // editor unable to tell "the player ignored it" from "the player has not run a frame yet".
-        EditorMessage reply = EditorMessage::makeReportInput(input_);
+        StudioMessage reply = StudioMessage::makeReportInput(input_);
         reply.requestId = message.requestId;
         outbox.push_back(std::move(reply));
     }
 
-    void PlayerHost::handleLoadScene(const EditorMessage& message, Outbox& outbox)
+    void PlayerHost::handleLoadScene(const StudioMessage& message, Outbox& outbox)
     {
         const std::string relativePath = message.payload["scenePath"].asString();
         if (relativePath.empty())
         {
-            outbox.push_back(EditorMessage::makeReportLog("error", "loadScene without a scenePath"));
+            outbox.push_back(StudioMessage::makeReportLog("error", "loadScene without a scenePath"));
             return;
         }
 
@@ -212,7 +212,7 @@ namespace CNA::Editor
         const SceneLoadResult loaded = scene_.loadFromFile(path, components_);
         if (!loaded.succeeded)
         {
-            outbox.push_back(EditorMessage::makeReportLog("error", "cannot load scene: " + loaded.errorMessage));
+            outbox.push_back(StudioMessage::makeReportLog("error", "cannot load scene: " + loaded.errorMessage));
             return;
         }
 
@@ -220,14 +220,14 @@ namespace CNA::Editor
         highlightedEntity_ = Uuid{};
         for (const std::string& warning : loaded.warnings)
         {
-            outbox.push_back(EditorMessage::makeReportLog("warn", warning));
+            outbox.push_back(StudioMessage::makeReportLog("warn", warning));
         }
-        outbox.push_back(EditorMessage::makeReportLog(
+        outbox.push_back(StudioMessage::makeReportLog(
             "info", "loaded scene '" + scene_.getName() + "' with "
                         + std::to_string(scene_.getEntityCount()) + " entities"));
     }
 
-    void PlayerHost::handleReloadAsset(const EditorMessage& message, Outbox& outbox)
+    void PlayerHost::handleReloadAsset(const StudioMessage& message, Outbox& outbox)
     {
         const Uuid assetId = Uuid::parse(message.payload["assetId"].asString());
 
@@ -237,7 +237,7 @@ namespace CNA::Editor
         const AssetScanResult scanned = assets_.scan(project_.getAssetDirectory());
         if (!scanned.succeeded)
         {
-            outbox.push_back(EditorMessage::makeReportLog(
+            outbox.push_back(StudioMessage::makeReportLog(
                 "error", "cannot rescan assets: " + scanned.errorMessage));
             return;
         }
@@ -246,7 +246,7 @@ namespace CNA::Editor
         // rather than as one message per asset.
         if (!assetId.isValid())
         {
-            outbox.push_back(EditorMessage::makeReportLog(
+            outbox.push_back(StudioMessage::makeReportLog(
                 "info", "rescanned " + std::to_string(assets_.getCount()) + " assets"));
             return;
         }
@@ -257,7 +257,7 @@ namespace CNA::Editor
             // Not fatal. The editor and the player scan the same directory but not necessarily at
             // the same moment, and an asset the player has not seen yet is a timing difference,
             // not a broken session.
-            outbox.push_back(EditorMessage::makeReportLog(
+            outbox.push_back(StudioMessage::makeReportLog(
                 "warn", "asked to reload unknown asset " + assetId.toString()));
             return;
         }
@@ -269,27 +269,27 @@ namespace CNA::Editor
         {
             reloadedAssets_.push_back(assetId);
         }
-        outbox.push_back(EditorMessage::makeReportLog("info", "reloaded '" + record->sourcePath + "'"));
+        outbox.push_back(StudioMessage::makeReportLog("info", "reloaded '" + record->sourcePath + "'"));
     }
 
-    void PlayerHost::handleSetProperty(const EditorMessage& message, Outbox& outbox)
+    void PlayerHost::handleSetProperty(const StudioMessage& message, Outbox& outbox)
     {
         const Uuid entityId = Uuid::parse(message.payload["entityId"].asString());
         const std::string componentTypeId = message.payload["component"].asString();
         const std::string propertyName = message.payload["property"].asString();
 
-        EditorEntity* entity = scene_.findEntity(entityId);
+        StudioEntity* entity = scene_.findEntity(entityId);
         if (entity == nullptr)
         {
-            outbox.push_back(EditorMessage::makeReportLog(
+            outbox.push_back(StudioMessage::makeReportLog(
                 "warn", "setProperty for unknown entity " + entityId.toString()));
             return;
         }
 
-        EditorComponent* component = entity->findComponent(componentTypeId);
+        StudioComponent* component = entity->findComponent(componentTypeId);
         if (component == nullptr)
         {
-            outbox.push_back(EditorMessage::makeReportLog(
+            outbox.push_back(StudioMessage::makeReportLog(
                 "warn", "setProperty for missing component '" + componentTypeId + "' on '"
                             + entity->getName() + "'"));
             return;
@@ -306,7 +306,7 @@ namespace CNA::Editor
         // when a live edit does not take effect, this line is the only thing that distinguishes
         // "the editor never sent it" from "the player would not apply it", which is exactly the
         // question live editing raises.
-        outbox.push_back(EditorMessage::makeReportLog(
+        outbox.push_back(StudioMessage::makeReportLog(
             "trace", "set " + entity->getName() + "." + componentTypeId + "." + propertyName));
     }
 

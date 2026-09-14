@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/Tilemap.hpp"
+#include "CNA/Studio/Scene/Tilemap.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
         /** @brief Returns the tilemap component on @p entityId, or nullptr. */
-        EditorComponent* findTilemap(SceneDocument& document, const Uuid& entityId)
+        StudioComponent* findTilemap(SceneDocument& document, const Uuid& entityId)
         {
-            EditorEntity* entity = document.findEntity(entityId);
+            StudioEntity* entity = document.findEntity(entityId);
             return entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTilemap) : nullptr;
         }
     }
@@ -46,7 +46,7 @@ namespace CNA::Editor
         return PropertyValue{std::move(list)};
     }
 
-    TilemapGrid readTilemapGrid(const EditorComponent& component, const ComponentDescriptor* descriptor)
+    TilemapGrid readTilemapGrid(const StudioComponent& component, const ComponentDescriptor* descriptor)
     {
         TilemapGrid grid;
         grid.columns = static_cast<int>(
@@ -98,7 +98,7 @@ namespace CNA::Editor
     TileCoordinate worldToTile(const WorldTransform& transform,
                                int tileWidth,
                                int tileHeight,
-                               const EditorVector2& worldPoint)
+                               const StudioVector2& worldPoint)
     {
         // A zero or negative tile size would divide by zero, and a hand-edited scene can hold one.
         const float width = tileWidth > 0 ? static_cast<float>(tileWidth) * transform.scale.x : 0.0f;
@@ -123,7 +123,7 @@ namespace CNA::Editor
 
     bool PaintTilesCommand::paint(int x, int y, std::int64_t tile)
     {
-        const EditorComponent* component = findTilemap(*document_, entityId_);
+        const StudioComponent* component = findTilemap(*document_, entityId_);
         if (component == nullptr) { return false; }
 
         const TilemapGrid grid =
@@ -155,7 +155,7 @@ namespace CNA::Editor
 
     void PaintTilesCommand::apply(bool useNewValue)
     {
-        EditorComponent* component = findTilemap(*document_, entityId_);
+        StudioComponent* component = findTilemap(*document_, entityId_);
         if (component == nullptr) { return; }
 
         // One read-modify-write for the whole stroke. Doing it per cell would rebuild the list once
@@ -185,7 +185,7 @@ namespace CNA::Editor
         return "tiles:" + entityId_.toString() + ":" + std::to_string(strokeId_);
     }
 
-    bool PaintTilesCommand::mergeWith(const EditorCommand& newer)
+    bool PaintTilesCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const PaintTilesCommand*>(&newer);
         if (other == nullptr) { return false; }

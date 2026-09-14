@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Assets/AssetTree.hpp"
+#include "CNA/Studio/Assets/AssetTree.hpp"
 
 #include <algorithm>
 #include <cctype>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

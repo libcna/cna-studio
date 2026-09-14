@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Assets/AssetImporters.hpp"
+#include "CNA/Studio/Assets/AssetImporters.hpp"
 
-#include "CNA/Editor/Assets/ModelImport.hpp"
+#include "CNA/Studio/Assets/ModelImport.hpp"
 
 #include <array>
 #include <cstdint>
@@ -12,7 +12,7 @@
 #include <string>
 #include <utility>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     /** @brief Helpers shared by the sprite-font reader and the facts pass. */
     namespace Detail
@@ -150,7 +150,7 @@ namespace CNA::Editor
                 [] {
                     PropertyDescriptor size = makeProperty("pixelSize", "Pixel Size",
                                                            PropertyType::Vector2,
-                                                           PropertyValue{EditorVector2{}},
+                                                           PropertyValue{StudioVector2{}},
                                                            "Read from the file's header. Zero means the format is one the editor cannot measure yet.");
                     size.readOnly = true;
                     return size;
@@ -264,7 +264,7 @@ namespace CNA::Editor
                 fact("vertexCount", "Vertices", PropertyType::Integer, PropertyValue{0}, ""),
                 fact("triangleCount", "Triangles", PropertyType::Integer, PropertyValue{0}, ""),
                 fact("materialCount", "Materials", PropertyType::Integer, PropertyValue{0}, ""),
-                fact("modelSize", "Size", PropertyType::Vector3, PropertyValue{EditorVector3{}},
+                fact("modelSize", "Size", PropertyType::Vector3, PropertyValue{StudioVector3{}},
                      "The model's extent in world units, after Scale Factor. Answers \"why is this "
                      "thing the size of a building\" without placing it in a scene first."),
             };
@@ -547,12 +547,12 @@ namespace CNA::Editor
             const std::optional<ImageSize> size = readImageSize(assets.resolvePath(record->sourcePath));
             if (!size) { continue; }
 
-            const EditorVector2 measured{static_cast<float>(size->width),
+            const StudioVector2 measured{static_cast<float>(size->width),
                                          static_cast<float>(size->height)};
 
             const JsonValue& stored = record->importerSettings["pixelSize"];
             if (!stored.isNull()
-                && PropertyValue::fromJson(stored, PropertyType::Vector2).get<EditorVector2>() == measured)
+                && PropertyValue::fromJson(stored, PropertyType::Vector2).get<StudioVector2>() == measured)
             {
                 continue;
             }

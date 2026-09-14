@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Assets/MaterialDocument.hpp"
+#include "CNA/Studio/Assets/MaterialDocument.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
-        JsonValue vectorToJson(const EditorVector3& vector)
+        JsonValue vectorToJson(const StudioVector3& vector)
         {
             JsonValue array = JsonValue::makeArray();
             array.append(JsonValue{static_cast<double>(vector.x)});
@@ -17,12 +17,12 @@ namespace CNA::Editor
             return array;
         }
 
-        EditorVector3 vectorFromJson(const JsonValue& json, const EditorVector3& fallback)
+        StudioVector3 vectorFromJson(const JsonValue& json, const StudioVector3& fallback)
         {
             if (!json.isArray() || json.getElements().size() < 3) { return fallback; }
 
             const std::vector<JsonValue>& elements = json.getElements();
-            return EditorVector3{
+            return StudioVector3{
                 static_cast<float>(elements[0].asNumber(static_cast<double>(fallback.x))),
                 static_cast<float>(elements[1].asNumber(static_cast<double>(fallback.y))),
                 static_cast<float>(elements[2].asNumber(static_cast<double>(fallback.z)))};
@@ -51,7 +51,7 @@ namespace CNA::Editor
         // the disagreement only shows on whichever effect the user is not looking at.
         const float metallicFactor = material.metallic;
         material.specularColor =
-            EditorVector3{metallicFactor * diffuseColor.x + (1.0f - metallicFactor) * 0.04f,
+            StudioVector3{metallicFactor * diffuseColor.x + (1.0f - metallicFactor) * 0.04f,
                           metallicFactor * diffuseColor.y + (1.0f - metallicFactor) * 0.04f,
                           metallicFactor * diffuseColor.z + (1.0f - metallicFactor) * 0.04f};
 

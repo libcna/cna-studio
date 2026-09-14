@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/PropertyValue.hpp"
+#include "CNA/Studio/Core/PropertyValue.hpp"
 
 #include <array>
 #include <cstdio>
 
-#include "CNA/Editor/Core/Json.hpp"
+#include "CNA/Studio/Core/Json.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -117,7 +117,7 @@ namespace CNA::Editor
             case PropertyType::String: return JsonValue{get<std::string>()};
             case PropertyType::Enum: return JsonValue{get<EnumValue>().name};
             case PropertyType::Color: {
-                const EditorColor color = get<EditorColor>();
+                const StudioColor color = get<StudioColor>();
                 JsonValue json = JsonValue::makeArray();
                 json.append(JsonValue{static_cast<int>(color.r)});
                 json.append(JsonValue{static_cast<int>(color.g)});
@@ -126,23 +126,23 @@ namespace CNA::Editor
                 return json;
             }
             case PropertyType::Vector2: {
-                const EditorVector2 value = get<EditorVector2>();
+                const StudioVector2 value = get<StudioVector2>();
                 return writeFloats({value.x, value.y});
             }
             case PropertyType::Vector3: {
-                const EditorVector3 value = get<EditorVector3>();
+                const StudioVector3 value = get<StudioVector3>();
                 return writeFloats({value.x, value.y, value.z});
             }
             case PropertyType::Vector4: {
-                const EditorVector4 value = get<EditorVector4>();
+                const StudioVector4 value = get<StudioVector4>();
                 return writeFloats({value.x, value.y, value.z, value.w});
             }
             case PropertyType::Quaternion: {
-                const EditorQuaternion value = get<EditorQuaternion>();
+                const StudioQuaternion value = get<StudioQuaternion>();
                 return writeFloats({value.x, value.y, value.z, value.w});
             }
             case PropertyType::Rectangle: {
-                const EditorRectangle value = get<EditorRectangle>();
+                const StudioRectangle value = get<StudioRectangle>();
                 JsonValue json = JsonValue::makeArray();
                 json.append(JsonValue{value.x});
                 json.append(JsonValue{value.y});
@@ -197,7 +197,7 @@ namespace CNA::Editor
             case PropertyType::Enum: return PropertyValue{EnumValue{json.asString()}};
             case PropertyType::Color: {
                 const auto& elements = json.getElements();
-                EditorColor color;
+                StudioColor color;
                 if (elements.size() >= 4)
                 {
                     color.r = static_cast<std::uint8_t>(elements[0].asInt(255));
@@ -209,27 +209,27 @@ namespace CNA::Editor
             }
             case PropertyType::Vector2: {
                 const auto values = readFloats<2>(json);
-                return PropertyValue{EditorVector2{values[0], values[1]}};
+                return PropertyValue{StudioVector2{values[0], values[1]}};
             }
             case PropertyType::Vector3: {
                 const auto values = readFloats<3>(json);
-                return PropertyValue{EditorVector3{values[0], values[1], values[2]}};
+                return PropertyValue{StudioVector3{values[0], values[1], values[2]}};
             }
             case PropertyType::Vector4: {
                 const auto values = readFloats<4>(json);
-                return PropertyValue{EditorVector4{values[0], values[1], values[2], values[3]}};
+                return PropertyValue{StudioVector4{values[0], values[1], values[2], values[3]}};
             }
             case PropertyType::Quaternion: {
                 // An absent or malformed quaternion must default to identity, not to all-zero:
                 // an all-zero quaternion is not a rotation and would collapse the transform.
                 const auto& elements = json.getElements();
-                if (elements.size() < 4) { return PropertyValue{EditorQuaternion{}}; }
+                if (elements.size() < 4) { return PropertyValue{StudioQuaternion{}}; }
                 const auto values = readFloats<4>(json);
-                return PropertyValue{EditorQuaternion{values[0], values[1], values[2], values[3]}};
+                return PropertyValue{StudioQuaternion{values[0], values[1], values[2], values[3]}};
             }
             case PropertyType::Rectangle: {
                 const auto& elements = json.getElements();
-                EditorRectangle rectangle;
+                StudioRectangle rectangle;
                 if (elements.size() >= 4)
                 {
                     rectangle.x = elements[0].asInt();
@@ -280,12 +280,12 @@ namespace CNA::Editor
             case PropertyType::Float: return PropertyValue{0.0f};
             case PropertyType::String: return PropertyValue{std::string{}};
             case PropertyType::Enum: return PropertyValue{EnumValue{}};
-            case PropertyType::Color: return PropertyValue{EditorColor{}};
-            case PropertyType::Vector2: return PropertyValue{EditorVector2{}};
-            case PropertyType::Vector3: return PropertyValue{EditorVector3{}};
-            case PropertyType::Vector4: return PropertyValue{EditorVector4{}};
-            case PropertyType::Quaternion: return PropertyValue{EditorQuaternion{}};
-            case PropertyType::Rectangle: return PropertyValue{EditorRectangle{}};
+            case PropertyType::Color: return PropertyValue{StudioColor{}};
+            case PropertyType::Vector2: return PropertyValue{StudioVector2{}};
+            case PropertyType::Vector3: return PropertyValue{StudioVector3{}};
+            case PropertyType::Vector4: return PropertyValue{StudioVector4{}};
+            case PropertyType::Quaternion: return PropertyValue{StudioQuaternion{}};
+            case PropertyType::Rectangle: return PropertyValue{StudioRectangle{}};
             case PropertyType::AssetReference: return PropertyValue{AssetReference{}};
             case PropertyType::EntityReference: return PropertyValue{EntityReference{}};
             case PropertyType::List: return PropertyValue{ListValue{}};
@@ -305,31 +305,31 @@ namespace CNA::Editor
             case PropertyType::String: return get<std::string>();
             case PropertyType::Enum: return get<EnumValue>().name;
             case PropertyType::Color: {
-                const EditorColor color = get<EditorColor>();
+                const StudioColor color = get<StudioColor>();
                 return "(" + std::to_string(color.r) + ", " + std::to_string(color.g) + ", "
                      + std::to_string(color.b) + ", " + std::to_string(color.a) + ")";
             }
             case PropertyType::Vector2: {
-                const EditorVector2 value = get<EditorVector2>();
+                const StudioVector2 value = get<StudioVector2>();
                 return "(" + formatFloat(value.x) + ", " + formatFloat(value.y) + ")";
             }
             case PropertyType::Vector3: {
-                const EditorVector3 value = get<EditorVector3>();
+                const StudioVector3 value = get<StudioVector3>();
                 return "(" + formatFloat(value.x) + ", " + formatFloat(value.y) + ", "
                      + formatFloat(value.z) + ")";
             }
             case PropertyType::Vector4: {
-                const EditorVector4 value = get<EditorVector4>();
+                const StudioVector4 value = get<StudioVector4>();
                 return "(" + formatFloat(value.x) + ", " + formatFloat(value.y) + ", "
                      + formatFloat(value.z) + ", " + formatFloat(value.w) + ")";
             }
             case PropertyType::Quaternion: {
-                const EditorQuaternion value = get<EditorQuaternion>();
+                const StudioQuaternion value = get<StudioQuaternion>();
                 return "(" + formatFloat(value.x) + ", " + formatFloat(value.y) + ", "
                      + formatFloat(value.z) + ", " + formatFloat(value.w) + ")";
             }
             case PropertyType::Rectangle: {
-                const EditorRectangle value = get<EditorRectangle>();
+                const StudioRectangle value = get<StudioRectangle>();
                 return "(" + std::to_string(value.x) + ", " + std::to_string(value.y) + ", "
                      + std::to_string(value.width) + ", " + std::to_string(value.height) + ")";
             }
@@ -366,7 +366,7 @@ namespace CNA::Editor
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const PropertyValue* PropertyValue::StructureValue::find(std::string_view name) const
     {

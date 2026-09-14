@@ -30,17 +30,17 @@
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/Assets/AssetDatabase.hpp"
-#include "CNA/Editor/Assets/AssetImporters.hpp"
-#include "CNA/Editor/Assets/MeshCache.hpp"
-#include "CNA/Editor/Assets/ModelImport.hpp"
-#include "CNA/Editor/Core/MeshData.hpp"
-#include "CNA/Editor/Core/Uuid.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
-#include "CNA/Editor/Scene/SceneWireframe.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetImporters.hpp"
+#include "CNA/Studio/Assets/MeshCache.hpp"
+#include "CNA/Studio/Assets/ModelImport.hpp"
+#include "CNA/Studio/Core/MeshData.hpp"
+#include "CNA/Studio/Core/Uuid.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneWireframe.hpp"
 
-using namespace CNA::Editor;
+using namespace CNA::Studio;
 
 namespace
 {
@@ -48,7 +48,7 @@ namespace
     {
         const std::filesystem::path directory =
             std::filesystem::temp_directory_path()
-            / ("cna-editor-tests-" + name + "-" + Uuid::generate().toString());
+            / ("cna-studio-tests-" + name + "-" + Uuid::generate().toString());
         std::filesystem::create_directories(directory);
         return directory;
     }
@@ -357,7 +357,7 @@ namespace
         return std::fabs(actual - expected) <= tolerance;
     }
 
-    bool nearlyEqual(const EditorVector3& actual, const EditorVector3& expected,
+    bool nearlyEqual(const StudioVector3& actual, const StudioVector3& expected,
                      float tolerance = 1e-4f)
     {
         return nearlyEqual(actual.x, expected.x, tolerance)
@@ -377,19 +377,19 @@ namespace
     }
 }
 
-CNA_EDITOR_TEST(AGltfTriangleImportsWithItsGeometry)
+CNA_STUDIO_TEST(AGltfTriangleImportsWithItsGeometry)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltf");
     const ModelImportResult imported = loadModel(writeGltf(directory, makeTriangleFixture()).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.parts.size(), std::size_t{1});
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.getVertexCount(), std::size_t{3});
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.getTriangleCount(), std::size_t{1});
-    CNA_EDITOR_EXPECT_EQ(imported.skippedPrimitives, std::size_t{0});
-    CNA_EDITOR_EXPECT(imported.warnings.empty());
-    CNA_EDITOR_EXPECT(!imported.mesh.isEmpty());
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.parts[0].name, std::string{"Fixture"});
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.parts.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.getVertexCount(), std::size_t{3});
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.getTriangleCount(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(imported.skippedPrimitives, std::size_t{0});
+    CNA_STUDIO_EXPECT(imported.warnings.empty());
+    CNA_STUDIO_EXPECT(!imported.mesh.isEmpty());
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.parts[0].name, std::string{"Fixture"});
 
     std::filesystem::remove_all(directory);
 }
@@ -400,26 +400,26 @@ CNA_EDITOR_TEST(AGltfTriangleImportsWithItsGeometry)
  * the grid, the gizmos and every sprite around it. The fixture's apex is at glTF +1 on Y; in the
  * editor's world it must be at -1, which is up here.
  */
-CNA_EDITOR_TEST(TheGltfImporterMirrorsGltfsYUpIntoTheEditorsYDownWorld)
+CNA_STUDIO_TEST(TheGltfImporterMirrorsGltfsYUpIntoTheStudiosYDownWorld)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfmirror");
     const ModelImportResult imported = loadModel(writeGltf(directory, makeTriangleFixture()).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
     const MeshVertex& apex = highestVertex(imported.mesh.parts[0]);
 
     // The apex is the *lowest* Y in the editor's world, so "highest" here found one of the base
     // vertices instead -- which is the whole point: after the mirror, the file's up is down.
-    CNA_EDITOR_EXPECT(nearlyEqual(apex.position.y, 0.0f));
+    CNA_STUDIO_EXPECT(nearlyEqual(apex.position.y, 0.0f));
 
     bool foundMirroredApex = false;
     for (const MeshVertex& vertex : imported.mesh.parts[0].vertices)
     {
-        if (nearlyEqual(vertex.position, EditorVector3{0.0f, -1.0f, 0.0f})) { foundMirroredApex = true; }
+        if (nearlyEqual(vertex.position, StudioVector3{0.0f, -1.0f, 0.0f})) { foundMirroredApex = true; }
         // Nothing may survive at the file's own +Y: that would mean the mirror was skipped.
-        CNA_EDITOR_EXPECT(vertex.position.y <= 1e-4f);
+        CNA_STUDIO_EXPECT(vertex.position.y <= 1e-4f);
     }
-    CNA_EDITOR_EXPECT(foundMirroredApex);
+    CNA_STUDIO_EXPECT(foundMirroredApex);
 
     std::filesystem::remove_all(directory);
 }
@@ -429,19 +429,19 @@ CNA_EDITOR_TEST(TheGltfImporterMirrorsGltfsYUpIntoTheEditorsYDownWorld)
  * is inside-out the moment ED-402 turns backface culling on -- and looks perfectly correct until
  * then, which is what makes it worth a test now rather than a bug report later.
  */
-CNA_EDITOR_TEST(TriangleWindingIsReversedToSurviveTheYMirror)
+CNA_STUDIO_TEST(TriangleWindingIsReversedToSurviveTheYMirror)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfwinding");
     const ModelImportResult imported = loadModel(writeGltf(directory, makeTriangleFixture()).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
     const MeshPart& part = imported.mesh.parts[0];
 
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(part));
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(part));
 
     // And specifically that the reversal happened, rather than the property holding by accident:
     // the file wound 0,1,2 and the importer must not have kept that order.
-    CNA_EDITOR_EXPECT(part.indices == std::vector<std::uint32_t>({0, 2, 1}));
+    CNA_STUDIO_EXPECT(part.indices == std::vector<std::uint32_t>({0, 2, 1}));
 
     std::filesystem::remove_all(directory);
 }
@@ -451,7 +451,7 @@ CNA_EDITOR_TEST(TriangleWindingIsReversedToSurviveTheYMirror)
  * routinely -- so the importer's own mirror is its *second*, and the two cancel. Reversing the
  * winding unconditionally would turn exactly these models inside out.
  */
-CNA_EDITOR_TEST(ANodeThatIsAlreadyMirroredIsNotMirroredTwice)
+CNA_STUDIO_TEST(ANodeThatIsAlreadyMirroredIsNotMirroredTwice)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfdoublemirror");
     GltfFixture fixture = makeTriangleFixture();
@@ -459,15 +459,15 @@ CNA_EDITOR_TEST(ANodeThatIsAlreadyMirroredIsNotMirroredTwice)
 
     const ModelImportResult imported = loadModel(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(imported.mesh.parts[0]));
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(imported.mesh.parts[0]));
     // Two mirrors cancel, so the file's own winding is the correct one here.
-    CNA_EDITOR_EXPECT(imported.mesh.parts[0].indices == std::vector<std::uint32_t>({0, 1, 2}));
+    CNA_STUDIO_EXPECT(imported.mesh.parts[0].indices == std::vector<std::uint32_t>({0, 1, 2}));
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(TheGltfImporterBakesNodeTransformsIntoPositions)
+CNA_STUDIO_TEST(TheGltfImporterBakesNodeTransformsIntoPositions)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfnode");
     GltfFixture fixture = makeTriangleFixture();
@@ -475,21 +475,21 @@ CNA_EDITOR_TEST(TheGltfImporterBakesNodeTransformsIntoPositions)
 
     const ModelImportResult imported = loadModel(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
 
     // The node's own translation is in glTF's frame, so it is mirrored along with the geometry:
     // the apex at glTF (0, 3, -3) becomes (0, -3, -3) here.
     bool foundApex = false;
     for (const MeshVertex& vertex : imported.mesh.parts[0].vertices)
     {
-        if (nearlyEqual(vertex.position, EditorVector3{10.0f, -3.0f, -3.0f})) { foundApex = true; }
+        if (nearlyEqual(vertex.position, StudioVector3{10.0f, -3.0f, -3.0f})) { foundApex = true; }
     }
-    CNA_EDITOR_EXPECT(foundApex);
+    CNA_STUDIO_EXPECT(foundApex);
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(TheGltfImporterAppliesTheScaleFactorSetting)
+CNA_STUDIO_TEST(TheGltfImporterAppliesTheScaleFactorSetting)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfscale");
     const std::filesystem::path path = writeGltf(directory, makeTriangleFixture());
@@ -498,13 +498,13 @@ CNA_EDITOR_TEST(TheGltfImporterAppliesTheScaleFactorSetting)
     settings.scaleFactor = 100.0f;
     const ModelImportResult imported = loadModel(path.string(), settings);
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
-    const EditorVector3 size = subtract(imported.mesh.boundsMax, imported.mesh.boundsMin);
-    CNA_EDITOR_EXPECT(nearlyEqual(size.x, 200.0f, 1e-2f));
-    CNA_EDITOR_EXPECT(nearlyEqual(size.y, 100.0f, 1e-2f));
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    const StudioVector3 size = subtract(imported.mesh.boundsMax, imported.mesh.boundsMin);
+    CNA_STUDIO_EXPECT(nearlyEqual(size.x, 200.0f, 1e-2f));
+    CNA_STUDIO_EXPECT(nearlyEqual(size.y, 100.0f, 1e-2f));
 
     // A scale is not a rotation: it must not have disturbed the winding or the normals.
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(imported.mesh.parts[0]));
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(imported.mesh.parts[0]));
 
     std::filesystem::remove_all(directory);
 }
@@ -515,7 +515,7 @@ CNA_EDITOR_TEST(TheGltfImporterAppliesTheScaleFactorSetting)
  * surface -- a squashed model lit as though it were not squashed. The fixture squashes hard enough
  * that the naive answer is visibly wrong.
  */
-CNA_EDITOR_TEST(NonUniformNodeScaleKeepsNormalsPerpendicularToTheSurface)
+CNA_STUDIO_TEST(NonUniformNodeScaleKeepsNormalsPerpendicularToTheSurface)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfnormalmatrix");
 
@@ -530,16 +530,16 @@ CNA_EDITOR_TEST(NonUniformNodeScaleKeepsNormalsPerpendicularToTheSurface)
 
     const ModelImportResult imported = loadModel(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
     const MeshPart& part = imported.mesh.parts[0];
 
     for (const MeshVertex& vertex : part.vertices)
     {
-        CNA_EDITOR_EXPECT(nearlyEqual(length(vertex.normal), 1.0f, 1e-3f));
+        CNA_STUDIO_EXPECT(nearlyEqual(length(vertex.normal), 1.0f, 1e-3f));
         // Perpendicular to the flattened surface, which still lies in the XZ plane.
-        CNA_EDITOR_EXPECT(nearlyEqual(std::fabs(vertex.normal.y), 1.0f, 1e-3f));
+        CNA_STUDIO_EXPECT(nearlyEqual(std::fabs(vertex.normal.y), 1.0f, 1e-3f));
     }
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(part));
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(part));
 
     std::filesystem::remove_all(directory);
 }
@@ -551,7 +551,7 @@ CNA_EDITOR_TEST(NonUniformNodeScaleKeepsNormalsPerpendicularToTheSurface)
  * this case is actually for is the rest of it -- that normals appear at all, that they are unit
  * length, and that a shared vertex was split so each face can carry its own.
  */
-CNA_EDITOR_TEST(AModelWithNoNormalsGetsFlatOnesThatAgreeWithItsWinding)
+CNA_STUDIO_TEST(AModelWithNoNormalsGetsFlatOnesThatAgreeWithItsWinding)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfnonormals");
     GltfFixture fixture = makeTriangleFixture();
@@ -559,19 +559,19 @@ CNA_EDITOR_TEST(AModelWithNoNormalsGetsFlatOnesThatAgreeWithItsWinding)
 
     const ModelImportResult imported = loadModel(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
     const MeshPart& part = imported.mesh.parts[0];
 
     for (const MeshVertex& vertex : part.vertices)
     {
-        CNA_EDITOR_EXPECT(nearlyEqual(length(vertex.normal), 1.0f, 1e-3f));
+        CNA_STUDIO_EXPECT(nearlyEqual(length(vertex.normal), 1.0f, 1e-3f));
     }
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(part));
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(part));
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(TriangleStripsAndFansBecomeTriangleLists)
+CNA_STUDIO_TEST(TriangleStripsAndFansBecomeTriangleLists)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfstrip");
 
@@ -586,20 +586,20 @@ CNA_EDITOR_TEST(TriangleStripsAndFansBecomeTriangleLists)
     strip.primitiveMode = 5;
 
     const ModelImportResult stripped = loadModel(writeGltf(directory, strip).string());
-    CNA_EDITOR_EXPECT(stripped.succeeded);
-    CNA_EDITOR_EXPECT_EQ(stripped.mesh.getTriangleCount(), std::size_t{2});
-    CNA_EDITOR_EXPECT_EQ(stripped.skippedPrimitives, std::size_t{0});
+    CNA_STUDIO_EXPECT(stripped.succeeded);
+    CNA_STUDIO_EXPECT_EQ(stripped.mesh.getTriangleCount(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(stripped.skippedPrimitives, std::size_t{0});
     // The alternating winding a strip encodes has to be unpicked, or every other triangle faces
     // the wrong way and the quad is half invisible under culling.
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(stripped.mesh.parts[0]));
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(stripped.mesh.parts[0]));
 
     GltfFixture fan = strip;
     fan.primitiveMode = 6;
     fan.indices = {0, 1, 3, 2};
     const ModelImportResult fanned = loadModel(writeGltf(directory, fan).string());
-    CNA_EDITOR_EXPECT(fanned.succeeded);
-    CNA_EDITOR_EXPECT_EQ(fanned.mesh.getTriangleCount(), std::size_t{2});
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(fanned.mesh.parts[0]));
+    CNA_STUDIO_EXPECT(fanned.succeeded);
+    CNA_STUDIO_EXPECT_EQ(fanned.mesh.getTriangleCount(), std::size_t{2});
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(fanned.mesh.parts[0]));
 
     std::filesystem::remove_all(directory);
 }
@@ -609,7 +609,7 @@ CNA_EDITOR_TEST(TriangleStripsAndFansBecomeTriangleLists)
  * reported and left out -- the case exists because the alternative, silently importing an empty
  * model, is indistinguishable from a working importer until someone looks for the geometry.
  */
-CNA_EDITOR_TEST(APrimitiveThatIsNotTrianglesIsReportedRatherThanSilentlyDropped)
+CNA_STUDIO_TEST(APrimitiveThatIsNotTrianglesIsReportedRatherThanSilentlyDropped)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltflines");
     GltfFixture fixture = makeTriangleFixture();
@@ -617,15 +617,15 @@ CNA_EDITOR_TEST(APrimitiveThatIsNotTrianglesIsReportedRatherThanSilentlyDropped)
 
     const ModelImportResult imported = loadModel(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
-    CNA_EDITOR_EXPECT_EQ(imported.skippedPrimitives, std::size_t{1});
-    CNA_EDITOR_EXPECT(imported.mesh.isEmpty());
-    CNA_EDITOR_EXPECT(!imported.warnings.empty());
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT_EQ(imported.skippedPrimitives, std::size_t{1});
+    CNA_STUDIO_EXPECT(imported.mesh.isEmpty());
+    CNA_STUDIO_EXPECT(!imported.warnings.empty());
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(AGlbAndAGltfOfTheSameModelImportIdentically)
+CNA_STUDIO_TEST(AGlbAndAGltfOfTheSameModelImportIdentically)
 {
     const std::filesystem::path directory = makeScratchDirectory("glb");
     const GltfFixture fixture = makeTriangleFixture();
@@ -633,17 +633,17 @@ CNA_EDITOR_TEST(AGlbAndAGltfOfTheSameModelImportIdentically)
     const ModelImportResult fromText = loadModel(writeGltf(directory, fixture).string());
     const ModelImportResult fromBinary = loadModel(writeGlb(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(fromText.succeeded);
-    CNA_EDITOR_EXPECT(fromBinary.succeeded);
-    CNA_EDITOR_EXPECT_EQ(fromBinary.mesh.getVertexCount(), fromText.mesh.getVertexCount());
-    CNA_EDITOR_EXPECT_EQ(fromBinary.mesh.getTriangleCount(), fromText.mesh.getTriangleCount());
-    CNA_EDITOR_EXPECT(nearlyEqual(fromBinary.mesh.boundsMin, fromText.mesh.boundsMin));
-    CNA_EDITOR_EXPECT(nearlyEqual(fromBinary.mesh.boundsMax, fromText.mesh.boundsMax));
+    CNA_STUDIO_EXPECT(fromText.succeeded);
+    CNA_STUDIO_EXPECT(fromBinary.succeeded);
+    CNA_STUDIO_EXPECT_EQ(fromBinary.mesh.getVertexCount(), fromText.mesh.getVertexCount());
+    CNA_STUDIO_EXPECT_EQ(fromBinary.mesh.getTriangleCount(), fromText.mesh.getTriangleCount());
+    CNA_STUDIO_EXPECT(nearlyEqual(fromBinary.mesh.boundsMin, fromText.mesh.boundsMin));
+    CNA_STUDIO_EXPECT(nearlyEqual(fromBinary.mesh.boundsMax, fromText.mesh.boundsMax));
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(MaterialsComeAcrossAsMuchAsABasicEffectCanExpress)
+CNA_STUDIO_TEST(MaterialsComeAcrossAsMuchAsABasicEffectCanExpress)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfmaterial");
     GltfFixture fixture = makeTriangleFixture();
@@ -653,18 +653,18 @@ CNA_EDITOR_TEST(MaterialsComeAcrossAsMuchAsABasicEffectCanExpress)
     const std::filesystem::path path = writeGltf(directory, fixture);
     const ModelImportResult imported = loadModel(path.string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.materials.size(), std::size_t{1});
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.parts[0].materialIndex, 0);
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.materials.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.parts[0].materialIndex, 0);
 
     const MeshMaterial& material = imported.mesh.materials[0];
-    CNA_EDITOR_EXPECT_EQ(material.name, std::string{"Painted"});
-    CNA_EDITOR_EXPECT(nearlyEqual(material.diffuseColor, EditorVector3{0.25f, 0.5f, 0.75f}));
-    CNA_EDITOR_EXPECT(nearlyEqual(material.emissiveColor, EditorVector3{0.1f, 0.2f, 0.3f}));
-    CNA_EDITOR_EXPECT(nearlyEqual(material.alpha, 0.5f));
+    CNA_STUDIO_EXPECT_EQ(material.name, std::string{"Painted"});
+    CNA_STUDIO_EXPECT(nearlyEqual(material.diffuseColor, StudioVector3{0.25f, 0.5f, 0.75f}));
+    CNA_STUDIO_EXPECT(nearlyEqual(material.emissiveColor, StudioVector3{0.1f, 0.2f, 0.3f}));
+    CNA_STUDIO_EXPECT(nearlyEqual(material.alpha, 0.5f));
     // A path relative to the model file, for the caller to resolve against its asset database --
     // the importer has no database and must not pretend to.
-    CNA_EDITOR_EXPECT_EQ(material.diffuseTexturePath, std::string{"paint.png"});
+    CNA_STUDIO_EXPECT_EQ(material.diffuseTexturePath, std::string{"paint.png"});
 
     // Texture coordinates come across unflipped: glTF, XNA and every CNA backend agree that the
     // origin is top-left, which makes this the one convention in the importer with nothing to do.
@@ -676,21 +676,21 @@ CNA_EDITOR_TEST(MaterialsComeAcrossAsMuchAsABasicEffectCanExpress)
             foundApexUv = true;
         }
     }
-    CNA_EDITOR_EXPECT(foundApexUv);
+    CNA_STUDIO_EXPECT(foundApexUv);
 
     ModelImportSettings withoutMaterials;
     withoutMaterials.importMaterials = false;
     const ModelImportResult bare = loadModel(path.string(), withoutMaterials);
-    CNA_EDITOR_EXPECT(bare.mesh.materials.empty());
-    CNA_EDITOR_EXPECT_EQ(bare.mesh.parts[0].materialIndex, -1);
+    CNA_STUDIO_EXPECT(bare.mesh.materials.empty());
+    CNA_STUDIO_EXPECT_EQ(bare.mesh.parts[0].materialIndex, -1);
 
     // The material above has no PBR maps, and the fields ED-402 added must still be the neutral
     // values a renderer can use rather than whatever was left in memory. Roughness 1 and metallic
     // 0 is glTF's own default: fully diffuse, non-metal.
-    CNA_EDITOR_EXPECT(nearlyEqual(material.metallic, 0.0f));
-    CNA_EDITOR_EXPECT(nearlyEqual(material.roughness, 1.0f));
-    CNA_EDITOR_EXPECT(material.normalTexturePath.empty());
-    CNA_EDITOR_EXPECT(material.metallicRoughnessTexturePath.empty());
+    CNA_STUDIO_EXPECT(nearlyEqual(material.metallic, 0.0f));
+    CNA_STUDIO_EXPECT(nearlyEqual(material.roughness, 1.0f));
+    CNA_STUDIO_EXPECT(material.normalTexturePath.empty());
+    CNA_STUDIO_EXPECT(material.metallicRoughnessTexturePath.empty());
 
     std::filesystem::remove_all(directory);
 }
@@ -703,7 +703,7 @@ CNA_EDITOR_TEST(MaterialsComeAcrossAsMuchAsABasicEffectCanExpress)
  * PBR fields would render as untextured grey on that fallback, which is a rendering bug that
  * appears on one machine and not another -- the worst kind to be told about.
  */
-CNA_EDITOR_TEST(APbrMaterialCarriesItsMapsAndItsBlinnPhongApproximationTogether)
+CNA_STUDIO_TEST(APbrMaterialCarriesItsMapsAndItsBlinnPhongApproximationTogether)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfpbr");
     GltfFixture fixture = makeTriangleFixture();
@@ -714,34 +714,34 @@ CNA_EDITOR_TEST(APbrMaterialCarriesItsMapsAndItsBlinnPhongApproximationTogether)
     const std::filesystem::path path = writeGltf(directory, fixture);
     const ModelImportResult imported = loadModel(path.string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
-    CNA_EDITOR_EXPECT_EQ(imported.mesh.materials.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT_EQ(imported.mesh.materials.size(), std::size_t{1});
 
     const MeshMaterial& material = imported.mesh.materials[0];
-    CNA_EDITOR_EXPECT(nearlyEqual(material.metallic, 0.9f));
-    CNA_EDITOR_EXPECT(nearlyEqual(material.roughness, 0.25f));
-    CNA_EDITOR_EXPECT_EQ(material.metallicRoughnessTexturePath, std::string{"orm.png"});
-    CNA_EDITOR_EXPECT_EQ(material.normalTexturePath, std::string{"normal.png"});
-    CNA_EDITOR_EXPECT_EQ(material.emissiveTexturePath, std::string{"paint.png"});
+    CNA_STUDIO_EXPECT(nearlyEqual(material.metallic, 0.9f));
+    CNA_STUDIO_EXPECT(nearlyEqual(material.roughness, 0.25f));
+    CNA_STUDIO_EXPECT_EQ(material.metallicRoughnessTexturePath, std::string{"orm.png"});
+    CNA_STUDIO_EXPECT_EQ(material.normalTexturePath, std::string{"normal.png"});
+    CNA_STUDIO_EXPECT_EQ(material.emissiveTexturePath, std::string{"paint.png"});
 
     // The derived half. A metal reflects its own base colour, so a metallic of 0.9 against a white
     // base must give a specular near white rather than the 0.04 a dielectric reflects -- that is
     // the one line of metallic-roughness that means the same thing in Blinn-Phong, and if the two
     // halves ever disagree it is because someone stopped deriving one from the other.
-    CNA_EDITOR_EXPECT(material.specularColor.x > 0.8f);
-    CNA_EDITOR_EXPECT(material.specularPower > 16.0f);
+    CNA_STUDIO_EXPECT(material.specularColor.x > 0.8f);
+    CNA_STUDIO_EXPECT(material.specularPower > 16.0f);
 
     // A packed ORM map is the ordinary case and says nothing.
     for (const ModelImportWarning& warning : imported.warnings)
     {
-        CNA_EDITOR_EXPECT(warning.reason.find("occlusion") == std::string::npos);
+        CNA_STUDIO_EXPECT(warning.reason.find("occlusion") == std::string::npos);
     }
 
     std::filesystem::remove_all(directory);
 }
 
 /** @brief An occlusion map in its own file is reported, because only the packed form is carried. */
-CNA_EDITOR_TEST(AnOcclusionMapInItsOwnFileIsReportedRatherThanHalfApplied)
+CNA_STUDIO_TEST(AnOcclusionMapInItsOwnFileIsReportedRatherThanHalfApplied)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfao");
     GltfFixture fixture = makeTriangleFixture();
@@ -753,32 +753,32 @@ CNA_EDITOR_TEST(AnOcclusionMapInItsOwnFileIsReportedRatherThanHalfApplied)
     const std::filesystem::path path = writeGltf(directory, fixture);
     const ModelImportResult imported = loadModel(path.string());
 
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
 
     bool reported = false;
     for (const ModelImportWarning& warning : imported.warnings)
     {
         if (warning.reason.find("occlusion") != std::string::npos) { reported = true; }
     }
-    CNA_EDITOR_EXPECT(reported);
+    CNA_STUDIO_EXPECT(reported);
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(AFileThatIsNotGltfIsReportedRatherThanGuessedAt)
+CNA_STUDIO_TEST(AFileThatIsNotGltfIsReportedRatherThanGuessedAt)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfbroken");
     writeBinaryFile(directory / "notamodel.gltf", "this is not a model");
 
     const ModelImportResult imported = loadModel((directory / "notamodel.gltf").string());
 
-    CNA_EDITOR_EXPECT(!imported.succeeded);
-    CNA_EDITOR_EXPECT(!imported.warnings.empty());
-    CNA_EDITOR_EXPECT(imported.mesh.isEmpty());
+    CNA_STUDIO_EXPECT(!imported.succeeded);
+    CNA_STUDIO_EXPECT(!imported.warnings.empty());
+    CNA_STUDIO_EXPECT(imported.mesh.isEmpty());
 
     // A missing file is the same kind of answer, not a crash.
-    CNA_EDITOR_EXPECT(!loadModel((directory / "absent.gltf").string()).succeeded);
-    CNA_EDITOR_EXPECT(!readModelDescription((directory / "absent.gltf").string()).has_value());
+    CNA_STUDIO_EXPECT(!loadModel((directory / "absent.gltf").string()).succeeded);
+    CNA_STUDIO_EXPECT(!readModelDescription((directory / "absent.gltf").string()).has_value());
 
     std::filesystem::remove_all(directory);
 }
@@ -787,7 +787,7 @@ CNA_EDITOR_TEST(AFileThatIsNotGltfIsReportedRatherThanGuessedAt)
  * A `.gltf` whose `.bin` is missing parses perfectly and contains no vertices. Reporting that as a
  * successful import of an empty model is exactly the silent loss this importer exists to avoid.
  */
-CNA_EDITOR_TEST(AGltfWhoseBufferIsMissingFailsRatherThanImportingNothing)
+CNA_STUDIO_TEST(AGltfWhoseBufferIsMissingFailsRatherThanImportingNothing)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltfnobin");
     GltfFixture fixture = makeTriangleFixture();
@@ -795,18 +795,18 @@ CNA_EDITOR_TEST(AGltfWhoseBufferIsMissingFailsRatherThanImportingNothing)
 
     const ModelImportResult imported = loadModel(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(!imported.succeeded);
-    CNA_EDITOR_EXPECT(!imported.warnings.empty());
+    CNA_STUDIO_EXPECT(!imported.succeeded);
+    CNA_STUDIO_EXPECT(!imported.warnings.empty());
 
     // The same file with its buffer present must load, or the case above is testing the fixture
     // builder rather than the missing buffer.
     writeBinaryFile(directory / "absent.bin", buildFixtureBuffer(fixture));
-    CNA_EDITOR_EXPECT(loadModel(writeGltf(directory, fixture).string()).succeeded);
+    CNA_STUDIO_EXPECT(loadModel(writeGltf(directory, fixture).string()).succeeded);
 
     std::filesystem::remove_all(directory);
 }
 
-CNA_EDITOR_TEST(ReadModelDescriptionReportsWhatTheModelContains)
+CNA_STUDIO_TEST(ReadModelDescriptionReportsWhatTheModelContains)
 {
     const std::filesystem::path directory = makeScratchDirectory("gltffacts");
     GltfFixture fixture = makeTriangleFixture();
@@ -815,14 +815,14 @@ CNA_EDITOR_TEST(ReadModelDescriptionReportsWhatTheModelContains)
     const std::optional<ModelDescription> description =
         readModelDescription(writeGltf(directory, fixture).string());
 
-    CNA_EDITOR_EXPECT(description.has_value());
+    CNA_STUDIO_EXPECT(description.has_value());
     if (description)
     {
-        CNA_EDITOR_EXPECT_EQ(description->partCount, std::size_t{1});
-        CNA_EDITOR_EXPECT_EQ(description->vertexCount, std::size_t{3});
-        CNA_EDITOR_EXPECT_EQ(description->triangleCount, std::size_t{1});
-        CNA_EDITOR_EXPECT_EQ(description->materialCount, std::size_t{1});
-        CNA_EDITOR_EXPECT(nearlyEqual(description->size, EditorVector3{2.0f, 1.0f, 0.0f}));
+        CNA_STUDIO_EXPECT_EQ(description->partCount, std::size_t{1});
+        CNA_STUDIO_EXPECT_EQ(description->vertexCount, std::size_t{3});
+        CNA_STUDIO_EXPECT_EQ(description->triangleCount, std::size_t{1});
+        CNA_STUDIO_EXPECT_EQ(description->materialCount, std::size_t{1});
+        CNA_STUDIO_EXPECT(nearlyEqual(description->size, StudioVector3{2.0f, 1.0f, 0.0f}));
     }
 
     std::filesystem::remove_all(directory);
@@ -834,7 +834,7 @@ CNA_EDITOR_TEST(ReadModelDescriptionReportsWhatTheModelContains)
  * `--headless` into something that dirties a repository just by looking at it, and reading a whole
  * glTF is the most expensive way this editor has of doing that.
  */
-CNA_EDITOR_TEST(AModelAssetReportsItsFactsIntoItsSidecarWithoutChurn)
+CNA_STUDIO_TEST(AModelAssetReportsItsFactsIntoItsSidecarWithoutChurn)
 {
     const std::filesystem::path directory = makeScratchDirectory("modelfacts");
     GltfFixture fixture = makeTriangleFixture();
@@ -846,35 +846,35 @@ CNA_EDITOR_TEST(AModelAssetReportsItsFactsIntoItsSidecarWithoutChurn)
 
     AssetDatabase database;
     database.setProjectRoot(directory.generic_string());
-    CNA_EDITOR_EXPECT(database.scan("Assets").succeeded);
+    CNA_STUDIO_EXPECT(database.scan("Assets").succeeded);
 
     const AssetRecord* record = database.findByPath("Assets/prop.gltf");
-    CNA_EDITOR_EXPECT(record != nullptr);
+    CNA_STUDIO_EXPECT(record != nullptr);
     if (record == nullptr)
     {
         std::filesystem::remove_all(directory);
         return;
     }
-    CNA_EDITOR_EXPECT(record->type == AssetType::Model);
+    CNA_STUDIO_EXPECT(record->type == AssetType::Model);
 
-    CNA_EDITOR_EXPECT_EQ(applyImporterFacts(database), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(applyImporterFacts(database), std::size_t{1});
 
     record = database.findByPath("Assets/prop.gltf");
-    CNA_EDITOR_EXPECT(nearlyEqual(static_cast<float>(record->importerSettings["triangleCount"].asNumber()),
+    CNA_STUDIO_EXPECT(nearlyEqual(static_cast<float>(record->importerSettings["triangleCount"].asNumber()),
                                   1.0f));
-    CNA_EDITOR_EXPECT(nearlyEqual(static_cast<float>(record->importerSettings["vertexCount"].asNumber()),
+    CNA_STUDIO_EXPECT(nearlyEqual(static_cast<float>(record->importerSettings["vertexCount"].asNumber()),
                                   3.0f));
-    CNA_EDITOR_EXPECT(nearlyEqual(static_cast<float>(record->importerSettings["materialCount"].asNumber()),
+    CNA_STUDIO_EXPECT(nearlyEqual(static_cast<float>(record->importerSettings["materialCount"].asNumber()),
                                   1.0f));
 
-    const EditorVector3 size =
+    const StudioVector3 size =
         PropertyValue::fromJson(record->importerSettings["modelSize"], PropertyType::Vector3)
-            .get<EditorVector3>();
-    CNA_EDITOR_EXPECT(nearlyEqual(size, EditorVector3{2.0f, 1.0f, 0.0f}));
+            .get<StudioVector3>();
+    CNA_STUDIO_EXPECT(nearlyEqual(size, StudioVector3{2.0f, 1.0f, 0.0f}));
 
     // Nothing changed, so nothing is written -- the rule that keeps opening a project twice from
     // producing a diff.
-    CNA_EDITOR_EXPECT_EQ(applyImporterFacts(database), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(applyImporterFacts(database), std::size_t{0});
 
     std::filesystem::remove_all(directory);
 }
@@ -887,34 +887,34 @@ CNA_EDITOR_TEST(AModelAssetReportsItsFactsIntoItsSidecarWithoutChurn)
  * looked at, and ED-402's `VertexBuffer` pass inherits a `MeshData` that is already known to
  * survive the trip.
  */
-CNA_EDITOR_TEST(AnImportedMeshIsDrawnByThe3DViewInsteadOfABadge)
+CNA_STUDIO_TEST(AnImportedMeshIsDrawnByThe3DViewInsteadOfABadge)
 {
     const std::filesystem::path directory = makeScratchDirectory("meshwireframe");
     const ModelImportResult imported = loadModel(writeGltf(directory, makeTriangleFixture()).string());
-    CNA_EDITOR_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.succeeded);
 
     const Uuid modelId = Uuid::generate();
 
-    EditorEntity prop{Uuid::generate(), "Prop"};
-    prop.addComponent(EditorComponent{BuiltinComponentIds::kTransform});
-    EditorComponent renderer{BuiltinComponentIds::kModelRenderer};
+    StudioEntity prop{Uuid::generate(), "Prop"};
+    prop.addComponent(StudioComponent{BuiltinComponentIds::kTransform});
+    StudioComponent renderer{BuiltinComponentIds::kModelRenderer};
     renderer.setProperty("model", PropertyValue{PropertyValue::AssetReference{modelId}});
     prop.addComponent(std::move(renderer));
 
     SceneDocument scene;
     scene.addEntity(std::move(prop));
 
-    EditorCamera3D camera;
-    camera.setViewportSize(EditorVector2{640.0f, 480.0f});
-    camera.frame(WorldBounds3D{EditorVector3{-2.0f, -2.0f, -2.0f}, EditorVector3{2.0f, 2.0f, 2.0f}});
+    StudioCamera3D camera;
+    camera.setViewportSize(StudioVector2{640.0f, 480.0f});
+    camera.frame(WorldBounds3D{StudioVector3{-2.0f, -2.0f, -2.0f}, StudioVector3{2.0f, 2.0f, 2.0f}});
 
-    const SpriteSizeProvider sizes = [](const Uuid&) { return EditorVector2{0.0f, 0.0f}; };
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{0.0f, 0.0f}; };
 
     // Without a provider, the entity is a badge -- the behaviour every 3D view had before ED-405.
     WireframeOptions options;
     options.drawGrid = false;
     const WireframeResult withoutMesh = buildSceneWireframe(scene, camera, {}, sizes, options);
-    CNA_EDITOR_EXPECT_EQ(withoutMesh.entitiesDrawn, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(withoutMesh.entitiesDrawn, std::size_t{1});
 
     // With one, it is the model's own edges. A triangle has three, and each is drawn once however
     // many faces claim it.
@@ -923,14 +923,14 @@ CNA_EDITOR_TEST(AnImportedMeshIsDrawnByThe3DViewInsteadOfABadge)
     };
     const WireframeResult withMesh = buildSceneWireframe(scene, camera, {}, sizes, options);
 
-    CNA_EDITOR_EXPECT_EQ(withMesh.entitiesDrawn, std::size_t{1});
-    CNA_EDITOR_EXPECT_EQ(withMesh.segments.size(), std::size_t{3});
-    CNA_EDITOR_EXPECT(!withMesh.truncated);
+    CNA_STUDIO_EXPECT_EQ(withMesh.entitiesDrawn, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(withMesh.segments.size(), std::size_t{3});
+    CNA_STUDIO_EXPECT(!withMesh.truncated);
 
     // A provider that has nothing for this id must fall back rather than draw nothing at all: an
     // asset still importing is not the same as an entity that vanished.
     options.meshProvider = [](const Uuid&) -> const MeshData* { return nullptr; };
-    CNA_EDITOR_EXPECT_EQ(buildSceneWireframe(scene, camera, {}, sizes, options).entitiesDrawn,
+    CNA_STUDIO_EXPECT_EQ(buildSceneWireframe(scene, camera, {}, sizes, options).entitiesDrawn,
                          std::size_t{1});
 
     std::filesystem::remove_all(directory);
@@ -942,7 +942,7 @@ CNA_EDITOR_TEST(AnImportedMeshIsDrawnByThe3DViewInsteadOfABadge)
  * stopping at the budget would show one corner of it completely, which reads as broken geometry
  * rather than as a full view.
  */
-CNA_EDITOR_TEST(ADenseMeshIsDrawnSparselyRatherThanPartially)
+CNA_STUDIO_TEST(ADenseMeshIsDrawnSparselyRatherThanPartially)
 {
     MeshData mesh;
     mesh.parts.emplace_back();
@@ -955,26 +955,26 @@ CNA_EDITOR_TEST(ADenseMeshIsDrawnSparselyRatherThanPartially)
     {
         const float x = static_cast<float>(i);
         const std::uint32_t base = static_cast<std::uint32_t>(part.vertices.size());
-        part.vertices.push_back(MeshVertex{EditorVector3{x, 0.0f, 0.0f}, EditorVector3{0, 0, 1}, {}});
-        part.vertices.push_back(MeshVertex{EditorVector3{x + 1.0f, 0.0f, 0.0f}, EditorVector3{0, 0, 1}, {}});
-        part.vertices.push_back(MeshVertex{EditorVector3{x, 1.0f, 0.0f}, EditorVector3{0, 0, 1}, {}});
+        part.vertices.push_back(MeshVertex{StudioVector3{x, 0.0f, 0.0f}, StudioVector3{0, 0, 1}, {}});
+        part.vertices.push_back(MeshVertex{StudioVector3{x + 1.0f, 0.0f, 0.0f}, StudioVector3{0, 0, 1}, {}});
+        part.vertices.push_back(MeshVertex{StudioVector3{x, 1.0f, 0.0f}, StudioVector3{0, 0, 1}, {}});
         part.indices.insert(part.indices.end(), {base, base + 1, base + 2});
     }
     recomputeMeshBounds(mesh);
 
-    EditorCamera3D camera;
-    camera.setViewportSize(EditorVector2{640.0f, 480.0f});
+    StudioCamera3D camera;
+    camera.setViewportSize(StudioVector2{640.0f, 480.0f});
     camera.frame(WorldBounds3D{mesh.boundsMin, mesh.boundsMax});
 
     std::vector<WireSegment> segments;
     bool truncated = false;
     constexpr std::size_t kBudget = 300;
-    const std::size_t drawn = appendMeshEdges(segments, camera, mesh, EditorMatrix{},
+    const std::size_t drawn = appendMeshEdges(segments, camera, mesh, StudioMatrix{},
                                               WireColors::kEntity, 1.0f, kBudget, truncated);
 
-    CNA_EDITOR_EXPECT(drawn <= kBudget);
-    CNA_EDITOR_EXPECT(drawn > 0);
-    CNA_EDITOR_EXPECT(truncated);
+    CNA_STUDIO_EXPECT(drawn <= kBudget);
+    CNA_STUDIO_EXPECT(drawn > 0);
+    CNA_STUDIO_EXPECT(truncated);
 
     // The sampled triangles must span the model rather than cluster at its start: something drawn
     // beyond the far end of the first tenth is what tells a stride apart from a cut-off.
@@ -984,11 +984,11 @@ CNA_EDITOR_TEST(ADenseMeshIsDrawnSparselyRatherThanPartially)
         furthest = std::max(furthest, std::max(segment.from.x, segment.to.x));
     }
     float centre = 0.0f;
-    const std::optional<EditorVector2> middleOfModel =
-        camera.worldToScreen(EditorVector3{static_cast<float>(kTriangles) * 0.5f, 0.0f, 0.0f});
-    CNA_EDITOR_EXPECT(middleOfModel.has_value());
+    const std::optional<StudioVector2> middleOfModel =
+        camera.worldToScreen(StudioVector3{static_cast<float>(kTriangles) * 0.5f, 0.0f, 0.0f});
+    CNA_STUDIO_EXPECT(middleOfModel.has_value());
     if (middleOfModel) { centre = middleOfModel->x; }
-    CNA_EDITOR_EXPECT(furthest > centre);
+    CNA_STUDIO_EXPECT(furthest > centre);
 }
 
 /**
@@ -996,7 +996,7 @@ CNA_EDITOR_TEST(ADenseMeshIsDrawnSparselyRatherThanPartially)
  * that a second ask is free, and that a *failed* ask is remembered too -- an absent key would mean
  * "not tried yet" and send the importer back at a broken file sixty times a second.
  */
-CNA_EDITOR_TEST(TheMeshCacheImportsOnceAndRemembersFailuresToo)
+CNA_STUDIO_TEST(TheMeshCacheImportsOnceAndRemembersFailuresToo)
 {
     const std::filesystem::path directory = makeScratchDirectory("meshcache");
     const GltfFixture fixture = makeTriangleFixture();
@@ -1008,12 +1008,12 @@ CNA_EDITOR_TEST(TheMeshCacheImportsOnceAndRemembersFailuresToo)
 
     AssetDatabase database;
     database.setProjectRoot(directory.generic_string());
-    CNA_EDITOR_EXPECT(database.scan("Assets").succeeded);
+    CNA_STUDIO_EXPECT(database.scan("Assets").succeeded);
 
     const AssetRecord* prop = database.findByPath("Assets/prop.gltf");
     const AssetRecord* broken = database.findByPath("Assets/broken.gltf");
     const AssetRecord* texture = database.findByPath("Assets/art.png");
-    CNA_EDITOR_EXPECT(prop != nullptr && broken != nullptr && texture != nullptr);
+    CNA_STUDIO_EXPECT(prop != nullptr && broken != nullptr && texture != nullptr);
     if (prop == nullptr || broken == nullptr || texture == nullptr)
     {
         std::filesystem::remove_all(directory);
@@ -1022,30 +1022,30 @@ CNA_EDITOR_TEST(TheMeshCacheImportsOnceAndRemembersFailuresToo)
 
     MeshCache cache;
     const MeshData* first = cache.get(database, prop->id);
-    CNA_EDITOR_EXPECT(first != nullptr);
+    CNA_STUDIO_EXPECT(first != nullptr);
 
     // The same pointer, so the second ask neither re-read the file nor moved what the first one
     // handed out -- the 3D view holds these across a frame.
-    CNA_EDITOR_EXPECT_EQ(cache.get(database, prop->id), first);
-    CNA_EDITOR_EXPECT_EQ(cache.getVertexCount(), std::size_t{3});
+    CNA_STUDIO_EXPECT_EQ(cache.get(database, prop->id), first);
+    CNA_STUDIO_EXPECT_EQ(cache.getVertexCount(), std::size_t{3});
 
     // A broken model, a non-model asset and an id that is nothing at all are all "nothing to
     // draw". The first two are *remembered* as such, so the broken file is not re-parsed every
     // frame; the third is not, because an id the database has not heard of may simply not have
     // been scanned yet, and a remembered "no" there would outlive the reason for it.
-    CNA_EDITOR_EXPECT(cache.get(database, broken->id) == nullptr);
-    CNA_EDITOR_EXPECT(cache.get(database, texture->id) == nullptr);
-    CNA_EDITOR_EXPECT(cache.get(database, Uuid::generate()) == nullptr);
-    CNA_EDITOR_EXPECT_EQ(cache.getEntryCount(), std::size_t{3});
+    CNA_STUDIO_EXPECT(cache.get(database, broken->id) == nullptr);
+    CNA_STUDIO_EXPECT(cache.get(database, texture->id) == nullptr);
+    CNA_STUDIO_EXPECT(cache.get(database, Uuid::generate()) == nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getEntryCount(), std::size_t{3});
 
     // Invalidation is what the asset watcher will call when a file changes on disk.
     cache.invalidate(prop->id);
-    CNA_EDITOR_EXPECT_EQ(cache.getEntryCount(), std::size_t{2});
-    CNA_EDITOR_EXPECT(cache.get(database, prop->id) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getEntryCount(), std::size_t{2});
+    CNA_STUDIO_EXPECT(cache.get(database, prop->id) != nullptr);
 
     cache.clear();
-    CNA_EDITOR_EXPECT_EQ(cache.getEntryCount(), std::size_t{0});
-    CNA_EDITOR_EXPECT_EQ(cache.getVertexCount(), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(cache.getEntryCount(), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(cache.getVertexCount(), std::size_t{0});
 
     std::filesystem::remove_all(directory);
 }
@@ -1054,24 +1054,24 @@ CNA_EDITOR_TEST(TheMeshCacheImportsOnceAndRemembersFailuresToo)
  * The winding checker is an assertion the other cases lean on, so it needs one of its own: a
  * checker that returned true unconditionally would make half this file pass for nothing.
  */
-CNA_EDITOR_TEST(TheWindingCheckActuallyCatchesAReversedTriangle)
+CNA_STUDIO_TEST(TheWindingCheckActuallyCatchesAReversedTriangle)
 {
     MeshPart part;
     part.vertices = {
-        MeshVertex{EditorVector3{0.0f, 0.0f, 0.0f}, EditorVector3{0.0f, 0.0f, 1.0f}, EditorVector2{}},
-        MeshVertex{EditorVector3{1.0f, 0.0f, 0.0f}, EditorVector3{0.0f, 0.0f, 1.0f}, EditorVector2{}},
-        MeshVertex{EditorVector3{0.0f, 1.0f, 0.0f}, EditorVector3{0.0f, 0.0f, 1.0f}, EditorVector2{}}};
+        MeshVertex{StudioVector3{0.0f, 0.0f, 0.0f}, StudioVector3{0.0f, 0.0f, 1.0f}, StudioVector2{}},
+        MeshVertex{StudioVector3{1.0f, 0.0f, 0.0f}, StudioVector3{0.0f, 0.0f, 1.0f}, StudioVector2{}},
+        MeshVertex{StudioVector3{0.0f, 1.0f, 0.0f}, StudioVector3{0.0f, 0.0f, 1.0f}, StudioVector2{}}};
 
     part.indices = {0, 1, 2};
-    CNA_EDITOR_EXPECT(meshWindingMatchesNormals(part));
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(part));
 
     part.indices = {0, 2, 1};
-    CNA_EDITOR_EXPECT(!meshWindingMatchesNormals(part));
+    CNA_STUDIO_EXPECT(!meshWindingMatchesNormals(part));
 
     // An index past the end is not safe to draw either, and saying "well wound" about it would be
     // a read past the vector to find out.
     part.indices = {0, 1, 99};
-    CNA_EDITOR_EXPECT(!meshWindingMatchesNormals(part));
+    CNA_STUDIO_EXPECT(!meshWindingMatchesNormals(part));
 }
 
 /**
@@ -1079,21 +1079,21 @@ CNA_EDITOR_TEST(TheWindingCheckActuallyCatchesAReversedTriangle)
  * the 3D view frames what it is given, and framing a point at the origin because a model failed
  * to load would be a camera flying somewhere for no reason.
  */
-CNA_EDITOR_TEST(AnEmptyMeshReportsEmptyBoundsRatherThanAPointAtTheOrigin)
+CNA_STUDIO_TEST(AnEmptyMeshReportsEmptyBoundsRatherThanAPointAtTheOrigin)
 {
     MeshData empty;
     recomputeMeshBounds(empty);
 
-    CNA_EDITOR_EXPECT(empty.isEmpty());
-    CNA_EDITOR_EXPECT(empty.boundsMin.x > empty.boundsMax.x);
-    CNA_EDITOR_EXPECT(empty.boundsMin.y > empty.boundsMax.y);
-    CNA_EDITOR_EXPECT(empty.boundsMin.z > empty.boundsMax.z);
+    CNA_STUDIO_EXPECT(empty.isEmpty());
+    CNA_STUDIO_EXPECT(empty.boundsMin.x > empty.boundsMax.x);
+    CNA_STUDIO_EXPECT(empty.boundsMin.y > empty.boundsMax.y);
+    CNA_STUDIO_EXPECT(empty.boundsMin.z > empty.boundsMax.z);
 
     MeshData atOrigin;
     atOrigin.parts.emplace_back();
     atOrigin.parts[0].vertices.emplace_back();
     recomputeMeshBounds(atOrigin);
 
-    CNA_EDITOR_EXPECT(nearlyEqual(atOrigin.boundsMin, EditorVector3{}));
-    CNA_EDITOR_EXPECT(nearlyEqual(atOrigin.boundsMax, EditorVector3{}));
+    CNA_STUDIO_EXPECT(nearlyEqual(atOrigin.boundsMin, StudioVector3{}));
+    CNA_STUDIO_EXPECT(nearlyEqual(atOrigin.boundsMax, StudioVector3{}));
 }

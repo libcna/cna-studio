@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace CnaEditorTest
+namespace CnaStudioTest
 {
     /** @brief One registered test case. */
     struct TestCase
@@ -91,22 +91,22 @@ namespace CnaEditorTest
 }
 
 /** @brief Defines and registers a test case. */
-#define CNA_EDITOR_TEST(name)                                                                      \
+#define CNA_STUDIO_TEST(name)                                                                      \
     static void name();                                                                            \
-    static const ::CnaEditorTest::Registrar registrar_##name{#name, name};                         \
+    static const ::CnaStudioTest::Registrar registrar_##name{#name, name};                         \
     static void name()
 
 /** @brief Fails the current case unless @p condition holds. */
-#define CNA_EDITOR_EXPECT(condition)                                                               \
+#define CNA_STUDIO_EXPECT(condition)                                                               \
     do {                                                                                           \
         if (!(condition))                                                                          \
         {                                                                                          \
-            ::CnaEditorTest::reportFailure(__FILE__, __LINE__, "expected: " #condition);           \
+            ::CnaStudioTest::reportFailure(__FILE__, __LINE__, "expected: " #condition);           \
         }                                                                                          \
     } while (false)
 
 /** @brief Fails the current case unless @p actual equals @p expected, printing both. */
-#define CNA_EDITOR_EXPECT_EQ(actual, expected)                                                     \
+#define CNA_STUDIO_EXPECT_EQ(actual, expected)                                                     \
     do {                                                                                           \
         const auto& actualValue = (actual);                                                        \
         const auto& expectedValue = (expected);                                                    \
@@ -115,6 +115,6 @@ namespace CnaEditorTest
             std::ostringstream message;                                                            \
             message << #actual " == " #expected " -- got " << actualValue                          \
                     << ", expected " << expectedValue;                                             \
-            ::CnaEditorTest::reportFailure(__FILE__, __LINE__, message.str());                     \
+            ::CnaStudioTest::reportFailure(__FILE__, __LINE__, message.str());                     \
         }                                                                                          \
     } while (false)

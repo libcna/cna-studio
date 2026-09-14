@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Ui/UiDrawData.hpp"
+#include "CNA/Studio/Ui/UiDrawData.hpp"
 
 #include <algorithm>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     UiClipRect UiClipRect::intersect(const UiClipRect& other) const
     {

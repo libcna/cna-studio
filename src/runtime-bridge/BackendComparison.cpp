@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/RuntimeBridge/BackendComparison.hpp"
+#include "CNA/Studio/RuntimeBridge/BackendComparison.hpp"
 
 #include <algorithm>
 #include <filesystem>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     /** @brief One player process and what the run has learned from it. */
     struct BackendComparison::Session
@@ -186,9 +186,9 @@ namespace CNA::Editor
         {
             ComparisonEntry& entry = entries_[session->entry];
 
-            for (const EditorMessage& message : session->process.poll())
+            for (const StudioMessage& message : session->process.poll())
             {
-                if (message.type != EditorMessageType::ScreenshotReady) { continue; }
+                if (message.type != StudioMessageType::ScreenshotReady) { continue; }
 
                 session->answered = true;
                 entry.captured = message.payload["written"].asBoolean(false);
@@ -273,7 +273,7 @@ namespace CNA::Editor
             // The scene is loaded by the player at start-up from the project, so all that is asked
             // for here is the frame. Sending loadScene as well would race the start-up load and
             // capture whichever finished first.
-            session->process.send(EditorMessage::makeScreenshot(entry.capturePath));
+            session->process.send(StudioMessage::makeScreenshot(entry.capturePath));
         }
     }
 

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneSprites3D.hpp"
+#include "CNA/Studio/Scene/SceneSprites3D.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -18,7 +18,7 @@ namespace CNA::Editor
             bool vertical = false;
         };
 
-        SpriteFlips readFlips(const EditorComponent& sprite)
+        SpriteFlips readFlips(const StudioComponent& sprite)
         {
             const std::string& name =
                 sprite.getProperty("spriteEffects").get<PropertyValue::EnumValue>().name;
@@ -31,7 +31,7 @@ namespace CNA::Editor
         }
     }
 
-    SceneSpriteBatch3D buildSceneSpriteQuads(const SceneDocument& scene, const EditorCamera3D& camera,
+    SceneSpriteBatch3D buildSceneSpriteQuads(const SceneDocument& scene, const StudioCamera3D& camera,
                                              const SpriteSizeProvider& sizeProvider,
                                              const AnimationPreview& preview,
                                              const std::vector<Uuid>& selection,
@@ -40,13 +40,13 @@ namespace CNA::Editor
         SceneSpriteBatch3D batch;
         if (!sizeProvider) { return batch; }
 
-        const EditorVector3 eye = camera.getEye();
+        const StudioVector3 eye = camera.getEye();
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (!entity.isEnabled()) { continue; }
 
-            const EditorComponent* sprite = entity.findComponent(BuiltinComponentIds::kSpriteRenderer);
+            const StudioComponent* sprite = entity.findComponent(BuiltinComponentIds::kSpriteRenderer);
             if (sprite == nullptr) { continue; }
 
             const std::optional<WorldTransform> world = computeWorldTransform(scene, entity.getId());
@@ -55,7 +55,7 @@ namespace CNA::Editor
             // An animated sprite is sized and framed by its *sheet*, exactly as the 2D content pass
             // does it -- and every animated entity but the previewed one shows frame zero, because
             // an editor playing every clip at once would be unreadable.
-            const EditorComponent* animation =
+            const StudioComponent* animation =
                 entity.findComponent(BuiltinComponentIds::kSpriteAnimation);
             const bool animated = animation != nullptr;
 
@@ -79,7 +79,7 @@ namespace CNA::Editor
                           .id
                     : sprite->getProperty("texture").get<PropertyValue::AssetReference>().id;
 
-            const EditorVector2 sheetSize = sizeProvider(textureId);
+            const StudioVector2 sheetSize = sizeProvider(textureId);
             if (sheetSize.x <= 0.0f || sheetSize.y <= 0.0f)
             {
                 // Counted, not guessed at: a quad of a made-up size would be drawn somewhere the
@@ -89,8 +89,8 @@ namespace CNA::Editor
                 continue;
             }
 
-            EditorRectangle source =
-                sprite->getProperty("sourceRectangle").get<EditorRectangle>();
+            StudioRectangle source =
+                sprite->getProperty("sourceRectangle").get<StudioRectangle>();
             if (playable)
             {
                 const std::size_t position =
@@ -102,12 +102,12 @@ namespace CNA::Editor
 
             // An empty source rectangle means the whole texture, which is what both the 2D pass and
             // `SpriteBatch` itself take it to mean.
-            const EditorVector2 drawnSize =
+            const StudioVector2 drawnSize =
                 source.isEmpty() ? sheetSize
-                                 : EditorVector2{static_cast<float>(source.width),
+                                 : StudioVector2{static_cast<float>(source.width),
                                                  static_cast<float>(source.height)};
 
-            const EditorVector2 origin = sprite->getProperty("origin").get<EditorVector2>();
+            const StudioVector2 origin = sprite->getProperty("origin").get<StudioVector2>();
 
             // In world units: texels times the entity's own scale, with the origin -- which is in
             // texels, as `SpriteBatch` takes it -- deciding where the entity's position sits inside
@@ -125,7 +125,7 @@ namespace CNA::Editor
 
             const auto place = [&](float x, float y)
             {
-                return EditorVector3{world->position.x + x * cosine - y * sine,
+                return StudioVector3{world->position.x + x * cosine - y * sine,
                                      world->position.y + x * sine + y * cosine,
                                      world->position.z};
             };
@@ -135,7 +135,7 @@ namespace CNA::Editor
             quad.textureId = textureId;
             quad.corners = {place(left, top), place(right, top), place(right, bottom),
                             place(left, bottom)};
-            quad.tint = sprite->getProperty("tint").get<EditorColor>();
+            quad.tint = sprite->getProperty("tint").get<StudioColor>();
             quad.selected =
                 std::find(selection.begin(), selection.end(), entity.getId()) != selection.end();
 
@@ -154,14 +154,14 @@ namespace CNA::Editor
             const float topV = flips.vertical ? v1 : v0;
             const float bottomV = flips.vertical ? v0 : v1;
 
-            quad.texCoords = {EditorVector2{leftU, topV}, EditorVector2{rightU, topV},
-                              EditorVector2{rightU, bottomV}, EditorVector2{leftU, bottomV}};
+            quad.texCoords = {StudioVector2{leftU, topV}, StudioVector2{rightU, topV},
+                              StudioVector2{rightU, bottomV}, StudioVector2{leftU, bottomV}};
 
-            const EditorVector3 centre{
+            const StudioVector3 centre{
                 (quad.corners[0].x + quad.corners[2].x) * 0.5f,
                 (quad.corners[0].y + quad.corners[2].y) * 0.5f,
                 (quad.corners[0].z + quad.corners[2].z) * 0.5f};
-            const EditorVector3 toEye = subtract(centre, eye);
+            const StudioVector3 toEye = subtract(centre, eye);
             quad.cameraDistance = std::sqrt(dot(toEye, toEye));
 
             batch.quads.push_back(quad);

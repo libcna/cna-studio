@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/InspectorPanel.hpp"
+#include "CNA/Studio/Panels/InspectorPanel.hpp"
 
 #include <fstream>
 #include <iterator>
 
-#include "CNA/Editor/Assets/AssetCommands.hpp"
-#include "CNA/Editor/Assets/MaterialDocument.hpp"
-#include "CNA/Editor/Scene/SceneEnvironment.hpp"
+#include "CNA/Studio/Assets/AssetCommands.hpp"
+#include "CNA/Studio/Assets/MaterialDocument.hpp"
+#include "CNA/Studio/Scene/SceneEnvironment.hpp"
 
 #include <memory>
 #include <optional>
 #include <vector>
 
-#include "CNA/Editor/Assets/AssetCommands.hpp"
-#include "CNA/Editor/EditorContext.hpp"
-#include "CNA/Editor/PrefabWorkflow.hpp"
-#include "CNA/Editor/ProjectCommands.hpp"
-#include "CNA/Editor/Scene/PrefabCommands.hpp"
-#include "CNA/Editor/Scene/PrefabDocument.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneCommands.hpp"
-#include "CNA/Editor/Scene/SceneTransform.hpp"
+#include "CNA/Studio/Assets/AssetCommands.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/PrefabWorkflow.hpp"
+#include "CNA/Studio/ProjectCommands.hpp"
+#include "CNA/Studio/Scene/PrefabCommands.hpp"
+#include "CNA/Studio/Scene/PrefabDocument.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void InspectorPanel::draw()
     {
@@ -52,7 +52,7 @@ namespace CNA::Editor
         }
 
         const Uuid selectedId = context_.getPrimarySelection();
-        const EditorEntity* entity = context_.getScene().findEntity(selectedId);
+        const StudioEntity* entity = context_.getScene().findEntity(selectedId);
         if (entity == nullptr)
         {
             drawProjectInspector();
@@ -72,10 +72,10 @@ namespace CNA::Editor
         // iterated, and invalidate the component reference the loop body is holding.
         std::optional<std::size_t> removeIndex;
 
-        const std::vector<EditorComponent>& components = entity->getComponents();
+        const std::vector<StudioComponent>& components = entity->getComponents();
         for (std::size_t index = 0; index < components.size(); ++index)
         {
-            const EditorComponent& component = components[index];
+            const StudioComponent& component = components[index];
             const ComponentDescriptor* descriptor = context_.getComponentRegistry().find(component.getTypeId());
             if (descriptor == nullptr)
             {
@@ -168,7 +168,7 @@ namespace CNA::Editor
 
         // Quaternions are shown as degrees, because four raw components are not something anyone
         // can author: rotating a sprite by 45 degrees should not require working out a quaternion.
-        const EditorQuaternion stored = value.get<EditorQuaternion>();
+        const StudioQuaternion stored = value.get<StudioQuaternion>();
 
         // Reuse what the user typed for as long as the stored value is still exactly the one it
         // produced. Recomputing every frame would let the other two angles jump to an equivalent
@@ -183,8 +183,8 @@ namespace CNA::Editor
             return std::nullopt;
         }
 
-        const EditorVector3 degrees = shown.get<EditorVector3>();
-        const EditorQuaternion produced = quaternionFromEulerDegrees(degrees);
+        const StudioVector3 degrees = shown.get<StudioVector3>();
+        const StudioQuaternion produced = quaternionFromEulerDegrees(degrees);
 
         eulerEdit_ = EulerEdit{entityId, componentTypeId, property.name, degrees, produced};
         return PropertyEdit{PropertyValue{produced}, false};
@@ -364,7 +364,7 @@ namespace CNA::Editor
         if (ui_.propertyField("Ambient", ambient))
         {
             SceneEnvironment edited = environment;
-            edited.ambientColor = ambient.get<EditorColor>();
+            edited.ambientColor = ambient.get<StudioColor>();
             apply(edited, "ambient light");
         }
 
@@ -384,7 +384,7 @@ namespace CNA::Editor
             if (ui_.propertyField("Fog Color", fogColor))
             {
                 SceneEnvironment edited = environment;
-                edited.fogColor = fogColor.get<EditorColor>();
+                edited.fogColor = fogColor.get<StudioColor>();
                 apply(edited, "fog colour");
             }
 
@@ -560,7 +560,7 @@ namespace CNA::Editor
             context_.execute(std::move(command));
 
             // Nothing to invalidate. The material provider reads the file on every ask rather than
-            // caching it (see `EditorContext::makeMaterialProvider`), which is exactly what makes
+            // caching it (see `StudioContext::makeMaterialProvider`), which is exactly what makes
             // an edit visible on the next frame with no cache to tell.
         };
 
@@ -576,7 +576,7 @@ namespace CNA::Editor
         if (ui_.propertyField("Base Color", diffuse))
         {
             MaterialDocument edited = material;
-            edited.diffuseColor = diffuse.get<EditorVector3>();
+            edited.diffuseColor = diffuse.get<StudioVector3>();
             apply(edited, "base colour");
         }
 
@@ -584,7 +584,7 @@ namespace CNA::Editor
         if (ui_.propertyField("Emissive", emissive))
         {
             MaterialDocument edited = material;
-            edited.emissiveColor = emissive.get<EditorVector3>();
+            edited.emissiveColor = emissive.get<StudioVector3>();
             apply(edited, "emissive");
         }
 
@@ -696,8 +696,8 @@ namespace CNA::Editor
 
     void InspectorPanel::drawAnimationPreview(const Uuid& entityId, double deltaSeconds)
     {
-        const EditorEntity* entity = context_.getScene().findEntity(entityId);
-        const EditorComponent* animation =
+        const StudioEntity* entity = context_.getScene().findEntity(entityId);
+        const StudioComponent* animation =
             entity != nullptr ? entity->findComponent(BuiltinComponentIds::kSpriteAnimation) : nullptr;
         if (animation == nullptr) { return; }
 
@@ -756,12 +756,12 @@ namespace CNA::Editor
         // The sheet's size comes from the importer's recorded fact rather than from the renderer:
         // it is the one place that already knows, and asking the renderer would mean the preview
         // could not be drawn at all in a headless run.
-        const EditorVector2 sheetSize =
+        const StudioVector2 sheetSize =
             PropertyValue::fromJson(record->importerSettings["pixelSize"], PropertyType::Vector2)
-                .get<EditorVector2>();
+                .get<StudioVector2>();
 
         const UiTextureId texture = actions_.getViewport().getAssetThumbnail(sheetId);
-        const EditorRectangle frame = clip.getFrameRectangle(playback_.position);
+        const StudioRectangle frame = clip.getFrameRectangle(playback_.position);
 
         constexpr float kPreviewSize = 128.0f;
         ui_.imageRegion("animation-preview", texture, frame, sheetSize, kPreviewSize, kPreviewSize);
@@ -771,8 +771,8 @@ namespace CNA::Editor
 
     void InspectorPanel::drawAudioPreview(const Uuid& entityId)
     {
-        const EditorEntity* entity = context_.getScene().findEntity(entityId);
-        const EditorComponent* source =
+        const StudioEntity* entity = context_.getScene().findEntity(entityId);
+        const StudioComponent* source =
             entity != nullptr ? entity->findComponent(BuiltinComponentIds::kAudioSource) : nullptr;
         if (source == nullptr) { return; }
 
@@ -910,7 +910,7 @@ namespace CNA::Editor
         context_.log(LogSeverity::Info, summary + ".");
     }
 
-    void InspectorPanel::drawAddComponentControl(const EditorEntity& entity)
+    void InspectorPanel::drawAddComponentControl(const StudioEntity& entity)
     {
         std::vector<std::string> labels;
         std::vector<std::string> typeIds;

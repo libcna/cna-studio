@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/RuntimeBridge/PlayerProcess.hpp"
+#include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -15,7 +15,7 @@
 #    include <unistd.h>
 #endif
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -45,7 +45,7 @@ namespace CNA::Editor
             case PlayerExitReason::StillRunning: return "still running";
             case PlayerExitReason::Exited: return "exited";
             case PlayerExitReason::Crashed: return "crashed";
-            case PlayerExitReason::StoppedByEditor: return "stopped by the editor";
+            case PlayerExitReason::StoppedByStudio: return "stopped by the editor";
             case PlayerExitReason::FailedToStart: return "failed to start";
         }
         return "still running";
@@ -212,7 +212,7 @@ namespace CNA::Editor
 
         std::vector<std::string> arguments;
         arguments.push_back("--project=" + projectPath);
-        arguments.push_back("--editor-port=" + std::to_string(channel_.getPort()));
+        arguments.push_back("--studio-port=" + std::to_string(channel_.getPort()));
         if (!scenePath.empty()) { arguments.push_back("--scene=" + scenePath); }
         if (build.backend != "default") { arguments.push_back("--graphics=" + build.backend); }
 
@@ -226,20 +226,20 @@ namespace CNA::Editor
         return true;
     }
 
-    std::vector<EditorMessage> PlayerProcess::poll()
+    std::vector<StudioMessage> PlayerProcess::poll()
     {
-        std::vector<EditorMessage> messages = channel_.poll();
+        std::vector<StudioMessage> messages = channel_.poll();
 
         // The player announces Ready the moment it connects and then waits for our Hello to
         // consider the handshake complete, so this has to go out as soon as the channel is up.
         if (!helloSent_ && channel_.isConnected())
         {
-            helloSent_ = channel_.send(EditorMessage::makeHello(projectPath_));
+            helloSent_ = channel_.send(StudioMessage::makeHello(projectPath_));
         }
 
-        for (const EditorMessage& message : messages)
+        for (const StudioMessage& message : messages)
         {
-            if (message.type == EditorMessageType::Ready)
+            if (message.type == StudioMessageType::Ready)
             {
                 reportedBackend_ = message.payload["backend"].asString();
             }
@@ -258,7 +258,7 @@ namespace CNA::Editor
         return messages;
     }
 
-    bool PlayerProcess::send(const EditorMessage& message) { return channel_.send(message); }
+    bool PlayerProcess::send(const StudioMessage& message) { return channel_.send(message); }
 
     bool PlayerProcess::isRunning() const
     {
@@ -269,8 +269,8 @@ namespace CNA::Editor
     {
         if (channel_.isConnected())
         {
-            EditorMessage quit;
-            quit.type = EditorMessageType::Quit;
+            StudioMessage quit;
+            quit.type = StudioMessageType::Quit;
             channel_.send(quit);
         }
 
@@ -287,6 +287,6 @@ namespace CNA::Editor
         impl_->reap();
         channel_.close();
 
-        if (exitReason_ == PlayerExitReason::StillRunning) { exitReason_ = PlayerExitReason::StoppedByEditor; }
+        if (exitReason_ == PlayerExitReason::StillRunning) { exitReason_ = PlayerExitReason::StoppedByStudio; }
     }
 }

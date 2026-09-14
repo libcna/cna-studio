@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/EntityJson.hpp"
+#include "CNA/Studio/Scene/EntityJson.hpp"
 
 #include <algorithm>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -63,7 +63,7 @@ namespace CNA::Editor
         return PropertyValue{std::move(list)};
     }
 
-    JsonValue entityToJson(const EditorEntity& entity)
+    JsonValue entityToJson(const StudioEntity& entity)
     {
         JsonValue entityJson = JsonValue::makeObject();
         entityJson.set("id", JsonValue{entity.getId().toString()});
@@ -77,7 +77,7 @@ namespace CNA::Editor
         if (entity.getSortOrder() != 0) { entityJson.set("sortOrder", JsonValue{entity.getSortOrder()}); }
 
         JsonValue componentsJson = JsonValue::makeObject();
-        for (const EditorComponent& component : entity.getComponents())
+        for (const StudioComponent& component : entity.getComponents())
         {
             JsonValue componentJson = JsonValue::makeObject();
             for (const auto& [name, value] : component.getProperties())
@@ -88,24 +88,24 @@ namespace CNA::Editor
         }
         entityJson.set("components", std::move(componentsJson));
 
-        if (!entity.getEditorState().empty())
+        if (!entity.getStudioState().empty())
         {
-            JsonValue editorStateJson = JsonValue::makeObject();
-            for (const auto& [name, value] : entity.getEditorState())
+            JsonValue studioStateJson = JsonValue::makeObject();
+            for (const auto& [name, value] : entity.getStudioState())
             {
-                editorStateJson.set(name, value.toJson());
+                studioStateJson.set(name, value.toJson());
             }
-            entityJson.set("editorState", std::move(editorStateJson));
+            entityJson.set("editorState", std::move(studioStateJson));
         }
 
         return entityJson;
     }
 
-    EditorEntity entityFromJson(const JsonValue& json,
+    StudioEntity entityFromJson(const JsonValue& json,
                                 const ComponentRegistry& registry,
                                 std::vector<std::string>& warnings)
     {
-        EditorEntity entity;
+        StudioEntity entity;
 
         const Uuid id = Uuid::parse(json["id"].asString());
         entity.setId(id.isValid() ? id : Uuid::generate());
@@ -122,7 +122,7 @@ namespace CNA::Editor
 
         for (const auto& [typeId, componentJson] : json["components"].getMembers())
         {
-            EditorComponent component{typeId};
+            StudioComponent component{typeId};
             const ComponentDescriptor* descriptor = registry.find(typeId);
             if (descriptor == nullptr)
             {
@@ -154,7 +154,7 @@ namespace CNA::Editor
 
         for (const auto& [name, valueJson] : json["editorState"].getMembers())
         {
-            entity.setEditorState(name, readUntypedJson(valueJson));
+            entity.setStudioState(name, readUntypedJson(valueJson));
         }
 
         return entity;

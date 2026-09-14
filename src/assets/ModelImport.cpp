@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MS-PL
 
-#include "CNA/Editor/Assets/ModelImport.hpp"
+#include "CNA/Studio/Assets/ModelImport.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,11 +8,11 @@
 #include <string_view>
 #include <unordered_set>
 
-#include "CNA/Editor/Core/EditorMatrix.hpp"
+#include "CNA/Studio/Core/StudioMatrix.hpp"
 
 #include "cgltf_prefixed.h"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -39,18 +39,18 @@ namespace CNA::Editor
         };
 
         /**
-         * @brief Converts a glTF node matrix into an `EditorMatrix`.
+         * @brief Converts a glTF node matrix into an `StudioMatrix`.
          *
          * A straight element-for-element copy, which is worth a sentence because it looks like it
          * should need a transpose and does not. glTF stores matrices column-major with the
-         * translation at indices 12..14; `EditorMatrix` is XNA's row-vector layout with the
+         * translation at indices 12..14; `StudioMatrix` is XNA's row-vector layout with the
          * translation in `m41`..`m43`, which is field index 12..14 in declaration order. The two
          * conventions are transposes of each other *and* the two storage orders are transposes of
          * each other, so the pair cancels exactly.
          */
-        EditorMatrix toEditorMatrix(const cgltf_float source[16])
+        StudioMatrix toStudioMatrix(const cgltf_float source[16])
         {
-            EditorMatrix result;
+            StudioMatrix result;
             result.m11 = source[0];  result.m12 = source[1];  result.m13 = source[2];  result.m14 = source[3];
             result.m21 = source[4];  result.m22 = source[5];  result.m23 = source[6];  result.m24 = source[7];
             result.m31 = source[8];  result.m32 = source[9];  result.m33 = source[10]; result.m34 = source[11];
@@ -59,7 +59,7 @@ namespace CNA::Editor
         }
 
         /** @brief Returns the determinant of @p matrix's upper-left 3x3, which is its handedness. */
-        float determinant3x3(const EditorMatrix& matrix)
+        float determinant3x3(const StudioMatrix& matrix)
         {
             return matrix.m11 * (matrix.m22 * matrix.m33 - matrix.m23 * matrix.m32)
                    - matrix.m12 * (matrix.m21 * matrix.m33 - matrix.m23 * matrix.m31)
@@ -74,9 +74,9 @@ namespace CNA::Editor
          * agree about which way is down; glTF is Y-up; a model that skipped this would hang upside
          * down from the grid it is supposed to stand on.
          */
-        EditorVector3 mirrorY(const EditorVector3& vector)
+        StudioVector3 mirrorY(const StudioVector3& vector)
         {
-            return EditorVector3{vector.x, -vector.y, vector.z};
+            return StudioVector3{vector.x, -vector.y, vector.z};
         }
 
         /** @brief Reads @p count floats per element from @p accessor into @p out. */
@@ -190,12 +190,12 @@ namespace CNA::Editor
                 const MeshVertex& v1 = part.vertices[part.indices[triangle + 1]];
                 const MeshVertex& v2 = part.vertices[part.indices[triangle + 2]];
 
-                EditorVector3 normal = cross(subtract(v1.position, v0.position),
+                StudioVector3 normal = cross(subtract(v1.position, v0.position),
                                              subtract(v2.position, v0.position));
                 // A degenerate triangle has no normal to compute. `MeshVertex`'s default is used
                 // rather than a zero, for the reason recorded on that field: zero lights as black
                 // and reads as a renderer bug.
-                normal = dot(normal, normal) > 0.0f ? normalize(normal) : EditorVector3{0.0f, 0.0f, 1.0f};
+                normal = dot(normal, normal) > 0.0f ? normalize(normal) : StudioVector3{0.0f, 0.0f, 1.0f};
 
                 for (const MeshVertex* source : {&v0, &v1, &v2})
                 {
@@ -249,7 +249,7 @@ namespace CNA::Editor
             if (source.has_pbr_metallic_roughness != 0)
             {
                 const cgltf_pbr_metallic_roughness& pbr = source.pbr_metallic_roughness;
-                material.diffuseColor = EditorVector3{pbr.base_color_factor[0],
+                material.diffuseColor = StudioVector3{pbr.base_color_factor[0],
                                                       pbr.base_color_factor[1],
                                                       pbr.base_color_factor[2]};
                 material.alpha = pbr.base_color_factor[3];
@@ -259,7 +259,7 @@ namespace CNA::Editor
                 // it meant, so it is the one that is carried across.
                 const float metallic = pbr.metallic_factor;
                 material.metallic = std::clamp(metallic, 0.0f, 1.0f);
-                material.specularColor = EditorVector3{
+                material.specularColor = StudioVector3{
                     metallic * material.diffuseColor.x + (1.0f - metallic) * 0.04f,
                     metallic * material.diffuseColor.y + (1.0f - metallic) * 0.04f,
                     metallic * material.diffuseColor.z + (1.0f - metallic) * 0.04f};
@@ -280,7 +280,7 @@ namespace CNA::Editor
                 material.metallicRoughnessTexturePath = textureUri(pbr.metallic_roughness_texture);
             }
 
-            material.emissiveColor = EditorVector3{source.emissive_factor[0],
+            material.emissiveColor = StudioVector3{source.emissive_factor[0],
                                                    source.emissive_factor[1],
                                                    source.emissive_factor[2]};
             material.normalTexturePath = textureUri(source.normal_texture);
@@ -324,11 +324,11 @@ namespace CNA::Editor
 
             void addNode(const cgltf_node& node);
             void addPrimitive(const cgltf_primitive& primitive, const std::string& name,
-                              const EditorMatrix& world);
+                              const StudioMatrix& world);
         };
 
         void Loader::addPrimitive(const cgltf_primitive& primitive, const std::string& name,
-                                  const EditorMatrix& world)
+                                  const StudioMatrix& world)
         {
             const cgltf_accessor* positions = nullptr;
             const cgltf_accessor* normals = nullptr;
@@ -391,7 +391,7 @@ namespace CNA::Editor
             // to nothing on some axis has no such matrix, and the file's normals are used unchanged
             // rather than dropped -- a flattened model with its original normals is a better
             // failure than one lit as if it had none.
-            const std::optional<EditorMatrix> normalMatrix = inverseTranspose(world);
+            const std::optional<StudioMatrix> normalMatrix = inverseTranspose(world);
 
             MeshPart part;
             part.name = name;
@@ -407,26 +407,26 @@ namespace CNA::Editor
             {
                 MeshVertex& vertex = part.vertices[i];
 
-                const EditorVector3 local{positionData[i * 3], positionData[i * 3 + 1],
+                const StudioVector3 local{positionData[i * 3], positionData[i * 3 + 1],
                                           positionData[i * 3 + 2]};
                 vertex.position = scale(mirrorY(transformPosition(world, local)), settings.scaleFactor);
 
                 if (hasNormals)
                 {
-                    const EditorVector3 sourceNormal{normalData[i * 3], normalData[i * 3 + 1],
+                    const StudioVector3 sourceNormal{normalData[i * 3], normalData[i * 3 + 1],
                                                      normalData[i * 3 + 2]};
-                    const EditorVector3 transformed =
+                    const StudioVector3 transformed =
                         normalMatrix ? transformDirection(*normalMatrix, sourceNormal) : sourceNormal;
-                    const EditorVector3 mirrored = mirrorY(transformed);
+                    const StudioVector3 mirrored = mirrorY(transformed);
                     vertex.normal = dot(mirrored, mirrored) > 0.0f ? normalize(mirrored)
-                                                                   : EditorVector3{0.0f, 0.0f, 1.0f};
+                                                                   : StudioVector3{0.0f, 0.0f, 1.0f};
                 }
 
                 if (hasTexCoords)
                 {
                     // No V flip. glTF puts its texture origin at the top left, and so do XNA and
                     // every backend CNA has; the one convention in this file that already agrees.
-                    vertex.texCoord = EditorVector2{texCoordData[i * 2], texCoordData[i * 2 + 1]};
+                    vertex.texCoord = StudioVector2{texCoordData[i * 2], texCoordData[i * 2 + 1]};
                 }
             }
 
@@ -462,7 +462,7 @@ namespace CNA::Editor
             {
                 cgltf_float worldValues[16];
                 cgltf_node_transform_world(&node, worldValues);
-                const EditorMatrix world = toEditorMatrix(worldValues);
+                const StudioMatrix world = toStudioMatrix(worldValues);
 
                 const std::string meshName = node.mesh->name != nullptr ? node.mesh->name
                                              : node.name != nullptr     ? node.name

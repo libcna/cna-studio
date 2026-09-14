@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -7,10 +7,10 @@
 #include <sstream>
 #include <unordered_set>
 
-#include "CNA/Editor/Core/Json.hpp"
-#include "CNA/Editor/Scene/EntityJson.hpp"
+#include "CNA/Studio/Core/Json.hpp"
+#include "CNA/Studio/Scene/EntityJson.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
 
     const FormatMigrator& getSceneFormatMigrator()
@@ -23,19 +23,19 @@ namespace CNA::Editor
 
     SceneDocument::SceneDocument() : sceneId_(Uuid::generate()) {}
 
-    const EditorEntity* SceneDocument::findEntity(const Uuid& id) const
+    const StudioEntity* SceneDocument::findEntity(const Uuid& id) const
     {
         const auto found = indexById_.find(id);
         return found == indexById_.end() ? nullptr : &entities_[found->second];
     }
 
-    EditorEntity* SceneDocument::findEntity(const Uuid& id)
+    StudioEntity* SceneDocument::findEntity(const Uuid& id)
     {
         const auto found = indexById_.find(id);
         return found == indexById_.end() ? nullptr : &entities_[found->second];
     }
 
-    Uuid SceneDocument::addEntity(EditorEntity entity)
+    Uuid SceneDocument::addEntity(StudioEntity entity)
     {
         if (!entity.getId().isValid()) { entity.setId(Uuid::generate()); }
         if (indexById_.find(entity.getId()) != indexById_.end()) { return Uuid{}; }
@@ -46,9 +46,9 @@ namespace CNA::Editor
         return id;
     }
 
-    std::vector<EditorEntity> SceneDocument::removeEntityRecursive(const Uuid& id)
+    std::vector<StudioEntity> SceneDocument::removeEntityRecursive(const Uuid& id)
     {
-        std::vector<EditorEntity> removed;
+        std::vector<StudioEntity> removed;
         if (findEntity(id) == nullptr) { return removed; }
 
         // Breadth-first so the result is ordered parents-before-children, which is what lets
@@ -79,7 +79,7 @@ namespace CNA::Editor
         // Preserve parents-first order regardless of storage order: an entity whose parent is
         // also being removed must come after it.
         std::stable_sort(removed.begin(), removed.end(),
-                         [&](const EditorEntity& lhs, const EditorEntity& rhs) {
+                         [&](const StudioEntity& lhs, const StudioEntity& rhs) {
                              const bool lhsIsRootOfDeletion = lhs.getId() == id;
                              const bool rhsIsRootOfDeletion = rhs.getId() == id;
                              if (lhsIsRootOfDeletion != rhsIsRootOfDeletion) { return lhsIsRootOfDeletion; }
@@ -92,7 +92,7 @@ namespace CNA::Editor
 
     bool SceneDocument::reparentEntity(const Uuid& childId, const Uuid& newParentId)
     {
-        EditorEntity* child = findEntity(childId);
+        StudioEntity* child = findEntity(childId);
         if (child == nullptr) { return false; }
 
         if (newParentId.isValid())
@@ -109,14 +109,14 @@ namespace CNA::Editor
 
     std::vector<Uuid> SceneDocument::getChildren(const Uuid& parentId) const
     {
-        std::vector<const EditorEntity*> children;
-        for (const EditorEntity& entity : entities_)
+        std::vector<const StudioEntity*> children;
+        for (const StudioEntity& entity : entities_)
         {
             if (entity.getParentId() == parentId) { children.push_back(&entity); }
         }
 
         std::stable_sort(children.begin(), children.end(),
-                         [](const EditorEntity* lhs, const EditorEntity* rhs) {
+                         [](const StudioEntity* lhs, const StudioEntity* rhs) {
                              if (lhs->getSortOrder() != rhs->getSortOrder())
                              {
                                  return lhs->getSortOrder() < rhs->getSortOrder();
@@ -126,7 +126,7 @@ namespace CNA::Editor
 
         std::vector<Uuid> ids;
         ids.reserve(children.size());
-        for (const EditorEntity* entity : children) { ids.push_back(entity->getId()); }
+        for (const StudioEntity* entity : children) { ids.push_back(entity->getId()); }
         return ids;
     }
 
@@ -144,7 +144,7 @@ namespace CNA::Editor
         {
             if (!current.isValid()) { return false; }
             if (current == ancestorId) { return true; }
-            const EditorEntity* entity = findEntity(current);
+            const StudioEntity* entity = findEntity(current);
             if (entity == nullptr) { return false; }
             current = entity->getParentId();
         }
@@ -153,8 +153,8 @@ namespace CNA::Editor
 
     namespace
     {
-        /** @brief Writes an `EditorColor` as the four-number array every other colour uses. */
-        JsonValue colorToJson(const EditorColor& color)
+        /** @brief Writes an `StudioColor` as the four-number array every other colour uses. */
+        JsonValue colorToJson(const StudioColor& color)
         {
             JsonValue array = JsonValue::makeArray();
             array.append(JsonValue{static_cast<double>(color.r)});
@@ -165,7 +165,7 @@ namespace CNA::Editor
         }
 
         /** @brief Reads a four-number colour array, keeping @p fallback for anything missing. */
-        EditorColor colorFromJson(const JsonValue& json, const EditorColor& fallback)
+        StudioColor colorFromJson(const JsonValue& json, const StudioColor& fallback)
         {
             if (!json.isArray() || json.getElements().size() < 4) { return fallback; }
 
@@ -176,7 +176,7 @@ namespace CNA::Editor
             };
 
             const std::vector<JsonValue>& elements = json.getElements();
-            return EditorColor{channel(elements[0], fallback.r), channel(elements[1], fallback.g),
+            return StudioColor{channel(elements[0], fallback.r), channel(elements[1], fallback.g),
                                channel(elements[2], fallback.b), channel(elements[3], fallback.a)};
         }
     }
@@ -189,7 +189,7 @@ namespace CNA::Editor
         root.set("name", JsonValue{name_});
 
         JsonValue entitiesJson = JsonValue::makeArray();
-        for (const EditorEntity& entity : entities_)
+        for (const StudioEntity& entity : entities_)
         {
             entitiesJson.append(entityToJson(entity));
         }
@@ -280,7 +280,7 @@ namespace CNA::Editor
 
         for (const JsonValue& entityJson : document["entities"].getElements())
         {
-            EditorEntity entity = entityFromJson(entityJson, registry, result.warnings);
+            StudioEntity entity = entityFromJson(entityJson, registry, result.warnings);
 
             if (!addEntity(std::move(entity)).isValid())
             {
@@ -290,7 +290,7 @@ namespace CNA::Editor
 
         // Dangling and cyclic parent links are repaired rather than rejected, so that a scene
         // whose parent entity was deleted by a bad merge still opens and can be fixed by hand.
-        for (EditorEntity& entity : entities_)
+        for (StudioEntity& entity : entities_)
         {
             const Uuid parentId = entity.getParentId();
             if (!parentId.isValid()) { continue; }
@@ -301,7 +301,7 @@ namespace CNA::Editor
                 entity.setParentId(Uuid{});
             }
         }
-        for (EditorEntity& entity : entities_)
+        for (StudioEntity& entity : entities_)
         {
             if (entity.getParentId().isValid() && isAncestorOf(entity.getId(), entity.getParentId()))
             {

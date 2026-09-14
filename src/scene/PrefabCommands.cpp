@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/PrefabCommands.hpp"
+#include "CNA/Studio/Scene/PrefabCommands.hpp"
 
 #include <algorithm>
 #include <unordered_map>
 
-#include "CNA/Editor/Scene/EntityJson.hpp"
-#include "CNA/Editor/Scene/PrefabDocument.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/EntityJson.hpp"
+#include "CNA/Studio/Scene/PrefabDocument.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
         /** @brief Returns the prefab entity @p entity was instantiated from, or the nil Uuid. */
-        Uuid linkedPrefabEntity(const EditorEntity& entity)
+        Uuid linkedPrefabEntity(const StudioEntity& entity)
         {
-            const auto found = entity.getEditorState().find(PrefabKeys::kPrefabEntity);
-            if (found == entity.getEditorState().end()) { return Uuid{}; }
+            const auto found = entity.getStudioState().find(PrefabKeys::kPrefabEntity);
+            if (found == entity.getStudioState().end()) { return Uuid{}; }
             return Uuid::parse(found->second.get<std::string>());
         }
 
@@ -41,7 +41,7 @@ namespace CNA::Editor
          * decides what an entity *is* on disk, so anything it does not write is by definition not
          * a difference worth an undo entry.
          */
-        bool subtreeDiffers(const std::vector<EditorEntity>& left, const std::vector<EditorEntity>& right)
+        bool subtreeDiffers(const std::vector<StudioEntity>& left, const std::vector<StudioEntity>& right)
         {
             if (left.size() != right.size()) { return true; }
 
@@ -57,8 +57,8 @@ namespace CNA::Editor
         }
 
         /** @brief Returns the union of the property names on @p left and @p right. */
-        std::vector<std::string> unionOfPropertyNames(const EditorComponent& left,
-                                                      const EditorComponent& right)
+        std::vector<std::string> unionOfPropertyNames(const StudioComponent& left,
+                                                      const StudioComponent& right)
         {
             std::vector<std::string> names;
             for (const auto& [name, value] : left.getProperties())
@@ -89,11 +89,11 @@ namespace CNA::Editor
 
     Uuid getPrefabAssetOf(const SceneDocument& scene, const Uuid& entityId)
     {
-        const EditorEntity* entity = scene.findEntity(entityId);
+        const StudioEntity* entity = scene.findEntity(entityId);
         if (entity == nullptr) { return Uuid{}; }
 
-        const auto found = entity->getEditorState().find(PrefabKeys::kPrefabAsset);
-        if (found == entity->getEditorState().end()) { return Uuid{}; }
+        const auto found = entity->getStudioState().find(PrefabKeys::kPrefabAsset);
+        if (found == entity->getStudioState().end()) { return Uuid{}; }
         return Uuid::parse(found->second.get<std::string>());
     }
 
@@ -108,7 +108,7 @@ namespace CNA::Editor
             if (!current.isValid()) { return Uuid{}; }
             if (getPrefabAssetOf(scene, current).isValid()) { return current; }
 
-            const EditorEntity* entity = scene.findEntity(current);
+            const StudioEntity* entity = scene.findEntity(current);
             if (entity == nullptr) { return Uuid{}; }
             current = entity->getParentId();
         }
@@ -129,11 +129,11 @@ namespace CNA::Editor
 
         for (const Uuid& entityId : subtree)
         {
-            const EditorEntity* instance = scene.findEntity(entityId);
+            const StudioEntity* instance = scene.findEntity(entityId);
             if (instance == nullptr) { continue; }
 
             const Uuid prefabEntityId = linkedPrefabEntity(*instance);
-            const EditorEntity* original =
+            const StudioEntity* original =
                 prefabEntityId.isValid() ? prefab.findEntity(prefabEntityId) : nullptr;
 
             if (original == nullptr)
@@ -161,9 +161,9 @@ namespace CNA::Editor
                 overrides.push_back(std::move(renamed));
             }
 
-            for (const EditorComponent& component : instance->getComponents())
+            for (const StudioComponent& component : instance->getComponents())
             {
-                const EditorComponent* originalComponent = original->findComponent(component.getTypeId());
+                const StudioComponent* originalComponent = original->findComponent(component.getTypeId());
                 if (originalComponent == nullptr)
                 {
                     // A component the instance has and the prefab does not. Reported as a property
@@ -201,7 +201,7 @@ namespace CNA::Editor
                 }
             }
 
-            for (const EditorComponent& original2 : original->getComponents())
+            for (const StudioComponent& original2 : original->getComponents())
             {
                 if (instance->findComponent(original2.getTypeId()) != nullptr) { continue; }
 
@@ -214,7 +214,7 @@ namespace CNA::Editor
             }
         }
 
-        for (const EditorEntity& original : prefab.getEntities())
+        for (const StudioEntity& original : prefab.getEntities())
         {
             if (std::find(seenPrefabEntities.begin(), seenPrefabEntities.end(), original.getId())
                 != seenPrefabEntities.end())
@@ -243,14 +243,14 @@ namespace CNA::Editor
         // Fresh ids: two instances of one prefab are two different entities, and reusing the
         // prefab's ids would make the second instantiation collide with the first.
         std::unordered_map<Uuid, Uuid> idByPrefabId;
-        for (const EditorEntity& original : prefab.getEntities())
+        for (const StudioEntity& original : prefab.getEntities())
         {
             idByPrefabId.emplace(original.getId(), Uuid::generate());
         }
 
-        for (const EditorEntity& original : prefab.getEntities())
+        for (const StudioEntity& original : prefab.getEntities())
         {
-            EditorEntity copy = original;
+            StudioEntity copy = original;
             copy.setId(idByPrefabId.at(original.getId()));
 
             const auto mappedParent = idByPrefabId.find(original.getParentId());
@@ -258,11 +258,11 @@ namespace CNA::Editor
 
             // The link, on every entity, so an override can be found later without depending on
             // names or on sibling order -- both of which the user is free to change.
-            copy.setEditorState(PrefabKeys::kPrefabEntity, PropertyValue{original.getId().toString()});
+            copy.setStudioState(PrefabKeys::kPrefabEntity, PropertyValue{original.getId().toString()});
 
             if (original.getId() == prefab.getRootId())
             {
-                copy.setEditorState(PrefabKeys::kPrefabAsset, PropertyValue{prefabAssetId.toString()});
+                copy.setStudioState(PrefabKeys::kPrefabAsset, PropertyValue{prefabAssetId.toString()});
                 rootId_ = copy.getId();
             }
 
@@ -278,7 +278,7 @@ namespace CNA::Editor
 
         // Parents first, which captureFromScene guaranteed, so every parent exists by the time its
         // children are added.
-        for (const EditorEntity& entity : entities_) { document_->addEntity(entity); }
+        for (const StudioEntity& entity : entities_) { document_->addEntity(entity); }
     }
 
     void InstantiatePrefabCommand::undo()
@@ -297,20 +297,20 @@ namespace CNA::Editor
                                                              const PrefabDocument& prefab)
         : document_(&document), rootId_(instanceRootId), prefabName_(prefab.getName())
     {
-        const EditorEntity* root = document.findEntity(instanceRootId);
+        const StudioEntity* root = document.findEntity(instanceRootId);
         if (root == nullptr || prefab.isEmpty()) { return; }
         if (!getPrefabAssetOf(document, instanceRootId).isValid()) { return; }
 
         for (const Uuid& entityId : collectSubtree(document, instanceRootId))
         {
-            if (const EditorEntity* entity = document.findEntity(entityId)) { before_.push_back(*entity); }
+            if (const StudioEntity* entity = document.findEntity(entityId)) { before_.push_back(*entity); }
         }
 
         // Reuse the instance's own entity ids wherever the link still resolves. Anything else would
         // break every reference into the instance -- an EntityReference on a sibling, the current
         // selection -- for entities that did not actually change identity.
         std::unordered_map<Uuid, Uuid> idByPrefabId;
-        for (const EditorEntity& existing : before_)
+        for (const StudioEntity& existing : before_)
         {
             const Uuid prefabEntityId = linkedPrefabEntity(existing);
             if (prefabEntityId.isValid() && prefab.findEntity(prefabEntityId) != nullptr)
@@ -318,7 +318,7 @@ namespace CNA::Editor
                 idByPrefabId.emplace(prefabEntityId, existing.getId());
             }
         }
-        for (const EditorEntity& original : prefab.getEntities())
+        for (const StudioEntity& original : prefab.getEntities())
         {
             idByPrefabId.emplace(original.getId(), Uuid::generate());
         }
@@ -326,18 +326,18 @@ namespace CNA::Editor
         const Uuid parentOfRoot = root->getParentId();
         const Uuid prefabAssetId = getPrefabAssetOf(document, instanceRootId);
 
-        for (const EditorEntity& original : prefab.getEntities())
+        for (const StudioEntity& original : prefab.getEntities())
         {
-            EditorEntity copy = original;
+            StudioEntity copy = original;
             copy.setId(idByPrefabId.at(original.getId()));
 
             const auto mappedParent = idByPrefabId.find(original.getParentId());
             copy.setParentId(mappedParent != idByPrefabId.end() ? mappedParent->second : parentOfRoot);
 
-            copy.setEditorState(PrefabKeys::kPrefabEntity, PropertyValue{original.getId().toString()});
+            copy.setStudioState(PrefabKeys::kPrefabEntity, PropertyValue{original.getId().toString()});
             if (original.getId() == prefab.getRootId())
             {
-                copy.setEditorState(PrefabKeys::kPrefabAsset, PropertyValue{prefabAssetId.toString()});
+                copy.setStudioState(PrefabKeys::kPrefabAsset, PropertyValue{prefabAssetId.toString()});
             }
 
             after_.push_back(std::move(copy));
@@ -349,7 +349,7 @@ namespace CNA::Editor
         {
             const Uuid oldRootId = after_.front().getId();
             after_.front().setId(instanceRootId);
-            for (EditorEntity& entity : after_)
+            for (StudioEntity& entity : after_)
             {
                 if (entity.getParentId() == oldRootId) { entity.setParentId(instanceRootId); }
             }
@@ -358,10 +358,10 @@ namespace CNA::Editor
         valid_ = !after_.empty() && subtreeDiffers(before_, after_);
     }
 
-    void RevertPrefabInstanceCommand::replaceSubtree(const std::vector<EditorEntity>& entities)
+    void RevertPrefabInstanceCommand::replaceSubtree(const std::vector<StudioEntity>& entities)
     {
         document_->removeEntityRecursive(rootId_);
-        for (const EditorEntity& entity : entities) { document_->addEntity(entity); }
+        for (const StudioEntity& entity : entities) { document_->addEntity(entity); }
     }
 
     void RevertPrefabInstanceCommand::execute()

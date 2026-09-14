@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/Uuid.hpp"
+#include "CNA/Studio/Core/Uuid.hpp"
 
 #include <algorithm>
 #include <random>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -108,7 +108,7 @@ namespace CNA::Editor
 
 namespace std
 {
-    std::size_t hash<CNA::Editor::Uuid>::operator()(const CNA::Editor::Uuid& value) const noexcept
+    std::size_t hash<CNA::Studio::Uuid>::operator()(const CNA::Studio::Uuid& value) const noexcept
     {
         // FNV-1a over the 16 raw bytes: cheap, and good enough for hash-bucket distribution of
         // values that are already uniformly random.

@@ -17,7 +17,7 @@
 ## 1. Why this mattered
 
 The alternative to a public-API renderer was one ImGui backend per CNA graphics backend — seven of
-them for the *Editor Supported* tier alone, each needing its own shader, buffer management and
+them for the *Studio Supported* tier alone, each needing its own shader, buffer management and
 scissor handling, each a place for the editor to render differently from the game.
 
 Writing the renderer against `SpriteBatch`-level primitives instead makes it backend-independent
@@ -112,7 +112,7 @@ top-left. CNA normalises this for *presentation* (a game drawing to a render tar
 back buffer looks right on every backend) but not for a render target subsequently **sampled as a
 texture**, which is what "render the scene into a panel" requires.
 
-**Workaround in use:** `EditorViewport::isRenderTextureFlippedVertically()` reports the convention
+**Workaround in use:** `StudioViewport::isRenderTextureFlippedVertically()` reports the convention
 per backend, resolved at compile time from `CNA::getCurrentGraphicsBackendType()`, and the UI swaps
 the V coordinates when drawing the image. Swapping UVs rather than geometry keeps the widget
 rectangle unchanged, so hit-testing and the cursor-to-world mapping are unaffected.
@@ -158,9 +158,9 @@ ImGui rasterises glyphs it has not seen before — not per frame.
 
 | File | Role | CNA? |
 |---|---|:--:|
-| `include/CNA/Editor/Ui/UiDrawData.hpp` | Toolkit-independent geometry description | no |
-| `include/CNA/Editor/Ui/UiInputState.hpp` | Toolkit-independent input snapshot | no |
-| `src/ui/imgui/ImGuiEditorUi.cpp` | ImGui implementation of `EditorUi` | no |
+| `include/CNA/Studio/Ui/UiDrawData.hpp` | Toolkit-independent geometry description | no |
+| `include/CNA/Studio/Ui/UiInputState.hpp` | Toolkit-independent input snapshot | no |
+| `src/ui/imgui/ImGuiStudioUi.cpp` | ImGui implementation of `StudioUi` | no |
 | `src/viewport/CnaUiRenderer.cpp` | Draws `UiDrawData` via CNA's public API | **yes** |
 | `src/viewport/CnaUiPlatform.cpp` | Fills `UiInputState` from CNA's public API | **yes** |
 
@@ -170,7 +170,7 @@ public API" is therefore a structural property of the build graph, not a claim t
 hand.
 
 It also means the entire UI is testable with no GPU. `tests/UiTests.cpp` runs the real
-`EditorApplication` over the real Dear ImGui, drives eight frames of synthetic input, and validates
+`StudioApplication` over the real Dear ImGui, drives eight frames of synthetic input, and validates
 every draw command's index ranges, vertex offsets and clip rectangles — on a build machine with no
 window system.
 
@@ -187,7 +187,7 @@ references a texture whose `TexID` is still unset — and draw commands are read
 that collects texture requests. A design where the *renderer* assigns ids and reports them back
 therefore cannot work without splitting the frame into two phases.
 
-`ImGuiEditorUi` owns the `UiTextureId` namespace instead. A request always arrives with its id
+`ImGuiStudioUi` owns the `UiTextureId` namespace instead. A request always arrives with its id
 already allocated, and the renderer keeps a plain `UiTextureId → Texture2D` map. The ordering
 hazard disappears rather than being worked around.
 
@@ -200,9 +200,9 @@ The spike's claim was checked by building the whole thing against a real CNA che
 running the editor for real:
 
 ```
-$ SDL_VIDEODRIVER=dummy ./cna-editor --project=examples/HelloSprites/HelloSprites.cnaproject \
+$ SDL_VIDEODRIVER=dummy ./cna-studio --project=examples/HelloSprites/HelloSprites.cnaproject \
       --frames=20 --screenshot=editor.png
-cna-editor: backend SOFTWARE, 56 frames, 1600x900 display, 14 draw calls, 1858 triangles,
+cna-studio: backend SOFTWARE, 56 frames, 1600x900 display, 14 draw calls, 1858 triangles,
             1 textures created, 0 texture updates, 0 commands clipped away
 ```
 
@@ -213,7 +213,7 @@ project's three entities, a central Viewport, an Inspector on the right, and Ass
 at the bottom showing the real start-up log. All of it drawn through
 `DrawUserIndexedPrimitives` + `BasicEffect` + `Texture2D`, with no backend-specific code.
 
-`tests/CMakeLists.txt` registers this as `CnaEditorWindowSmoke` when the CNA build is enabled. The
+`tests/CMakeLists.txt` registers this as `CnaStudioWindowSmoke` when the CNA build is enabled. The
 screenshot is the assertion: a run that merely exits cleanly cannot distinguish a working editor
 from one that opened a blank window.
 
@@ -232,7 +232,7 @@ classifies it *Preview Only*. The tier table predicted this.
 
 **Dear ImGui does not place windows into a dock space by itself.** Without a saved layout, every
 panel floated at the same default position, stacked on top of one another — one small window in a
-sea of empty grey. `ImGuiEditorUi` now builds a default arrangement with the `DockBuilder` API on
+sea of empty grey. `ImGuiStudioUi` now builds a default arrangement with the `DockBuilder` API on
 first run, using each panel's declared `DockSide`, and never overrides a layout the user has saved.
 
 ---

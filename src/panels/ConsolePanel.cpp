@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/ConsolePanel.hpp"
+#include "CNA/Studio/Panels/ConsolePanel.hpp"
 
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/FormatMigration.hpp"
+#include "CNA/Studio/Core/FormatMigration.hpp"
 
 #include <algorithm>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     bool FormatMigrator::addMigration(int fromVersion, std::string description,
                                       std::function<bool(JsonValue&, std::string&)> apply)

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Plugins/PluginExtensions.hpp"
+#include "CNA/Studio/Plugins/PluginExtensions.hpp"
 
 #include <algorithm>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void PluginExtensionRegistry::addPanel(PluginPanel panel)
     {

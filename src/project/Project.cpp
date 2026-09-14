@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Project/Project.hpp"
+#include "CNA/Studio/Project/Project.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const char* toString(ProjectKind kind)
     {
@@ -25,31 +25,31 @@ namespace CNA::Editor
         // records whether a backend can host a *docked editor UI*, which is a stricter
         // requirement than being able to run a game.
         static const std::vector<BackendInfo> backends{
-            {"EASYGL", "easygl", "EasyGL (OpenGL ES)", BackendEditorSupport::EditorSupported,
+            {"EASYGL", "easygl", "EasyGL (OpenGL ES)", BackendStudioSupport::StudioSupported,
              "CNA's default on Linux and Emscripten. The reference target for the editor UI."},
-            {"VULKAN", "vulkan", "Vulkan", BackendEditorSupport::EditorSupported,
+            {"VULKAN", "vulkan", "Vulkan", BackendStudioSupport::StudioSupported,
              "Full editor UI support."},
-            {"SDL_RENDERER", "sdlrenderer", "SDL_Renderer (2D only)", BackendEditorSupport::EditorSupported,
+            {"SDL_RENDERER", "sdlrenderer", "SDL_Renderer (2D only)", BackendStudioSupport::StudioSupported,
              "CNA's default off Linux. 2D-only, which the editor UI itself does not mind."},
-            {"BGFX", "bgfx", "bgfx", BackendEditorSupport::EditorSupported, "Full editor UI support."},
-            {"SDL_GPU", "sdlgpu", "SDL_GPU", BackendEditorSupport::EditorSupported, "Full editor UI support."},
-            {"D3D11", "d3d11", "Direct3D 11", BackendEditorSupport::EditorSupported,
+            {"BGFX", "bgfx", "bgfx", BackendStudioSupport::StudioSupported, "Full editor UI support."},
+            {"SDL_GPU", "sdlgpu", "SDL_GPU", BackendStudioSupport::StudioSupported, "Full editor UI support."},
+            {"D3D11", "d3d11", "Direct3D 11", BackendStudioSupport::StudioSupported,
              "Windows only. Full editor UI support there."},
-            {"D3D12", "d3d12", "Direct3D 12", BackendEditorSupport::EditorSupported,
+            {"D3D12", "d3d12", "Direct3D 12", BackendStudioSupport::StudioSupported,
              "Windows only. Full editor UI support there."},
-            {"WEBGPU", "webgpu", "WebGPU", BackendEditorSupport::PreviewOnly,
+            {"WEBGPU", "webgpu", "WebGPU", BackendStudioSupport::PreviewOnly,
              "Experimental in CNA. Useful for previewing a browser build's rendering."},
-            {"D3D9", "d3d9", "Direct3D 9", BackendEditorSupport::PreviewOnly,
+            {"D3D9", "d3d9", "Direct3D 9", BackendStudioSupport::PreviewOnly,
              "Fixed-function-era feature set. Suitable for a player process, not for the editor UI."},
-            {"SOFTWARE", "software", "Software (CPU rasterizer)", BackendEditorSupport::PreviewOnly,
+            {"SOFTWARE", "software", "Software (CPU rasterizer)", BackendStudioSupport::PreviewOnly,
              "Correct but slow. Ideal as a comparison reference, unusable as an interactive UI host."},
-            {"CANVAS", "canvas", "HTML Canvas 2D", BackendEditorSupport::RuntimeOnly,
+            {"CANVAS", "canvas", "HTML Canvas 2D", BackendStudioSupport::RuntimeOnly,
              "Emscripten only; there is no desktop editor process to host."},
-            {"ASCII", "ascii", "ASCII glyph grid", BackendEditorSupport::RuntimeOnly,
+            {"ASCII", "ascii", "ASCII glyph grid", BackendStudioSupport::RuntimeOnly,
              "A deliberately lossy presentation filter. Meaningful for a game, not for a UI."},
-            {"DX3", "dx3", "DirectX 3 (DirectDraw)", BackendEditorSupport::RuntimeOnly,
+            {"DX3", "dx3", "DirectX 3 (DirectDraw)", BackendStudioSupport::RuntimeOnly,
              "Historical backend. Exactly the case the separate player process exists for."},
-            {"HEADLESS", "headless", "Headless (no GPU or window)", BackendEditorSupport::RuntimeOnly,
+            {"HEADLESS", "headless", "Headless (no GPU or window)", BackendStudioSupport::RuntimeOnly,
              "No window by definition. Used by the editor's own automated tests."},
         };
         return backends;

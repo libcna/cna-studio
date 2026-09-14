@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Project/BuildRunner.hpp"
+#include "CNA/Studio/Project/BuildRunner.hpp"
 
 #include <cstdlib>
 #include <deque>
@@ -8,7 +8,7 @@
 #include <string>
 #include <system_error>
 
-#include "CNA/Editor/Project/Project.hpp"
+#include "CNA/Studio/Project/Project.hpp"
 
 #if defined(_WIN32)
 #    include <windows.h>
@@ -19,7 +19,7 @@
 #    include <unistd.h>
 #endif
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -355,14 +355,14 @@ namespace CNA::Editor
         std::filesystem::create_directories(buildDirectory, errorCode);
         if (errorCode) { return fail("cannot create '" + buildDirectory + "': " + errorCode.message()); }
 
-        logPath_ = (std::filesystem::path{buildDirectory} / "cna-editor-build.log").generic_string();
+        logPath_ = (std::filesystem::path{buildDirectory} / "cna-studio-build.log").generic_string();
 
         // Truncated at the start of a build rather than appended to for ever. A log holding four
         // builds is one nobody can tell apart; each step then appends to this one.
         {
             std::ofstream truncate{logPath_, std::ios::binary | std::ios::trunc};
             if (!truncate) { return fail("cannot write '" + logPath_ + "'"); }
-            truncate << "cna-editor build: " << request.targetPlatform << ", "
+            truncate << "cna-studio build: " << request.targetPlatform << ", "
                      << request.configuration << "\n";
             for (const BuildStep& step : steps_) { truncate << "  " << step.toCommandLine() << "\n"; }
             truncate << "\n";

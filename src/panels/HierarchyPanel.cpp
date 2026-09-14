@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/HierarchyPanel.hpp"
+#include "CNA/Studio/Panels/HierarchyPanel.hpp"
 
 #include <memory>
 #include <optional>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/PrefabWorkflow.hpp"
-#include "CNA/Editor/Scene/PrefabCommands.hpp"
-#include "CNA/Editor/Scene/PrefabDocument.hpp"
-#include "CNA/Editor/Scene/SceneCommands.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/PrefabWorkflow.hpp"
+#include "CNA/Studio/Scene/PrefabCommands.hpp"
+#include "CNA/Studio/Scene/PrefabDocument.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void HierarchyPanel::draw()
     {
@@ -24,8 +24,8 @@ namespace CNA::Editor
 
         if (ui_.button("Add Entity"))
         {
-            EditorEntity entity{Uuid::generate(), "Entity"};
-            EditorComponent transform{BuiltinComponentIds::kTransform};
+            StudioEntity entity{Uuid::generate(), "Entity"};
+            StudioComponent transform{BuiltinComponentIds::kTransform};
             if (const ComponentDescriptor* descriptor =
                     context_.getComponentRegistry().find(BuiltinComponentIds::kTransform))
             {
@@ -50,7 +50,7 @@ namespace CNA::Editor
 
     void HierarchyPanel::drawNode(const Uuid& entityId)
     {
-        const EditorEntity* entity = context_.getScene().findEntity(entityId);
+        const StudioEntity* entity = context_.getScene().findEntity(entityId);
         if (entity == nullptr) { return; }
 
         const std::vector<Uuid> children = context_.getScene().getChildren(entityId);
@@ -153,7 +153,7 @@ namespace CNA::Editor
 
     void HierarchyPanel::beginRename(const Uuid& entityId)
     {
-        const EditorEntity* entity = context_.getScene().findEntity(entityId);
+        const StudioEntity* entity = context_.getScene().findEntity(entityId);
         if (entity == nullptr) { return; }
 
         renamingEntity_ = entityId;
@@ -177,7 +177,7 @@ namespace CNA::Editor
 
         // An empty name is a slip, not an instruction: an unnamed row in the hierarchy is
         // unusable, and the old name is still right there to keep.
-        const EditorEntity* entity = context_.getScene().findEntity(entityId);
+        const StudioEntity* entity = context_.getScene().findEntity(entityId);
         if (entity == nullptr || renameBuffer_.empty() || renameBuffer_ == entity->getName()) { return; }
 
         context_.execute(std::make_unique<RenameEntityCommand>(context_.getScene(), entityId, renameBuffer_));
@@ -212,7 +212,7 @@ namespace CNA::Editor
                     return;
                 }
 
-                const EditorEntity* entity = context_.getScene().findEntity(action.entityId);
+                const StudioEntity* entity = context_.getScene().findEntity(action.entityId);
                 if (entity == nullptr || entity->getParentId() == action.parentId) { return; }
 
                 context_.execute(std::make_unique<ReparentEntityCommand>(

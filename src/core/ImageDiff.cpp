@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/ImageDiff.hpp"
+#include "CNA/Studio/Core/ImageDiff.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -81,7 +81,7 @@ namespace CNA::Editor
         if (maxX >= 0)
         {
             difference.boundingBox =
-                EditorRectangle{minX, minY, maxX - minX + 1, maxY - minY + 1};
+                StudioRectangle{minX, minY, maxX - minX + 1, maxY - minY + 1};
         }
         return difference;
     }

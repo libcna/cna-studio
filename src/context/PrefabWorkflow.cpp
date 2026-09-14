@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/PrefabWorkflow.hpp"
+#include "CNA/Studio/PrefabWorkflow.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <unordered_map>
 #include <system_error>
 
-#include "CNA/Editor/Scene/PrefabCommands.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/PrefabCommands.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -63,14 +63,14 @@ namespace CNA::Editor
         }
 
         /** @brief Collects @p rootId and every descendant from @p scene, parents first. */
-        std::vector<EditorEntity> copySubtree(const SceneDocument& scene, const Uuid& rootId)
+        std::vector<StudioEntity> copySubtree(const SceneDocument& scene, const Uuid& rootId)
         {
             std::vector<Uuid> ids{rootId};
-            std::vector<EditorEntity> entities;
+            std::vector<StudioEntity> entities;
 
             for (std::size_t index = 0; index < ids.size(); ++index)
             {
-                const EditorEntity* entity = scene.findEntity(ids[index]);
+                const StudioEntity* entity = scene.findEntity(ids[index]);
                 if (entity == nullptr) { continue; }
 
                 entities.push_back(*entity);
@@ -86,7 +86,7 @@ namespace CNA::Editor
                                              std::string relativeDirectory)
         : scene_(&scene), assets_(&assets), rootId_(rootId)
     {
-        const EditorEntity* root = scene.findEntity(rootId);
+        const StudioEntity* root = scene.findEntity(rootId);
         if (root == nullptr)
         {
             error_ = "no such entity";
@@ -136,15 +136,15 @@ namespace CNA::Editor
         // The original becomes an instance. Creating a prefab that left the entity it was made from
         // unlinked would mean the first edit afterwards silently did not reach the prefab, which is
         // how users learn not to trust the feature.
-        for (const EditorEntity& captured : prefab_.getEntities())
+        for (const StudioEntity& captured : prefab_.getEntities())
         {
-            EditorEntity* live = scene_->findEntity(captured.getId());
+            StudioEntity* live = scene_->findEntity(captured.getId());
             if (live == nullptr) { continue; }
 
-            live->setEditorState(PrefabKeys::kPrefabEntity, PropertyValue{captured.getId().toString()});
+            live->setStudioState(PrefabKeys::kPrefabEntity, PropertyValue{captured.getId().toString()});
             if (captured.getId() == rootId_)
             {
-                live->setEditorState(PrefabKeys::kPrefabAsset, PropertyValue{assetId_.toString()});
+                live->setStudioState(PrefabKeys::kPrefabAsset, PropertyValue{assetId_.toString()});
             }
         }
     }
@@ -156,7 +156,7 @@ namespace CNA::Editor
         // The subtree goes back exactly as it was, which is what removes the links -- rather than
         // erasing the two keys by name and hoping nothing else touched them meanwhile.
         scene_->removeEntityRecursive(rootId_);
-        for (const EditorEntity& entity : before_) { scene_->addEntity(entity); }
+        for (const StudioEntity& entity : before_) { scene_->addEntity(entity); }
 
         assets_->removeRecord(assetId_);
 
@@ -219,10 +219,10 @@ namespace CNA::Editor
         // entity by that name -- so every entity in the instance would read back as one the prefab
         // does not describe. Map them back through the links they already carry.
         std::unordered_map<Uuid, Uuid> prefabIdByInstanceId;
-        for (const EditorEntity& entity : after_.getEntities())
+        for (const StudioEntity& entity : after_.getEntities())
         {
-            const auto link = entity.getEditorState().find(PrefabKeys::kPrefabEntity);
-            const Uuid linked = link != entity.getEditorState().end()
+            const auto link = entity.getStudioState().find(PrefabKeys::kPrefabEntity);
+            const Uuid linked = link != entity.getStudioState().end()
                                     ? Uuid::parse(link->second.get<std::string>())
                                     : Uuid{};
 
@@ -241,8 +241,8 @@ namespace CNA::Editor
             newLinks_.emplace_back(entity.getId(), fresh);
         }
 
-        std::vector<EditorEntity> mapped = after_.getEntities();
-        for (EditorEntity& entity : mapped)
+        std::vector<StudioEntity> mapped = after_.getEntities();
+        for (StudioEntity& entity : mapped)
         {
             entity.setId(prefabIdByInstanceId.at(entity.getId()));
 
@@ -251,8 +251,8 @@ namespace CNA::Editor
 
             // A prefab does not carry instance bookkeeping. Leaving it in would make every future
             // instance born claiming to be an instance of something else (D-07).
-            entity.removeEditorState(PrefabKeys::kPrefabEntity);
-            entity.removeEditorState(PrefabKeys::kPrefabAsset);
+            entity.removeStudioState(PrefabKeys::kPrefabEntity);
+            entity.removeStudioState(PrefabKeys::kPrefabAsset);
         }
         after_.setEntities(std::move(mapped));
 
@@ -270,9 +270,9 @@ namespace CNA::Editor
 
         for (const auto& [instanceId, prefabEntityId] : newLinks_)
         {
-            if (EditorEntity* entity = scene_->findEntity(instanceId))
+            if (StudioEntity* entity = scene_->findEntity(instanceId))
             {
-                entity->setEditorState(PrefabKeys::kPrefabEntity, PropertyValue{prefabEntityId.toString()});
+                entity->setStudioState(PrefabKeys::kPrefabEntity, PropertyValue{prefabEntityId.toString()});
             }
         }
     }
@@ -284,9 +284,9 @@ namespace CNA::Editor
         for (const auto& [instanceId, prefabEntityId] : newLinks_)
         {
             (void)prefabEntityId;
-            if (EditorEntity* entity = scene_->findEntity(instanceId))
+            if (StudioEntity* entity = scene_->findEntity(instanceId))
             {
-                entity->removeEditorState(PrefabKeys::kPrefabEntity);
+                entity->removeStudioState(PrefabKeys::kPrefabEntity);
             }
         }
     }

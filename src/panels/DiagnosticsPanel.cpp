@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/DiagnosticsPanel.hpp"
+#include "CNA/Studio/Panels/DiagnosticsPanel.hpp"
 
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void DiagnosticsPanel::draw()
     {
         if (!ui_.beginPanel("Diagnostics", DockSide::Bottom)) { ui_.endPanel(); return; }
 
-        ui_.text(std::string{"Editor UI: "} + ui_.getBackendName());
+        ui_.text(std::string{"Studio UI: "} + ui_.getBackendName());
         ui_.text(std::string{"Viewport: "} + actions_.getViewport().getBackendName());
 
         // Which effect the 3D model pass got (ED-402). Reported rather than assumed: PbrEffect is
@@ -98,9 +98,9 @@ namespace CNA::Editor
             const char* support = "runtime only";
             switch (backend.support)
             {
-                case BackendEditorSupport::EditorSupported: support = "editor      "; break;
-                case BackendEditorSupport::PreviewOnly: support = "preview only"; break;
-                case BackendEditorSupport::RuntimeOnly: support = "runtime only"; break;
+                case BackendStudioSupport::StudioSupported: support = "editor      "; break;
+                case BackendStudioSupport::PreviewOnly: support = "preview only"; break;
+                case BackendStudioSupport::RuntimeOnly: support = "runtime only"; break;
             }
             ui_.text(std::string{"    "} + support + "  " + backend.commandLineName + "  ("
                      + backend.displayName + ")");

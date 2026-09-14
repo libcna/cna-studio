@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/MissingReferences.hpp"
+#include "CNA/Studio/Scene/MissingReferences.hpp"
 
 #include <algorithm>
 
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const char* toString(MissingReference::Reason reason)
     {
@@ -22,9 +22,9 @@ namespace CNA::Editor
     {
         std::vector<MissingReference> missing;
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
-            for (const EditorComponent& component : entity.getComponents())
+            for (const StudioComponent& component : entity.getComponents())
             {
                 // The entity's *stored* properties, not its descriptor's. A component whose plugin
                 // failed to load keeps its data and gets its references checked like any other --

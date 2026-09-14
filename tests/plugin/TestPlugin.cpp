@@ -12,29 +12,29 @@
  * that `shutdown` cleaned up.
  */
 
-#include "CNA/Editor/EditorContext.hpp"
-#include "CNA/Editor/Plugins/Plugin.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Plugins/Plugin.hpp"
 
 namespace
 {
     /** @brief The component this plugin adds. Named so a test can look for exactly it. */
     constexpr const char* kComponentTypeId = "Test.PluginComponent";
 
-    class TestPlugin final : public CNA::Editor::EditorPlugin
+    class TestPlugin final : public CNA::Studio::StudioPlugin
     {
     public:
-        void initialize(CNA::Editor::EditorContext& context) override
+        void initialize(CNA::Studio::StudioContext& context) override
         {
-            CNA::Editor::ComponentDescriptor descriptor;
+            CNA::Studio::ComponentDescriptor descriptor;
             descriptor.typeId = kComponentTypeId;
             descriptor.displayName = "Plugin Component";
             descriptor.category = "Test";
 
-            CNA::Editor::PropertyDescriptor property;
+            CNA::Studio::PropertyDescriptor property;
             property.name = "value";
             property.displayName = "Value";
-            property.type = CNA::Editor::PropertyType::Integer;
-            property.defaultValue = CNA::Editor::PropertyValue{static_cast<std::int64_t>(7)};
+            property.type = CNA::Studio::PropertyType::Integer;
+            property.defaultValue = CNA::Studio::PropertyValue{static_cast<std::int64_t>(7)};
             descriptor.properties = {property};
 
             context.getComponentRegistry().registerComponent(std::move(descriptor));
@@ -42,24 +42,24 @@ namespace
             // A panel and a menu command (ED-412), so a test can check the two extension points
             // that needed a registry of their own. Both are keyed by this plugin's id, which is
             // how unloading takes exactly these away and nothing else.
-            CNA::Editor::PluginPanel panel;
+            CNA::Studio::PluginPanel panel;
             panel.ownerId = getId();
             panel.title = "Test Plugin Panel";
-            panel.preferredSide = CNA::Editor::DockSide::Right;
-            panel.draw = [](CNA::Editor::EditorUi& ui, CNA::Editor::EditorContext&)
+            panel.preferredSide = CNA::Studio::DockSide::Right;
+            panel.draw = [](CNA::Studio::StudioUi& ui, CNA::Studio::StudioContext&)
             { ui.text("Drawn by the test plugin."); };
             context.getPluginExtensions().addPanel(std::move(panel));
 
-            CNA::Editor::PluginMenuCommand command;
+            CNA::Studio::PluginMenuCommand command;
             command.ownerId = getId();
             command.menu = "Tools";
             command.label = "Test Plugin Command";
-            command.invoke = [](CNA::Editor::EditorContext& target)
-            { target.log(CNA::Editor::LogSeverity::Info, "Test plugin command ran."); };
+            command.invoke = [](CNA::Studio::StudioContext& target)
+            { target.log(CNA::Studio::LogSeverity::Info, "Test plugin command ran."); };
             context.getPluginExtensions().addMenuCommand(std::move(command));
         }
 
-        void shutdown(CNA::Editor::EditorContext& context) override
+        void shutdown(CNA::Studio::StudioContext& context) override
         {
             // Everything initialize() registered, removed. The host requires this rather than
             // hoping for it: the descriptor holds strings and defaults allocated in *this*
@@ -79,13 +79,13 @@ namespace
 
 extern "C"
 {
-    CNA::Editor::EditorPlugin* cnaEditorCreatePlugin(int editorApiVersion)
+    CNA::Studio::StudioPlugin* cnaStudioCreatePlugin(int studioApiVersion)
     {
         // The plugin's own refusal, which is a better check than the manifest's: this side knows
         // what it needs, and a manifest can be edited to claim anything.
-        if (editorApiVersion != CNA::Editor::kEditorPluginApiVersion) { return nullptr; }
+        if (studioApiVersion != CNA::Studio::kStudioPluginApiVersion) { return nullptr; }
         return new TestPlugin{};
     }
 
-    void cnaEditorDestroyPlugin(CNA::Editor::EditorPlugin* plugin) { delete plugin; }
+    void cnaStudioDestroyPlugin(CNA::Studio::StudioPlugin* plugin) { delete plugin; }
 }

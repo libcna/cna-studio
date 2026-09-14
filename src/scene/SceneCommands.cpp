@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 
 #include <unordered_map>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
         /** @brief Finds a component, creating nothing. Returns nullptr when entity or type is absent. */
-        EditorComponent* findComponent(SceneDocument& document, const Uuid& entityId, std::string_view typeId)
+        StudioComponent* findComponent(SceneDocument& document, const Uuid& entityId, std::string_view typeId)
         {
-            EditorEntity* entity = document.findEntity(entityId);
+            StudioEntity* entity = document.findEntity(entityId);
             return entity != nullptr ? entity->findComponent(typeId) : nullptr;
         }
     }
 
-    CreateEntityCommand::CreateEntityCommand(SceneDocument& document, EditorEntity entity)
+    CreateEntityCommand::CreateEntityCommand(SceneDocument& document, StudioEntity entity)
         : document_(&document), entity_(std::move(entity))
     {
         // The id is assigned now rather than at execute() time so that the caller can select the
@@ -47,7 +47,7 @@ namespace CNA::Editor
     DeleteEntityCommand::DeleteEntityCommand(SceneDocument& document, Uuid entityId)
         : document_(&document), entityId_(entityId)
     {
-        if (const EditorEntity* entity = document_->findEntity(entityId_))
+        if (const StudioEntity* entity = document_->findEntity(entityId_))
         {
             entityName_ = entity->getName();
         }
@@ -62,7 +62,7 @@ namespace CNA::Editor
     {
         // removeEntityRecursive returns parents first, so re-adding in order never leaves a child
         // pointing at a parent that is not back yet.
-        for (const EditorEntity& entity : removed_) { document_->addEntity(entity); }
+        for (const StudioEntity& entity : removed_) { document_->addEntity(entity); }
         removed_.clear();
     }
 
@@ -74,7 +74,7 @@ namespace CNA::Editor
     DuplicateEntityCommand::DuplicateEntityCommand(SceneDocument& document, Uuid sourceId)
         : document_(&document), sourceId_(sourceId)
     {
-        const EditorEntity* source = document_->findEntity(sourceId_);
+        const StudioEntity* source = document_->findEntity(sourceId_);
         if (source == nullptr) { return; }
 
         sourceName_ = source->getName();
@@ -86,10 +86,10 @@ namespace CNA::Editor
 
         for (std::size_t index = 0; index < pending.size(); ++index)
         {
-            const EditorEntity* original = document_->findEntity(pending[index]);
+            const StudioEntity* original = document_->findEntity(pending[index]);
             if (original == nullptr) { continue; }
 
-            EditorEntity clone = *original;
+            StudioEntity clone = *original;
             const Uuid cloneId = Uuid::generate();
             idMap.emplace(original->getId(), cloneId);
             clone.setId(cloneId);
@@ -124,7 +124,7 @@ namespace CNA::Editor
 
     void DuplicateEntityCommand::execute()
     {
-        for (const EditorEntity& clone : clones_) { document_->addEntity(clone); }
+        for (const StudioEntity& clone : clones_) { document_->addEntity(clone); }
     }
 
     void DuplicateEntityCommand::undo()
@@ -142,17 +142,17 @@ namespace CNA::Editor
     RenameEntityCommand::RenameEntityCommand(SceneDocument& document, Uuid entityId, std::string newName)
         : document_(&document), entityId_(entityId), newName_(std::move(newName))
     {
-        if (const EditorEntity* entity = document_->findEntity(entityId_)) { oldName_ = entity->getName(); }
+        if (const StudioEntity* entity = document_->findEntity(entityId_)) { oldName_ = entity->getName(); }
     }
 
     void RenameEntityCommand::execute()
     {
-        if (EditorEntity* entity = document_->findEntity(entityId_)) { entity->setName(newName_); }
+        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->setName(newName_); }
     }
 
     void RenameEntityCommand::undo()
     {
-        if (EditorEntity* entity = document_->findEntity(entityId_)) { entity->setName(oldName_); }
+        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->setName(oldName_); }
     }
 
     std::string RenameEntityCommand::getDescription() const
@@ -165,7 +165,7 @@ namespace CNA::Editor
         return "rename:" + entityId_.toString();
     }
 
-    bool RenameEntityCommand::mergeWith(const EditorCommand& newer)
+    bool RenameEntityCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const RenameEntityCommand*>(&newer);
         if (other == nullptr || other->entityId_ != entityId_) { return false; }
@@ -177,7 +177,7 @@ namespace CNA::Editor
     ReparentEntityCommand::ReparentEntityCommand(SceneDocument& document, Uuid entityId, Uuid newParentId)
         : document_(&document), entityId_(entityId), newParentId_(newParentId)
     {
-        if (const EditorEntity* entity = document_->findEntity(entityId_)) { oldParentId_ = entity->getParentId(); }
+        if (const StudioEntity* entity = document_->findEntity(entityId_)) { oldParentId_ = entity->getParentId(); }
     }
 
     void ReparentEntityCommand::execute()
@@ -192,7 +192,7 @@ namespace CNA::Editor
 
     std::string ReparentEntityCommand::getDescription() const
     {
-        const EditorEntity* entity = document_->findEntity(entityId_);
+        const StudioEntity* entity = document_->findEntity(entityId_);
         const std::string name = entity != nullptr ? entity->getName() : entityId_.toString();
         return newParentId_.isValid() ? "Reparent '" + name + "'" : "Unparent '" + name + "'";
     }
@@ -208,7 +208,7 @@ namespace CNA::Editor
           propertyName_(std::move(propertyName)),
           newValue_(std::move(newValue))
     {
-        if (const EditorComponent* component = findComponent(*document_, entityId_, componentTypeId_))
+        if (const StudioComponent* component = findComponent(*document_, entityId_, componentTypeId_))
         {
             hadOldValue_ = component->hasProperty(propertyName_);
             oldValue_ = component->getProperty(propertyName_);
@@ -217,7 +217,7 @@ namespace CNA::Editor
 
     void SetPropertyCommand::execute()
     {
-        if (EditorComponent* component = findComponent(*document_, entityId_, componentTypeId_))
+        if (StudioComponent* component = findComponent(*document_, entityId_, componentTypeId_))
         {
             component->setProperty(propertyName_, newValue_);
         }
@@ -225,7 +225,7 @@ namespace CNA::Editor
 
     void SetPropertyCommand::undo()
     {
-        EditorComponent* component = findComponent(*document_, entityId_, componentTypeId_);
+        StudioComponent* component = findComponent(*document_, entityId_, componentTypeId_);
         if (component == nullptr) { return; }
 
         // Restoring "the property was not present at all" matters: a component loaded from a
@@ -245,7 +245,7 @@ namespace CNA::Editor
         return "property:" + entityId_.toString() + ":" + componentTypeId_ + ":" + propertyName_;
     }
 
-    bool SetPropertyCommand::mergeWith(const EditorCommand& newer)
+    bool SetPropertyCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const SetPropertyCommand*>(&newer);
         if (other == nullptr) { return false; }
@@ -262,9 +262,9 @@ namespace CNA::Editor
     namespace
     {
         /** @brief Returns @p entityId's transform component, or nullptr. */
-        EditorComponent* findTransform(SceneDocument& document, const Uuid& entityId)
+        StudioComponent* findTransform(SceneDocument& document, const Uuid& entityId)
         {
-            EditorEntity* entity = document.findEntity(entityId);
+            StudioEntity* entity = document.findEntity(entityId);
             if (entity == nullptr) { return nullptr; }
             return entity->findComponent(BuiltinComponentIds::kTransform);
         }
@@ -287,19 +287,19 @@ namespace CNA::Editor
         // else.
         for (const EntityTransformEdit& edit : edits_)
         {
-            const EditorComponent* transform = findTransform(*document_, edit.entityId);
+            const StudioComponent* transform = findTransform(*document_, edit.entityId);
             if (transform == nullptr) { continue; }
 
             EntityTransformEdit old;
             old.entityId = edit.entityId;
-            if (edit.position) { old.position = transform->getProperty("position").get<EditorVector3>(); }
+            if (edit.position) { old.position = transform->getProperty("position").get<StudioVector3>(); }
             if (edit.rotation)
             {
-                old.rotation = transform->getProperty("rotation").get<EditorQuaternion>();
+                old.rotation = transform->getProperty("rotation").get<StudioQuaternion>();
             }
             if (edit.scale)
             {
-                old.scale = transform->getProperty("scale").get<EditorVector3>(EditorVector3{1.0f, 1.0f, 1.0f});
+                old.scale = transform->getProperty("scale").get<StudioVector3>(StudioVector3{1.0f, 1.0f, 1.0f});
             }
             oldValues_.push_back(std::move(old));
         }
@@ -311,7 +311,7 @@ namespace CNA::Editor
 
         for (const EntityTransformEdit& edit : edits_)
         {
-            EditorComponent* transform = findTransform(*document_, edit.entityId);
+            StudioComponent* transform = findTransform(*document_, edit.entityId);
             if (transform == nullptr) { continue; }
 
             if (edit.position) { transform->setProperty("position", PropertyValue{*edit.position}); }
@@ -324,7 +324,7 @@ namespace CNA::Editor
     {
         for (const EntityTransformEdit& old : oldValues_)
         {
-            EditorComponent* transform = findTransform(*document_, old.entityId);
+            StudioComponent* transform = findTransform(*document_, old.entityId);
             if (transform == nullptr) { continue; }
 
             if (old.position) { transform->setProperty("position", PropertyValue{*old.position}); }
@@ -338,7 +338,7 @@ namespace CNA::Editor
         return "Transform " + std::to_string(edits_.size()) + " entities";
     }
 
-    bool TransformEntitiesCommand::mergeWith(const EditorCommand& newer)
+    bool TransformEntitiesCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const TransformEntitiesCommand*>(&newer);
         if (other == nullptr) { return false; }
@@ -359,9 +359,9 @@ namespace CNA::Editor
         // The targets are found once, at construction, and held. Re-scanning in execute() would
         // make redo rewrite a different set than the one undo restored, because by then the
         // properties no longer hold the old id.
-        for (const EditorEntity& entity : document_->getEntities())
+        for (const StudioEntity& entity : document_->getEntities())
         {
-            for (const EditorComponent& component : entity.getComponents())
+            for (const StudioComponent& component : entity.getComponents())
             {
                 for (const auto& [name, value] : component.getProperties())
                 {
@@ -378,7 +378,7 @@ namespace CNA::Editor
     {
         for (const Target& target : targets_)
         {
-            if (EditorComponent* component =
+            if (StudioComponent* component =
                     findComponent(*document_, target.entityId, target.componentTypeId))
             {
                 component->setProperty(target.propertyName,
@@ -391,7 +391,7 @@ namespace CNA::Editor
     {
         for (const Target& target : targets_)
         {
-            if (EditorComponent* component =
+            if (StudioComponent* component =
                     findComponent(*document_, target.entityId, target.componentTypeId))
             {
                 component->setProperty(target.propertyName,
@@ -414,11 +414,11 @@ namespace CNA::Editor
         : document_(&document), entityId_(entityId), componentTypeId_(std::move(componentTypeId))
     {
         const ComponentDescriptor* descriptor = registry.find(componentTypeId_);
-        const EditorEntity* entity = document_->findEntity(entityId_);
+        const StudioEntity* entity = document_->findEntity(entityId_);
         if (descriptor == nullptr || entity == nullptr) { return; }
         if (descriptor->unique && entity->findComponent(componentTypeId_) != nullptr) { return; }
 
-        prototype_ = EditorComponent{componentTypeId_};
+        prototype_ = StudioComponent{componentTypeId_};
         prototype_.applyDefaults(*descriptor);
         valid_ = true;
     }
@@ -426,13 +426,13 @@ namespace CNA::Editor
     void AddComponentCommand::execute()
     {
         if (!valid_) { return; }
-        if (EditorEntity* entity = document_->findEntity(entityId_)) { entity->addComponent(prototype_); }
+        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->addComponent(prototype_); }
     }
 
     void AddComponentCommand::undo()
     {
         if (!valid_) { return; }
-        EditorEntity* entity = document_->findEntity(entityId_);
+        StudioEntity* entity = document_->findEntity(entityId_);
         if (entity == nullptr) { return; }
 
         // Remove the *last* instance of the type, which is the one execute() appended. For a
@@ -459,7 +459,7 @@ namespace CNA::Editor
                                                    std::string componentTypeId)
         : document_(&document), entityId_(entityId), componentTypeId_(std::move(componentTypeId))
     {
-        const EditorEntity* entity = document_->findEntity(entityId_);
+        const StudioEntity* entity = document_->findEntity(entityId_);
         if (entity == nullptr) { return; }
 
         const ComponentDescriptor* descriptor = registry.find(componentTypeId_);
@@ -479,11 +479,11 @@ namespace CNA::Editor
                                                    std::size_t componentIndex)
         : document_(&document), entityId_(entityId)
     {
-        const EditorEntity* entity = document_->findEntity(entityId_);
+        const StudioEntity* entity = document_->findEntity(entityId_);
         if (entity == nullptr) { return; }
         if (componentIndex >= entity->getComponents().size()) { return; }
 
-        const EditorComponent& component = entity->getComponents()[componentIndex];
+        const StudioComponent& component = entity->getComponents()[componentIndex];
         componentTypeId_ = component.getTypeId();
 
         const ComponentDescriptor* descriptor = registry.find(componentTypeId_);
@@ -497,17 +497,17 @@ namespace CNA::Editor
     void RemoveComponentCommand::execute()
     {
         if (!valid_) { return; }
-        if (EditorEntity* entity = document_->findEntity(entityId_)) { entity->removeComponentAt(removedIndex_); }
+        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->removeComponentAt(removedIndex_); }
     }
 
     void RemoveComponentCommand::undo()
     {
         if (!valid_) { return; }
-        EditorEntity* entity = document_->findEntity(entityId_);
+        StudioEntity* entity = document_->findEntity(entityId_);
         if (entity == nullptr) { return; }
 
         // Restore at the original index so the inspector's component order survives undo.
-        std::vector<EditorComponent>& components = entity->getComponents();
+        std::vector<StudioComponent>& components = entity->getComponents();
         const std::size_t index = std::min(removedIndex_, components.size());
         components.insert(components.begin() + static_cast<std::ptrdiff_t>(index), removed_);
     }
@@ -518,7 +518,7 @@ namespace CNA::Editor
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     SetSceneEnvironmentCommand::SetSceneEnvironmentCommand(SceneDocument& document,
                                                            SceneEnvironment environment,
@@ -544,7 +544,7 @@ namespace CNA::Editor
         return "scene-environment:" + fieldName_;
     }
 
-    bool SetSceneEnvironmentCommand::mergeWith(const EditorCommand& newer)
+    bool SetSceneEnvironmentCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const SetSceneEnvironmentCommand*>(&newer);
         if (other == nullptr) { return false; }

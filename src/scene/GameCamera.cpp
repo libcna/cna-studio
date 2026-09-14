@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/GameCamera.hpp"
+#include "CNA/Studio/Scene/GameCamera.hpp"
 
 #include <optional>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
-#include "CNA/Editor/Scene/SceneTransform.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
         /** @brief Returns the scene's primary camera component, or nullptr. */
-        const EditorEntity* findPrimaryCamera(const SceneDocument& scene)
+        const StudioEntity* findPrimaryCamera(const SceneDocument& scene)
         {
-            const EditorEntity* firstCamera = nullptr;
+            const StudioEntity* firstCamera = nullptr;
 
-            for (const EditorEntity& entity : scene.getEntities())
+            for (const StudioEntity& entity : scene.getEntities())
             {
                 // A disabled entity is not in the game at all, so its camera is not either.
                 if (!entity.isEnabled()) { continue; }
 
-                const EditorComponent* camera = entity.findComponent(BuiltinComponentIds::kCamera);
+                const StudioComponent* camera = entity.findComponent(BuiltinComponentIds::kCamera);
                 if (camera == nullptr) { continue; }
 
                 if (camera->getProperty("isPrimary").get<bool>(true)) { return &entity; }
@@ -35,21 +35,21 @@ namespace CNA::Editor
         }
     }
 
-    GameView computeGameView(const SceneDocument& scene, const EditorVector2& viewportSize)
+    GameView computeGameView(const SceneDocument& scene, const StudioVector2& viewportSize)
     {
         GameView view;
         view.camera.setViewportSize(viewportSize);
 
-        const EditorEntity* entity = findPrimaryCamera(scene);
+        const StudioEntity* entity = findPrimaryCamera(scene);
         if (entity == nullptr) { return view; }
 
-        const EditorComponent* camera = entity->findComponent(BuiltinComponentIds::kCamera);
+        const StudioComponent* camera = entity->findComponent(BuiltinComponentIds::kCamera);
         view.cameraId = entity->getId();
-        view.clearColor = camera->getProperty("clearColor").get<EditorColor>(view.clearColor);
+        view.clearColor = camera->getProperty("clearColor").get<StudioColor>(view.clearColor);
 
         if (const std::optional<WorldTransform> world = computeWorldTransform(scene, entity->getId()))
         {
-            view.camera.setCenter(EditorVector2{world->position.x, world->position.y});
+            view.camera.setCenter(StudioVector2{world->position.x, world->position.y});
         }
 
         // Height, not width: `orthographicSize` is the visible height in world units, so the zoom

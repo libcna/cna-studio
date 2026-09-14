@@ -1,4 +1,4 @@
-# CNA Editor File Formats
+# CNA Studio File Formats
 
 Every editor-authored file is JSON. That is a deliberate choice for the authoring formats, and it
 is not a claim about the *runtime* formats — the content builder is free to emit something compact
@@ -101,7 +101,7 @@ mismatch is worth surfacing.
 
 ### `defaultGraphicsBackend`
 
-The lower-case command-line name of a CNA backend (`cna-editor --list-backends` prints them). This
+The lower-case command-line name of a CNA backend (`cna-studio --list-backends` prints them). This
 selects which **player build** the Play button launches, not anything about the editor: CNA fixes
 its backend at compile time, so the editor binary is bound to whatever it was built against. An
 unrecognised value loads with a warning rather than failing.
@@ -166,13 +166,13 @@ One per scene. Lives under `sceneDirectory` by convention, but any path works.
 | `enabled` | bool | `true` | Omitted when true |
 | `sortOrder` | int | `0` | Sibling ordering; omitted when zero |
 | `components` | object | `{}` | Keyed by component type id |
-| `editorState` | object | absent | Editor-only, never seen by the runtime |
+| `studioState` | object | absent | Studio-only, never seen by the runtime |
 
 `parent` is stored on the child rather than as a child list on the parent, because every operation
 the editor performs — reparent, delete, "which entities are roots" — is cheaper and harder to
 corrupt that way.
 
-### `editorState`
+### `studioState`
 
 Cosmetic, editor-only data: tree expansion, layer colour, notes, icon overrides. Keeping it in a
 named sub-object means the runtime scene compiler drops it wholesale rather than needing to know
@@ -290,7 +290,7 @@ first — and the way that disagreement surfaces is a property reverting to a va
 chose, which is the worst thing a prefab system can do. It also means prefabs added **no** new field
 to the scene format: a scene written before they existed is still a valid scene.
 
-What an instance does store is the link, in `editorState` because it is editor bookkeeping rather
+What an instance does store is the link, in `studioState` because it is editor bookkeeping rather
 than something the game runs (D-07):
 
 | Key | On | Meaning |
@@ -362,7 +362,7 @@ permanently break every reference to it, so the database reports it as missing i
 ## `.cnarecovery`
 
 Not an authoring format. One file per unsaved scene, under the user's *state* directory
-(`$XDG_STATE_HOME/cna-editor/recovery`, or the platform equivalent), written every
+(`$XDG_STATE_HOME/cna-studio/recovery`, or the platform equivalent), written every
 `--autosave=SECONDS` while the open document differs from its file and deleted the moment it
 matches again. Nothing in a project ever references one, and none is ever written beside a project.
 
@@ -408,7 +408,7 @@ session's unsaved hours, and they share a file name.
 
 ---
 
-## Editor ↔ player wire protocol
+## Studio ↔ player wire protocol
 
 One JSON object per line over a stream socket. The framing is the newline, so a message body
 contains exactly one and it is last.
@@ -432,7 +432,7 @@ contains exactly one and it is last.
 
 ### Messages
 
-**Editor → player:** `hello`, `loadScene`, `reloadAsset`, `setProperty`, `pause`, `resume`,
+**Studio → player:** `hello`, `loadScene`, `reloadAsset`, `setProperty`, `pause`, `resume`,
 `stepFrame`, `selectEntity`, `screenshot`, `quit`.
 
 **Player → editor:** `ready`, `reportException`, `reportLog`, `reportFrameStats`,
@@ -520,7 +520,7 @@ existence are all settled first, and rejection is always reported rather than fa
 | Changing the meaning of an existing value | **Yes**, plus a migration |
 
 Both halves are implemented. Gating refuses a file from the future and one with no version at all;
-the migration chain (`CNA/Editor/Core/FormatMigration.hpp`) upgrades one from the past.
+the migration chain (`CNA/Studio/Core/FormatMigration.hpp`) upgrades one from the past.
 
 A chain is a list of **single-version steps**: 3 becomes 4, then 4 becomes 5. No step knows about
 more than one transition, which is what keeps the twelfth migration the same size as the first —

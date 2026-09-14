@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Scene/SceneValidation.hpp"
+#include "CNA/Studio/Scene/SceneValidation.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
 
-#include "CNA/Editor/Scene/BuiltinComponents.hpp"
-#include "CNA/Editor/Scene/SpriteAnimation.hpp"
-#include "CNA/Editor/Scene/Tilemap.hpp"
-#include "CNA/Editor/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SpriteAnimation.hpp"
+#include "CNA/Studio/Scene/Tilemap.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -19,7 +19,7 @@ namespace CNA::Editor
 
         SceneIssue makeIssue(SceneIssue::Severity severity,
                              std::string ruleId,
-                             const EditorEntity& entity,
+                             const StudioEntity& entity,
                              std::string componentTypeId,
                              std::string message)
         {
@@ -40,9 +40,9 @@ namespace CNA::Editor
          * primary camera would report a conflict the user has already resolved -- by switching the
          * other one off, which is exactly how a person switches cameras.
          */
-        bool isEffectivelyEnabled(const SceneDocument& scene, const EditorEntity& entity)
+        bool isEffectivelyEnabled(const SceneDocument& scene, const StudioEntity& entity)
         {
-            const EditorEntity* current = &entity;
+            const StudioEntity* current = &entity;
             // Bounded by the entity count: SceneDocument forbids cycles, but a bound costs nothing
             // and turns a corrupted document into a wrong answer rather than a hang.
             for (std::size_t guard = 0; guard <= scene.getEntityCount(); ++guard)
@@ -57,7 +57,7 @@ namespace CNA::Editor
         }
 
         /** @brief True when the camera component is the one the game is meant to start with. */
-        bool isPrimaryCamera(const EditorComponent& camera, const ComponentDescriptor* descriptor)
+        bool isPrimaryCamera(const StudioComponent& camera, const ComponentDescriptor* descriptor)
         {
             return camera.getPropertyOrDefault("isPrimary", descriptor).get<bool>(false);
         }
@@ -68,12 +68,12 @@ namespace CNA::Editor
         {
             const ComponentDescriptor* descriptor = registry.find(BuiltinComponentIds::kCamera);
 
-            std::vector<const EditorEntity*> cameras;
-            std::vector<const EditorEntity*> primaries;
+            std::vector<const StudioEntity*> cameras;
+            std::vector<const StudioEntity*> primaries;
 
-            for (const EditorEntity& entity : scene.getEntities())
+            for (const StudioEntity& entity : scene.getEntities())
             {
-                const EditorComponent* camera = entity.findComponent(BuiltinComponentIds::kCamera);
+                const StudioComponent* camera = entity.findComponent(BuiltinComponentIds::kCamera);
                 if (camera == nullptr) { continue; }
                 if (!isEffectivelyEnabled(scene, entity)) { continue; }
 
@@ -100,7 +100,7 @@ namespace CNA::Editor
 
             // One issue per offending camera, so every row selects a real entity. A single
             // scene-wide issue would name them and select none of them.
-            for (const EditorEntity* entity : primaries)
+            for (const StudioEntity* entity : primaries)
             {
                 issues.push_back(makeIssue(
                     SceneIssue::Severity::Error, "duplicate-primary-camera", *entity,
@@ -119,8 +119,8 @@ namespace CNA::Editor
           */
         void checkListeners(const SceneDocument& scene, std::vector<SceneIssue>& issues)
         {
-            std::vector<const EditorEntity*> listeners;
-            for (const EditorEntity& entity : scene.getEntities())
+            std::vector<const StudioEntity*> listeners;
+            for (const StudioEntity& entity : scene.getEntities())
             {
                 if (entity.findComponent(BuiltinComponentIds::kAudioListener) == nullptr) { continue; }
                 if (!isEffectivelyEnabled(scene, entity)) { continue; }
@@ -129,7 +129,7 @@ namespace CNA::Editor
 
             if (listeners.size() < 2) { return; }
 
-            for (const EditorEntity* entity : listeners)
+            for (const StudioEntity* entity : listeners)
             {
                 issues.push_back(makeIssue(
                     SceneIssue::Severity::Error, "duplicate-audio-listener", *entity,
@@ -168,8 +168,8 @@ namespace CNA::Editor
             issues.push_back(std::move(issue));
         }
 
-        void checkCameraPlanes(const EditorEntity& entity,
-                               const EditorComponent& camera,
+        void checkCameraPlanes(const StudioEntity& entity,
+                               const StudioComponent& camera,
                                const ComponentDescriptor* descriptor,
                                std::vector<SceneIssue>& issues)
         {
@@ -185,13 +185,13 @@ namespace CNA::Editor
                     std::to_string(farPlane) + "). The projection matrix is degenerate."));
         }
 
-        void checkTransform(const EditorEntity& entity,
-                            const EditorComponent& transform,
+        void checkTransform(const StudioEntity& entity,
+                            const StudioComponent& transform,
                             const ComponentDescriptor* descriptor,
                             std::vector<SceneIssue>& issues)
         {
-            const EditorVector3 scale =
-                transform.getPropertyOrDefault("scale", descriptor).get<EditorVector3>(EditorVector3{1.0f, 1.0f, 1.0f});
+            const StudioVector3 scale =
+                transform.getPropertyOrDefault("scale", descriptor).get<StudioVector3>(StudioVector3{1.0f, 1.0f, 1.0f});
 
             const bool collapsed = std::fabs(scale.x) < kZeroScaleEpsilon ||
                                    std::fabs(scale.y) < kZeroScaleEpsilon ||
@@ -208,8 +208,8 @@ namespace CNA::Editor
                 "Disabling the entity says the same thing more clearly."));
         }
 
-        void checkSprite(const EditorEntity& entity,
-                         const EditorComponent& sprite,
+        void checkSprite(const StudioEntity& entity,
+                         const StudioComponent& sprite,
                          std::vector<SceneIssue>& issues)
         {
             const PropertyValue texture = sprite.getProperty("texture");
@@ -236,8 +236,8 @@ namespace CNA::Editor
          * error because a tilemap added a moment ago and not yet configured is a normal state --
          * what is not normal is finding out about it by wondering why painting does nothing.
          */
-        void checkTilemap(const EditorEntity& entity,
-                          const EditorComponent& tilemap,
+        void checkTilemap(const StudioEntity& entity,
+                          const StudioComponent& tilemap,
                           const ComponentDescriptor* descriptor,
                           std::vector<SceneIssue>& issues)
         {
@@ -262,8 +262,8 @@ namespace CNA::Editor
          * animation without one leaves the entity drawing the placeholder and looking like a broken
          * asset reference, which is a different problem with a different fix.
          */
-        void checkAnimation(const EditorEntity& entity,
-                            const EditorComponent& animation,
+        void checkAnimation(const StudioEntity& entity,
+                            const StudioComponent& animation,
                             std::vector<SceneIssue>& issues)
         {
             const PropertyValue sheet = animation.getProperty(SpriteAnimationKeys::kSheet);
@@ -298,8 +298,8 @@ namespace CNA::Editor
          * nothing. The value is *kept*, not repaired -- rewriting it would decide for the user
          * which of the remaining layers they meant.
          */
-        void checkEnums(const EditorEntity& entity,
-                        const EditorComponent& component,
+        void checkEnums(const StudioEntity& entity,
+                        const StudioComponent& component,
                         const ComponentDescriptor& descriptor,
                         std::vector<SceneIssue>& issues)
         {
@@ -327,13 +327,13 @@ namespace CNA::Editor
             }
         }
 
-        void checkComponentSet(const EditorEntity& entity,
+        void checkComponentSet(const StudioEntity& entity,
                                const ComponentRegistry& registry,
                                std::vector<SceneIssue>& issues)
         {
             std::vector<std::string> reportedDuplicates;
 
-            for (const EditorComponent& component : entity.getComponents())
+            for (const StudioComponent& component : entity.getComponents())
             {
                 const ComponentDescriptor* descriptor = registry.find(component.getTypeId());
                 if (descriptor == nullptr)
@@ -353,7 +353,7 @@ namespace CNA::Editor
 
                 const std::size_t count = static_cast<std::size_t>(
                     std::count_if(entity.getComponents().begin(), entity.getComponents().end(),
-                                  [&](const EditorComponent& other)
+                                  [&](const StudioComponent& other)
                                   { return other.getTypeId() == component.getTypeId(); }));
                 if (count < 2) { continue; }
 
@@ -386,7 +386,7 @@ namespace CNA::Editor
             }
         }
 
-        void checkEmptyEntity(const EditorEntity& entity,
+        void checkEmptyEntity(const StudioEntity& entity,
                               const ComponentRegistry& registry,
                               const std::unordered_set<Uuid>& parents,
                               std::vector<SceneIssue>& issues)
@@ -395,7 +395,7 @@ namespace CNA::Editor
             // is the normal way to move a set of things together.
             if (parents.count(entity.getId()) != 0) { return; }
 
-            for (const EditorComponent& component : entity.getComponents())
+            for (const StudioComponent& component : entity.getComponents())
             {
                 const ComponentDescriptor* descriptor = registry.find(component.getTypeId());
 
@@ -431,37 +431,37 @@ namespace CNA::Editor
         // Derived once rather than per entity: getChildren() is a scan, and asking it for every
         // entity would turn the report into O(n^2) on exactly the large scenes that need it most.
         std::unordered_set<Uuid> parents;
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             if (entity.getParentId().isValid()) { parents.insert(entity.getParentId()); }
         }
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
             checkComponentSet(entity, registry, issues);
 
-            if (const EditorComponent* transform = entity.findComponent(BuiltinComponentIds::kTransform))
+            if (const StudioComponent* transform = entity.findComponent(BuiltinComponentIds::kTransform))
             {
                 checkTransform(entity, *transform, registry.find(BuiltinComponentIds::kTransform), issues);
             }
 
-            if (const EditorComponent* sprite = entity.findComponent(BuiltinComponentIds::kSpriteRenderer))
+            if (const StudioComponent* sprite = entity.findComponent(BuiltinComponentIds::kSpriteRenderer))
             {
                 checkSprite(entity, *sprite, issues);
             }
 
-            if (const EditorComponent* tilemap = entity.findComponent(BuiltinComponentIds::kTilemap))
+            if (const StudioComponent* tilemap = entity.findComponent(BuiltinComponentIds::kTilemap))
             {
                 checkTilemap(entity, *tilemap, registry.find(BuiltinComponentIds::kTilemap), issues);
             }
 
-            if (const EditorComponent* animation =
+            if (const StudioComponent* animation =
                     entity.findComponent(BuiltinComponentIds::kSpriteAnimation))
             {
                 checkAnimation(entity, *animation, issues);
             }
 
-            if (const EditorComponent* camera = entity.findComponent(BuiltinComponentIds::kCamera))
+            if (const StudioComponent* camera = entity.findComponent(BuiltinComponentIds::kCamera))
             {
                 checkCameraPlanes(entity, *camera, registry.find(BuiltinComponentIds::kCamera), issues);
             }
@@ -480,7 +480,7 @@ namespace CNA::Editor
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     std::vector<SceneIssue> validateModelPartMaterials(const SceneDocument& scene,
                                                        const MeshProvider& meshes)
@@ -488,9 +488,9 @@ namespace CNA::Editor
         std::vector<SceneIssue> issues;
         if (!meshes) { return issues; }
 
-        for (const EditorEntity& entity : scene.getEntities())
+        for (const StudioEntity& entity : scene.getEntities())
         {
-            const EditorComponent* renderer =
+            const StudioComponent* renderer =
                 entity.findComponent(BuiltinComponentIds::kModelRenderer);
             if (renderer == nullptr) { continue; }
 

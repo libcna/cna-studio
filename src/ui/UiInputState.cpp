@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Ui/UiInputState.hpp"
+#include "CNA/Studio/Ui/UiInputState.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void UiInputState::clearEvents()
     {

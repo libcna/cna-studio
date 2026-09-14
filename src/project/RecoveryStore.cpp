@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Project/RecoveryStore.hpp"
+#include "CNA/Studio/Project/RecoveryStore.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -9,7 +9,7 @@
 #include <sstream>
 #include <system_error>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -186,11 +186,11 @@ namespace CNA::Editor
             if (errorCode) { return {}; }
         }
 
-        return (base / "cna-editor" / "recovery").generic_string();
+        return (base / "cna-studio" / "recovery").generic_string();
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     std::string formatRecoveryTime(std::int64_t unixSeconds)
     {

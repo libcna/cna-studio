@@ -3,7 +3,7 @@
 # The standalone configuration only: no CNA checkout, no GPU, no window.
 #
 # That is not a limitation being worked around, it is the property the architecture exists to have
-# (ANALYSIS.md decision D-03). Everything except `cna-editor-viewport` is CNA-free, which is what
+# (ANALYSIS.md decision D-03). Everything except `cna-studio-viewport` is CNA-free, which is what
 # lets the document model, the undo stack, the asset database, the whole panel layer and the real
 # Dear ImGui UI be built and tested on a machine with none of CNA's dependencies installed.
 #
@@ -57,7 +57,7 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCNA_EDITOR_WARNINGS_AS_ERRORS=ON
+          -DCNA_STUDIO_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build --parallel
@@ -65,7 +65,7 @@ jobs:
       - name: Unit tests
         # Run the binary directly as well as through CTest: its own output names every test, which
         # is what makes a failure readable in the log without opening an artifact.
-        run: ./build/tests/cna-editor-tests
+        run: ./build/tests/cna-studio-tests
 
       - name: CTest
         run: ctest --test-dir build --output-on-failure
@@ -74,7 +74,7 @@ jobs:
         # Opens a real project, scans its assets, loads a scene and draws a frame. A test suite
         # that passes while the executable cannot open anything is a test suite worth distrusting.
         run: |
-          ./build/cna-editor --headless \
+          ./build/cna-studio --headless \
             --project=examples/HelloSprites/HelloSprites.cnaproject
 
       - name: The example project must not be modified by opening it
@@ -82,7 +82,7 @@ jobs:
         # intended; doing it on every open would fill a repository with spurious diffs, and this is
         # where that regression would otherwise go unnoticed.
         run: |
-          ./build/cna-editor --headless \
+          ./build/cna-studio --headless \
             --project=examples/HelloSprites/HelloSprites.cnaproject > /dev/null
           if ! git diff --quiet -- examples/; then
             echo "Opening the example project modified it:"

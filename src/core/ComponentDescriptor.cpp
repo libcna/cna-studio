@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Core/ComponentDescriptor.hpp"
+#include "CNA/Studio/Core/ComponentDescriptor.hpp"
 
-#include "CNA/Editor/Core/Json.hpp"
+#include "CNA/Studio/Core/Json.hpp"
 
 #include <algorithm>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     const PropertyDescriptor* ComponentDescriptor::findProperty(std::string_view name) const
     {
@@ -43,7 +43,7 @@ namespace CNA::Editor
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     PropertyValue propertyValueFromJson(const JsonValue& json, const PropertyDescriptor& descriptor);
 

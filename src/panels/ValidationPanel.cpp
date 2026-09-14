@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/ValidationPanel.hpp"
+#include "CNA/Studio/Panels/ValidationPanel.hpp"
 
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
-#include "CNA/Editor/Scene/MissingReferences.hpp"
-#include "CNA/Editor/Scene/SceneCommands.hpp"
-#include "CNA/Editor/Scene/SceneValidation.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/MissingReferences.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Scene/SceneValidation.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     void ValidationPanel::draw()
     {

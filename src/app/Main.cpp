@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
 /**
  * @file Main.cpp
- * @brief The cna-editor entry point.
+ * @brief The cna-studio entry point.
  *
- * Only this file decides which concrete EditorUi and EditorViewport the application gets. Keeping
- * that decision in exactly one place is what lets the same EditorApplication run under a real
+ * Only this file decides which concrete StudioUi and StudioViewport the application gets. Keeping
+ * that decision in exactly one place is what lets the same StudioApplication run under a real
  * toolkit, under the null UI in CI, and under a future Qt implementation.
  */
 
@@ -13,35 +13,35 @@
 #include <iostream>
 #include <memory>
 
-#include "CNA/Editor/EditorApplication.hpp"
-#include "CNA/Editor/RuntimeBridge/BackendComparison.hpp"
+#include "CNA/Studio/StudioApplication.hpp"
+#include "CNA/Studio/RuntimeBridge/BackendComparison.hpp"
 
-#if defined(CNA_EDITOR_HAS_IMGUI)
-#    include "CNA/Editor/Ui/ImGuiEditorUi.hpp"
+#if defined(CNA_STUDIO_HAS_IMGUI)
+#    include "CNA/Studio/Ui/ImGuiStudioUi.hpp"
 #endif
 
 // The window host needs both CNA and Dear ImGui. Without it the editor still runs headless, which
 // is what CI and `--headless` use.
-#if defined(CNA_EDITOR_HAS_HOST)
-#    include "CNA/Editor/Viewport/CnaEditorHost.hpp"
+#if defined(CNA_STUDIO_HAS_HOST)
+#    include "CNA/Studio/Viewport/CnaStudioHost.hpp"
 #endif
 
 namespace
 {
     /** @brief Prints every log message to stdout. Used by headless runs. */
-    class ConsoleEditorUi final : public CNA::Editor::NullEditorUi
+    class ConsoleStudioUi final : public CNA::Studio::NullStudioUi
     {
     public:
-        void log(CNA::Editor::LogSeverity severity, const std::string& message) override
+        void log(CNA::Studio::LogSeverity severity, const std::string& message) override
         {
-            NullEditorUi::log(severity, message);
+            NullStudioUi::log(severity, message);
             std::ostream& stream =
-                severity == CNA::Editor::LogSeverity::Error ? std::cerr : std::cout;
-            stream << "[" << CNA::Editor::toString(severity) << "] " << message << "\n";
+                severity == CNA::Studio::LogSeverity::Error ? std::cerr : std::cout;
+            stream << "[" << CNA::Studio::toString(severity) << "] " << message << "\n";
         }
     };
 
-#if defined(CNA_EDITOR_HAS_HOST)
+#if defined(CNA_STUDIO_HAS_HOST)
     /**
      * @brief Returns where ImGui's dock layout `.ini` should live.
      *
@@ -60,7 +60,7 @@ namespace
         else if (home != nullptr && *home != '\0') { base = std::filesystem::path{home} / ".config"; }
         else { return {}; }
 
-        const std::filesystem::path directory = base / "cna-editor";
+        const std::filesystem::path directory = base / "cna-studio";
         std::error_code errorCode;
         std::filesystem::create_directories(directory, errorCode);
         if (errorCode) { return {}; }
@@ -69,7 +69,7 @@ namespace
     }
 #endif
 
-#if defined(CNA_EDITOR_HAS_HOST)
+#if defined(CNA_STUDIO_HAS_HOST)
     /**
      * @brief Prints a comparison run's verdict, one line per backend.
      *
@@ -77,12 +77,12 @@ namespace
      * capture needs a graphics device, and a function nobody can reach is a warning waiting to
      * happen.
      */
-    void printComparison(const CNA::Editor::BackendComparison& comparison)
+    void printComparison(const CNA::Studio::BackendComparison& comparison)
     {
-        std::cout << "cna-editor: backend comparison against '" << comparison.getReferenceBackend()
+        std::cout << "cna-studio: backend comparison against '" << comparison.getReferenceBackend()
                   << "'\n";
 
-        for (const CNA::Editor::ComparisonEntry& entry : comparison.getEntries())
+        for (const CNA::Studio::ComparisonEntry& entry : comparison.getEntries())
         {
             std::cout << "  " << entry.backend << (entry.isReference ? "  (reference)" : "") << "\n";
 
@@ -110,7 +110,7 @@ namespace
 
         if (!comparison.getError().empty())
         {
-            std::cerr << "cna-editor: " << comparison.getError() << "\n";
+            std::cerr << "cna-studio: " << comparison.getError() << "\n";
         }
     }
 #endif
@@ -118,14 +118,14 @@ namespace
     void printBackends()
     {
         std::cout << "CNA graphics backends known to this editor:\n\n";
-        for (const CNA::Editor::BackendInfo& backend : CNA::Editor::getKnownBackends())
+        for (const CNA::Studio::BackendInfo& backend : CNA::Studio::getKnownBackends())
         {
             const char* support = "runtime-only  ";
             switch (backend.support)
             {
-                case CNA::Editor::BackendEditorSupport::EditorSupported: support = "editor        "; break;
-                case CNA::Editor::BackendEditorSupport::PreviewOnly: support = "preview-only  "; break;
-                case CNA::Editor::BackendEditorSupport::RuntimeOnly: support = "runtime-only  "; break;
+                case CNA::Studio::BackendStudioSupport::StudioSupported: support = "editor        "; break;
+                case CNA::Studio::BackendStudioSupport::PreviewOnly: support = "preview-only  "; break;
+                case CNA::Studio::BackendStudioSupport::RuntimeOnly: support = "runtime-only  "; break;
             }
             std::cout << "  " << support << backend.commandLineName << "  (" << backend.cmakeName << ")\n"
                       << "      " << backend.displayName << " -- " << backend.note << "\n";
@@ -137,22 +137,22 @@ namespace
 
 int main(int argc, char** argv)
 {
-    const CNA::Editor::EditorOptions options = CNA::Editor::EditorOptions::parse(argc, argv);
+    const CNA::Studio::StudioOptions options = CNA::Studio::StudioOptions::parse(argc, argv);
 
     if (options.hasError)
     {
-        std::cerr << "cna-editor: " << options.errorMessage << "\n\n"
-                  << CNA::Editor::EditorOptions::getUsage();
+        std::cerr << "cna-studio: " << options.errorMessage << "\n\n"
+                  << CNA::Studio::StudioOptions::getUsage();
         return 2;
     }
     if (options.showHelp)
     {
-        std::cout << CNA::Editor::EditorOptions::getUsage();
+        std::cout << CNA::Studio::StudioOptions::getUsage();
         return 0;
     }
     if (options.showVersion)
     {
-        std::cout << "cna-editor " << CNA_EDITOR_VERSION << "\n";
+        std::cout << "cna-studio " << CNA_STUDIO_VERSION << "\n";
         return 0;
     }
     if (options.listBackends)
@@ -161,15 +161,15 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // This is the one place that decides which concrete EditorUi and EditorViewport the
+    // This is the one place that decides which concrete StudioUi and StudioViewport the
     // application gets. Everything else -- panels, commands, plugins -- is written against the
     // abstractions and does not change when this does (ANALYSIS.md decision D-02).
     const bool useImGui = !options.headless && options.uiBackend != "null";
 
-#if !defined(CNA_EDITOR_HAS_IMGUI)
+#if !defined(CNA_STUDIO_HAS_IMGUI)
     if (useImGui)
     {
-        std::cerr << "cna-editor: this binary was built with -DCNA_EDITOR_WITH_IMGUI=OFF, so the "
+        std::cerr << "cna-studio: this binary was built with -DCNA_STUDIO_WITH_IMGUI=OFF, so the "
                      "'" << options.uiBackend << "' UI is unavailable.\n"
                      "Run with --headless to use the console UI.\n";
         return 3;
@@ -177,49 +177,49 @@ int main(int argc, char** argv)
 #else
     if (useImGui && options.uiBackend != "imgui")
     {
-        std::cerr << "cna-editor: unknown UI backend '" << options.uiBackend
+        std::cerr << "cna-studio: unknown UI backend '" << options.uiBackend
                   << "'. This binary provides 'imgui' and 'null'.\n";
         return 3;
     }
 
-#    if defined(CNA_EDITOR_HAS_HOST)
+#    if defined(CNA_STUDIO_HAS_HOST)
     if (useImGui)
     {
-        auto application = std::make_unique<CNA::Editor::EditorApplication>(
-            std::make_unique<CNA::Editor::ImGuiEditorUi>(),
-            std::make_unique<CNA::Editor::NullEditorViewport>());
+        auto application = std::make_unique<CNA::Studio::StudioApplication>(
+            std::make_unique<CNA::Studio::ImGuiStudioUi>(),
+            std::make_unique<CNA::Studio::NullStudioViewport>());
 
         if (!application->initialize(options)) { return 1; }
 
         // Set before the application is handed to the host, which owns it from then on: by the
-        // time runEditorInWindow returns there is nothing left to ask.
+        // time runStudioInWindow returns there is nothing left to ask.
         bool comparisonReported = false;
         bool backendsAgree = false;
         if (options.compareBackends)
         {
-            application->setComparisonReport([&](const CNA::Editor::BackendComparison& comparison) {
+            application->setComparisonReport([&](const CNA::Studio::BackendComparison& comparison) {
                 comparisonReported = true;
                 backendsAgree = comparison.allBackendsAgree();
                 printComparison(comparison);
             });
         }
 
-        CNA::Editor::CnaEditorHostOptions hostOptions;
+        CNA::Studio::CnaStudioHostOptions hostOptions;
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.layoutPath = resolveLayoutPath();
         hostOptions.screenshotPath = options.screenshotPath;
         hostOptions.windowTitle = application->getContext().hasProject()
-                                      ? "CNA Editor -- " + application->getContext().getProject().getName()
-                                      : "CNA Editor";
+                                      ? "CNA Studio -- " + application->getContext().getProject().getName()
+                                      : "CNA Studio";
 
-        const CNA::Editor::CnaEditorHostResult result =
-            CNA::Editor::runEditorInWindow(hostOptions, std::move(application));
+        const CNA::Studio::CnaStudioHostResult result =
+            CNA::Studio::runStudioInWindow(hostOptions, std::move(application));
 
-        if (!result.errorMessage.empty()) { std::cerr << "cna-editor: " << result.errorMessage << "\n"; }
+        if (!result.errorMessage.empty()) { std::cerr << "cna-studio: " << result.errorMessage << "\n"; }
 
         if (!options.screenshotPath.empty() && !result.screenshotWritten)
         {
-            std::cerr << "cna-editor: no screenshot was written to '" << options.screenshotPath
+            std::cerr << "cna-studio: no screenshot was written to '" << options.screenshotPath
                       << "'. --screenshot needs --frames, and the backend must support reading "
                          "back its own back buffer.\n";
             return 4;
@@ -231,15 +231,15 @@ int main(int argc, char** argv)
             // server asserts on it without reading a word of the output.
             if (!comparisonReported)
             {
-                std::cerr << "cna-editor: the backend comparison never produced a verdict.\n";
+                std::cerr << "cna-studio: the backend comparison never produced a verdict.\n";
                 return 5;
             }
             if (!backendsAgree)
             {
-                std::cerr << "cna-editor: the backends do not agree.\n";
+                std::cerr << "cna-studio: the backends do not agree.\n";
                 return 5;
             }
-            std::cout << "cna-editor: every backend drew the same picture.\n";
+            std::cout << "cna-studio: every backend drew the same picture.\n";
             return 0;
         }
 
@@ -248,7 +248,7 @@ int main(int argc, char** argv)
         // needs the numbers to assert on.
         if (options.frameLimit > 0)
         {
-            std::cout << "cna-editor: backend " << result.backend << ", " << result.frames
+            std::cout << "cna-studio: backend " << result.backend << ", " << result.frames
                       << " frames, " << result.displayWidth << "x" << result.displayHeight
                       << " display, " << result.drawCalls << " draw calls, " << result.triangles
                       << " triangles, " << result.textures << " textures created, "
@@ -262,9 +262,9 @@ int main(int argc, char** argv)
     {
         // The ImGui UI is built and produces real geometry -- that is what the headless tests
         // assert on -- but presenting it needs a window and a CNA graphics device, which live in
-        // cna-editor-viewport. Saying so plainly beats opening a blank window.
-        std::cerr << "cna-editor: the ImGui UI is built, but this binary has no window host.\n"
-                     "Rebuild with -DCNA_EDITOR_WITH_CNA=ON to get one, or run with --headless.\n";
+        // cna-studio-viewport. Saying so plainly beats opening a blank window.
+        std::cerr << "cna-studio: the ImGui UI is built, but this binary has no window host.\n"
+                     "Rebuild with -DCNA_STUDIO_WITH_CNA=ON to get one, or run with --headless.\n";
         return 3;
     }
 #    endif
@@ -274,14 +274,14 @@ int main(int argc, char** argv)
     {
         // Comparing means decoding the captures, and decoding needs a graphics device. Saying so
         // beats running the whole thing and reporting that every capture was unreadable.
-        std::cerr << "cna-editor: --compare-backends needs a graphics device, so it cannot run "
-                     "headless or on the null UI. Run it on a build with -DCNA_EDITOR_WITH_CNA=ON "
+        std::cerr << "cna-studio: --compare-backends needs a graphics device, so it cannot run "
+                     "headless or on the null UI. Run it on a build with -DCNA_STUDIO_WITH_CNA=ON "
                      "and a display.\n";
         return 3;
     }
 
-    CNA::Editor::EditorApplication application{std::make_unique<ConsoleEditorUi>(),
-                                               std::make_unique<CNA::Editor::NullEditorViewport>()};
+    CNA::Studio::StudioApplication application{std::make_unique<ConsoleStudioUi>(),
+                                               std::make_unique<CNA::Studio::NullStudioViewport>()};
 
     if (!application.initialize(options)) { return 1; }
 

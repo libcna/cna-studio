@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Assets/AssetCommands.hpp"
+#include "CNA/Studio/Assets/AssetCommands.hpp"
 #include <system_error>
 #include <optional>
 #include <iterator>
 #include <fstream>
 #include <filesystem>
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     MoveAssetCommand::MoveAssetCommand(AssetDatabase& assets, Uuid assetId, std::string newRelativePath)
         : assets_(&assets), assetId_(assetId), newPath_(std::move(newRelativePath))
@@ -128,7 +128,7 @@ namespace CNA::Editor
         return "importer:" + assetId_.toString() + ":" + settingName_;
     }
 
-    bool SetImporterSettingCommand::mergeWith(const EditorCommand& newer)
+    bool SetImporterSettingCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const SetImporterSettingCommand*>(&newer);
         if (other == nullptr || other->assetId_ != assetId_ || other->settingName_ != settingName_)
@@ -142,7 +142,7 @@ namespace CNA::Editor
     }
 }
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -214,7 +214,7 @@ namespace CNA::Editor
         return "material:" + absolutePath_ + ":" + fieldName_;
     }
 
-    bool SetMaterialCommand::mergeWith(const EditorCommand& newer)
+    bool SetMaterialCommand::mergeWith(const StudioCommand& newer)
     {
         const auto* other = dynamic_cast<const SetMaterialCommand*>(&newer);
         if (other == nullptr || other->absolutePath_ != absolutePath_) { return false; }

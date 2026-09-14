@@ -1,4 +1,4 @@
-# CNA Editor — Architecture Analysis
+# CNA Studio — Architecture Analysis
 
 > **Purpose.** This document is the *reasoning* behind `plan.md`. It takes the original editor
 > architecture discussion, checks every assumption in it against the CNA codebase as it actually
@@ -34,10 +34,10 @@ Six things changed after checking the code:
 
 | # | Finding | Effect |
 |---|---------|--------|
-| **F-01** | CNA's graphics backend is a **compile-time** choice, not a runtime one | ⚠️ Large. Kills `cna-editor --graphics=vulkan`; makes multi-process play mode structurally mandatory rather than merely prudent |
+| **F-01** | CNA's graphics backend is a **compile-time** choice, not a runtime one | ⚠️ Large. Kills `cna-studio --graphics=vulkan`; makes multi-process play mode structurally mandatory rather than merely prudent |
 | **F-02** | CNA has **14** graphics backends, not 30–35 | ⚠️ Small. The support-tier table is concrete and testable rather than aspirational |
 | **F-03** | `GraphicsDevice` lives in `Microsoft::Xna::Framework::Graphics`, not `CNA::Graphics` | ⚠️ Small, but every API sketch in the discussion had the namespace wrong |
-| **F-04** | CNA is a **standalone repository** with sibling-checkout dependencies, and has no install/export rules | ⚠️ Medium. The proposed `cna/tools/cna-editor/` monorepo path does not match reality |
+| **F-04** | CNA is a **standalone repository** with sibling-checkout dependencies, and has no install/export rules | ⚠️ Medium. The proposed `cna/tools/cna-studio/` monorepo path does not match reality |
 | **F-05** | CNA is C++23 with a `System::` runtime layer from `sharp-runtime` | ✅ Confirms the technology baseline; constrains what the editor may reuse |
 | **F-06** | CNA vendors no UI toolkit, and no ImGui anywhere | ⚠️ Small. Dear ImGui is a *new* dependency owned by this repository, not a shared one |
 
@@ -56,9 +56,9 @@ This is the single most consequential finding, and it invalidates a recurring as
 The discussion proposed launching the editor with a runtime switch:
 
 ```
-cna-editor --graphics=vulkan
-cna-editor --graphics=opengl
-cna-editor --graphics=software
+cna-studio --graphics=vulkan
+cna-studio --graphics=opengl
+cna-studio --graphics=software
 ```
 
 CNA cannot do this. `cmake/BackendSelection.cmake` resolves `CNA_GRAPHICS_BACKEND` to exactly one
@@ -88,7 +88,7 @@ second one.
 
 1. **`--graphics` cannot be an editor option.** One editor binary is permanently bound to the
    backend it was compiled against. The skeleton therefore *rejects* the flag with an explanatory
-   message rather than ignoring it (`src/app/EditorApplication.cpp`), and a test asserts the
+   message rather than ignoring it (`src/app/StudioApplication.cpp`), and a test asserts the
    rejection. Silently accepting it would teach users a mental model the framework does not have.
 
 2. **Multi-process play mode stops being a robustness nicety and becomes structural.** The
@@ -116,15 +116,15 @@ lists 14:
 `SDL_RENDERER`, `EASYGL`, `BGFX`, `VULKAN`, `WEBGPU`, `HEADLESS`, `SOFTWARE`, `D3D11`, `D3D12`,
 `CANVAS`, `ASCII`, `DX3`, `D3D9`, `SDL_GPU`.
 
-This is good news, not bad: the discussion's three-tier support model (*Editor Supported* /
+This is good news, not bad: the discussion's three-tier support model (*Studio Supported* /
 *Preview Only* / *Runtime Only*) can be a concrete table rather than a policy. It is implemented as
-data in `include/CNA/Editor/Project/Project.hpp` and asserted by
+data in `include/CNA/Studio/Project/Project.hpp` and asserted by
 `tests/ProjectAndAssetTests.cpp`, so that adding a backend to CNA produces a failing test here as
 the reminder to classify it:
 
 | Tier | Backends | Rationale |
 |------|----------|-----------|
-| **Editor Supported** | EASYGL, VULKAN, SDL_RENDERER, BGFX, SDL_GPU, D3D11, D3D12 | Can host a docked editor UI at an arbitrary window size |
+| **Studio Supported** | EASYGL, VULKAN, SDL_RENDERER, BGFX, SDL_GPU, D3D11, D3D12 | Can host a docked editor UI at an arbitrary window size |
 | **Preview Only** | WEBGPU, D3D9, SOFTWARE | Correct enough to render a game, unsuitable as an interactive UI host — SOFTWARE is too slow, D3D9 too limited, WEBGPU too experimental |
 | **Runtime Only** | CANVAS, ASCII, DX3, HEADLESS | No desktop process to host (CANVAS is Emscripten-only), no window at all (HEADLESS), or a deliberately lossy presentation (ASCII, DX3) |
 
@@ -159,7 +159,7 @@ cna/
 ├── runtime/
 ├── modules/
 ├── tools/
-│   ├── cna-editor/
+│   ├── cna-studio/
 │   ├── cna-content-builder/
 │   └── cna-player/
 └── editor-sdk/
@@ -167,7 +167,7 @@ cna/
 
 The real `openeggbert/cna` has a `tools/` directory, but it holds development utilities
 (`cna-reference`, `xna-oracle`, `fna-reference`, `gltf_to_cnj`, `avatar_builder`), not shipped
-applications. More importantly, `cna-editor` already exists as its **own repository**, alongside
+applications. More importantly, `cna-studio` already exists as its **own repository**, alongside
 `cna-gltf-viewer`, `cna-examples`, `cna-craft` and others — the project is already organised as a
 family of sibling repositories.
 
@@ -214,7 +214,7 @@ because it cannot host an editor UI in the ordinary sense.
 
 **A clean exit proves nothing.** A window that opens, loops and closes having drawn nothing is
 indistinguishable from a working editor unless you look at the pixels. That is why
-`--screenshot=PATH` exists and why `CnaEditorWindowSmoke` asserts on a written PNG rather than on
+`--screenshot=PATH` exists and why `CnaStudioWindowSmoke` asserts on a written PNG rather than on
 an exit code. The same mechanism — `GraphicsDevice::GetBackBufferData` plus
 `Texture2D::SaveAsPng`, both public API — is what plan.md ED-510's backend comparison mode will
 capture through, so building it now costs nothing later.
@@ -237,7 +237,7 @@ implemented in this repository.
 
 ### D-01 — The editor uses CNA's public API only
 
-**Decision.** `cna-editor-viewport` links CNA and calls `Microsoft::Xna::Framework::*`. It never
+**Decision.** `cna-studio-viewport` links CNA and calls `Microsoft::Xna::Framework::*`. It never
 includes `CNA::Internal::*`.
 
 **Why.** The discussion's original argument stands and is worth restating: if the editor cannot
@@ -248,11 +248,11 @@ building the editor, not an obstacle to it.
 **Rejected.** Privileged access "just for the viewport". It would hide exactly the information the
 exercise is meant to produce, and it would couple the editor to CNA's internal refactors.
 
-### D-02 — All UI goes through `cna-editor-ui`; Dear ImGui is one implementation
+### D-02 — All UI goes through `cna-studio-ui`; Dear ImGui is one implementation
 
 **Decision.** No panel, command or plugin may call a UI toolkit directly. They call the abstract
-`EditorUi` (`include/CNA/Editor/Ui/EditorUi.hpp`). Dear ImGui becomes the first real
-implementation in Phase 0; `NullEditorUi` already exists and is a first-class one.
+`StudioUi` (`include/CNA/Studio/Ui/StudioUi.hpp`). Dear ImGui becomes the first real
+implementation in Phase 0; `NullStudioUi` already exists and is a first-class one.
 
 **Why.** Three reasons, in order of weight:
 
@@ -260,11 +260,11 @@ implementation in Phase 0; `NullEditorUi` already exists and is a first-class on
    would have to maintain. Committing to it irreversibly, before the editor has any real panels,
    is a bet placed at the moment of least information.
 2. **The panel layer becomes testable with no display.** `tests/ApplicationTests.cpp` runs the
-   *real* `EditorApplication` — same code path a user gets — over `NullEditorUi` and
-   `NullEditorViewport`, on a build machine with no GPU. This is why `NullEditorUi` reports panels
+   *real* `StudioApplication` — same code path a user gets — over `NullStudioUi` and
+   `NullStudioViewport`, on a build machine with no GPU. This is why `NullStudioUi` reports panels
    as *visible* and tree nodes as *expanded*: a headless frame walks every panel body and the whole
    hierarchy, so `--headless` is a genuine smoke test rather than a no-op.
-3. **Plugin ABI stability.** A plugin compiled against `EditorUi` survives a toolkit change.
+3. **Plugin ABI stability.** A plugin compiled against `StudioUi` survives a toolkit change.
 
 **Cost.** One virtual call per widget. At editor frame rates this is not measurable.
 
@@ -279,8 +279,8 @@ option.
 
 ### D-03 — CNA is an optional sibling checkout, off by default
 
-**Decision.** `CNA_EDITOR_WITH_CNA=OFF` by default. When ON, `add_subdirectory(../cna)`, matching
-CNA's own `../sharp-runtime` pattern (F-04). Only `cna-editor-viewport` links CNA.
+**Decision.** `CNA_STUDIO_WITH_CNA=OFF` by default. When ON, `add_subdirectory(../cna)`, matching
+CNA's own `../sharp-runtime` pattern (F-04). Only `cna-studio-viewport` links CNA.
 
 **Why.** The document model, the undo stack, the asset database, the project format and the wire
 protocol have nothing to do with graphics. Keeping the default build CNA-free means this repository
@@ -288,7 +288,7 @@ clones and builds in seconds with no `../cna`, no `../sharp-runtime`, no GPU and
 is what makes the test suite run in CI, and what makes a contributor's first build succeed.
 
 The dependency edge is enforced by the build graph rather than by review: nothing but
-`cna-editor-viewport` links `CNA`, so a stray `#include <Microsoft/Xna/...>` in the document model
+`cna-studio-viewport` links `CNA`, so a stray `#include <Microsoft/Xna/...>` in the document model
 fails to compile.
 
 **Rejected.** *Required checkout* — would make the editor unbuildable alone for no gain.
@@ -299,7 +299,7 @@ front-loads a dynamic-loading problem before there is anything to load.
 ### D-04 — An entity/component **document** model, not an ECS, and no ECS in CNA
 
 **Decision.** The editor has entities with components. CNA does not, and is not asked to.
-`EditorEntity`/`EditorComponent` are *document* types (`include/CNA/Editor/Scene/EditorEntity.hpp`).
+`StudioEntity`/`StudioComponent` are *document* types (`include/CNA/Studio/Scene/StudioEntity.hpp`).
 
 **Why.** This is the decision that keeps CNA an XNA-compatible framework. An entity graph is a good
 way to *author* a scene and a poor thing to force on a game that already has its own object model.
@@ -316,7 +316,7 @@ component whose plugin failed to load still round-trips through save and load wi
 ### D-05 — Hand-written reflection metadata
 
 **Decision.** `ComponentDescriptor` + `PropertyDescriptor` + `PropertyValue`
-(`include/CNA/Editor/Core/`), registered at runtime into a `ComponentRegistry`.
+(`include/CNA/Studio/Core/`), registered at runtime into a `ComponentRegistry`.
 
 **Why.** C++ has no usable reflection, and the discussion is right that this is the most
 load-bearing part of the editor SDK. Everything downstream is generic over it: the inspector builds
@@ -333,12 +333,12 @@ pick a widget and the asset database needs it to walk a scene's outbound referen
 support that does not exist yet; `ModelRenderer` carries a single material override until then.
 
 **Rejected.** *Macro-based registration* as the only mechanism — the explicit descriptor form is
-what a plugin uses across an ABI boundary. A `CNA_EDITOR_COMPONENT` macro can be sugar over it
+what a plugin uses across an ABI boundary. A `CNA_STUDIO_COMPONENT` macro can be sugar over it
 later.
 
 ### D-06 — Undo is a hard rule from day one
 
-**Decision.** Every document mutation is an `EditorCommand` pushed through `CommandHistory`. Not a
+**Decision.** Every document mutation is an `StudioCommand` pushed through `CommandHistory`. Not a
 convention — an invariant.
 
 **Why.** The discussion's warning is exactly right, and it is the one architectural mistake that
@@ -355,16 +355,16 @@ covers the cases editors habitually get wrong:
 - **Merging is keyed on entity + component + property**, so alternating between two objects stays
   two entries.
 - **`isDirty()` moves in both directions.** Undoing back past a save marks the document dirty
-  again: the file on disk no longer matches memory, even though the change count went down. Editors
+  again: the file on disk no longer matches memory, even though the change count went down. Studios
   routinely get this wrong.
 - **Undo restores *absence*, not just value.** A component loaded from a scene file that omitted an
   optional field must be able to go back to omitting it, or an undone edit silently starts writing
   a field the file never had.
 - **Deleting an entity restores its whole subtree with the hierarchy intact**, not as loose roots.
 
-### D-07 — Editor state is separated from runtime data in the same file
+### D-07 — Studio state is separated from runtime data in the same file
 
-**Decision.** `.cnascene` carries an `editorState` object per entity, distinct from `components`.
+**Decision.** `.cnascene` carries an `studioState` object per entity, distinct from `components`.
 
 **Why.** Tree expansion, layer colours, notes and icon overrides are cosmetic. Keeping them in a
 named sub-object means the runtime scene compiler drops them wholesale rather than having to know
@@ -402,7 +402,7 @@ looked modified on every scan. The stamp is now stored in seconds, and
 
 **Decision.** `cna-player` is its own binary, built once per backend. The editor spawns it and
 talks over a stream socket, one JSON object per line
-(`include/CNA/Editor/RuntimeBridge/EditorProtocol.hpp`).
+(`include/CNA/Studio/RuntimeBridge/StudioProtocol.hpp`).
 
 **Why separate process.** F-01 makes it mandatory, not merely wise. The discussion's own reasons —
 a crash cannot take the editor down, historical and 32-bit builds become testable, reload is
@@ -424,7 +424,7 @@ component registry may not match the editor's after a plugin reload.
 ### D-10 — Two project kinds, so CNA never becomes a mandatory engine
 
 **Decision.** `.cnaproject` declares `kind`: `CnaNative` or `XnaCompatible`
-(`include/CNA/Editor/Project/Project.hpp`).
+(`include/CNA/Studio/Project/Project.hpp`).
 
 **Why.** This is the concrete mechanism behind the discussion's most important architectural point.
 A `CnaNative` project opts into scenes, entities, the inspector, gizmos and the runtime bridge. An
@@ -432,7 +432,7 @@ A `CnaNative` project opts into scenes, entities, the inspector, gizmos and the 
 and the game keeps its own hand-written `Initialize`/`LoadContent`/`Update`/`Draw` with no editor
 concepts in it. A pure XNA port must never be forced through the entity model to use the tooling.
 
-`EditorContext::openProject` honours this — it does not load a startup scene for an
+`StudioContext::openProject` honours this — it does not load a startup scene for an
 `XnaCompatible` project — and warns when such a project declares one, because that is a real
 mismatch worth surfacing rather than silently honouring.
 
@@ -454,7 +454,7 @@ only in release builds.
 
 ### D-12 — Zero external dependencies in the editor core
 
-**Decision.** `cna-editor-core` links nothing but the C++ standard library. That includes the JSON
+**Decision.** `cna-studio-core` links nothing but the C++ standard library. That includes the JSON
 implementation (`src/core/Json.cpp`, ~400 lines) and the test harness
 (`tests/TestHarness.hpp`, ~80 lines).
 
@@ -486,13 +486,13 @@ and receive `ImDrawData*`. That works, and it was rejected for three reasons:
    per-vertex repack is required whichever way this is structured. Doing it while filling
    `UiDrawData` means it happens exactly once, in the place that was going to pay for it anyway.
 3. **It makes the whole UI testable headless.** `tests/UiTests.cpp` runs the real
-   `EditorApplication` over the real Dear ImGui, drives frames of synthetic input, and validates
+   `StudioApplication` over the real Dear ImGui, drives frames of synthetic input, and validates
    every draw command's index ranges, vertex offsets and clip rectangles — with no window, no GPU
-   and no CNA checkout. That is why `CNA_EDITOR_WITH_IMGUI` defaults to **ON** while
-   `CNA_EDITOR_WITH_CNA` defaults to OFF: ImGui is portable C++ with no system dependencies, so
+   and no CNA checkout. That is why `CNA_STUDIO_WITH_IMGUI` defaults to **ON** while
+   `CNA_STUDIO_WITH_CNA` defaults to OFF: ImGui is portable C++ with no system dependencies, so
    building it costs only compile time and buys real CI coverage.
 
-**Also decided here.** `ImGuiEditorUi` owns the `UiTextureId` namespace rather than the renderer.
+**Also decided here.** `ImGuiStudioUi` owns the `UiTextureId` namespace rather than the renderer.
 ImGui 1.92 asserts the moment a draw command references a texture whose id is unset, and draw
 commands are read in the same pass that collects texture requests — so "renderer assigns ids and
 reports them back" cannot work without a two-phase frame. Details in docs/SPIKE-IMGUI-CNA.md §6.
@@ -521,9 +521,9 @@ entire protocol — which is what the editor's own end-to-end bridge test runs a
 
 ### D-16 — The window host is a free function, not an exported `Game` subclass
 
-**Decision.** `runEditorInWindow(options, application)` is the public interface. The
+**Decision.** `runStudioInWindow(options, application)` is the public interface. The
 `Microsoft::Xna::Framework::Game` subclass that implements it lives entirely inside
-`src/viewport/CnaEditorHost.cpp`.
+`src/viewport/CnaStudioHost.cpp`.
 
 **Why a `Game` subclass at all.** The editor is structurally a CNA application: it wants a window,
 a graphics device, a frame loop and input, which is exactly what `Game` provides. Building a
@@ -532,7 +532,7 @@ never exercise — and would quietly weaken D-01, since the editor would stop ea
 at the layer most worth testing.
 
 **Why the class is not exported.** A base class cannot be hidden behind a pimpl. Exposing the class
-publicly would put `Game` in the public interface, which forces `cna-editor-viewport` to link CNA
+publicly would put `Game` in the public interface, which forces `cna-studio-viewport` to link CNA
 `PUBLIC` — and then every target linking the viewport can reach CNA headers, and the layering rule
 stops being enforced by the build graph. The free function keeps CNA a *private* link dependency.
 This was found the honest way: the first attempt exported the class and the build broke, which is
@@ -544,12 +544,12 @@ itself. One module includes CNA; everything else asks that module.
 
 ### D-13 — The editor's own math types, duplicated from CNA's
 
-**Decision.** `EditorVector2/3/4`, `EditorQuaternion`, `EditorColor`, `EditorRectangle` in
-`include/CNA/Editor/Core/EditorMath.hpp`, laid out to match their CNA counterparts field for field.
+**Decision.** `StudioVector2/3/4`, `StudioQuaternion`, `StudioColor`, `StudioRectangle` in
+`include/CNA/Studio/Core/StudioMath.hpp`, laid out to match their CNA counterparts field for field.
 
 **Why.** A direct consequence of D-03: using `Microsoft::Xna::Framework::Vector3` in the document
-model would drag CNA into `cna-editor-core` and make the default build require a CNA checkout.
-Conversion happens in exactly one place — `cna-editor-viewport` — where the dependency exists
+model would drag CNA into `cna-studio-core` and make the default build require a CNA checkout.
+Conversion happens in exactly one place — `cna-studio-viewport` — where the dependency exists
 anyway, and matching layout keeps it a field copy rather than a reinterpretation.
 
 **Cost, stated honestly.** Two parallel type families that must be kept in sync by hand. This is a
@@ -563,7 +563,7 @@ real maintenance tax, accepted because the alternative — a CNA-dependent core 
   animation, glTF or CSG.
 - JSON for `.cnaproject`, `.cnascene` and `.cnaasset`: readable, diffable, mergeable, migratable.
   A binary runtime form is the content builder's job, not the editor's.
-- Editor overlay as a separate render pass, never as objects in the game's scene. Selection
+- Studio overlay as a separate render pass, never as objects in the game's scene. Selection
   outlines, grids, gizmos and icons are editor artefacts; putting them in the scene graph means a
   build eventually ships with them.
 - Ray-cast picking before GPU picking. GPU picking is an optimisation to reach for when profiling
@@ -578,7 +578,7 @@ real maintenance tax, accepted because the alternative — a CNA-dependent core 
 
 ## 4. Open questions
 
-✅ **Q-01 — Does Dear ImGui integrate cleanly with every Editor Supported backend? — RESOLVED: yes.**
+✅ **Q-01 — Does Dear ImGui integrate cleanly with every Studio Supported backend? — RESOLVED: yes.**
 The spike ran and passed; the renderer and platform layer are implemented and compile against real
 CNA headers. Everything an immediate-mode UI needs is in CNA's public API — including, against
 expectation, proper text input via `TextInputEXT` rather than synthesised key codes. One
@@ -588,7 +588,7 @@ gaps were found and are worth filing upstream: `Color` is not default-constructi
 `CNA_DEVICES` feature. Full report and capability table: **docs/SPIKE-IMGUI-CNA.md**.
 
 ✅ **Q-02 — How does a game consume a compiled scene? Resolved.**
-A **header-only loader shipped from this repository**: `include/CNA/Editor/Runtime/SceneLoader.hpp`.
+A **header-only loader shipped from this repository**: `include/CNA/Studio/Runtime/SceneLoader.hpp`.
 CNA never has to know what a `.cnascene` is, which keeps D-01 and D-03 intact, and the choice is
 reversible — moving the loader into CNA later is a relocation rather than a rewrite, while a format
 that has been part of CNA's public surface for a release cannot be taken back out of it. The
@@ -612,7 +612,7 @@ end-to-end by `tests/PlayerTests.cpp`, which starts the real binary over a real 
 
 Restating the discussion's own minimum milestone, unchanged, because it is a good one:
 
-> CNA Editor opens a project, shows docked panels, loads a JSON scene with three sprites, lets the
+> CNA Studio opens a project, shows docked panels, loads a JSON scene with three sprites, lets the
 > user select an object in the viewport or the hierarchy, change its position in the inspector,
 > undo, save the scene, and run it in a separate CNA Player process.
 
@@ -620,8 +620,8 @@ Of that, the current implementation already does: open a project, load and save 
 change a property through a command, undo, redo, track the saved/dirty state, draw every panel
 through the real Dear ImGui, and **run the scene in a separate `cna-player` process over a real
 socket** — verified by `FullProjectRoundTripThroughTheApplication`,
-`ImGuiUiProducesValidDrawDataForTheWholeEditor` and
-`EditorLaunchesARealPlayerProcessAndTalksToIt` respectively.
+`ImGuiUiProducesValidDrawDataForTheWholeStudio` and
+`StudioLaunchesARealPlayerProcessAndTalksToIt` respectively.
 
 The window exists too: built against a real CNA checkout, the editor opens, docks its five panels
 and renders them through CNA's public API, verified by a screenshot rather than by an exit code.

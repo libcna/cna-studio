@@ -1,7 +1,7 @@
 {
   "asset": {
     "version": "2.0",
-    "generator": "cna-editor example content"
+    "generator": "cna-studio example content"
   },
   "scene": 0,
   "scenes": [

@@ -8,6 +8,6 @@
 
 int main()
 {
-    std::cout << "cna-editor tests\n\n";
-    return CnaEditorTest::runAll();
+    std::cout << "cna-studio tests\n\n";
+    return CnaStudioTest::runAll();
 }

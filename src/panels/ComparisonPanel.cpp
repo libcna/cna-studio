@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/Panels/ComparisonPanel.hpp"
+#include "CNA/Studio/Panels/ComparisonPanel.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <string>
 #include <vector>
 
-#include "CNA/Editor/EditorContext.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -65,7 +65,7 @@ namespace CNA::Editor
         // and exactly one module may have one (D-03). A headless editor supplies a viewport that
         // reads nothing, and the run then reports that it could not read the captures back --
         // which is the honest answer rather than a crash.
-        EditorViewport& viewport = actions_.getViewport();
+        StudioViewport& viewport = actions_.getViewport();
 
         if (!comparison_.start(
                 request, [&viewport](const std::string& path) { return viewport.readImageFile(path); },
@@ -127,7 +127,7 @@ namespace CNA::Editor
 
         // Where, not just how much. A band along one edge is a viewport or scissor problem; a
         // scattering over one sprite is a filtering one. The rectangle usually is the diagnosis.
-        const EditorRectangle& box = entry.difference.boundingBox;
+        const StudioRectangle& box = entry.difference.boundingBox;
         ui_.text("        within " + std::to_string(box.width) + "x" + std::to_string(box.height)
                  + " at (" + std::to_string(box.x) + ", " + std::to_string(box.y) + ")");
 

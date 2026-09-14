@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MS-PL
-#include "CNA/Editor/RuntimeBridge/MessageChannel.hpp"
+#include "CNA/Studio/RuntimeBridge/MessageChannel.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -16,7 +16,7 @@
 #    include <unistd.h>
 #endif
 
-namespace CNA::Editor
+namespace CNA::Studio
 {
     namespace
     {
@@ -302,9 +302,9 @@ namespace CNA::Editor
         impl_->error.clear();
     }
 
-    std::vector<EditorMessage> MessageChannel::poll()
+    std::vector<StudioMessage> MessageChannel::poll()
     {
-        std::vector<EditorMessage> messages;
+        std::vector<StudioMessage> messages;
 
         if (impl_->state == ChannelState::Listening) { tryAccept(); }
 
@@ -354,7 +354,7 @@ namespace CNA::Editor
             const int received = receiveRaw(impl_->peer, buffer, sizeof(buffer));
             if (received > 0)
             {
-                const std::vector<EditorMessage> batch =
+                const std::vector<StudioMessage> batch =
                     impl_->decoder.feed(std::string_view{buffer, static_cast<std::size_t>(received)});
                 messages.insert(messages.end(), batch.begin(), batch.end());
                 continue;
@@ -378,7 +378,7 @@ namespace CNA::Editor
         return messages;
     }
 
-    bool MessageChannel::send(const EditorMessage& message)
+    bool MessageChannel::send(const StudioMessage& message)
     {
         if (impl_->state != ChannelState::Connected) { return false; }
         impl_->sendBuffer += message.encode();
