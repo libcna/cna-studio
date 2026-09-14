@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 5 of 21 complete `███░░░░░░░░░`
+**Progress:** 11 of 22 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,16 +19,17 @@
 | `STUDIO-02020` | Define the Studio host renderer capability contract as data | ⬜ | `STUDIO-02001` |
 | `STUDIO-02021` | Evaluate the contract against the live device at start-up | ⬜ | `STUDIO-02020` |
 | `STUDIO-02022` | Fail cleanly and precisely when the compiled renderer cannot host Studio | ⬜ | `STUDIO-02021` |
-| `STUDIO-02030` | Guard test: Studio must classify every renderer identity CNA registers | ⬜ | `STUDIO-02020` |
-| `STUDIO-02031` | Guard test: Studio must classify every platform identity CNA implements | ⬜ | `STUDIO-02030` |
-| `STUDIO-02032` | Guard test: no `CNA::Internal::*` anywhere in Studio | ⬜ | — |
-| `STUDIO-02033` | Guard test: only `cna-studio-viewport` includes CNA headers | ⬜ | — |
-| `STUDIO-02034` | Guard test: no direct Vulkan/D3D/OpenGL/Metal/WebGPU calls in Studio modules | ⬜ | — |
+| `STUDIO-02030` | Guard test: Studio must classify every renderer identity CNA registers | ✅ | `STUDIO-02020` |
+| `STUDIO-02031` | Guard test: Studio must classify every platform identity CNA implements | ✅ | `STUDIO-02030` |
+| `STUDIO-02032` | Guard test: no `CNA::Internal::*` anywhere in Studio | ✅ | — |
+| `STUDIO-02033` | Guard test: only `cna-studio-viewport` includes CNA headers | ✅ | — |
+| `STUDIO-02034` | Guard test: no direct Vulkan/D3D/OpenGL/Metal/WebGPU calls in Studio modules | ✅ | — |
 | `STUDIO-02035` | Guard test: every document mutation goes through a command | ⬜ | — |
 | `STUDIO-02036` | Guard test: unknown plugin components survive a save/load round trip | ✅ | — |
 | `STUDIO-02037` | Guard test: authored files are byte-deterministic across repeated saves | ⬜ | — |
+| `STUDIO-02038` | Legacy renderer-name migration for projects written by the prototype | ✅ | `STUDIO-02030` |
 | `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ⬜ | `STUDIO-02020` |
-| `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | ⬜ | `STUDIO-02040` |
+| `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | 🔄 | `STUDIO-02040` |
 | `STUDIO-02050` | Define the service decomposition of the application shell | ⬜ | — |
 | `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ⬜ | `STUDIO-02050` |
 
@@ -109,6 +110,12 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-02037` — Guard test: authored files are byte-deterministic across repeated saves
 
 **Acceptance.** Saving the same document twice produces identical bytes; ordering is stable and no timestamps leak
+
+### `STUDIO-02038` — Legacy renderer-name migration for projects written by the prototype
+
+**Acceptance.** A `.cnaproject` naming `easygl`, `d3d11`, `d3d12`, `d3d9` or `dx3` opens and is migrated to the current identity, with a warning saying what changed and why. `ascii` is reported as removed with no substitute chosen for the user
+
+**Verification.** Round-trip tests for a migrated name, a removed name, and alias-table consistency
 
 ### `STUDIO-02040` — Define the target-profile model: OS, platform, architecture, renderer, configuration, features
 

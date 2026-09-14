@@ -5,6 +5,10 @@
  */
 
 #include "TestHarness.hpp"
+#include <algorithm>
+#include <set>
+
+#include "CNA/Studio/Project/RendererCatalog.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -82,12 +86,76 @@ CNA_STUDIO_TEST(ProjectWarnsAboutAnUnknownBackend)
     JsonValue json = JsonValue::makeObject();
     json.set("formatVersion", JsonValue{Project::kFormatVersion});
     json.set("name", JsonValue{"MyGame"});
-    json.set("defaultGraphicsBackend", JsonValue{"glide"});
+    // Not "glide": that WAS this test's example of an unknown renderer, and CNA has one now. A
+    // test whose fixture quietly becomes valid stops testing anything, so the name here is one no
+    // renderer registry will ever contain.
+    json.set("defaultGraphicsBackend", JsonValue{"no-such-renderer"});
 
     Project project;
     const ProjectLoadResult result = project.loadFromJson(json);
     CNA_STUDIO_EXPECT(result.succeeded);
     CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
+}
+
+CNA_STUDIO_TEST(ALegacyRendererNameIsMigratedAndTheChangeIsReported)
+{
+    // `.cnaproject` files written by the CNA Editor prototype name renderers CNA no longer has.
+    // They are migrated rather than rejected -- but never silently, because substituting a
+    // renderer changes what the user's game ships on.
+    JsonValue json = JsonValue::makeObject();
+    json.set("formatVersion", JsonValue{Project::kFormatVersion});
+    json.set("name", JsonValue{"OldGame"});
+    json.set("defaultGraphicsBackend", JsonValue{"easygl"});
+
+    Project project;
+    const ProjectLoadResult result = project.loadFromJson(json);
+    CNA_STUDIO_EXPECT(result.succeeded);
+    CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(result.warnings.front().find("easygl") != std::string::npos);
+    CNA_STUDIO_EXPECT(result.warnings.front().find("OPENGLES3") != std::string::npos);
+
+    // And the migration actually took effect, rather than only being described.
+    CNA_STUDIO_EXPECT_EQ(project.getDefaultGraphicsBackend(), std::string{"OPENGLES3"});
+    CNA_STUDIO_EXPECT(findRenderer(project.getDefaultGraphicsBackend()) != nullptr);
+}
+
+CNA_STUDIO_TEST(ARemovedRendererIsReportedRatherThanSilentlySubstituted)
+{
+    // ASCII is not a renderer any more and has no equivalent. Picking one for the user would be a
+    // guess about how their game should look.
+    JsonValue json = JsonValue::makeObject();
+    json.set("formatVersion", JsonValue{Project::kFormatVersion});
+    json.set("name", JsonValue{"AsciiGame"});
+    json.set("defaultGraphicsBackend", JsonValue{"ascii"});
+
+    Project project;
+    const ProjectLoadResult result = project.loadFromJson(json);
+    CNA_STUDIO_EXPECT(result.succeeded);
+    CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(result.warnings.front().find("removed") != std::string::npos);
+    CNA_STUDIO_EXPECT_EQ(project.getDefaultGraphicsBackend(), std::string{"ascii"});
+}
+
+CNA_STUDIO_TEST(EveryLegacyAliasPointsAtSomethingRealOrAtNothingDeliberately)
+{
+    for (const RendererAlias& alias : getLegacyRendererAliases())
+    {
+        CNA_STUDIO_EXPECT(!alias.legacyName.empty());
+        // A migration with no explanation is one a user cannot evaluate.
+        CNA_STUDIO_EXPECT(!alias.reason.empty());
+        // The legacy name must not also be a current identity, or the alias would never be reached.
+        CNA_STUDIO_EXPECT(findRenderer(alias.legacyName) == nullptr);
+        if (!alias.replacement.empty())
+        {
+            CNA_STUDIO_EXPECT(findRenderer(alias.replacement) != nullptr);
+        }
+    }
+}
+
+CNA_STUDIO_TEST(ANewProjectDefaultsToARendererCnaActuallyHas)
+{
+    Project project;
+    CNA_STUDIO_EXPECT(findRenderer(project.getDefaultGraphicsBackend()) != nullptr);
 }
 
 CNA_STUDIO_TEST(XnaCompatibleProjectWarnsAboutAStartupScene)
@@ -107,22 +175,139 @@ CNA_STUDIO_TEST(XnaCompatibleProjectWarnsAboutAStartupScene)
     CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
 }
 
-CNA_STUDIO_TEST(BackendTableCoversEveryCnaBackend)
+CNA_STUDIO_TEST(TheRendererCatalogueClassifiesEveryAuditedCnaRenderer)
 {
-    // Mirrors cmake/BackendSelection.cmake in the CNA revision this editor targets. When CNA gains
-    // a backend, this count changes and this test is the reminder to update the table.
-    CNA_STUDIO_EXPECT_EQ(getKnownBackends().size(), std::size_t{14});
+    // Note what this does NOT assert: a count. The prototype's version of this test pinned the
+    // table at fourteen entries, which is exactly the "hard-code today's renderer count" the
+    // architecture forbids -- it made the number the contract, so growing the table meant editing
+    // the assertion, and the assertion could be edited without anyone classifying anything.
+    //
+    // The contract is coverage: every renderer identity CNA registers must have a Studio
+    // classification. That is checked against the audited snapshot here, and against CNA's live
+    // inventory in the CNA-enabled build.
+    for (const std::string_view identity : getAuditedCnaRendererIdentities())
+    {
+        const RendererInfo* renderer = findRenderer(identity);
+        if (renderer == nullptr)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "CNA renderer '" + std::string{identity} + "' has no Studio classification. "
+                "Add it to src/project/RendererCatalog.cpp.");
+        }
+        CNA_STUDIO_EXPECT(renderer != nullptr);
+    }
+}
 
-    CNA_STUDIO_EXPECT(findBackend("easygl") != nullptr);
-    CNA_STUDIO_EXPECT(findBackend("EASYGL") != nullptr);
-    CNA_STUDIO_EXPECT(findBackend("glide") == nullptr);
+CNA_STUDIO_TEST(TheRendererCatalogueClaimsNothingCnaDoesNotHave)
+{
+    // The other direction, which catches a typo in the catalogue: an entry Studio classifies but
+    // CNA has never heard of would silently offer a user a renderer that cannot be built.
+    const std::vector<std::string_view>& audited = getAuditedCnaRendererIdentities();
+    for (const RendererInfo& renderer : getKnownRenderers())
+    {
+        const bool known = std::find(audited.begin(), audited.end(), renderer.cnaIdentity)
+                        != audited.end();
+        if (!known)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "Studio classifies '" + std::string{renderer.cnaIdentity}
+                + "', which is not a CNA renderer identity at the audited commit "
+                + std::string{getAuditedCnaCommit()});
+        }
+        CNA_STUDIO_EXPECT(known);
+    }
+}
 
-    CNA_STUDIO_EXPECT(findBackend("easygl")->support == BackendStudioSupport::StudioSupported);
-    // A CPU rasterizer is a fine reference renderer and a hopeless interactive UI host.
-    CNA_STUDIO_EXPECT(findBackend("software")->support == BackendStudioSupport::PreviewOnly);
-    // Historical and Emscripten-only backends are exactly why the player is a separate process.
-    CNA_STUDIO_EXPECT(findBackend("dx3")->support == BackendStudioSupport::RuntimeOnly);
-    CNA_STUDIO_EXPECT(findBackend("canvas")->support == BackendStudioSupport::RuntimeOnly);
+CNA_STUDIO_TEST(RendererIdentitiesAndCommandLineNamesAreUnique)
+{
+    std::set<std::string_view> identities;
+    std::set<std::string_view> names;
+    for (const RendererInfo& renderer : getKnownRenderers())
+    {
+        CNA_STUDIO_EXPECT(identities.insert(renderer.cnaIdentity).second);
+        CNA_STUDIO_EXPECT(names.insert(renderer.commandLineName).second);
+        // A classification with no reasoning is a classification nobody can review or revise.
+        CNA_STUDIO_EXPECT(!renderer.note.empty());
+        CNA_STUDIO_EXPECT(!renderer.displayName.empty());
+    }
+}
+
+CNA_STUDIO_TEST(RendererLookupIsCaseInsensitiveOverBothSpellings)
+{
+    CNA_STUDIO_EXPECT(findRenderer("vulkan") != nullptr);
+    CNA_STUDIO_EXPECT(findRenderer("VULKAN") != nullptr);
+    CNA_STUDIO_EXPECT(findRenderer("Vulkan") != nullptr);
+    CNA_STUDIO_EXPECT(findRenderer("SDL_RENDERER") != nullptr);
+    CNA_STUDIO_EXPECT(findRenderer("sdlrenderer") != nullptr);
+    CNA_STUDIO_EXPECT(findRenderer("no-such-renderer") == nullptr);
+}
+
+CNA_STUDIO_TEST(StudioHostSupportIsAStricterQuestionThanRunningAGame)
+{
+    // A renderer that cannot host Studio is still a perfectly good game target. Conflating the two
+    // would deny a 2D game a 2D renderer because Studio's own viewport happens to be 3D.
+    CNA_STUDIO_EXPECT(findRenderer("vulkan")->hostSupport == RendererHostSupport::StudioHost);
+    CNA_STUDIO_EXPECT(findRenderer("opengl33")->hostSupport == RendererHostSupport::StudioHost);
+
+    // 2D-only: it can draw the UI but not the 3D viewport, so it cannot host Studio -- and it is
+    // still a first-class target for a 2D game.
+    CNA_STUDIO_EXPECT(findRenderer("sdlrenderer")->hostSupport == RendererHostSupport::PreviewOnly);
+
+    // A CPU rasterizer is a fine reference renderer and a hopeless interactive host.
+    CNA_STUDIO_EXPECT(findRenderer("software")->hostSupport == RendererHostSupport::PreviewOnly);
+
+    // Historical and browser-only renderers are exactly why the player is a separate process.
+    CNA_STUDIO_EXPECT(findRenderer("directx3")->hostSupport == RendererHostSupport::PreviewOnly);
+    CNA_STUDIO_EXPECT(findRenderer("canvas")->hostSupport == RendererHostSupport::RuntimeOnly);
+    CNA_STUDIO_EXPECT(findRenderer("headless")->hostSupport == RendererHostSupport::RuntimeOnly);
+}
+
+CNA_STUDIO_TEST(AtLeastOneRendererCanHostStudioOnEachMajorDesktopPlatform)
+{
+    // If this ever fails, Studio cannot be run at all on some platform -- which is worth failing
+    // loudly for rather than discovering when someone tries to build it there.
+    CNA_STUDIO_EXPECT(findRenderer("vulkan")->hostSupport == RendererHostSupport::StudioHost);
+    CNA_STUDIO_EXPECT(findRenderer("directx12")->hostSupport == RendererHostSupport::StudioHost);
+    CNA_STUDIO_EXPECT(findRenderer("metal")->hostSupport == RendererHostSupport::StudioHost);
+}
+
+CNA_STUDIO_TEST(ThePlatformCatalogueSeparatesPlatformFromRenderer)
+{
+    // Current CNA models these as separate axes and rejects invalid combinations. The prototype
+    // had one flat "backend" concept, which cannot express "SDL3 windowing, Vulkan rendering".
+    CNA_STUDIO_EXPECT(findPlatform("SDL3") != nullptr);
+    CNA_STUDIO_EXPECT(findPlatform("sdl3")->status == PlatformStatus::Implemented);
+    CNA_STUDIO_EXPECT(findPlatform("sdl3")->canHostStudio);
+
+    // Headless and terminal provide no surface a GPU renderer can draw into.
+    CNA_STUDIO_EXPECT(!findPlatform("headless")->canHostStudio);
+    CNA_STUDIO_EXPECT(!findPlatform("terminal")->canHostStudio);
+}
+
+CNA_STUDIO_TEST(ReservedPlatformsAreListedRatherThanHidden)
+{
+    // CNA makes selecting one a hard error rather than falling back to the default. Studio lists
+    // them so a user who asks is told it does not exist yet, instead of silently getting SDL3.
+    for (const char* reserved : {"SDL12", "WIN32", "EMSCRIPTEN"})
+    {
+        const PlatformInfo* platform = findPlatform(reserved);
+        CNA_STUDIO_EXPECT(platform != nullptr);
+        if (platform != nullptr)
+        {
+            CNA_STUDIO_EXPECT(platform->status == PlatformStatus::Reserved);
+            CNA_STUDIO_EXPECT(!platform->canHostStudio);
+        }
+    }
+}
+
+CNA_STUDIO_TEST(TheAuditRecordsWhichCnaItWasTakenFrom)
+{
+    // A snapshot with no provenance cannot be re-verified, and a stale one is indistinguishable
+    // from a current one. This is how the prototype's table became wrong without anyone noticing.
+    CNA_STUDIO_EXPECT(!getAuditedCnaCommit().empty());
+    CNA_STUDIO_EXPECT_EQ(getAuditedCnaCommit().size(), std::size_t{40});
+    CNA_STUDIO_EXPECT(!getAuditedCnaBranch().empty());
+    CNA_STUDIO_EXPECT(getAuditedCnaRendererIdentities().size() > 40);
 }
 
 CNA_STUDIO_TEST(AssetDatabaseAssignsStableIdsAndWritesSidecars)

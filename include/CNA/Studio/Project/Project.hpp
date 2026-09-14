@@ -47,52 +47,13 @@ namespace CNA::Studio
     ProjectKind parseProjectKind(std::string_view text);
 
     /**
-     * @brief How well a given CNA graphics backend works underneath the editor itself.
+     * @brief The renderer a project gets when it does not name one.
      *
-     * This distinction exists because CNA selects its backend at *compile* time, so the editor
-     * binary and the previewed game are built against different CNA builds (ANALYSIS.md finding
-     * F-01). A backend can therefore be perfectly good for running a game while being unable to
-     * host a docked editor UI at an arbitrary window size.
+     * A current CNA renderer identity. The prototype defaulted to `"easygl"`, which CNA no longer
+     * has: EasyGL became a renderer family rather than an identity, and `OPENGLES3` is the profile
+     * that matches what it used to select.
      */
-    enum class BackendStudioSupport
-    {
-        /** @brief The editor UI itself can be hosted on this backend. */
-        StudioSupported,
-
-        /** @brief Usable for a preview/player process, not for the Studio UI. */
-        PreviewOnly,
-
-        /** @brief Ships games only; no editor or preview role. */
-        RuntimeOnly
-    };
-
-    /** @brief One entry in the table of CNA backends the editor knows about. */
-    struct BackendInfo
-    {
-        /** @brief The value CNA's own CNA_GRAPHICS_BACKEND CMake option takes, e.g. "VULKAN". */
-        std::string cmakeName;
-
-        /** @brief Lower-case name used on the command line and in `.cnaproject`, e.g. "vulkan". */
-        std::string commandLineName;
-
-        std::string displayName;
-        BackendStudioSupport support = BackendStudioSupport::RuntimeOnly;
-
-        /** @brief Why the support level is what it is; shown in the backend configuration dialog. */
-        std::string note;
-    };
-
-    /**
-     * @brief Returns the backend table, mirroring CNA's cmake/BackendSelection.cmake.
-     *
-     * Kept as data in the editor rather than queried from CNA, because the editor must be able to
-     * talk about a backend it was not itself built against -- which is the normal case, since it
-     * launches player processes built from other CNA configurations.
-     */
-    const std::vector<BackendInfo>& getKnownBackends();
-
-    /** @brief Returns the entry whose commandLineName is @p name, or nullptr. */
-    const BackendInfo* findBackend(std::string_view name);
+    inline constexpr const char* kDefaultRenderer = "OPENGLES3";
 
     /** @brief Outcome of loading a `.cnaproject`. */
     struct ProjectLoadResult
@@ -222,7 +183,7 @@ namespace CNA::Studio
         std::string startupScene_;
         std::string assetDirectory_ = "Assets";
         std::string sceneDirectory_ = "Scenes";
-        std::string defaultGraphicsBackend_ = "easygl";
+        std::string defaultGraphicsBackend_ = kDefaultRenderer;
         std::vector<std::string> targetPlatforms_{"linux-x64"};
         std::vector<std::string> layers_{kDefaultLayer};
 

@@ -15,6 +15,7 @@ add_executable(cna-studio-tests
     UiTests.cpp
     UiCoreTests.cpp
     StudioShellTests.cpp
+    ArchitectureGuardTests.cpp
     PlayerTests.cpp
     ViewportTests.cpp)
 
@@ -50,6 +51,12 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/plugins/testplugin/plugin.json"
 add_dependencies(cna-studio-tests cna-studio-test-plugin)
 target_compile_definitions(cna-studio-tests PRIVATE
     CNA_STUDIO_TEST_PLUGIN_DIR="${CMAKE_CURRENT_BINARY_DIR}/plugins")
+
+# The architecture guard tests scan the source tree, so they must be told where it is rather than
+# guessing from the test binary's location -- a guess that silently finds nothing would make every
+# guard pass vacuously.
+target_compile_definitions(cna-studio-tests PRIVATE
+    CNA_STUDIO_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 target_include_directories(cna-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cna-studio-tests PRIVATE

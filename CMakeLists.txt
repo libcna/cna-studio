@@ -151,6 +151,7 @@ target_link_libraries(cna-studio-assets PUBLIC cna-studio-core PRIVATE cna-studi
 
 # cna-studio-project -- the .cnaproject format and the backend capability table.
 add_library(cna-studio-project STATIC
+    src/project/RendererCatalog.cpp
     src/project/Project.cpp
     src/project/RecoveryStore.cpp
     src/project/BuildRunner.cpp)

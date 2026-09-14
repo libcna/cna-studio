@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Panels/BuildPanel.hpp"
 
+#include "CNA/Studio/Project/RendererCatalog.hpp"
+
 #include <string>
 #include <vector>
 
@@ -43,8 +45,8 @@ namespace CNA::Studio
         }
         if (backend_.empty())
         {
-            const BackendInfo* backend = findBackend(project.getDefaultGraphicsBackend());
-            backend_ = backend != nullptr ? backend->cmakeName : std::string{};
+            const RendererInfo* backend = findRenderer(project.getDefaultGraphicsBackend());
+            backend_ = backend != nullptr ? std::string{backend->cnaIdentity} : std::string{};
         }
 
         PropertyValue platform{PropertyValue::EnumValue{platform_}};
@@ -55,7 +57,10 @@ namespace CNA::Studio
         }
 
         std::vector<std::string> backends;
-        for (const BackendInfo& entry : getKnownBackends()) { backends.push_back(entry.cmakeName); }
+        for (const RendererInfo& entry : getKnownRenderers())
+        {
+            backends.push_back(std::string{entry.cnaIdentity});
+        }
 
         PropertyValue backend{PropertyValue::EnumValue{backend_}};
         ui_.setNextItemWidth(160.0f);

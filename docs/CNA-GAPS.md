@@ -69,7 +69,7 @@ described is gone.
 
 **Note.** This gap predates the renderer registry rewrite and the audited commit has a far larger
 renderer set than when it was filed. Its restatement above is deliberately renderer-agnostic;
-re-measuring which of the 49 registered renderer identities are actually affected is
+re-measuring which of the 50 registered renderer identities are actually affected is
 `STUDIO-02010`.
 
 ---

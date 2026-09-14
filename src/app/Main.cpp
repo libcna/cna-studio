@@ -13,6 +13,7 @@
 #include <iostream>
 #include <memory>
 
+#include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
@@ -175,16 +176,16 @@ namespace
     void printBackends()
     {
         std::cout << "CNA graphics backends known to Studio:\n\n";
-        for (const CNA::Studio::BackendInfo& backend : CNA::Studio::getKnownBackends())
+        for (const CNA::Studio::RendererInfo& backend : CNA::Studio::getKnownRenderers())
         {
             const char* support = "runtime-only  ";
-            switch (backend.support)
+            switch (backend.hostSupport)
             {
-                case CNA::Studio::BackendStudioSupport::StudioSupported: support = "studio        "; break;
-                case CNA::Studio::BackendStudioSupport::PreviewOnly: support = "preview-only  "; break;
-                case CNA::Studio::BackendStudioSupport::RuntimeOnly: support = "runtime-only  "; break;
+                case CNA::Studio::RendererHostSupport::StudioHost: support = "studio        "; break;
+                case CNA::Studio::RendererHostSupport::PreviewOnly: support = "preview-only  "; break;
+                case CNA::Studio::RendererHostSupport::RuntimeOnly: support = "runtime-only  "; break;
             }
-            std::cout << "  " << support << backend.commandLineName << "  (" << backend.cmakeName << ")\n"
+            std::cout << "  " << support << backend.commandLineName << "  (" << backend.cnaIdentity << ")\n"
                       << "      " << backend.displayName << " -- " << backend.note << "\n";
         }
         std::cout << "\nThese are the backends a cna-player build can use. Studio's own backend\n"

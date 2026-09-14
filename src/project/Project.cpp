@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Project/Project.hpp"
 
+#include "CNA/Studio/Project/RendererCatalog.hpp"
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -18,52 +20,6 @@ namespace CNA::Studio
         return text == "XnaCompatible" ? ProjectKind::XnaCompatible : ProjectKind::CnaNative;
     }
 
-    const std::vector<BackendInfo>& getKnownBackends()
-    {
-        // Mirrors CNA's cmake/BackendSelection.cmake as of the CNA revision this editor was
-        // written against. The support column is the editor's own judgement, not CNA's: it
-        // records whether a backend can host a *docked editor UI*, which is a stricter
-        // requirement than being able to run a game.
-        static const std::vector<BackendInfo> backends{
-            {"EASYGL", "easygl", "EasyGL (OpenGL ES)", BackendStudioSupport::StudioSupported,
-             "CNA's default on Linux and Emscripten. The reference target for the Studio UI."},
-            {"VULKAN", "vulkan", "Vulkan", BackendStudioSupport::StudioSupported,
-             "Full Studio UI support."},
-            {"SDL_RENDERER", "sdlrenderer", "SDL_Renderer (2D only)", BackendStudioSupport::StudioSupported,
-             "CNA's default off Linux. 2D-only, which the Studio UI itself does not mind."},
-            {"BGFX", "bgfx", "bgfx", BackendStudioSupport::StudioSupported, "Full Studio UI support."},
-            {"SDL_GPU", "sdlgpu", "SDL_GPU", BackendStudioSupport::StudioSupported, "Full Studio UI support."},
-            {"D3D11", "d3d11", "Direct3D 11", BackendStudioSupport::StudioSupported,
-             "Windows only. Full Studio UI support there."},
-            {"D3D12", "d3d12", "Direct3D 12", BackendStudioSupport::StudioSupported,
-             "Windows only. Full Studio UI support there."},
-            {"WEBGPU", "webgpu", "WebGPU", BackendStudioSupport::PreviewOnly,
-             "Experimental in CNA. Useful for previewing a browser build's rendering."},
-            {"D3D9", "d3d9", "Direct3D 9", BackendStudioSupport::PreviewOnly,
-             "Fixed-function-era feature set. Suitable for a player process, not for the Studio UI."},
-            {"SOFTWARE", "software", "Software (CPU rasterizer)", BackendStudioSupport::PreviewOnly,
-             "Correct but slow. Ideal as a comparison reference, unusable as an interactive UI host."},
-            {"CANVAS", "canvas", "HTML Canvas 2D", BackendStudioSupport::RuntimeOnly,
-             "Emscripten only; there is no desktop Studio process to host."},
-            {"ASCII", "ascii", "ASCII glyph grid", BackendStudioSupport::RuntimeOnly,
-             "A deliberately lossy presentation filter. Meaningful for a game, not for a UI."},
-            {"DX3", "dx3", "DirectX 3 (DirectDraw)", BackendStudioSupport::RuntimeOnly,
-             "Historical backend. Exactly the case the separate player process exists for."},
-            {"HEADLESS", "headless", "Headless (no GPU or window)", BackendStudioSupport::RuntimeOnly,
-             "No window by definition. Used by Studio's own automated tests."},
-        };
-        return backends;
-    }
-
-    const BackendInfo* findBackend(std::string_view name)
-    {
-        const std::vector<BackendInfo>& backends = getKnownBackends();
-        const auto found = std::find_if(backends.begin(), backends.end(),
-                                        [&](const BackendInfo& backend) {
-                                            return backend.commandLineName == name || backend.cmakeName == name;
-                                        });
-        return found == backends.end() ? nullptr : &*found;
-    }
 
     JsonValue Project::toJson() const
     {
@@ -164,12 +120,36 @@ namespace CNA::Studio
         startupScene_ = document["startupScene"].asString();
         assetDirectory_ = document["assetDirectory"].asString("Assets");
         sceneDirectory_ = document["sceneDirectory"].asString("Scenes");
-        defaultGraphicsBackend_ = document["defaultGraphicsBackend"].asString("easygl");
+        // The JSON key stays `defaultGraphicsBackend` -- it is a serialized contract that existing
+        // project files already carry. The *value* it takes is a CNA renderer identity, and CNA's
+        // renderer registry has been reorganised since the prototype wrote these files.
+        defaultGraphicsBackend_ = document["defaultGraphicsBackend"].asString(kDefaultRenderer);
 
-        if (findBackend(defaultGraphicsBackend_) == nullptr)
+        if (findRenderer(defaultGraphicsBackend_) == nullptr)
         {
-            result.warnings.push_back("unknown defaultGraphicsBackend '" + defaultGraphicsBackend_
-                                      + "'; the Play button will need one chosen explicitly");
+            const RendererAlias* alias = findLegacyRendererAlias(defaultGraphicsBackend_);
+            if (alias != nullptr && !alias->replacement.empty())
+            {
+                // Migrated, and reported. Silently substituting would change which renderer the
+                // user's game ships on without telling them.
+                result.warnings.push_back(
+                    "defaultGraphicsBackend '" + defaultGraphicsBackend_ + "' is no longer a CNA "
+                    "renderer; using '" + std::string{alias->replacement} + "' instead. "
+                    + std::string{alias->reason});
+                defaultGraphicsBackend_ = std::string{alias->replacement};
+            }
+            else if (alias != nullptr)
+            {
+                result.warnings.push_back(
+                    "defaultGraphicsBackend '" + defaultGraphicsBackend_ + "' has been removed "
+                    "from CNA and has no replacement. " + std::string{alias->reason}
+                    + " Choose a renderer before building.");
+            }
+            else
+            {
+                result.warnings.push_back("unknown defaultGraphicsBackend '" + defaultGraphicsBackend_
+                                          + "'; the Play button will need one chosen explicitly");
+            }
         }
 
         targetPlatforms_.clear();

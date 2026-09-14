@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Panels/DiagnosticsPanel.hpp"
 
+#include "CNA/Studio/Project/RendererCatalog.hpp"
+
 #include <string>
 #include <vector>
 
@@ -93,17 +95,17 @@ namespace CNA::Studio
         ui_.separator();
 
         ui_.text("Backends Studio knows about");
-        for (const BackendInfo& backend : getKnownBackends())
+        for (const RendererInfo& backend : getKnownRenderers())
         {
             const char* support = "runtime only";
-            switch (backend.support)
+            switch (backend.hostSupport)
             {
-                case BackendStudioSupport::StudioSupported: support = "studio      "; break;
-                case BackendStudioSupport::PreviewOnly: support = "preview only"; break;
-                case BackendStudioSupport::RuntimeOnly: support = "runtime only"; break;
+                case RendererHostSupport::StudioHost: support = "studio      "; break;
+                case RendererHostSupport::PreviewOnly: support = "preview only"; break;
+                case RendererHostSupport::RuntimeOnly: support = "runtime only"; break;
             }
-            ui_.text(std::string{"    "} + support + "  " + backend.commandLineName + "  ("
-                     + backend.displayName + ")");
+            ui_.text(std::string{"    "} + support + "  " + std::string{backend.commandLineName}
+                     + "  (" + std::string{backend.displayName} + ")");
         }
 
         ui_.endPanel();

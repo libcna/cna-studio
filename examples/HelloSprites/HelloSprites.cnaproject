@@ -5,7 +5,7 @@
   "startupScene": "Scenes/Level01.cnascene",
   "assetDirectory": "Assets",
   "sceneDirectory": "Scenes",
-  "defaultGraphicsBackend": "easygl",
+  "defaultGraphicsBackend": "OPENGLES3",
   "targetPlatforms": [
     "linux-x64",
     "windows-x64"

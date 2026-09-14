@@ -48,16 +48,16 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**45 of 441 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  10.2%
+**53 of 442 tasks complete** `███░░░░░░░░░░░░░░░░░░░░░`  12.0%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 45 |
-| 🔄 In progress | 10 |
-| ⬜ Not started | 381 |
+| ✅ Complete | 53 |
+| 🔄 In progress | 11 |
+| ⬜ Not started | 373 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **441** |
+| **Total** | **442** |
 
 > **On the task count.** 439 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
@@ -71,7 +71,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 |------:|-------|-----|:------:|------:|-----:|----------|
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
-| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 21 | 5 | `██░░░░░░░░` |
+| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 22 | 11 | `█████░░░░░` |
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 26 | 7 | `███░░░░░░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 15 | 4 | `███░░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 12 | 1 | `█░░░░░░░░░` |
@@ -98,7 +98,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 26 | [Physics and navigation tooling](plans/phase-26-physics-nav.md) | `STUDIO-26NNN` | ⬜ | 8 | 0 | `░░░░░░░░░░` |
 | 27 | [Profiling and diagnostics](plans/phase-27-profiling.md) | `STUDIO-27NNN` | ⬜ | 14 | 0 | `░░░░░░░░░░` |
 | 28 | [Plugins and SDK](plans/phase-28-plugins.md) | `STUDIO-28NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
-| 29 | [Renderer and platform matrix](plans/phase-29-renderer-matrix.md) | `STUDIO-29NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
+| 29 | [Renderer and platform matrix](plans/phase-29-renderer-matrix.md) | `STUDIO-29NNN` | 🔄 | 6 | 2 | `███░░░░░░░` |
 | 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 31 | [Reliability](plans/phase-31-reliability.md) | `STUDIO-31NNN` | 🔄 | 13 | 1 | `█░░░░░░░░░` |
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
@@ -192,7 +192,7 @@ The repository is at the end of the **first implementation tranche**. What exist
   `CNA::Studio` namespace, `include/CNA/Studio/`, `CNA_STUDIO_*` options, and user-visible text that
   no longer calls the product an editor. 94 files moved with `git mv`, so per-file history survived.
 - The architecture is re-stated against **current** CNA (`next`), which has changed substantially
-  since the prototype's analysis: renderer and platform are separate axes, there are 49 renderer
+  since the prototype's analysis: renderer and platform are separate axes, there are 50 renderer
   identities rather than 14, and `RendererCapabilityProfile` provides a genuine runtime capability
   model. See `docs/ARCHITECTURE.md`.
 - Six CNA gaps are registered, two of them re-verified as fixed upstream since the prototype filed
@@ -214,7 +214,16 @@ The repository is at the end of the **first implementation tranche**. What exist
 `cna-studio --shell-preview=shell.png` renders it from the real binary with no GPU and no
 display.
 
-The suite is **509 assertions across 17 CTest suites**, green and warning-free in both GCC Debug
+- A **renderer and platform catalogue** replacing the prototype's stale 14-entry backend table:
+  all 50 of CNA's renderer identities classified, platforms modelled as their own axis, and a
+  legacy alias table that migrates a `.cnaproject` written by the prototype rather than failing on
+  it (`STUDIO-02030`/`02031`/`29001`/`29002`).
+- **Ten architecture guard tests** (`STUDIO-02032`/`02033`/`02034`) that fail the build on a
+  `CNA::Internal` reference, a direct backend call, a CNA header outside the viewport module, a
+  Dear ImGui dependency in the native UI, a missing SPDX header or a hard-coded renderer-name
+  comparison — each naming the file, the line and the rule.
+
+The suite is **531 assertions across 17 CTest suites**, green and warning-free in both GCC Debug
 and GCC Release at `-Werror`. Two latent defects inherited from the prototype were found by
 building at `-O3 -Werror`, which the prototype's CI did not do, and both are fixed: an ignored
 `freopen` result that would have sent a build's output nowhere while leaving an empty log, and a

@@ -57,12 +57,27 @@ target profiles, the Build panel, diagnostics and the capability contract.
 **Platforms implemented today:** `SDL3` (default), `SDL2`, `HEADLESS`, and `TERMINAL` (POSIX only).
 **Reserved but unimplemented, and a hard configure error:** `SDL12`, `WIN32`, `EMSCRIPTEN`.
 
-### 2.2 There are 49 renderer identities, not 14
+### 2.2 There are 50 renderer identities, not 14
 
-`cmake/RendererRegistry.cmake` maps 49 renderer identities to implementing families. The
-prototype's table of 14 is historical. Studio must never hard-code this list —
-`STUDIO-02030` adds a test that fails loudly when CNA registers an identity Studio has not
-classified.
+`cmake/RendererRegistry.cmake` maps 50 renderer identities to implementing families. The
+prototype's table of 14 is historical, and not merely incomplete — it is **wrong**:
+
+- `EASYGL`, the prototype's *default* renderer, is no longer a renderer identity at all. EasyGL
+  became a renderer **family** serving five GL profiles (`OPENGLES2`, `OPENGLES3`, `OPENGL33`,
+  `WEBGL1`, `WEBGL2`), with the GL profile a runtime value. A project naming `easygl` names
+  something that cannot be built.
+- `D3D11`, `D3D12`, `D3D9` and `DX3` were renamed to the `DIRECTXnn` form.
+- `ASCII` is no longer a renderer; the equivalent presentation is a CNAEXT post-process effect
+  applied on top of an ordinary renderer.
+
+Studio's catalogue (`CNA/Studio/Project/RendererCatalog.hpp`) classifies all 50, models platforms
+as their own axis, and carries a **legacy alias table** so a `.cnaproject` written by the prototype
+migrates rather than failing — and is told what changed, because silently substituting a renderer
+changes what a user's game ships on.
+
+Studio must never hard-code this list. `STUDIO-02030` adds a test that fails loudly when CNA
+registers an identity Studio has not classified, and a guard test rejects scattered
+`name == "vulkan"` comparisons anywhere outside the catalogue itself.
 
 ### 2.3 Capability reporting is now a first-class runtime model
 
@@ -309,4 +324,4 @@ Recorded rather than guessed at. Each has a task id in `plan.md`.
 | `STUDIO-15001` | Which C++ reflection mechanism for project-defined gameplay components — registration functions, descriptor files, lightweight macros, or a small project-side generator? Decided on maintainability and ABI safety, not elegance |
 | `STUDIO-16020` | How does player output reach a Studio viewport efficiently without compromising the separate-process architecture? |
 | `STUDIO-16021` | Does native code hot reload beyond "rebuild and restart the player with state restored" earn its reliability cost? |
-| `STUDIO-02010` | Which of the 49 renderer identities actually exhibit G-03's render-target flip? |
+| `STUDIO-02010` | Which of the 50 renderer identities actually exhibit G-03's render-target flip? |
