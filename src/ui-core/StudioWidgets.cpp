@@ -415,6 +415,45 @@ namespace CNA::Studio
         return result;
     }
 
+    StudioSplitterResult studioSplitter(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                        StudioSplitterAxis axis, float grabPadding)
+    {
+        const StudioTheme& theme = frame.theme();
+        const bool horizontal = axis == StudioSplitterAxis::Horizontal;
+
+        const UiRect grab = horizontal
+            ? UiRect{bounds.left() - grabPadding, bounds.top(),
+                     bounds.width + grabPadding * 2.0f, bounds.height}
+            : UiRect{bounds.left(), bounds.top() - grabPadding,
+                     bounds.width, bounds.height + grabPadding * 2.0f};
+
+        StudioSplitterResult result;
+        // Not a tab stop: Tab moves between things a keyboard can operate, and a splitter is not
+        // one of them yet. Panel resizing from the keyboard belongs with the layout commands.
+        result.interaction = frame.interact(id, grab, /*enabled=*/true);
+        result.dragging = result.interaction.held;
+
+        if (result.interaction.hovered || result.interaction.held)
+        {
+            frame.requestCursor(id, horizontal ? StudioCursor::ResizeHorizontal
+                                               : StudioCursor::ResizeVertical);
+        }
+
+        if (frame.isInputPass() && result.interaction.held)
+        {
+            result.delta = horizontal ? frame.router().mouseDeltaX() : frame.router().mouseDeltaY();
+        }
+
+        if (!frame.isDrawPass()) { return result; }
+
+        StudioColorRole role = StudioColorRole::AppBackground;
+        if (result.interaction.held) { role = StudioColorRole::Accent; }
+        else if (result.interaction.hovered) { role = StudioColorRole::Border; }
+        frame.drawList().fillRect(bounds, theme.color(role));
+
+        return result;
+    }
+
     float studioMenuItemHeight(const StudioTheme& theme)
     {
         return std::max(metricOf(theme, StudioMetric::RowHeight),

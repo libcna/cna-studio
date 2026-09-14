@@ -50,6 +50,7 @@
 
 #include "CNA/Studio/Ui/UiInputState.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
+#include "CNA/Studio/UiCore/StudioDockTree.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
@@ -63,13 +64,26 @@ namespace CNA::Studio
     /** @brief The id an entry uses to mean "a separator here", rather than an action. */
     inline constexpr std::string_view kStudioMenuSeparatorId = "-";
 
-    /** @brief One panel docked in a region, presented as a tab. */
-    struct StudioDockedPanel
+    /**
+     * @brief A panel the shell knows about.
+     *
+     * Identity and presentation are separate fields on purpose: the **id** is what a saved layout
+     * stores and what the dock tree arranges, and it must not change when the title is reworded or
+     * translated. A workspace that stopped restoring because a panel was renamed from "Details" to
+     * "Inspector" would be a self-inflicted data loss.
+     */
+    struct StudioPanelDescriptor
     {
+        /** @brief Stable identifier, e.g. `"outliner"`. Written into saved layouts. */
+        std::string id;
         /** @brief Text shown on the tab. */
         std::string title;
         /** @brief True when the panel's content has unsaved changes. */
         bool modified = false;
+        /** @brief False for a panel the user must not be able to close, such as the viewport. */
+        bool closable = true;
+        /** @brief True to draw the body as the 3D viewport rather than as a panel surface. */
+        bool isViewport = false;
     };
 
     /** @brief One menu in the application menu bar. */
@@ -84,14 +98,6 @@ namespace CNA::Studio
          * drawn, so a menu cannot fall out of step with the command it invokes.
          */
         std::vector<std::string> entries;
-    };
-
-    /** @brief A group of panels sharing one dock region, one of them showing. */
-    struct StudioDockGroup
-    {
-        std::vector<StudioDockedPanel> panels;
-        /** @brief Index of the panel whose body is shown. */
-        std::size_t activeIndex = 0;
     };
 
     /**
@@ -127,11 +133,11 @@ namespace CNA::Studio
         /** @brief The frame the shell drives. */
         [[nodiscard]] const StudioFrame& frame() const { return frame_; }
 
-        /** @brief The dock proportions, adjustable by the user. */
-        [[nodiscard]] StudioShellProportions& proportions() { return proportions_; }
+        /** @brief The workspace arrangement. */
+        [[nodiscard]] StudioDockTree& dockTree() { return dock_; }
 
-        /** @brief The dock proportions. */
-        [[nodiscard]] const StudioShellProportions& proportions() const { return proportions_; }
+        /** @brief The workspace arrangement. */
+        [[nodiscard]] const StudioDockTree& dockTree() const { return dock_; }
 
         /**
          * @brief Replaces the menu bar definition.
@@ -148,14 +154,111 @@ namespace CNA::Studio
          */
         void setToolbar(std::vector<std::string> entries);
 
-        /** @brief The panels docked on the left. */
-        [[nodiscard]] StudioDockGroup& leftDock() { return leftDock_; }
-        /** @brief The panels docked on the right. */
-        [[nodiscard]] StudioDockGroup& rightDock() { return rightDock_; }
-        /** @brief The panels docked along the bottom. */
-        [[nodiscard]] StudioDockGroup& bottomDock() { return bottomDock_; }
-        /** @brief The documents open in the centre. */
-        [[nodiscard]] StudioDockGroup& documents() { return documents_; }
+        /**
+         * @brief Registers a panel, or replaces the descriptor of one already registered.
+         *
+         * Registering does not dock it; @ref dockTree decides where it goes. The two are separate
+         * because a panel the user closed still exists and must be re-openable from the Window
+         * menu without being reconstructed.
+         *
+         * @param panel Descriptor to register.
+         */
+        void registerPanel(StudioPanelDescriptor panel);
+
+        /**
+         * @brief Finds a registered panel.
+         * @param id Panel id.
+         * @return Its descriptor, or nullptr.
+         */
+        [[nodiscard]] const StudioPanelDescriptor* panel(std::string_view id) const;
+
+        /** @brief Every registered panel, in registration order. */
+        [[nodiscard]] const std::vector<StudioPanelDescriptor>& registeredPanels() const
+        {
+            return panels_;
+        }
+
+        /**
+         * @brief Marks a panel as having unsaved changes.
+         * @param id Panel id.
+         * @param modified True when its content is dirty.
+         * @return True when the panel is registered.
+         */
+        bool setPanelModified(std::string_view id, bool modified);
+
+        /** @brief Arranges the registered panels into Studio's default workspace. */
+        void resetLayout();
+
+        /**
+         * @brief Whether a panel is currently docked somewhere.
+         * @param id Panel id.
+         * @return True when it is in the workspace.
+         */
+        [[nodiscard]] bool isPanelOpen(std::string_view id) const;
+
+        /**
+         * @brief Docks a registered panel that is not currently open.
+         *
+         * Into the largest leaf, as a new active tab. Remembering where a panel was last docked is
+         * `STUDIO-05010`'s problem; putting it somewhere the user can see is this one's, and a
+         * panel reopened into a two-tab-wide corner reads as a panel that did not reopen.
+         *
+         * @param id Panel id.
+         * @return True when it was registered and is now open.
+         */
+        bool openPanel(std::string_view id);
+
+        /**
+         * @brief Removes a panel from the workspace.
+         *
+         * Refuses a panel whose descriptor says it is not closable: a workspace with no viewport
+         * is not a smaller workspace, it is a broken one.
+         *
+         * @param id Panel id.
+         * @return True when it was open and is now closed.
+         */
+        bool closePanel(std::string_view id);
+
+        /**
+         * @brief Serializes the workspace arrangement.
+         * @return The JSON document, versioned by @ref StudioDockTree::kLayoutVersion.
+         */
+        [[nodiscard]] JsonValue saveLayout() const;
+
+        /**
+         * @brief Restores a workspace arrangement, never failing into an unusable state.
+         *
+         * A document this Studio cannot read, a tree that is not well-formed, or one naming panels
+         * that no longer exist all resolve to something usable: the default workspace in the first
+         * two cases, and the same arrangement minus the unknown panels in the third. A corrupt
+         * layout file must never be the reason Studio will not start (`STUDIO-05012`), and an
+         * upgrade that removed a panel must not cost the user the rest of their arrangement
+         * (`STUDIO-05011`).
+         *
+         * @param value Document to read.
+         * @param outProblem Receives what could not be read, when anything could not be.
+         * @return True when the document was read exactly as written.
+         */
+        bool loadLayout(const JsonValue& value, std::string* outProblem = nullptr);
+
+        /**
+         * @brief Where a panel's body is drawn, or an empty rectangle when it is not showing.
+         *
+         * Empty for a panel that is docked but is not the active tab of its group, as well as for
+         * one that is not docked at all: in both cases there is nowhere to draw it, and a caller
+         * that checks for an empty rectangle handles both without asking which.
+         *
+         * @param id Panel id.
+         * @return Its body rectangle.
+         */
+        [[nodiscard]] UiRect panelBounds(std::string_view id) const;
+
+        /**
+         * @brief Where a panel's tab sits, or an empty rectangle when it is not docked.
+         * @param id Panel id.
+         * @return Its tab rectangle.
+         */
+        [[nodiscard]] UiRect panelTabBounds(std::string_view id) const;
 
         /**
          * @brief Declares that something in the shell is taking typed input this frame.
@@ -323,14 +426,16 @@ namespace CNA::Studio
 
         void buildContent();
         void computeLayout(float width, float height);
+        [[nodiscard]] float tabStripHeight() const;
         void describe();
 
         void describeMenuBar();
         void describeMenuPopup();
         void describeToolbar();
         void describeDocks();
+        void describeSplitters();
         void describeStatusBar();
-        void describeViewport();
+        void describeViewportBody(const UiRect& body);
 
         void handleMenuKeyboard();
         void dispatchShortcuts();
@@ -344,15 +449,14 @@ namespace CNA::Studio
 
         StudioFrame frame_;
         StudioActionRegistry actions_;
-        StudioShellProportions proportions_;
+        StudioDockTree dock_;
+        std::vector<StudioPanelDescriptor> panels_;
 
         std::vector<StudioMenuDefinition> menus_;
         std::vector<std::string> toolbar_;
 
-        StudioDockGroup leftDock_;
-        StudioDockGroup rightDock_;
-        StudioDockGroup bottomDock_;
-        StudioDockGroup documents_;
+        /** @brief Tab rectangles resolved this frame, by panel id. */
+        std::vector<std::pair<std::string, UiRect>> tabBounds_;
 
         std::string statusLeft_;
         std::string statusRight_;

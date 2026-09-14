@@ -45,10 +45,26 @@ namespace CNA::Studio
         menus_ = defaultMenus();
         toolbar_ = defaultToolbar();
 
-        leftDock_.panels = {{"World Outliner"}, {"Layers"}};
-        rightDock_.panels = {{"Details"}, {"Material"}};
-        bottomDock_.panels = {{"Content Browser"}, {"Output Log"}, {"Build"}, {"Problems"}};
-        documents_.panels = {{"Viewport"}};
+        registerPanel({"viewport", "Viewport", false, /*closable=*/false, /*isViewport=*/true});
+        registerPanel({"outliner", "World Outliner"});
+        registerPanel({"layers", "Layers"});
+        registerPanel({"details", "Details"});
+        registerPanel({"material", "Material"});
+        registerPanel({"content", "Content Browser"});
+        registerPanel({"output", "Output Log"});
+        registerPanel({"build", "Build"});
+        registerPanel({"problems", "Problems"});
+        resetLayout();
+
+        // The one core action the shell itself owns, attached here rather than left for a service
+        // that will never exist: the workspace arrangement is the shell's own state, and a Window
+        // menu whose only entry reports "not implemented" is worse than one with no entry.
+        if (const StudioAction* found = actions_.find("studio.window.resetLayout"))
+        {
+            StudioAction reset = *found;
+            reset.run = [this]() { resetLayout(); };
+            actions_.add(std::move(reset));
+        }
 
         statusLeft_ = "No project open";
         statusRight_ = "Renderer: unknown";
@@ -82,6 +98,184 @@ namespace CNA::Studio
                 "studio.view.toggleGrid", sep,
                 "studio.play.play", "studio.play.stop", sep,
                 "studio.build.build"};
+    }
+
+    void StudioShell::registerPanel(StudioPanelDescriptor descriptor)
+    {
+        const auto existing = std::find_if(panels_.begin(), panels_.end(),
+            [&](const StudioPanelDescriptor& p) { return p.id == descriptor.id; });
+        if (existing != panels_.end()) { *existing = std::move(descriptor); return; }
+        panels_.push_back(std::move(descriptor));
+    }
+
+    const StudioPanelDescriptor* StudioShell::panel(std::string_view id) const
+    {
+        const auto found = std::find_if(panels_.begin(), panels_.end(),
+            [&](const StudioPanelDescriptor& p) { return p.id == id; });
+        return found == panels_.end() ? nullptr : &*found;
+    }
+
+    bool StudioShell::setPanelModified(std::string_view id, bool modified)
+    {
+        const auto found = std::find_if(panels_.begin(), panels_.end(),
+            [&](const StudioPanelDescriptor& p) { return p.id == id; });
+        if (found == panels_.end()) { return false; }
+        found->modified = modified;
+        return true;
+    }
+
+    void StudioShell::resetLayout()
+    {
+        // Studio's default workspace, built from the same operations a user's gestures will use.
+        // Constructing it any other way would let the default reach an arrangement no gesture can
+        // produce -- and therefore one the user could never get back to after changing it.
+        dock_ = StudioDockTree{};
+
+        // Each split turns the node it was given *into* the split and moves its content to a new
+        // leaf, so the centre has to be re-found after every one. sibling() is what says that
+        // plainly; chasing child links here would be the first thing to break when the tree gains
+        // a node kind.
+        // The bottom group is taken off the whole dock area first, so the Content Browser and the
+        // Output Log span the full width beneath the outliner and the inspector. A log is read
+        // across, and a wide one costs the side panels nothing.
+        StudioDockNodeId centre = dock_.root();
+        const StudioDockNodeId bottom = dock_.split(centre, StudioDockSide::Bottom, 0.28f);
+        centre = dock_.sibling(bottom);
+        const StudioDockNodeId left = dock_.split(centre, StudioDockSide::Left, 0.18f);
+        centre = dock_.sibling(left);
+        const StudioDockNodeId right = dock_.split(centre, StudioDockSide::Right, 0.24f);
+        centre = dock_.sibling(right);
+
+        dock_.addPanel(left, "outliner");
+        dock_.addPanel(left, "layers");
+        dock_.addPanel(right, "details");
+        dock_.addPanel(right, "material");
+        dock_.addPanel(bottom, "content");
+        dock_.addPanel(bottom, "output");
+        dock_.addPanel(bottom, "build");
+        dock_.addPanel(bottom, "problems");
+        dock_.addPanel(centre, "viewport");
+
+        for (const StudioDockNodeId leaf : dock_.leaves())
+        {
+            if (!dock_.node(leaf).panels.empty()) { dock_.node(leaf).activePanel = 0; }
+        }
+    }
+
+    bool StudioShell::isPanelOpen(std::string_view id) const
+    {
+        return dock_.findPanel(id) != kInvalidDockNode;
+    }
+
+    bool StudioShell::openPanel(std::string_view id)
+    {
+        if (panel(id) == nullptr) { return false; }
+        if (isPanelOpen(id)) { return true; }
+
+        StudioDockNodeId largest = kInvalidDockNode;
+        float largestArea = -1.0f;
+        for (const StudioDockNodeId leaf : dock_.leaves())
+        {
+            const UiRect& bounds = dock_.node(leaf).bounds;
+            const float area = bounds.width * bounds.height;
+            if (area > largestArea) { largestArea = area; largest = leaf; }
+        }
+        if (largest == kInvalidDockNode) { largest = dock_.root(); }
+        return dock_.addPanel(largest, std::string{id});
+    }
+
+    bool StudioShell::closePanel(std::string_view id)
+    {
+        const StudioPanelDescriptor* descriptor = panel(id);
+        if (descriptor != nullptr && !descriptor->closable) { return false; }
+        return dock_.removePanel(id);
+    }
+
+    JsonValue StudioShell::saveLayout() const { return dock_.toJson(); }
+
+    bool StudioShell::loadLayout(const JsonValue& value, std::string* outProblem)
+    {
+        std::string problem;
+        StudioDockTree restored = StudioDockTree::fromJson(value, &problem);
+        if (!problem.empty())
+        {
+            if (outProblem != nullptr) { *outProblem = problem; }
+            resetLayout();
+            return false;
+        }
+
+        // Panels this build has never heard of are dropped and named, rather than carried through
+        // as tabs that show nothing. An upgrade that retired a panel must cost the user that panel
+        // and not the rest of their arrangement.
+        std::vector<std::string> unknown;
+        for (const std::string& id : restored.panels())
+        {
+            if (panel(id) == nullptr) { unknown.push_back(id); }
+        }
+        for (const std::string& id : unknown) { restored.removePanel(id); }
+
+        dock_ = std::move(restored);
+
+        // A panel the user cannot close must be present however the document arrived. A workspace
+        // with no viewport is not a smaller workspace.
+        std::vector<std::string> missing;
+        for (const StudioPanelDescriptor& descriptor : panels_)
+        {
+            if (!descriptor.closable && !isPanelOpen(descriptor.id))
+            {
+                openPanel(descriptor.id);
+                missing.push_back(descriptor.id);
+            }
+        }
+
+        if (!dock_.isWellFormed(&problem))
+        {
+            if (outProblem != nullptr) { *outProblem = problem; }
+            resetLayout();
+            return false;
+        }
+
+        if (unknown.empty() && missing.empty()) { return true; }
+
+        if (outProblem != nullptr)
+        {
+            std::string message;
+            for (const std::string& id : unknown)
+            {
+                message += (message.empty() ? "dropped unknown panel '" : ", '") + id + "'";
+            }
+            for (const std::string& id : missing)
+            {
+                message += (message.empty() ? "restored required panel '" : ", '") + id + "'";
+            }
+            *outProblem = message;
+        }
+        return false;
+    }
+
+    UiRect StudioShell::panelBounds(std::string_view id) const
+    {
+        const StudioDockNodeId leaf = dock_.findPanel(id);
+        if (leaf == kInvalidDockNode) { return UiRect{}; }
+
+        const StudioDockNode& node = dock_.node(leaf);
+        if (node.activePanel >= node.panels.size() || node.panels[node.activePanel] != id)
+        {
+            return UiRect{};
+        }
+        return dock_.leafGeometry(leaf, tabStripHeight()).body;
+    }
+
+    UiRect StudioShell::panelTabBounds(std::string_view id) const
+    {
+        const auto found = std::find_if(tabBounds_.begin(), tabBounds_.end(),
+            [&](const auto& entry) { return entry.first == id; });
+        return found == tabBounds_.end() ? UiRect{} : found->second;
+    }
+
+    float StudioShell::tabStripHeight() const
+    {
+        return metricOf(frame_.theme(), StudioMetric::TabHeight);
     }
 
     void StudioShell::setMenus(std::vector<StudioMenuDefinition> menus)
@@ -198,21 +392,24 @@ namespace CNA::Studio
     void StudioShell::buildContent()
     {
         // Content descriptors are already the shell's own state; the phase exists so that an
-        // application putting *its* state into them has a named place to do it.
-        for (StudioDockGroup* group : {&leftDock_, &rightDock_, &bottomDock_, &documents_})
+        // application putting *its* state into them has a named place to do it. What is worth
+        // doing here is refusing to draw a workspace that is not sound: a layout read from a file
+        // somebody edited by hand is not a layout this code wrote.
+        std::string problem;
+        if (!dock_.isWellFormed(&problem))
         {
-            if (group->panels.empty()) { group->activeIndex = 0; }
-            else if (group->activeIndex >= group->panels.size())
-            {
-                group->activeIndex = group->panels.size() - 1;
-            }
+            refused_.push_back("workspace layout: " + problem + " -- reset to the default");
+            resetLayout();
         }
+        tabBounds_.clear();
     }
 
     void StudioShell::computeLayout(float width, float height)
     {
         const StudioTheme& theme = frame_.theme();
-        layout_ = computeStudioShellLayout(width, height, theme, proportions_);
+        layout_ = computeStudioShellLayout(width, height, theme);
+        dock_.layout(layout_.dockArea, metricOf(theme, StudioMetric::SplitterThickness),
+                     tabStripHeight(), kStudioMinimumDockExtent * theme.scale());
 
         // --- Menu bar titles ----------------------------------------------------------------------
         menuTitles_.clear();
@@ -339,7 +536,7 @@ namespace CNA::Studio
         describeMenuBar();
         describeToolbar();
         describeDocks();
-        describeViewport();
+        describeSplitters();
         describeStatusBar();
 
         // Last, so it draws over everything and so its widgets win hover against anything they
@@ -554,120 +751,141 @@ namespace CNA::Studio
 
     void StudioShell::describeDocks()
     {
-        struct DockBinding
-        {
-            const UiRect* region;
-            StudioDockGroup* group;
-            const char* scope;
-        };
-
-        const DockBinding docks[] = {
-            {&layout_.leftDock, &leftDock_, "left"},
-            {&layout_.rightDock, &rightDock_, "right"},
-            {&layout_.bottomDock, &bottomDock_, "bottom"},
-            {&layout_.centerDock, &documents_, "documents"},
-        };
-
         const StudioTheme& theme = frame_.theme();
-        const float tabHeight = metricOf(theme, StudioMetric::TabHeight);
+        const float tabHeight = tabStripHeight();
 
-        for (const DockBinding& dock : docks)
+        frame_.ids().push("docks");
+        for (const StudioDockNodeId leaf : dock_.leaves())
         {
-            if (dock.region->isEmpty() || dock.group->panels.empty()) { continue; }
+            StudioDockNode& node = dock_.node(leaf);
+            if (node.bounds.isEmpty()) { continue; }
 
-            UiRect remaining = *dock.region;
-            const UiRect strip = remaining.splitTop(tabHeight);
+            const StudioDockLeafGeometry geometry = dock_.leafGeometry(leaf, tabHeight);
 
             if (frame_.isDrawPass())
             {
-                frame_.drawList().fillRect(strip, theme.color(StudioColorRole::PanelHeader));
+                frame_.drawList().fillRect(geometry.tabStrip,
+                                           theme.color(StudioColorRole::PanelHeader));
             }
 
-            frame_.ids().push(dock.scope);
-            frame_.pushClip(strip);
+            if (node.panels.empty())
+            {
+                // An empty leaf is not normally reachable -- removePanel collapses one -- but a
+                // layout read from disk can contain one, and drawing nothing at all would leave a
+                // hole in the window with no explanation.
+                if (frame_.isDrawPass())
+                {
+                    frame_.drawList().fillRect(geometry.body,
+                                               theme.color(StudioColorRole::PanelBackground));
+                }
+                continue;
+            }
 
-            UiRect cursor = strip;
-            for (std::size_t i = 0; i < dock.group->panels.size(); ++i)
+            frame_.ids().pushIndex(static_cast<std::int64_t>(leaf));
+            frame_.pushClip(geometry.tabStrip);
+
+            UiRect cursor = geometry.tabStrip;
+            for (std::size_t i = 0; i < node.panels.size(); ++i)
             {
                 if (cursor.width <= 0.0f) { break; }
-                const StudioDockedPanel& panel = dock.group->panels[i];
+
+                const std::string& panelId = node.panels[i];
+                const StudioPanelDescriptor* descriptor = panel(panelId);
+                const std::string_view title = descriptor != nullptr
+                    ? std::string_view{descriptor->title} : std::string_view{panelId};
 
                 const float width = std::min(
-                    studioLabelWidth(frame_, panel.title) + metricOf(theme, StudioMetric::SpacingMedium),
+                    studioLabelWidth(frame_, title) + metricOf(theme, StudioMetric::SpacingMedium),
                     cursor.width);
 
                 StudioTabOptions options;
-                options.active = dock.group->activeIndex == i;
-                options.modified = panel.modified;
+                options.active = node.activePanel == i;
+                options.modified = descriptor != nullptr && descriptor->modified;
 
-                const StudioWidgetResult result = studioTab(
-                    frame_, frame_.ids().make(panel.title), cursor.splitLeft(width),
-                    panel.title, options);
+                const UiRect tab = cursor.splitLeft(width);
+                const StudioWidgetResult result =
+                    studioTab(frame_, frame_.ids().make(panelId), tab, title, options);
 
-                if (result.activated) { dock.group->activeIndex = i; }
+                if (frame_.isInputPass()) { tabBounds_.emplace_back(panelId, tab); }
+                if (result.activated) { node.activePanel = i; }
             }
 
             frame_.popClip();
             frame_.ids().pop();
 
-            if (frame_.isDrawPass())
-            {
-                frame_.drawList().drawHorizontalSeparator(
-                    UiRect{strip.left(), strip.bottom(), strip.width, 0.0f},
-                    theme.color(StudioColorRole::Separator),
-                    metricOf(theme, StudioMetric::SeparatorThickness));
+            if (!frame_.isDrawPass()) { continue; }
 
-                // The centre dock's body is the viewport, drawn separately; every other dock body
-                // is a panel surface awaiting the panel that will be ported into it (Phase 7).
-                if (dock.group != &documents_)
-                {
-                    frame_.drawList().fillRect(remaining,
-                                               theme.color(StudioColorRole::PanelBackground));
-                }
+            frame_.drawList().drawHorizontalSeparator(
+                UiRect{geometry.tabStrip.left(), geometry.tabStrip.bottom(),
+                       geometry.tabStrip.width, 0.0f},
+                theme.color(StudioColorRole::Separator),
+                metricOf(theme, StudioMetric::SeparatorThickness));
+
+            const std::string& active = node.panels[std::min(node.activePanel,
+                                                             node.panels.size() - 1)];
+            const StudioPanelDescriptor* descriptor = panel(active);
+            if (descriptor != nullptr && descriptor->isViewport)
+            {
+                describeViewportBody(geometry.body);
+            }
+            else
+            {
+                // A panel surface awaiting the panel that will be ported into it (Phase 7).
+                frame_.drawList().fillRect(geometry.body,
+                                           theme.color(StudioColorRole::PanelBackground));
             }
         }
-
-        if (frame_.isDrawPass())
-        {
-            for (const UiRect* splitter : {&layout_.leftSplitter, &layout_.rightSplitter,
-                                           &layout_.bottomSplitter})
-            {
-                if (!splitter->isEmpty())
-                {
-                    frame_.drawList().fillRect(*splitter,
-                                               theme.color(StudioColorRole::AppBackground));
-                }
-            }
-        }
+        frame_.ids().pop();
     }
 
-    void StudioShell::describeViewport()
+    void StudioShell::describeSplitters()
     {
-        if (!frame_.isDrawPass() || layout_.viewport.isEmpty()) { return; }
+        const StudioTheme& theme = frame_.theme();
+        const float minimum = kStudioMinimumDockExtent * theme.scale();
+
+        frame_.ids().push("splitters");
+        for (const StudioDockNodeId id : dock_.splits())
+        {
+            const StudioDockNode& node = dock_.node(id);
+            if (node.splitter.isEmpty()) { continue; }
+
+            const StudioSplitterAxis axis = node.orientation == StudioDockOrientation::Horizontal
+                ? StudioSplitterAxis::Horizontal
+                : StudioSplitterAxis::Vertical;
+
+            const StudioSplitterResult result = studioSplitter(
+                frame_, frame_.ids().makeIndex(static_cast<std::int64_t>(id)), node.splitter, axis);
+
+            if (result.delta != 0.0f) { dock_.moveSplitter(id, result.delta, minimum); }
+        }
+        frame_.ids().pop();
+    }
+
+    void StudioShell::describeViewportBody(const UiRect& body)
+    {
+        if (!frame_.isDrawPass() || body.isEmpty()) { return; }
 
         const StudioTheme& theme = frame_.theme();
         StudioDrawList& list = frame_.drawList();
 
         // Darker than the panels, so the viewport reads as a window into the scene rather than as
         // another panel. The grid is shell furniture; the real scene arrives with STUDIO-07009.
-        list.fillRect(layout_.viewport, theme.color(StudioColorRole::ViewportBackground));
+        list.fillRect(body, theme.color(StudioColorRole::ViewportBackground));
 
         const float spacing = 32.0f * theme.scale();
         const StudioColor minor = theme.color(StudioColorRole::ViewportGrid);
         const StudioColor major = theme.color(StudioColorRole::ViewportGridMajor);
 
-        frame_.pushClip(layout_.viewport);
+        frame_.pushClip(body);
         int line = 0;
-        for (float x = layout_.viewport.left(); x < layout_.viewport.right(); x += spacing, ++line)
+        for (float x = body.left(); x < body.right(); x += spacing, ++line)
         {
-            list.drawLine(x, layout_.viewport.top(), x, layout_.viewport.bottom(),
-                          (line % 4 == 0) ? major : minor, 1.0f);
+            list.drawLine(x, body.top(), x, body.bottom(), (line % 4 == 0) ? major : minor, 1.0f);
         }
         line = 0;
-        for (float y = layout_.viewport.top(); y < layout_.viewport.bottom(); y += spacing, ++line)
+        for (float y = body.top(); y < body.bottom(); y += spacing, ++line)
         {
-            list.drawLine(layout_.viewport.left(), y, layout_.viewport.right(), y,
-                          (line % 4 == 0) ? major : minor, 1.0f);
+            list.drawLine(body.left(), y, body.right(), y, (line % 4 == 0) ? major : minor, 1.0f);
         }
         frame_.popClip();
     }

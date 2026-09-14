@@ -35,6 +35,8 @@ namespace
         std::size_t commands = 0;
         StudioShellLayout layout;
         std::size_t phaseViolations = 0;
+        UiRect viewportBounds;
+        UiRect outlinerBounds;
     };
 
     /**
@@ -45,13 +47,13 @@ namespace
      * which is the state a golden image should pin.
      */
     ShellRender renderShell(float width, float height, float scale = 1.0f,
-                            const StudioShellProportions& proportions = {})
+                            const std::vector<std::string>& closedPanels = {})
     {
         StudioTheme theme = StudioTheme::dark();
         theme.setScale(scale);
 
         StudioShell shell{theme};
-        shell.proportions() = proportions;
+        for (const std::string& panel : closedPanels) { shell.dockTree().removePanel(panel); }
 
         UiInputState input;
         input.displayWidth = width;
@@ -63,6 +65,8 @@ namespace
         result.data = shell.drawData();
         result.layout = shell.layout();
         result.phaseViolations = shell.frame().phaseViolations();
+        result.viewportBounds = shell.panelBounds("viewport");
+        result.outlinerBounds = shell.panelBounds("outliner");
         for (const UiDrawList& list : result.data.lists)
         {
             result.vertices += list.vertices.size();
@@ -169,7 +173,7 @@ CNA_STUDIO_TEST(TheShellLayoutIsWellFormedAtEveryCommonResolution)
                 + "x" + std::to_string(static_cast<int>(height)));
         }
         CNA_STUDIO_EXPECT(layout.isWellFormed());
-        CNA_STUDIO_EXPECT(!layout.viewport.isEmpty());
+        CNA_STUDIO_EXPECT(!layout.dockArea.isEmpty());
         CNA_STUDIO_EXPECT(!layout.menuBar.isEmpty());
         CNA_STUDIO_EXPECT(!layout.statusBar.isEmpty());
     }
@@ -183,7 +187,7 @@ CNA_STUDIO_TEST(TheShellLayoutIsWellFormedAtEveryDpiScale)
         theme.setScale(scale);
         const StudioShellLayout layout = computeStudioShellLayout(1920.0f, 1080.0f, theme);
         CNA_STUDIO_EXPECT(layout.isWellFormed());
-        CNA_STUDIO_EXPECT(!layout.viewport.isEmpty());
+        CNA_STUDIO_EXPECT(!layout.dockArea.isEmpty());
     }
 }
 
@@ -197,19 +201,6 @@ CNA_STUDIO_TEST(ChromeHeightScalesWithDpi)
     CNA_STUDIO_EXPECT_EQ(at200.menuBar.height, at100.menuBar.height * 2.0f);
     CNA_STUDIO_EXPECT_EQ(at200.toolbar.height, at100.toolbar.height * 2.0f);
     CNA_STUDIO_EXPECT_EQ(at200.statusBar.height, at100.statusBar.height * 2.0f);
-}
-
-CNA_STUDIO_TEST(DockProportionsSurviveAResize)
-{
-    // Fractions rather than pixel widths: dragging a window to a larger monitor must rescale the
-    // arrangement, not leave the inspector 300px wide on a 4K display.
-    const StudioTheme theme = StudioTheme::dark();
-    const StudioShellLayout small = computeStudioShellLayout(1280.0f, 720.0f, theme);
-    const StudioShellLayout large = computeStudioShellLayout(2560.0f, 1440.0f, theme);
-
-    const float smallRatio = small.leftDock.width / small.dockArea.width;
-    const float largeRatio = large.leftDock.width / large.dockArea.width;
-    CNA_STUDIO_EXPECT(std::abs(smallRatio - largeRatio) < 0.01f);
 }
 
 CNA_STUDIO_TEST(AWindowTooSmallForItsChromeDegradesRatherThanBreaking)
@@ -227,8 +218,7 @@ CNA_STUDIO_TEST(AWindowTooSmallForItsChromeDegradesRatherThanBreaking)
 
         // Every region stays non-negative: an inverted rectangle rasterises across the window.
         for (const UiRect* r : {&layout.menuBar, &layout.toolbar, &layout.statusBar,
-                                &layout.leftDock, &layout.rightDock, &layout.bottomDock,
-                                &layout.centerDock, &layout.viewport})
+                                &layout.dockArea})
         {
             CNA_STUDIO_EXPECT(r->width >= 0.0f);
             CNA_STUDIO_EXPECT(r->height >= 0.0f);
@@ -236,48 +226,44 @@ CNA_STUDIO_TEST(AWindowTooSmallForItsChromeDegradesRatherThanBreaking)
     }
 }
 
-CNA_STUDIO_TEST(ADockTooNarrowToBeUsefulCollapsesEntirely)
+CNA_STUDIO_TEST(ClosingEveryOtherPanelGivesTheViewportTheWholeDockArea)
 {
-    // A two-pixel-wide outliner is not a smaller outliner; it is a rendering artefact with a
-    // splitter attached.
-    const StudioTheme theme = StudioTheme::dark();
-    StudioShellProportions proportions;
-    proportions.leftDockFraction = 0.001f;
+    StudioShell shell;
+    UiInputState input;
+    input.displayWidth = 1920.0f;
+    input.displayHeight = 1080.0f;
+    shell.renderFrame(input);
 
-    const StudioShellLayout layout = computeStudioShellLayout(1920.0f, 1080.0f, theme, proportions);
-    CNA_STUDIO_EXPECT(layout.leftDock.isEmpty());
-    CNA_STUDIO_EXPECT(layout.leftSplitter.isEmpty());
-    CNA_STUDIO_EXPECT(layout.isWellFormed());
+    const UiRect before = shell.panelBounds("viewport");
+    CNA_STUDIO_EXPECT(!before.isEmpty());
+
+    for (const char* panel : {"outliner", "layers", "details", "material",
+                              "content", "output", "build", "problems"})
+    {
+        shell.dockTree().removePanel(panel);
+    }
+    shell.renderFrame(input);
+
+    const UiRect after = shell.panelBounds("viewport");
+    CNA_STUDIO_EXPECT(after.width > before.width);
+    CNA_STUDIO_EXPECT(after.height > before.height);
+    CNA_STUDIO_EXPECT(shell.dockTree().isWellFormed());
+    CNA_STUDIO_EXPECT_EQ(shell.dockTree().leaves().size(), std::size_t{1});
 }
 
-CNA_STUDIO_TEST(HidingADockGivesItsSpaceToTheCentre)
+CNA_STUDIO_TEST(TheChromeAndTheDockAreaTileTheWindowExactly)
 {
-    const StudioTheme theme = StudioTheme::dark();
-    const StudioShellLayout all = computeStudioShellLayout(1920.0f, 1080.0f, theme);
-
-    StudioShellProportions hidden;
-    hidden.leftDockVisible = false;
-    hidden.rightDockVisible = false;
-    hidden.bottomDockVisible = false;
-    const StudioShellLayout none = computeStudioShellLayout(1920.0f, 1080.0f, theme, hidden);
-
-    CNA_STUDIO_EXPECT(none.leftDock.isEmpty());
-    CNA_STUDIO_EXPECT(none.rightDock.isEmpty());
-    CNA_STUDIO_EXPECT(none.bottomDock.isEmpty());
-    CNA_STUDIO_EXPECT(none.viewport.width > all.viewport.width);
-    CNA_STUDIO_EXPECT(none.viewport.height > all.viewport.height);
-    CNA_STUDIO_EXPECT(none.isWellFormed());
-}
-
-CNA_STUDIO_TEST(SplittersSitBetweenTheDocksTheySeparate)
-{
+    // The dock area is what is left after the chrome, and "what is left" must be exactly that:
+    // a gap is a strip of app background nobody can use, and an overlap is a panel drawn over a bar.
     const StudioTheme theme = StudioTheme::dark();
     const StudioShellLayout layout = computeStudioShellLayout(1920.0f, 1080.0f, theme);
 
-    CNA_STUDIO_EXPECT_EQ(layout.leftSplitter.left(), layout.leftDock.right());
-    CNA_STUDIO_EXPECT_EQ(layout.leftSplitter.right(), layout.centerDock.left());
-    CNA_STUDIO_EXPECT_EQ(layout.rightSplitter.right(), layout.rightDock.left());
-    CNA_STUDIO_EXPECT(layout.leftSplitter.width > 0.0f);
+    CNA_STUDIO_EXPECT_EQ(layout.menuBar.top(), layout.window.top());
+    CNA_STUDIO_EXPECT_EQ(layout.toolbar.top(), layout.menuBar.bottom());
+    CNA_STUDIO_EXPECT_EQ(layout.dockArea.top(), layout.toolbar.bottom());
+    CNA_STUDIO_EXPECT_EQ(layout.dockArea.bottom(), layout.statusBar.top());
+    CNA_STUDIO_EXPECT_EQ(layout.statusBar.bottom(), layout.window.bottom());
+    CNA_STUDIO_EXPECT_EQ(layout.dockArea.width, layout.window.width);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -479,11 +465,13 @@ CNA_STUDIO_TEST(EveryShellRegionIsVisiblyDistinct)
     };
 
     const std::string menuBar = sample(layout.menuBar);
-    const std::string viewport = sample(layout.viewport);
-    const std::string leftDock = sample(layout.leftDock);
+    const std::string viewport = sample(shell.viewportBounds);
+    const std::string outliner = sample(shell.outlinerBounds);
 
+    CNA_STUDIO_EXPECT(!shell.viewportBounds.isEmpty());
+    CNA_STUDIO_EXPECT(!shell.outlinerBounds.isEmpty());
     CNA_STUDIO_EXPECT(menuBar != viewport);
-    CNA_STUDIO_EXPECT(leftDock != viewport);
+    CNA_STUDIO_EXPECT(outliner != viewport);
 }
 
 CNA_STUDIO_TEST(TheShellRendersAtEveryTestedResolutionAndScale)
@@ -528,9 +516,7 @@ CNA_STUDIO_TEST(TwoRendersOfDifferentContentDifferMeasurably)
     // Guards the golden comparison itself: if compareImages reported everything as matching, every
     // visual test above would pass vacuously.
     const ShellRender wide = renderShell(640.0f, 360.0f);
-    StudioShellProportions hidden;
-    hidden.leftDockVisible = false;
-    const ShellRender narrow = renderShell(640.0f, 360.0f, 1.0f, hidden);
+    const ShellRender narrow = renderShell(640.0f, 360.0f, 1.0f, {"outliner", "layers"});
 
     const ImageBuffer a = rasterizeUiDrawData(wide.data, StudioColor{0, 0, 0, 255});
     const ImageBuffer b = rasterizeUiDrawData(narrow.data, StudioColor{0, 0, 0, 255});

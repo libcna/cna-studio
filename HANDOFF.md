@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **12** — `studio-ui: make the application shell interactive and action-driven` |
+| HEAD | commit **13** — `studio-ui: replace the fixed dock regions with a real docking model` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 2 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 3 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -84,9 +84,9 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **628 test cases, 21 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **628 test cases, 21 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **628 test cases, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, no CNA | **656 test cases, 21 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **656 test cases, 21 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **656 test cases, 0 failures, no sanitizer reports** |
 | GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
 
 Baseline at import, for comparison: 442 test cases, 12 CTest suites.
@@ -99,7 +99,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 75 of 452 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 81 of 453 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -120,7 +120,9 @@ cursor requests, the widget interaction helpers and the text-measurement seam.
 **Phase 4 — CNAEXT UI renderer** (5 of 16). Vertex/index management, draw-call batching, nested
 scissor clipping, rounded rectangles, separators, triangles and clip culling.
 
-**Phase 5 — Docking** (2 of 13). Dock splitting, and tab strips that switch the active panel.
+**Phase 5 — Docking** (8 of 14). The dock node tree, splits, draggable splitters with minimum
+sizes and cursor shapes, tab strips, opening and closing panels, layout serialization, restoring
+the default, dropping panels a build no longer has, and never failing to start on a corrupt layout.
 
 **Phase 6 — Studio shell** (7 of 19, 5 in progress). The action registry and the core action set;
 an interactive menu bar, toolbar, tab strips and status bar driven entirely by that registry;
@@ -214,9 +216,12 @@ file appearing **is** the test. Split into `screenshotAttempted` (stop retrying)
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **The shell is interactive but not yet dockable.** Menus, toolbar, tabs and shortcuts all work.
-  Splitters draw but do not drag, panels cannot be rearranged, and no layout is persisted — so the
-  entry point is still `--shell-preview` rather than `--ui=studio`, which waits on `STUDIO-05009`.
+- **Panels cannot yet be dragged between docks.** The tree supports it (`movePanel`) and the model
+  is tested, but there is no drag gesture and no drop-target preview (`STUDIO-05005`/`05006`).
+- **The layout is not written to disk yet.** It serializes and restores, but nothing saves it
+  between runs: that needs the preferences store of `STUDIO-06010` (`STUDIO-05014`).
+- **The entry point is still `--shell-preview` rather than `--ui=studio`**, because the shell hosts
+  no real panel content yet — every dock body is an empty surface awaiting Phase 7.
 - **Submenus are not implemented.** The arrow is drawn for an item that declares one and nothing
   opens (`STUDIO-06017`). No menu in the default set declares a submenu, so nothing is visibly
   broken today.

@@ -498,24 +498,89 @@ CNA_STUDIO_TEST(ClickingADockTabMakesItsPanelActive)
 {
     Harness harness;
     harness.settle();
-    CNA_STUDIO_EXPECT_EQ(harness.shell.bottomDock().activeIndex, std::size_t{0});
 
-    // The strip's leftmost tab is the first panel; stepping right across it reaches the second.
-    const UiRect dock = harness.shell.layout().bottomDock;
-    const float tabHeight = static_cast<float>(harness.shell.theme().metric(StudioMetric::TabHeight));
-    const float y = dock.top() + tabHeight * 0.5f;
+    CNA_STUDIO_EXPECT(!harness.shell.panelBounds("content").isEmpty());
+    CNA_STUDIO_EXPECT(harness.shell.panelBounds("output").isEmpty());
 
-    std::size_t reached = 0;
-    for (float x = dock.left() + 2.0f; x < dock.left() + 400.0f; x += 4.0f)
+    const UiRect tab = harness.shell.panelTabBounds("output");
+    CNA_STUDIO_EXPECT(!tab.isEmpty());
+
+    harness.click(tab.centerX(), tab.centerY());
+    CNA_STUDIO_EXPECT(!harness.shell.panelBounds("output").isEmpty());
+    CNA_STUDIO_EXPECT(harness.shell.panelBounds("content").isEmpty());
+}
+
+CNA_STUDIO_TEST(DraggingASplitterResizesTheDocksItSeparates)
+{
+    Harness harness;
+    harness.settle();
+
+    const UiRect before = harness.shell.panelBounds("outliner");
+    CNA_STUDIO_EXPECT(!before.isEmpty());
+
+    // The splitter between the outliner and everything right of it.
+    StudioDockNodeId split = kInvalidDockNode;
+    for (const StudioDockNodeId id : harness.shell.dockTree().splits())
     {
-        harness.click(x, y);
-        if (harness.shell.bottomDock().activeIndex != 0)
+        const StudioDockNode& node = harness.shell.dockTree().node(id);
+        if (!node.splitter.isEmpty()
+            && node.orientation == StudioDockOrientation::Horizontal
+            && node.splitter.left() > before.left()
+            && node.splitter.left() < before.right() + 20.0f)
         {
-            reached = harness.shell.bottomDock().activeIndex;
+            split = id;
             break;
         }
     }
-    CNA_STUDIO_EXPECT(reached > 0);
+    CNA_STUDIO_EXPECT(split != kInvalidDockNode);
+
+    const UiRect grip = harness.shell.dockTree().node(split).splitter;
+    const float x = grip.centerX();
+    const float y = grip.centerY();
+
+    harness.frame(at(x, y));
+    harness.frame(at(x, y, /*leftDown=*/true));
+    CNA_STUDIO_EXPECT(harness.shell.cursor() == StudioCursor::ResizeHorizontal);
+
+    harness.frame(at(x + 60.0f, y, /*leftDown=*/true));
+    harness.frame(at(x + 60.0f, y));
+
+    const UiRect after = harness.shell.panelBounds("outliner");
+    CNA_STUDIO_EXPECT(after.width > before.width + 40.0f);
+}
+
+CNA_STUDIO_TEST(ASplitterCannotBeDraggedPastItsNeighboursMinimum)
+{
+    Harness harness;
+    harness.settle();
+
+    StudioDockNodeId split = kInvalidDockNode;
+    for (const StudioDockNodeId id : harness.shell.dockTree().splits())
+    {
+        if (!harness.shell.dockTree().node(id).splitter.isEmpty()) { split = id; break; }
+    }
+    CNA_STUDIO_EXPECT(split != kInvalidDockNode);
+
+    const UiRect grip = harness.shell.dockTree().node(split).splitter;
+    float x = grip.centerX();
+    const float y = grip.centerY();
+
+    harness.frame(at(x, y));
+    harness.frame(at(x, y, /*leftDown=*/true));
+    for (int step = 0; step < 40; ++step)
+    {
+        x += 80.0f;
+        harness.frame(at(x, y, /*leftDown=*/true));
+    }
+    harness.frame(at(x, y));
+
+    CNA_STUDIO_EXPECT(harness.shell.dockTree().isWellFormed());
+    for (const StudioDockNodeId leaf : harness.shell.dockTree().leaves())
+    {
+        const UiRect bounds = harness.shell.dockTree().node(leaf).bounds;
+        CNA_STUDIO_EXPECT(bounds.width > 0.0f);
+        CNA_STUDIO_EXPECT(bounds.height > 0.0f);
+    }
 }
 
 // ------------------------------------------------------------------------------------------------

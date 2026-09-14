@@ -125,6 +125,32 @@ namespace CNA::Studio
         bool modified = false;
     };
 
+    /** @brief Which way a splitter divides, and therefore which way it drags. */
+    enum class StudioSplitterAxis : std::uint8_t
+    {
+        /** @brief Divides left from right; drags along x. */
+        Horizontal,
+        /** @brief Divides top from bottom; drags along y. */
+        Vertical
+    };
+
+    /** @brief What a splitter did this frame. */
+    struct StudioSplitterResult
+    {
+        /** @brief Hover, capture and press state. */
+        StudioInteraction interaction;
+        /**
+         * @brief Movement along the split axis since the previous frame, in logical units.
+         *
+         * Non-zero only in the input pass and only while the splitter holds the mouse. Reported in
+         * pixels because that is what a drag produces; converting to a fraction is the dock tree's
+         * job, which is the only place that knows the minimums it has to respect.
+         */
+        float delta = 0.0f;
+        /** @brief Whether a drag is in progress. */
+        bool dragging = false;
+    };
+
     /** @brief The adjustable parts of a menu item. */
     struct StudioMenuItemOptions
     {
@@ -281,6 +307,24 @@ namespace CNA::Studio
     StudioWidgetResult studioMenuItem(StudioFrame& frame, WidgetId id, const UiRect& bounds,
                                       std::string_view label,
                                       const StudioMenuItemOptions& options = {});
+
+    /**
+     * @brief A draggable divider between two docked regions.
+     *
+     * The **grab** area is deliberately wider than the drawn divider. A 4-pixel splitter drawn at
+     * 4 pixels is a 4-pixel target, which at 150% DPI on a trackpad is a target people miss; the
+     * hit zone is widened on both sides so that the thing you can grab is bigger than the thing you
+     * can see. Every professional tool does this and none of them mention it.
+     *
+     * @param frame Frame to describe into.
+     * @param id The splitter's identity.
+     * @param bounds The divider as drawn.
+     * @param axis Which way it divides.
+     * @param grabPadding Extra hit distance on each side, in logical units.
+     * @return What it did this frame.
+     */
+    StudioSplitterResult studioSplitter(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                        StudioSplitterAxis axis, float grabPadding = 3.0f);
 
     /**
      * @brief A horizontal rule between groups of menu items.
