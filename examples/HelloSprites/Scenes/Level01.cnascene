@@ -1,0 +1,210 @@
+{
+ "formatVersion": 1,
+ "sceneId": "c486b3f0-2a41-4d6b-9f18-7e0c5a1b4d92",
+ "name": "Level01",
+ "entities": [
+  {
+   "id": "8f1c2d34-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+   "name": "Main Camera",
+   "components": {
+    "CNA.Transform": {
+     "position": [
+      400,
+      300,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "CNA.Camera": {
+     "clearColor": [
+      100,
+      149,
+      237,
+      255
+     ],
+     "farPlane": 1000,
+     "fieldOfView": 45,
+     "isPrimary": true,
+     "nearPlane": 0.1,
+     "orthographicSize": 600,
+     "projection": "Orthographic"
+    }
+   }
+  },
+  {
+   "id": "f392a1b2-c3d4-4e5f-a607-182930415263",
+   "name": "Player",
+   "components": {
+    "CNA.Transform": {
+     "position": [
+      100,
+      220,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "CNA.SpriteRenderer": {
+     "layerDepth": 0.5,
+     "origin": [
+      0,
+      0
+     ],
+     "sourceRectangle": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "spriteEffects": "None",
+     "texture": "8d9fb62c-7447-4c22-a190-036691308c8a",
+     "tint": [
+      255,
+      255,
+      255,
+      255
+     ]
+    }
+   },
+   "editorState": {
+    "expanded": true
+   }
+  },
+  {
+   "id": "b7d4e91a-3c56-4f28-8a01-9d2e5f7b3c64",
+   "name": "Crate",
+   "components": {
+    "CNA.Transform": {
+     "position": [
+      400,
+      340,
+      0
+     ],
+     "rotation": [
+      0,
+      0.258819,
+      0,
+      0.9659258
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "CNA.ModelRenderer": {
+     "castShadows": true,
+     "material": "4f454361-ddf7-4706-9633-b08a2deaf399",
+     "model": "3eaac087-d4b1-4f13-9b05-0fcc79ea4956",
+     "receiveShadows": true,
+     "materials": [
+      {
+       "part": "Crate",
+       "material": "2272bcd9-6504-406f-abbe-8ab0a9a2bead"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "a1b2c3d4-e5f6-4708-9a1b-2c3d4e5f6071",
+   "name": "Weapon",
+   "parent": "f392a1b2-c3d4-4e5f-a607-182930415263",
+   "components": {
+    "CNA.Transform": {
+     "position": [
+      40,
+      8,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1.5,
+      1.5,
+      1
+     ]
+    },
+    "CNA.SpriteRenderer": {
+     "layerDepth": 0.4,
+     "origin": [
+      0,
+      0
+     ],
+     "sourceRectangle": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "spriteEffects": "None",
+     "texture": "8d9fb62c-7447-4c22-a190-036691308c8a",
+     "tint": [
+      255,
+      255,
+      255,
+      255
+     ]
+    }
+   }
+  },
+  {
+   "id": "c1f2a3b4-5d6e-4f70-8912-a3b4c5d6e7f8",
+   "name": "Key Light",
+   "components": {
+    "CNA.Light": {
+     "color": [
+      255,
+      244,
+      214,
+      255
+     ],
+     "intensity": 1.1,
+     "kind": "Point",
+     "range": 520.0
+    },
+    "CNA.Transform": {
+     "position": [
+      260,
+      240,
+      -160
+     ],
+     "rotation": [
+      0.2954,
+      -0.2126,
+      0.067,
+      0.9282
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    }
+   }
+  }
+ ]
+}

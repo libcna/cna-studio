@@ -1,0 +1,17 @@
+{
+ "formatVersion": 1,
+ "name": "Part Green",
+ "diffuseColor": [
+  0.15,
+  0.75,
+  0.2
+ ],
+ "emissiveColor": [
+  0,
+  0,
+  0
+ ],
+ "metallic": 0.0,
+ "roughness": 0.5,
+ "alpha": 1.0
+}

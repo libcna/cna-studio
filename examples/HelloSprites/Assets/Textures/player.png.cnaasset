@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "id": "8d9fb62c-7447-4c22-a190-036691308c8a",
+  "type": "Texture2D",
+  "importer": "CNA.TextureImporter",
+  "settings": {
+    "pixelSize": [
+      32,
+      32
+    ]
+  },
+  "sourceStamp": {
+    "size": 216,
+    "modifiedTime": -4651907708
+  }
+}

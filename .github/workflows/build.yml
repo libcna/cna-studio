@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: MS-PL
+#
+# The standalone configuration only: no CNA checkout, no GPU, no window.
+#
+# That is not a limitation being worked around, it is the property the architecture exists to have
+# (ANALYSIS.md decision D-03). Everything except `cna-editor-viewport` is CNA-free, which is what
+# lets the document model, the undo stack, the asset database, the whole panel layer and the real
+# Dear ImGui UI be built and tested on a machine with none of CNA's dependencies installed.
+#
+# A CNA-configuration job would need four sibling checkouts, CNA's SDL submodules and an X server,
+# and would take an order of magnitude longer. It is worth adding once the editor has a reason to
+# regress there; until then this job catches nearly everything and stays fast enough to be run on
+# every push.
+
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to the same branch makes an in-flight run redundant.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.build_type }} (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One compiler failing should not hide whether the other passed.
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            build_type: Debug
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            build_type: Release
+            cc: clang
+            cxx: clang++
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        # Warnings are errors here even though the option defaults to OFF locally: a warning that
+        # only ever appears on somebody's machine is a warning nobody fixes.
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCNA_EDITOR_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        # Run the binary directly as well as through CTest: its own output names every test, which
+        # is what makes a failure readable in the log without opening an artifact.
+        run: ./build/tests/cna-editor-tests
+
+      - name: CTest
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Headless smoke test
+        # Opens a real project, scans its assets, loads a scene and draws a frame. A test suite
+        # that passes while the executable cannot open anything is a test suite worth distrusting.
+        run: |
+          ./build/cna-editor --headless \
+            --project=examples/HelloSprites/HelloSprites.cnaproject
+
+      - name: The example project must not be modified by opening it
+        # Opening a project applies importer facts and may rewrite a sidecar. Doing that once is
+        # intended; doing it on every open would fill a repository with spurious diffs, and this is
+        # where that regression would otherwise go unnoticed.
+        run: |
+          ./build/cna-editor --headless \
+            --project=examples/HelloSprites/HelloSprites.cnaproject > /dev/null
+          if ! git diff --quiet -- examples/; then
+            echo "Opening the example project modified it:"
+            git diff -- examples/
+            exit 1
+          fi

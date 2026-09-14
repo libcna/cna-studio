@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "3eaac087-d4b1-4f13-9b05-0fcc79ea4956",
+  "type": "Model",
+  "importer": "CNA.ModelImporter",
+  "settings": {
+    "meshCount": 1,
+    "vertexCount": 24,
+    "triangleCount": 12,
+    "materialCount": 1,
+    "modelSize": [
+      32,
+      32,
+      32
+    ]
+  },
+  "sourceStamp": {
+    "size": 3058,
+    "modifiedTime": -4651811818
+  }
+}

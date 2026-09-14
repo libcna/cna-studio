@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "name": "HelloSprites",
+  "kind": "CnaNative",
+  "startupScene": "Scenes/Level01.cnascene",
+  "assetDirectory": "Assets",
+  "sceneDirectory": "Scenes",
+  "defaultGraphicsBackend": "easygl",
+  "targetPlatforms": [
+    "linux-x64",
+    "windows-x64"
+  ],
+  "modules": [
+    "cna-core"
+  ]
+}
