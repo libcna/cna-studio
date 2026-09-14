@@ -20,6 +20,7 @@ add_executable(cna-studio-tests
     StudioDockTests.cpp
     StudioHostCapabilityTests.cpp
     StudioFontTests.cpp
+    StudioHighDpiTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -142,10 +143,15 @@ add_test(NAME CnaStudioShellPreviewLightTheme
                        --shell-size=1280x720 --shell-theme=light)
 set_tests_properties(CnaStudioShellPreviewLightTheme PROPERTIES TIMEOUT 60)
 
-add_test(NAME CnaStudioShellPreviewHiDpi
-    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-200.png
-                       --shell-size=1280x720 --shell-scale=2.0)
-set_tests_properties(CnaStudioShellPreviewHiDpi PROPERTIES TIMEOUT 60)
+# Every DPI scale Studio supports, through the real binary. 125% and 175% are included because they
+# are where a layout that happened to round cleanly at 150% and 200% falls apart, and they are the
+# scales a Windows laptop actually ships on.
+foreach(_scale "125" "150" "175" "200")
+    add_test(NAME CnaStudioShellPreviewHiDpi${_scale}
+        COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-${_scale}.png
+                           --shell-size=1600x900 --shell-scale=${_scale}e-2)
+    set_tests_properties(CnaStudioShellPreviewHiDpi${_scale} PROPERTIES TIMEOUT 60)
+endforeach()
 
 # The interactive states. A shell captured only at rest leaves every hover, pressed, highlight and
 # popup token untested by any image -- and those are exactly the tokens a theme gets wrong.

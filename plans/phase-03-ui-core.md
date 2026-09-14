@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 18 of 28 complete `██████░░░░░░`
+**Progress:** 19 of 28 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -33,7 +33,7 @@
 | `STUDIO-03025` | Clipboard integration through the platform seam | ⬜ | `STUDIO-03024` |
 | `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | 🔄 | `STUDIO-03024` |
 | `STUDIO-03027` | IME support where the platform provides it | ⬜ | `STUDIO-03026` |
-| `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | 🔄 | `STUDIO-03004` |
+| `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | ✅ | `STUDIO-03004` |
 | `STUDIO-03029` | Keyboard shortcut matching and chords | ✅ | `STUDIO-03012` |
 | `STUDIO-03030` | Restrained animation model: state transitions only, no decorative motion | ⬜ | `STUDIO-03004` |
 | `STUDIO-03031` | Widget interaction helpers over `interact()`: button, toggle, checkbox, tab, menu item | ✅ | `STUDIO-03015` |
@@ -184,7 +184,27 @@ sequence is one thing to a reader and several code points to a decoder — waits
 
 **Acceptance.** 100/125/150/175/200% produce correctly proportioned layout with no fractional-pixel seams
 
-**Verification.** Headless layout tests at each scale
+**How it was met.** Scaling is applied in one place — on reading a metric — so no widget can forget
+to apply it and none can apply it twice, and the authored logical value never changes. Thicknesses
+that must stay visible are clamped to at least one physical pixel, because a hairline that rounds to
+zero is a hairline that disappears. Text is rasterised at the size it is drawn at rather than scaled
+from a master size.
+
+The seams took the most care. A dock fraction of an arbitrary area is almost never an integer, so
+panel edges land on fractional pixels and leave a partially covered column between neighbours —
+faint at 100%, and at 150% landing differently on every splitter in the window. The **split** is
+snapped to a whole pixel rather than each panel afterwards: rounding two neighbours independently
+can leave a one-pixel gap of app background between them, or an overlap. Menu titles, toolbar
+entries, tab widths and popup geometry are snapped for the same reason
+
+**Verification.** `tests/StudioHighDpiTests.cpp` at 100/125/150/175/200%: every hairline stays at
+least one pixel (checked down to 50% and up to 300%), chrome and controls scale, the minimum hit
+target scales, every dock edge lands on a whole pixel, panels stay exactly adjacent across every
+splitter, no panel collapses, menu geometry stays whole and on screen, each scale rasterises its own
+glyphs, the frame commits no phase violations and stays under the draw-call bound — and clicking the
+centre of a menu title opens it at every scale, which is the one that catches a UI that scaled its
+drawing and not its hit testing. Eight golden-image resolutions and four `--shell-preview` CTest
+cases cover the same set through the real binary
 
 ### `STUDIO-03030` — Restrained animation model: state transitions only, no decorative motion
 

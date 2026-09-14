@@ -7,6 +7,7 @@
 #include "CNA/Studio/UiCore/StudioDockTree.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace CNA::Studio
@@ -350,6 +351,14 @@ namespace CNA::Studio
             firstExtent = content * (firstMinimum / (firstMinimum + secondMinimum));
         }
         firstExtent = std::clamp(firstExtent, 0.0f, content);
+
+        // Snapped to a whole pixel. A fraction of the dock area is almost never an integer, and a
+        // panel edge at x = 123.4 puts a partially covered column of pixels between two panels --
+        // a seam that is faint at 100% and obvious at 150%, where it lands differently on every
+        // splitter. Snapping the split, rather than each panel afterwards, is what keeps the two
+        // children exactly adjacent: rounding them independently can leave a one-pixel gap or
+        // overlap between them.
+        firstExtent = std::round(firstExtent);
 
         UiRect remaining = area;
         if (horizontal)

@@ -9,6 +9,7 @@
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace CNA::Studio
 {
@@ -419,8 +420,16 @@ namespace CNA::Studio
             UiEdges{metricOf(theme, StudioMetric::SpacingSmall), 0.0f});
         for (const StudioMenuDefinition& menu : menus_)
         {
-            const float width_ = frame_.measureText(StudioFontRole::Body, menu.title).width
-                               + titlePadding * 2.0f;
+            // Whole pixels, for the same reason the dock splits are snapped: a title starting at
+            // a fraction blurs its own left edge and shifts every title after it by a different
+            // sub-pixel amount.
+            //
+            // **Ceil, not round.** A box sized to fit its text and then rounded *down* is a box
+            // its text no longer fits, and the widget dutifully truncates it -- which showed up as
+            // "File" rendering as "F..." while "Project" was fine, depending on nothing but where
+            // each measured width fell relative to a half pixel.
+            const float width_ = std::ceil(
+                frame_.measureText(StudioFontRole::Body, menu.title).width + titlePadding * 2.0f);
             MenuTitleGeometry geometry;
             geometry.bounds = cursor.splitLeft(std::min(width_, cursor.width));
             menuTitles_.push_back(geometry);
@@ -451,8 +460,10 @@ namespace CNA::Studio
                 const StudioAction* action = actions_.find(entry);
                 const std::string_view label = action != nullptr ? std::string_view{action->label}
                                                                  : std::string_view{entry};
-                const float wanted = std::max(buttonHeight,
-                                              studioLabelWidth(frame_, label, StudioFontRole::BodySmall));
+                // Ceil for the same reason as the menu titles: rounding a content-derived width
+                // down produces a control its own label does not fit in.
+                const float wanted = std::ceil(std::max(
+                    buttonHeight, studioLabelWidth(frame_, label, StudioFontRole::BodySmall)));
                 geometry.bounds = toolbarCursor.splitLeft(std::min(wanted, toolbarCursor.width));
                 toolbarCursor.splitLeft(std::min(spacing, toolbarCursor.width));
             }
@@ -498,7 +509,7 @@ namespace CNA::Studio
         }
 
         const float minimumWidth = metricOf(theme, StudioMetric::PanelHeaderHeight) * 4.0f;
-        float popupWidth = std::max(widest, minimumWidth);
+        float popupWidth = std::ceil(std::max(widest, minimumWidth));
         popupWidth = std::min(popupWidth, layout_.window.width);
 
         float popupX = menuTitles_[static_cast<std::size_t>(openMenu_)].bounds.left();
@@ -509,7 +520,8 @@ namespace CNA::Studio
 
         const float popupY = layout_.menuBar.bottom();
         const float available = std::max(0.0f, layout_.window.bottom() - popupY);
-        menuPopup_ = UiRect{popupX, popupY, popupWidth, std::min(totalHeight, available)};
+        menuPopup_ = UiRect{std::round(popupX), popupY, popupWidth,
+                            std::round(std::min(totalHeight, available))};
 
         UiRect rowCursor = menuPopup_.inset(
             UiEdges{0.0f, metricOf(theme, StudioMetric::SpacingSmall)});
@@ -796,7 +808,8 @@ namespace CNA::Studio
                     ? std::string_view{descriptor->title} : std::string_view{panelId};
 
                 const float width = std::min(
-                    studioLabelWidth(frame_, title) + metricOf(theme, StudioMetric::SpacingMedium),
+                    std::ceil(studioLabelWidth(frame_, title)
+                              + metricOf(theme, StudioMetric::SpacingMedium)),
                     cursor.width);
 
                 StudioTabOptions options;

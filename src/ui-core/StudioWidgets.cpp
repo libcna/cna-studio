@@ -513,6 +513,8 @@ namespace CNA::Studio
 
     float studioMenuItemHeight(const StudioTheme& theme)
     {
+        // Already whole: theme metrics are integers, so every row boundary in a menu lands on a
+        // pixel at every DPI scale rather than accumulating a fraction down the list.
         return std::max(metricOf(theme, StudioMetric::RowHeight),
                         metricOf(theme, StudioMetric::MinimumHitTarget));
     }

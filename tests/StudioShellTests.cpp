@@ -491,11 +491,15 @@ CNA_STUDIO_TEST(EveryShellRegionIsVisiblyDistinct)
 CNA_STUDIO_TEST(TheShellRendersAtEveryTestedResolutionAndScale)
 {
     struct Case { float width; float height; float scale; const char* name; };
+    // Every DPI scale Studio supports as a matter of policy, not only the round ones: 125% and
+    // 175% are where a layout that only ever rounded cleanly at 150% and 200% comes apart.
     const Case cases[] = {
         {1280.0f, 720.0f,  1.0f,  "1280x720@100"},
         {1600.0f, 900.0f,  1.0f,  "1600x900@100"},
         {1920.0f, 1080.0f, 1.0f,  "1920x1080@100"},
+        {1920.0f, 1080.0f, 1.25f, "1920x1080@125"},
         {2560.0f, 1440.0f, 1.5f,  "2560x1440@150"},
+        {2560.0f, 1440.0f, 1.75f, "2560x1440@175"},
         {3440.0f, 1440.0f, 1.0f,  "3440x1440@100"},
         {1920.0f, 1080.0f, 2.0f,  "1920x1080@200"},
     };
