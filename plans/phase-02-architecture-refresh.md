@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 19 of 25 complete `████████░░░░`
+**Progress:** 22 of 27 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -34,7 +34,9 @@
 | `STUDIO-02050` | Define the service decomposition of the application shell | ⬜ | — |
 | `STUDIO-02060` | Restore the CNA-backed build against current CNA | ✅ | `STUDIO-02001` |
 | `STUDIO-02061` | Screenshot success is reported honestly | ✅ | `STUDIO-02060` |
-| `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ⬜ | `STUDIO-02050` |
+| `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ✅ | `STUDIO-02040` |
+| `STUDIO-02052` | Export a project as a standalone CNA game | ✅ | `STUDIO-02040` |
+| `STUDIO-02053` | The exported game's runtime travels with the project | ✅ | `STUDIO-02052` |
 
 ## Acceptance and verification
 
@@ -46,7 +48,7 @@ Tasks whose completion condition is not obvious from the title.
 
 ### `STUDIO-02002` — Write `docs/CNA-GAPS.md` as the CNA deficiency register
 
-**Acceptance.** Six gaps with affected API, current and expected behaviour, Studio impact, workaround, suggested fix and the test CNA would need
+**Acceptance.** Every gap carries its affected API, current and expected behaviour, Studio impact, workaround, suggested fix and the test CNA would need. Six at the time this task was written; the register grows as Studio finds more
 
 ### `STUDIO-02003` — Write `docs/LEGACY-EDITOR-TASK-MAP.md`
 
@@ -221,4 +223,52 @@ target, and the profile validator never consults the host contract
 ### `STUDIO-02051` — Early guard: an exported project configures and builds with Studio unavailable
 
 **Acceptance.** A reduced form of the Phase 18 standalone test, run in CI from the start so the invariant cannot rot while the packaging workstream is still ahead
+
+**How it was met.** `CnaStudioStandaloneExport` exports the example project into an empty directory,
+configures it with nothing but CMake and a CNA checkout, compiles it, and runs it. Studio is not
+consulted after the export. The assertion is the line the game prints — how many entities came out
+of the scene the editor wrote and how many sprites it drew — because a game that built and loaded
+nothing would pass every earlier step
+
+**Why it builds rather than inspects.** Both failures it has found so far were invisible in the
+exported tree. `CNA_ENABLE_VIDEO` is tri-state and Studio passed the boolean `ON`, which made an
+exported game *require* FFmpeg (`STUDIO-17012`). And CNA builds its own tests and examples by
+default when consumed as a subdirectory, where neither can succeed — the tests want an initialised
+googletest submodule and the examples resolve a helper through `CMAKE_SOURCE_DIR`, which from a
+subdirectory is the consuming project's root (CNA gap G-09). Both looked correct on paper
+
+**Note on the dependency.** Originally listed as depending on `STUDIO-02050`, the service
+decomposition. It does not: export reads a `Project` and writes files, and waiting for a
+refactor of the application shell would have left the invariant unguarded for no reason
+
+**Verification.** `CnaStudioStandaloneExport`, labelled `slow` and not excluded in CI; roughly four
+minutes, most of it CNA
+
+### `STUDIO-02052` — Export a project as a standalone CNA game
+
+**Acceptance.** `cna-studio --project=P --export=DIR` writes a tree containing the game's `main`,
+its build file, the project-owned runtime and the content — and nothing that refers to Studio. It
+refuses a directory that already has files in it unless asked twice, because export writes a whole
+tree and a tree written over the wrong directory is not something an undo can help with
+
+**On the command line, not only in the GUI.** The invariant this serves has to be *provable by a
+script*: a GUI-only export is a claim nobody can test
+
+**Verification.** `tests/ProjectExportTests.cpp` — the files written, no absolute path from the
+exporting machine anywhere in the tree, every quoted `#include` resolving inside the export or in
+CNA, no Studio target named in the generated build, the refusal and the override, the target-name
+rule, and a project with no startup scene exporting with a warning rather than failing
+
+### `STUDIO-02053` — The exported game's runtime travels with the project
+
+**Acceptance.** The scene runtime is written into the exported project as ordinary source it
+compiles itself. No library, SDK or editor has to be present on the machine that builds it
+
+**Embedded, not read from disk.** A shipped Studio has no source tree beside it, so export must work
+from the binary alone — the runtime is embedded at build time the same way the typefaces are.
+Embedding from the files Studio itself compiles is also what stops the exported runtime drifting
+from the writer that produced the scene: a committed second copy would be free to
+
+**Verification.** `TheExportedRuntimeIsTheSameCodeStudioItselfCompiles` compares every embedded file
+against its original byte for byte
 

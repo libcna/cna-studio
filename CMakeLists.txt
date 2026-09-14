@@ -95,6 +95,38 @@ add_library(cna-studio-core STATIC
     src/core/StudioMatrix.cpp)
 target_link_libraries(cna-studio-core PUBLIC cna-studio-settings)
 
+# The runtime an exported game carries, embedded the same way the typefaces are and for the same
+# reason: a shipped Studio has no source tree beside it, and export must work from the binary alone.
+# Embedding from the sources Studio itself compiles is also what stops the exported runtime drifting
+# from the writer that produced the scene -- a committed second copy would be free to.
+set(CNA_STUDIO_EMBEDDED_RUNTIME_SOURCES "")
+foreach(_runtimeFile
+        "include/CNA/Studio/Core/Json.hpp|kRuntimeJsonHeader"
+        "src/core/Json.cpp|kRuntimeJsonSource"
+        "include/CNA/Studio/Core/Uuid.hpp|kRuntimeUuidHeader"
+        "src/core/Uuid.cpp|kRuntimeUuidSource"
+        "include/CNA/Studio/Runtime/SceneLoader.hpp|kRuntimeSceneLoaderHeader")
+    string(REPLACE "|" ";" _parts "${_runtimeFile}")
+    list(GET _parts 0 _runtimePath)
+    list(GET _parts 1 _runtimeSymbol)
+
+    set(_runtimeInput "${CMAKE_CURRENT_SOURCE_DIR}/${_runtimePath}")
+    set(_runtimeOutput "${CMAKE_CURRENT_BINARY_DIR}/generated/${_runtimeSymbol}.cpp")
+
+    add_custom_command(
+        OUTPUT "${_runtimeOutput}"
+        COMMAND "${CMAKE_COMMAND}"
+                -DINPUT=${_runtimeInput}
+                -DOUTPUT=${_runtimeOutput}
+                -DSYMBOL=${_runtimeSymbol}
+                -DNAMESPACE=CNA::Studio::Generated
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
+        DEPENDS "${_runtimeInput}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
+        COMMENT "Embedding exported runtime source ${_runtimePath}"
+        VERBATIM)
+    list(APPEND CNA_STUDIO_EMBEDDED_RUNTIME_SOURCES "${_runtimeOutput}")
+endforeach()
+
 # cna-studio-scene -- the scene document, its entities, and every undoable scene operation.
 add_library(cna-studio-scene STATIC
     src/scene/StudioEntity.cpp
@@ -156,7 +188,10 @@ add_library(cna-studio-project STATIC
     src/project/TargetProfile.cpp
     src/project/Project.cpp
     src/project/RecoveryStore.cpp
-    src/project/BuildRunner.cpp)
+    src/project/BuildRunner.cpp
+    src/project/StudioRuntimeSources.cpp
+    src/project/ProjectExport.cpp
+    ${CNA_STUDIO_EMBEDDED_RUNTIME_SOURCES})
 target_link_libraries(cna-studio-project PUBLIC cna-studio-core)
 
 # cna-studio-ui -- the toolkit-independent UI surface plus its null implementation, and the two

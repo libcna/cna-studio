@@ -167,6 +167,20 @@ namespace CNA::Studio
         bool hostCapabilities = false;
 
         /**
+         * @brief Export the opened project as a standalone CNA game into this directory, and exit.
+         *
+         * On the command line because the invariant it serves has to be *provable* by a script:
+         * "an exported project builds with Studio uninstalled" is a claim, and the only thing that
+         * settles it is a test that exports into an empty directory and builds the result with
+         * nothing but CMake, a compiler and CNA. A GUI-only export could not be checked that way,
+         * and so would be a claim nobody ever tested (`STUDIO-02051`).
+         */
+        std::string exportPath;
+
+        /** @brief Let `--export` write into a directory that already has files in it. */
+        bool exportOverwrite = false;
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a

@@ -326,9 +326,39 @@ CNA_STUDIO_TEST(AProfileTranslatesToTheCMakeArgumentsStudioWouldRun)
     CNA_STUDIO_EXPECT(has(arguments, "-DCNA_ENABLE_DRACO=OFF"));
     for (const StudioFeatureOption& feature : getKnownStudioFeatures())
     {
-        const std::string on = "-D" + std::string{feature.cnaOption} + "=ON";
+        const std::string on = "-D" + std::string{feature.cnaOption} + "="
+                             + std::string{feature.enabledValue};
         const std::string off = "-D" + std::string{feature.cnaOption} + "=OFF";
         CNA_STUDIO_EXPECT(has(arguments, on) || has(arguments, off));
+    }
+}
+
+CNA_STUDIO_TEST(TurningVideoOnAsksCnaToUseFfmpegIfPresentRatherThanToRequireIt)
+{
+    // CNA_ENABLE_VIDEO is the one switch in this set that is not a boolean: OFF, AUTO or ON, where
+    // ON *requires* FFmpeg and fails the configure without it. Studio's "video" feature means the
+    // project would like video, not that it cannot be built without it -- so it maps to AUTO.
+    //
+    // This is not a hypothetical. Passing ON is what stopped an exported game configuring on a
+    // machine with no FFmpeg, which the export guard found by building the result rather than only
+    // reading it. A project that genuinely requires video sets CNA_ENABLE_VIDEO itself; the
+    // tri-state is STUDIO-17012.
+    StudioTargetProfile profile;
+    profile.setFeature("video", true);
+
+    const std::vector<std::string> arguments = studioTargetProfileCMakeArguments(profile);
+    CNA_STUDIO_EXPECT(has(arguments, "-DCNA_ENABLE_VIDEO=AUTO"));
+    CNA_STUDIO_EXPECT(!has(arguments, "-DCNA_ENABLE_VIDEO=ON"));
+
+    profile.setFeature("video", false);
+    const std::vector<std::string> withoutVideo = studioTargetProfileCMakeArguments(profile);
+    CNA_STUDIO_EXPECT(has(withoutVideo, "-DCNA_ENABLE_VIDEO=OFF"));
+
+    // Every other feature really is a boolean, and turning one on must still say ON.
+    for (const StudioFeatureOption& feature : getKnownStudioFeatures())
+    {
+        if (feature.name == "video") { continue; }
+        CNA_STUDIO_EXPECT_EQ(std::string{feature.enabledValue}, std::string{"ON"});
     }
 }
 

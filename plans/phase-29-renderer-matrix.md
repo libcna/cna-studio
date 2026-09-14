@@ -6,7 +6,7 @@
 
 **Exit criteria.** Adding a renderer or platform to CNA does not require hunting through Studio, and a new one cannot slip in unclassified.
 
-**Progress:** 5 of 7 complete `███████░░░░░`
+**Progress:** 5 of 7 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|

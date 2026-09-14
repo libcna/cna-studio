@@ -13,6 +13,8 @@
 #include <iostream>
 #include <memory>
 
+#include "CNA/Studio/Project/Project.hpp"
+#include "CNA/Studio/Project/ProjectExport.hpp"
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
@@ -323,6 +325,58 @@ int main(int argc, char** argv)
                      "contract against. Rebuild with -DCNA_STUDIO_WITH_CNA=ON for the live verdict.\n";
         return 0;
 #endif
+    }
+
+    // Export needs no window, no toolkit and no graphics device -- and, more to the point,
+    // the thing it produces must need no Studio either. Handled here, before anything that
+    // would open one, so the code path a script exercises is the short one.
+    if (!options.exportPath.empty())
+    {
+        if (options.projectPath.empty())
+        {
+            std::cerr << "cna-studio: --export needs --project=PATH: there is nothing to export "
+                         "without a project.\n";
+            return 3;
+        }
+
+        CNA::Studio::Project project;
+        const CNA::Studio::ProjectLoadResult loaded = project.loadFromFile(
+            options.projectPath, &CNA::Studio::getProjectFormatMigrator());
+        for (const std::string& warning : loaded.warnings)
+        {
+            std::cerr << "cna-studio: warning: " << warning << "\n";
+        }
+        if (!loaded.succeeded)
+        {
+            std::cerr << "cna-studio: cannot open '" << options.projectPath
+                      << "': " << loaded.errorMessage << "\n";
+            return 4;
+        }
+
+        CNA::Studio::StudioExportRequest request;
+        request.outputDirectory = options.exportPath;
+        request.overwrite = options.exportOverwrite;
+
+        const CNA::Studio::StudioExportResult result =
+            CNA::Studio::exportStandaloneProject(project, request);
+
+        for (const std::string& warning : result.warnings)
+        {
+            std::cerr << "cna-studio: warning: " << warning << "\n";
+        }
+        if (!result.succeeded())
+        {
+            std::cerr << "cna-studio: export failed: " << result.errorMessage << "\n";
+            return 5;
+        }
+
+        std::cout << "cna-studio: exported " << result.writtenFiles.size() << " files to '"
+                  << options.exportPath << "'\n"
+                  << "Build it with:\n"
+                  << "  cmake -S " << options.exportPath << " -B " << options.exportPath
+                  << "/build -DCNA_ROOT=/path/to/cna\n"
+                  << "  cmake --build " << options.exportPath << "/build\n";
+        return 0;
     }
 
     // Before the UI selection below, because the preview needs no window, no toolkit and no

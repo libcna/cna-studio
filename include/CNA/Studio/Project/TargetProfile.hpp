@@ -116,6 +116,21 @@ namespace CNA::Studio
         std::string_view note;
         /** @brief Whether a new project has it on. */
         bool defaultEnabled = false;
+
+        /**
+         * @brief What "on" is spelled as in CNA's configure.
+         *
+         * Usually `"ON"`, because most of CNA's switches are booleans. `CNA_ENABLE_VIDEO` is not:
+         * it takes `OFF`, `AUTO` or `ON`, where `ON` *requires* FFmpeg and fails the configure
+         * without it, and `AUTO` uses FFmpeg when the machine has it. Studio passing `ON` for a
+         * feature the project merely wants is how an exported game stopped building on a machine
+         * with no FFmpeg -- found by the export guard (`STUDIO-02051`), which is the whole reason
+         * that guard builds the exported project rather than only reading it.
+         *
+         * Studio's model is still a boolean, so a project that requires video unconditionally has
+         * to say so by overriding `CNA_ENABLE_VIDEO` itself; `STUDIO-17012` is the tri-state.
+         */
+        std::string_view enabledValue = "ON";
     };
 
     /** @brief Every feature a target profile can carry. */
@@ -246,6 +261,25 @@ namespace CNA::Studio
      * @param profile Profile to translate.
      * @return The arguments, e.g. `-DCNA_GRAPHICS_RENDERER=OPENGLES3`.
      */
+    /**
+     * @brief CNA's own spelling of a renderer Studio stores lower case.
+     *
+     * Studio stores `"opengles3"`; CNA's configure wants `"OPENGLES3"`. One function knows that,
+     * and everything that has to speak to CNA's build -- the build runner, the project exporter --
+     * asks it rather than upper-casing a string and hoping the two conventions never diverge.
+     *
+     * @param renderer Studio's lower-case renderer name.
+     * @return CNA's identity for it, or the name upper-cased when it is not one Studio knows.
+     */
+    [[nodiscard]] std::string studioRendererCnaIdentity(std::string_view renderer);
+
+    /**
+     * @brief CNA's own spelling of a platform Studio stores lower case.
+     * @param platform Studio's lower-case platform name.
+     * @return CNA's identity for it, or the name upper-cased when it is not one Studio knows.
+     */
+    [[nodiscard]] std::string studioPlatformCnaIdentity(std::string_view platform);
+
     [[nodiscard]] std::vector<std::string> studioTargetProfileCMakeArguments(
         const StudioTargetProfile& profile);
 

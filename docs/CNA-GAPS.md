@@ -17,7 +17,7 @@ reporting it.
 | `libcna/sharp-runtime` | `next` | `0c82d9b888bdf5f7d5663c77942f339bcb2a7445` | 2026-09-14 |
 
 The gaps numbered G-01 … G-05 were recorded against an **older** CNA revision by the CNA Editor
-prototype; G-06, G-07 and G-08 are new, filed by CNA Studio. All five of the inherited ones were
+prototype; G-06 through G-09 are new, filed by CNA Studio. All five of the inherited ones were
 re-verified against the commit above as part of the CNA Studio bootstrap; two have since been fixed
 upstream and are kept here, marked closed, so the record stays honest.
 
@@ -179,6 +179,26 @@ while proving nothing.
 **Note on severity.** This is the mildest of the open gaps and the most annoying to live with. Nothing
 is broken; the information is simply not reachable except by reading CMake, so every consumer that
 needs it writes the same table and each one rots independently.
+
+---
+
+## 🔴 G-09 — Consuming CNA as a subdirectory builds its tests and examples, and its examples cannot build that way at all
+
+**New, filed by CNA Studio.**
+
+| Field | Value |
+|-------|-------|
+| Affected API | `CMakeLists.txt` (`CNA_BUILD_TESTS`, `CNA_BUILD_EXAMPLES`); `modules/graphics/examples/CMakeLists.txt` |
+| Current behaviour | Both options default `ON` with no top-level-project guard, so `add_subdirectory(cna)` from a consuming project builds CNA's entire test suite and every example program as part of that project's build. Neither can succeed in the default case: the tests `FATAL_ERROR` on a checkout whose `vendor/googletest` submodule is not initialised, and the examples resolve their content-staging helper as `${CMAKE_SOURCE_DIR}/cmake/CopyDirectoryLocked.cmake` — which, from a subdirectory, is the **consuming project's** root, not CNA's, so the custom command fails with `Not a file` |
+| Expected behaviour | A project that consumes CNA gets CNA. `CNA_BUILD_TESTS` and `CNA_BUILD_EXAMPLES` default to `ON` only when CNA is the top-level project (CMake has `PROJECT_IS_TOP_LEVEL` for exactly this), and anything CNA's own targets reference inside its tree is addressed through `CNA_SOURCE_DIR` or `CMAKE_CURRENT_SOURCE_DIR` rather than `CMAKE_SOURCE_DIR` |
+| Studio impact | Every game CNA Studio exports consumes CNA this way — that is what a CNA game *is*. An exported project that did not know to turn both options off would not configure on a fresh CNA clone, and the message it failed with would name googletest, which has nothing to do with the game |
+| Workaround | The generated `CMakeLists.txt` sets `CNA_BUILD_TESTS OFF` and `CNA_BUILD_EXAMPLES OFF` as cache entries, with a comment saying why, and `STUDIO-02051` builds an exported project on every CNA-backed run so a regression here fails a test rather than a user's first build |
+| Suggested fix | `option(CNA_BUILD_TESTS "..." ${PROJECT_IS_TOP_LEVEL})` and the same for examples; replace `CMAKE_SOURCE_DIR` with `CNA_SOURCE_DIR` in `modules/graphics/examples/CMakeLists.txt` (two occurrences, one of them a Python test script path) |
+| Test needed in CNA | A CI leg that configures a trivial consumer project which does nothing but `add_subdirectory(cna)` and link `CNA`. It would have caught both halves of this, and it is the configuration every downstream user is in |
+
+**How it was found.** By building an exported game rather than reading it. `STUDIO-02051` exports the
+example project, configures it with nothing but CMake and a CNA checkout, compiles it and runs it.
+Both halves of this gap stopped that build, and neither is visible in the exported tree.
 
 ---
 

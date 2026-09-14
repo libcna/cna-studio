@@ -196,8 +196,10 @@ namespace CNA::Studio
             {"net", "CNA_ENABLE_NET", "Networking",
              "ENet-based networking. Off by default; a single-player game needs none of it.", false},
             {"video", "CNA_ENABLE_VIDEO", "Video playback",
-             "FFmpeg-backed video. CNA detects FFmpeg's absence and disables it, so leaving this on "
-             "costs nothing on a machine without it.", true},
+             "FFmpeg-backed video, used when the build machine has FFmpeg and quietly left out when "
+             "it does not. A project that must have it should set CNA_ENABLE_VIDEO=ON itself, which "
+             "turns a missing FFmpeg into a failed configure rather than a game without video.",
+             true, "AUTO"},
             {"draco", "CNA_ENABLE_DRACO", "Draco mesh compression",
              "Compressed glTF meshes. Off unless the project's content actually uses them.", false},
             {"devices", "CNA_DEVICES", "Device services",
@@ -393,24 +395,28 @@ namespace CNA::Studio
         return validation;
     }
 
+    std::string studioRendererCnaIdentity(std::string_view renderer)
+    {
+        // Upper case, because that is how CNA spells its renderer and platform identities. Studio
+        // stores them lower case because that is how a user types them and how a project file
+        // reads; the conversion happens here, once, rather than at every call site.
+        const RendererInfo* known = findRenderer(renderer);
+        return known != nullptr ? std::string{known->cnaIdentity} : uppered(renderer);
+    }
+
+    std::string studioPlatformCnaIdentity(std::string_view platform)
+    {
+        const PlatformInfo* known = findPlatform(platform);
+        return known != nullptr ? std::string{known->cnaIdentity} : uppered(platform);
+    }
+
     std::vector<std::string> studioTargetProfileCMakeArguments(const StudioTargetProfile& profile)
     {
         std::vector<std::string> arguments;
         arguments.push_back("-DCMAKE_BUILD_TYPE="
                             + std::string{studioBuildConfigurationName(profile.configuration)});
-
-        // Upper case, because that is how CNA spells its renderer and platform identities. Studio
-        // stores them lower case because that is how a user types them and how a project file
-        // reads; the conversion happens here, once, rather than at every call site.
-        const RendererInfo* renderer = findRenderer(profile.renderer);
-        arguments.push_back("-DCNA_GRAPHICS_RENDERER="
-                            + (renderer != nullptr ? std::string{renderer->cnaIdentity}
-                                                   : uppered(profile.renderer)));
-
-        const PlatformInfo* platform = findPlatform(profile.platform);
-        arguments.push_back("-DCNA_PLATFORM="
-                            + (platform != nullptr ? std::string{platform->cnaIdentity}
-                                                   : uppered(profile.platform)));
+        arguments.push_back("-DCNA_GRAPHICS_RENDERER=" + studioRendererCnaIdentity(profile.renderer));
+        arguments.push_back("-DCNA_PLATFORM=" + studioPlatformCnaIdentity(profile.platform));
 
         // Every known feature, on or off explicitly. Passing only the enabled ones would let a
         // stale cache keep a feature the profile turned off -- which is the kind of build that
@@ -418,7 +424,8 @@ namespace CNA::Studio
         for (const StudioFeatureOption& feature : getKnownStudioFeatures())
         {
             arguments.push_back("-D" + std::string{feature.cnaOption} + "="
-                                + (profile.hasFeature(feature.name) ? "ON" : "OFF"));
+                                + std::string{profile.hasFeature(feature.name) ? feature.enabledValue
+                                                                              : std::string_view{"OFF"}});
         }
         return arguments;
     }

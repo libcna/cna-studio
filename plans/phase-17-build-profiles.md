@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user picks a named profile, and Studio offers only combinations that can actually be built.
 
-**Progress:** 5 of 11 complete `█████░░░░░░░`
+**Progress:** 5 of 12 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,6 +21,7 @@
 | `STUDIO-17009` | Studio drives the project's own CMake, showing the exact commands | ⬜ | `STUDIO-17001` |
 | `STUDIO-17010` | Build output parsed for navigation, with the original log always retained | ⬜ | `STUDIO-17009` |
 | `STUDIO-17011` | Clean and incremental build | ⬜ | `STUDIO-17009` |
+| `STUDIO-17012` | Features that are tri-state in CNA are tri-state in the profile | ⬜ | `STUDIO-17001` |
 
 ## Acceptance and verification
 
@@ -76,3 +77,18 @@ Tasks whose completion condition is not obvious from the title.
 
 **Acceptance.** Compiler errors are never hidden behind "Build failed"
 
+### `STUDIO-17012` — Features that are tri-state in CNA are tri-state in the profile
+
+**Acceptance.** A profile can say *off*, *use it if the machine has it*, or *require it* for any CNA
+option that has three states, and the Build panel offers all three. Today the model is a boolean per
+feature, with a per-feature spelling of "on" as the escape hatch
+
+**Why it is not just tidiness.** `CNA_ENABLE_VIDEO` takes `OFF`, `AUTO` or `ON`, and `ON` *requires*
+FFmpeg: it fails the configure on a machine without it. Studio's boolean mapped "on" to `ON`, which
+made every exported project require FFmpeg to build — found by `STUDIO-02051` building an exported
+game rather than reading it. The stop-gap maps "on" to `AUTO`, which is right for a project that
+merely wants video and wrong for one that cannot ship without it; that project currently has to
+override `CNA_ENABLE_VIDEO` by hand
+
+**Verification.** `TurningVideoOnAsksCnaToUseFfmpegIfPresentRatherThanToRequireIt` pins the current
+behaviour and will need rewriting when this lands, which is the intent

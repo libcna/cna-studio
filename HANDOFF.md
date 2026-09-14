@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **15** — `studio-ui: replace placeholder text with real glyph rendering` |
+| HEAD | commit **16** — `studio: model the game build target on its six real axes` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 5 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 6 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -105,7 +105,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 87 of 456 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 100 of 457 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -138,9 +138,16 @@ an interactive menu bar, toolbar, tab strips and status bar driven entirely by t
 shortcut dispatch with scope precedence; and a preview entry point that can capture the shell's
 interaction states.
 
-**Phase 29 — Renderer matrix** (2 of 6). The renderer and platform catalogue.
+**Phase 29 — Renderer matrix** (5 of 7). The renderer and platform catalogue, capability-driven
+host eligibility, target renderer validation, and the guard that keeps Studio's transcription of
+CNA's configure rules from drifting.
 
-**Phase 33 — Docs and CI** (1 of 22). Golden-image test infrastructure.
+**Phase 17 — Build profiles** (5 of 11). The target profile model, OS/platform/architecture and
+renderer selection, build configuration, and the migration of the game's configure command onto
+the CMake variables current CNA actually defines.
+
+**Phase 33 — Docs and CI** (4 of 15). Golden-image test infrastructure, visual tests at every
+tested resolution and DPI scale, and the assertion-macro hardening that a sanitizer forced.
 
 ---
 
@@ -179,6 +186,13 @@ real runtime capability model with 32 atomic features, 22 limits and per-format 
 **`EASYGL` is not a renderer any more.** It was the prototype's *default*. It became a renderer
 *family* serving five GL profiles, so every `.cnaproject` the prototype wrote names a renderer that
 cannot be built. Handled by the alias table; the example project was updated to `OPENGLES3`.
+
+**Studio was configuring every user's game with a variable CNA does not define.** The build runner
+passed `-DCNA_GRAPHICS_BACKEND`, the name from before CNA split renderer from platform. CNA ignores
+it, so a game built through Studio silently took CNA's *default* renderer rather than the one the
+user chose — and the build succeeded, which is precisely why nobody noticed. Fixed with
+`STUDIO-17003`; the configure command now passes `CNA_GRAPHICS_RENDERER` and `CNA_PLATFORM`, and a
+test asserts the old name appears nowhere in it.
 
 **Two CNA gaps have closed upstream.** `Color` is now default-constructible (G-01), and `SpriteFont`
 has a public CNAEXT constructor (G-04, narrowed to the missing rasterizer).
@@ -241,9 +255,6 @@ Nothing is failing. What is **not** done, and should not be mistaken for done:
 - **The glyph atlas re-uploads whole.** A dirty atlas sends all four megabytes rather than the
   changed region (`STUDIO-04017`), and a full one drops glyphs and counts them rather than growing
   (`STUDIO-04018`). Both are start-up costs — the atlas settles within a few frames.
-- **Studio's CMake still uses `CNA_GRAPHICS_BACKEND`**, the variable name from before CNA split
-  renderer from platform. Current CNA uses `CNA_GRAPHICS_RENDERER` and `CNA_PLATFORM`. Migrating
-  the build option is `STUDIO-02040`/`STUDIO-17003`.
 - **No graphical CI.** `STUDIO-00013`'s reference screenshots and the real-device smoke tests are
   blocked on `STUDIO-33010`.
 - **Visual-test PNGs are large** (~8 MB at 1080p): the encoder uses stored deflate, which is
@@ -251,8 +262,9 @@ Nothing is failing. What is **not** done, and should not be mistaken for done:
 
 ### Building against a real CNA checkout
 
-Reproduced this session on Ubuntu 24.04. CNA's SDL is a submodule and is not fetched by a plain
-clone:
+Reproduced again this session on Ubuntu 24.04, and it is worth the twenty minutes: it caught a
+compile error in `CnaStudioHost.cpp` that no dependency-free configuration can see, because that
+file does not exist in one. CNA's SDL is a submodule and is not fetched by a plain clone:
 
 ```bash
 git clone --branch next https://github.com/libcna/cna       /path/to/cna
@@ -292,7 +304,6 @@ In dependency order. The first block is what makes the shell a UI rather than a 
 | `STUDIO-04005` | Font atlas construction and glyph rasterization |
 | `STUDIO-04006` | Text rendering with kerning and correct line metrics |
 | `STUDIO-04009` | Choose and document redistributable fonts and icons |
-| `STUDIO-02040` | Target-profile model, and migrate `CNA_GRAPHICS_BACKEND` to the split axes |
 | `STUDIO-02050` | Service decomposition of the application shell |
 | `STUDIO-02051` | Early guard: an exported project builds with Studio unavailable |
 | `STUDIO-01014` | Decide and document the compatibility-shim policy for the renamed API |

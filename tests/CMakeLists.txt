@@ -22,6 +22,7 @@ add_executable(cna-studio-tests
     StudioFontTests.cpp
     StudioHighDpiTests.cpp
     StudioTargetProfileTests.cpp
+    ProjectExportTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -213,6 +214,12 @@ set_tests_properties(CnaStudioRejectsGraphicsFlag PROPERTIES WILL_FAIL TRUE)
 add_test(NAME CnaPlayerHelp COMMAND cna-player --help)
 
 if(CNA_STUDIO_WITH_CNA)
+    # How many compile jobs the standalone export test gives the exported project's own build. It
+    # builds CNA from source, so the default is generous; lower it on a machine where a second
+    # full-throttle build alongside this one would thrash.
+    set(CNA_STUDIO_EXPORT_TEST_JOBS "8" CACHE STRING
+        "Parallel jobs for the standalone export test's build of the exported project")
+
     # Where the two ctests that need a real graphics context find one. Declared here rather than
     # inside one of the blocks below because both need it and either can be the one that runs:
     # the native shell needs CNA alone, the ImGui editor needs CNA and Dear ImGui.
@@ -271,6 +278,40 @@ if(CNA_STUDIO_WITH_CNA)
                              CnaStudioNativeShellWindowSmokeHiDpi
             PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
                        LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # The invariant the whole product rests on, checked by doing it: export the example project
+    # into an empty directory, configure it with nothing but CMake and a CNA checkout, compile it,
+    # and run it. Studio is not consulted after the export.
+    #
+    # An expensive test -- it builds CNA -- and it earns its cost. Every failure of this invariant
+    # found so far has been one that reading the exported tree could not have caught: CNA's video
+    # option is tri-state, so the boolean ON Studio passed made an exported game require FFmpeg;
+    # and CNA builds its own tests and examples by default from a subdirectory, so the configure
+    # failed before a line of the game compiled. Both looked correct on paper.
+    #
+    # Labelled, so a developer iterating on the UI can exclude it with -LE slow and CI cannot.
+    add_test(NAME CnaStudioStandaloneExport
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTUDIO=$<TARGET_FILE:cna-studio>"
+            "-DPROJECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject"
+            "-DCNA_ROOT=${CNA_STUDIO_CNA_ROOT}"
+            "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/standalone-export"
+            "-DRENDERER=${CNA_GRAPHICS_RENDERER}"
+            "-DJOBS=${CNA_STUDIO_EXPORT_TEST_JOBS}"
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StandaloneExportTest.cmake")
+    set_tests_properties(CnaStudioStandaloneExport PROPERTIES
+        LABELS "slow"
+        TIMEOUT 5400)
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioStandaloneExport PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    else()
+        set_property(TEST CnaStudioStandaloneExport APPEND PROPERTY LABELS "needs-display")
+        set_tests_properties(CnaStudioStandaloneExport PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
     endif()
 
     # The native shell has no headless mode: without a frame limit it runs until the window is

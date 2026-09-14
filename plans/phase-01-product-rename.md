@@ -6,7 +6,7 @@
 
 **Exit criteria.** Nothing in the repository presents itself as "cna-editor" except deliberately pinned serialized contracts, and the suite is still green.
 
-**Progress:** 13 of 16 complete `██████████░░`
+**Progress:** 13 of 16 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|

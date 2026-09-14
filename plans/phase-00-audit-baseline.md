@@ -6,7 +6,7 @@
 
 **Exit criteria.** The imported tree builds clean and green from an empty build directory, its numbers are written down, and the provenance of every file is recorded.
 
-**Progress:** 12 of 15 complete `██████████░░`
+**Progress:** 12 of 15 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
