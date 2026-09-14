@@ -21,6 +21,7 @@ add_executable(cna-studio-tests
     StudioHostCapabilityTests.cpp
     StudioFontTests.cpp
     StudioHighDpiTests.cpp
+    StudioTargetProfileTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -86,6 +87,14 @@ target_compile_definitions(cna-studio-tests PRIVATE
 target_sources(cna-studio-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioApplication.cpp"
     ${CNA_STUDIO_PANEL_SOURCES})
+
+# The renderer/operating-system gate transcription (STUDIO-29007) can only be *checked* against CNA
+# when there is a CNA checkout to read. Told where it is rather than left to guess: a guard that
+# silently found nothing would pass vacuously, which is the failure mode these tests exist to avoid.
+if(CNA_STUDIO_WITH_CNA AND EXISTS "${CNA_STUDIO_CNA_ROOT}/cmake/RendererSelection.cmake")
+    target_compile_definitions(cna-studio-tests PRIVATE
+        CNA_STUDIO_TEST_CNA_ROOT="${CNA_STUDIO_CNA_ROOT}")
+endif()
 
 if(CNA_STUDIO_WITH_IMGUI)
     # The ImGui cases run the real editor UI headless and assert on the geometry it produces.

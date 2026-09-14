@@ -17,8 +17,9 @@ reporting it.
 | `libcna/sharp-runtime` | `next` | `0c82d9b888bdf5f7d5663c77942f339bcb2a7445` | 2026-09-14 |
 
 The gaps numbered G-01 … G-05 were recorded against an **older** CNA revision by the CNA Editor
-prototype; G-06 and G-07 are new, filed by CNA Studio. All five were re-verified against the commit above as part of the CNA Studio bootstrap;
-two have since been fixed upstream and are kept here, marked closed, so the record stays honest.
+prototype; G-06, G-07 and G-08 are new, filed by CNA Studio. All five of the inherited ones were
+re-verified against the commit above as part of the CNA Studio bootstrap; two have since been fixed
+upstream and are kept here, marked closed, so the record stays honest.
 
 ## Status legend
 
@@ -158,6 +159,26 @@ success and the process exited zero having written nothing. That was a Studio bu
 it is worth recording because it is the exact failure mode the graphical smoke tests exist to
 prevent — the file appearing *is* the assertion, and a flag that lies about it makes the test pass
 while proving nothing.
+
+---
+
+## 🔴 G-08 — Which renderers a target can build is stated only as CMake conditions
+
+**New, filed by CNA Studio.**
+
+| Field | Value |
+|-------|-------|
+| Affected API | `cmake/RendererSelection.cmake`; no runtime or build-time query |
+| Current behaviour | CNA knows precisely which of its 50 renderers can be built for which operating system — `DIRECTX*`, `DIRECT2D`, `GLIDE` and `GDI` are Windows-only; `CANVAS`, `HTML_DOM`, `SVG_DOM`, `PIXIJS`, `WEBGL1` and `WEBGL2` are Emscripten-only; `MAGNUM` and the desktop GL profiles are the reverse; `NANOVG` and `RLGL` are desktop-only; `GLIDE` additionally needs a 32-bit x86 ABI. Every one of those is a `FATAL_ERROR` inside a CMake `if`, reachable only by attempting a configure |
+| Expected behaviour | A consumer building a target-selection UI can ask, without configuring anything, which renderers are valid for a given platform and architecture — a generated table, a queryable CMake target property, or a small JSON manifest beside the registry |
+| Studio impact | Studio's Build panel offers target profiles, and offering a combination CNA will refuse is a build that fails minutes later with a message about a missing header. So Studio **transcribes** the gates from `RendererSelection.cmake` into `CNA/Studio/Project/TargetProfile.cpp` — a second copy of CNA's own rules, which is exactly what `docs/ARCHITECTURE.md` says Studio should not have to hold |
+| Workaround | The transcription, plus `STUDIO-29007`: a guard test that reads CNA's `RendererSelection.cmake` and fails when a renderer CNA gates is one Studio still offers. It runs only in the CNA-backed configuration, because it needs a CNA checkout to read |
+| Suggested fix | Emit the identity → allowed-system map from `RendererRegistry.cmake`, the same way the renderer descriptor table is already generated. The data exists; only the export is missing |
+| Test needed in CNA | A test asserting the generated map agrees with the `FATAL_ERROR` gates, so the two cannot drift |
+
+**Note on severity.** This is the mildest of the open gaps and the most annoying to live with. Nothing
+is broken; the information is simply not reachable except by reading CMake, so every consumer that
+needs it writes the same table and each one rots independently.
 
 ---
 

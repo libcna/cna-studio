@@ -17,6 +17,7 @@
 
 #include "CNA/Studio/Core/FormatMigration.hpp"
 #include "CNA/Studio/Core/Json.hpp"
+#include "CNA/Studio/Project/TargetProfile.hpp"
 
 namespace CNA::Studio
 {
@@ -110,6 +111,42 @@ namespace CNA::Studio
         [[nodiscard]] const std::string& getSceneDirectory() const { return sceneDirectory_; }
         void setSceneDirectory(std::string path) { sceneDirectory_ = std::move(path); }
 
+        /**
+         * @brief The build targets this project ships, in the order the Build panel lists them.
+         *
+         * A project has as many as it ships on, and none of them is privileged: "Linux desktop",
+         * "Windows 32-bit" and "Web" are three profiles, not one profile and two exceptions. See
+         * `CNA/Studio/Project/TargetProfile.hpp` for why one string could never express this.
+         */
+        [[nodiscard]] const std::vector<StudioTargetProfile>& getTargetProfiles() const
+        {
+            return targetProfiles_;
+        }
+
+        /**
+         * @brief Replaces the build targets.
+         *
+         * An empty list is refused: a project with no target cannot be built, and silently
+         * accepting one defers the error to the moment somebody presses Build.
+         *
+         * @param profiles Profiles to set.
+         * @return True when they were accepted.
+         */
+        bool setTargetProfiles(std::vector<StudioTargetProfile> profiles);
+
+        /** @brief Index of the profile the Play and Build buttons use. */
+        [[nodiscard]] std::size_t getActiveTargetProfileIndex() const { return activeTargetProfile_; }
+
+        /**
+         * @brief Chooses the profile the Play and Build buttons use.
+         * @param index Index into @ref getTargetProfiles.
+         * @return True when the index was in range.
+         */
+        bool setActiveTargetProfileIndex(std::size_t index);
+
+        /** @brief The profile the Play and Build buttons use. */
+        [[nodiscard]] const StudioTargetProfile& getActiveTargetProfile() const;
+
         /** @brief Command-line backend name the Play button prefers, e.g. "easygl". */
         [[nodiscard]] const std::string& getDefaultGraphicsBackend() const { return defaultGraphicsBackend_; }
         void setDefaultGraphicsBackend(std::string name) { defaultGraphicsBackend_ = std::move(name); }
@@ -184,6 +221,8 @@ namespace CNA::Studio
         std::string assetDirectory_ = "Assets";
         std::string sceneDirectory_ = "Scenes";
         std::string defaultGraphicsBackend_ = kDefaultRenderer;
+        std::vector<StudioTargetProfile> targetProfiles_{StudioTargetProfile::defaults()};
+        std::size_t activeTargetProfile_ = 0;
         std::vector<std::string> targetPlatforms_{"linux-x64"};
         std::vector<std::string> layers_{kDefaultLayer};
 

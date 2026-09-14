@@ -37,6 +37,22 @@ using namespace CNA::Studio;
 
 namespace
 {
+    /**
+     * @brief Finds the load warning mentioning @p needle, or nullptr.
+     *
+     * A load reports everything it found, so tests assert that the *right* thing was said rather
+     * than counting how many things were. Counting makes a suite that discourages diagnostics:
+     * every new warning breaks tests that had nothing to do with it.
+     */
+    const std::string* warningMentioning(const ProjectLoadResult& result, std::string_view needle)
+    {
+        for (const std::string& warning : result.warnings)
+        {
+            if (warning.find(needle) != std::string::npos) { return &warning; }
+        }
+        return nullptr;
+    }
+
     std::filesystem::path makeScratchDirectory(const std::string& name)
     {
         const std::filesystem::path directory =
@@ -94,7 +110,10 @@ CNA_STUDIO_TEST(ProjectWarnsAboutAnUnknownBackend)
     Project project;
     const ProjectLoadResult result = project.loadFromJson(json);
     CNA_STUDIO_EXPECT(result.succeeded);
-    CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
+    // Asserted by content, not by count: a load reports everything it found, and a test that
+    // counts breaks the next time anything else is worth reporting -- which is how a suite ends up
+    // discouraging diagnostics.
+    CNA_STUDIO_EXPECT(warningMentioning(result, "no-such-renderer") != nullptr);
 }
 
 CNA_STUDIO_TEST(ALegacyRendererNameIsMigratedAndTheChangeIsReported)
@@ -110,9 +129,9 @@ CNA_STUDIO_TEST(ALegacyRendererNameIsMigratedAndTheChangeIsReported)
     Project project;
     const ProjectLoadResult result = project.loadFromJson(json);
     CNA_STUDIO_EXPECT(result.succeeded);
-    CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
-    CNA_STUDIO_EXPECT(result.warnings.front().find("easygl") != std::string::npos);
-    CNA_STUDIO_EXPECT(result.warnings.front().find("OPENGLES3") != std::string::npos);
+    const std::string* migration = warningMentioning(result, "easygl");
+    CNA_STUDIO_EXPECT(migration != nullptr);
+    CNA_STUDIO_EXPECT(migration != nullptr && migration->find("OPENGLES3") != std::string::npos);
 
     // And the migration actually took effect, rather than only being described.
     CNA_STUDIO_EXPECT_EQ(project.getDefaultGraphicsBackend(), std::string{"OPENGLES3"});
@@ -131,8 +150,7 @@ CNA_STUDIO_TEST(ARemovedRendererIsReportedRatherThanSilentlySubstituted)
     Project project;
     const ProjectLoadResult result = project.loadFromJson(json);
     CNA_STUDIO_EXPECT(result.succeeded);
-    CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
-    CNA_STUDIO_EXPECT(result.warnings.front().find("removed") != std::string::npos);
+    CNA_STUDIO_EXPECT(warningMentioning(result, "removed") != nullptr);
     CNA_STUDIO_EXPECT_EQ(project.getDefaultGraphicsBackend(), std::string{"ascii"});
 }
 
@@ -1668,7 +1686,10 @@ CNA_STUDIO_TEST(ABuildPlanIsTwoCommandsWithTheOptionsTheStudioActuallyKnows)
 
     // The one option the editor genuinely knows about. Passing more would be guessing at somebody
     // else's CMakeLists.
-    CNA_STUDIO_EXPECT(configure.find("-DCNA_GRAPHICS_BACKEND=EASYGL") != std::string::npos);
+    // CNA_GRAPHICS_RENDERER, not the CNA_GRAPHICS_BACKEND Studio used to pass: current CNA does
+    // not define the old name, so a game configured with it silently took CNA's default renderer
+    // instead of the chosen one -- and the build succeeded, which is what hid it.
+    CNA_STUDIO_EXPECT(configure.find("-DCNA_GRAPHICS_RENDERER=EASYGL") != std::string::npos);
 
     // --config as well as CMAKE_BUILD_TYPE: single-config generators read the first and
     // multi-config ones read the second, and a build that produced a Debug binary on one

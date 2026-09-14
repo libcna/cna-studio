@@ -43,8 +43,27 @@ namespace CNA::Studio
         /** @brief The platform from the project's `targetPlatforms`, e.g. "linux-x64". */
         std::string targetPlatform;
 
-        /** @brief CNA's own `CNA_GRAPHICS_BACKEND` value, e.g. "EASYGL". */
+        /**
+         * @brief CNA's `CNA_GRAPHICS_RENDERER` value, e.g. `"OPENGLES3"`.
+         *
+         * The field keeps its name because callers and saved settings use it; what changed is the
+         * *variable it sets*. Studio passed `CNA_GRAPHICS_BACKEND`, which current CNA does not
+         * define — so every game Studio configured silently took CNA's default renderer instead of
+         * the one the user chose, and the build succeeded, which is what made it hard to notice.
+         */
         std::string graphicsBackend;
+
+        /** @brief CNA's `CNA_PLATFORM` value, e.g. `"SDL3"`. Empty leaves CNA's default. */
+        std::string platform;
+
+        /**
+         * @brief Extra `-D` arguments, in order, from the target profile.
+         *
+         * Everything beyond renderer and platform that the profile decides: the feature options,
+         * each passed explicitly on or off. Carried as a list rather than reconstructed here so
+         * that the Build panel can show exactly what it is about to run.
+         */
+        std::vector<std::string> extraDefinitions;
 
         /** @brief CMake build type, e.g. "Release". */
         std::string configuration = "Release";
@@ -106,6 +125,17 @@ namespace CNA::Studio
     [[nodiscard]] BuildRequest makeBuildRequest(const Project& project,
                                                 std::string targetPlatform,
                                                 std::string graphicsBackend);
+
+    /**
+     * @brief Fills in a request from a project's active target profile.
+     *
+     * Prefer this: the profile is where a project's renderer, platform, configuration and features
+     * are decided, and a request assembled from anywhere else is a second opinion.
+     *
+     * @param project Project to build.
+     * @return The request.
+     */
+    [[nodiscard]] BuildRequest makeBuildRequestFromActiveProfile(const Project& project);
 
     /** @brief Where a build has got to. */
     enum class BuildState

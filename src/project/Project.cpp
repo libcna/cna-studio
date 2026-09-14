@@ -21,6 +21,34 @@ namespace CNA::Studio
     }
 
 
+    bool Project::setTargetProfiles(std::vector<StudioTargetProfile> profiles)
+    {
+        // Refused rather than accepted. A project with no target cannot be built, and taking an
+        // empty list here defers the error to the moment somebody presses Build.
+        if (profiles.empty()) { return false; }
+
+        targetProfiles_ = std::move(profiles);
+        if (activeTargetProfile_ >= targetProfiles_.size()) { activeTargetProfile_ = 0; }
+        defaultGraphicsBackend_ = targetProfiles_[activeTargetProfile_].renderer;
+        return true;
+    }
+
+    bool Project::setActiveTargetProfileIndex(std::size_t index)
+    {
+        if (index >= targetProfiles_.size()) { return false; }
+        activeTargetProfile_ = index;
+        // Kept in step deliberately: `defaultGraphicsBackend` is a serialized contract that the
+        // player's discovery and existing project files depend on, so it follows the active
+        // profile rather than becoming a second place the renderer is decided.
+        defaultGraphicsBackend_ = targetProfiles_[index].renderer;
+        return true;
+    }
+
+    const StudioTargetProfile& Project::getActiveTargetProfile() const
+    {
+        return targetProfiles_[std::min(activeTargetProfile_, targetProfiles_.size() - 1)];
+    }
+
     JsonValue Project::toJson() const
     {
         JsonValue json = JsonValue::makeObject();
@@ -31,6 +59,14 @@ namespace CNA::Studio
         json.set("assetDirectory", JsonValue{assetDirectory_});
         json.set("sceneDirectory", JsonValue{sceneDirectory_});
         json.set("defaultGraphicsBackend", JsonValue{defaultGraphicsBackend_});
+
+        JsonValue profiles = JsonValue::makeArray();
+        for (const StudioTargetProfile& profile : targetProfiles_)
+        {
+            profiles.append(studioTargetProfileToJson(profile));
+        }
+        json.set("targetProfiles", std::move(profiles));
+        json.set("activeTargetProfile", static_cast<int>(activeTargetProfile_));
 
         JsonValue platforms = JsonValue::makeArray();
         for (const std::string& platform : targetPlatforms_) { platforms.append(JsonValue{platform}); }
@@ -150,6 +186,52 @@ namespace CNA::Studio
                 result.warnings.push_back("unknown defaultGraphicsBackend '" + defaultGraphicsBackend_
                                           + "'; the Play button will need one chosen explicitly");
             }
+        }
+
+        // --- Target profiles ---------------------------------------------------------------------
+        targetProfiles_.clear();
+        for (const JsonValue& profile : document["targetProfiles"].getElements())
+        {
+            StudioTargetProfile parsed = studioTargetProfileFromJson(profile);
+            const StudioProfileValidation validation = validateStudioTargetProfile(parsed);
+            for (const StudioProfileProblem& problem : validation.problems)
+            {
+                result.warnings.push_back("target profile '" + parsed.name + "': " + problem.message);
+            }
+            targetProfiles_.push_back(std::move(parsed));
+        }
+
+        if (targetProfiles_.empty())
+        {
+            // A project written before profiles existed -- which is every project the prototype
+            // wrote. Its one renderer string becomes one profile, so the build targets a user
+            // already had keep working and the richer model arrives without an import step.
+            StudioTargetProfile migrated = StudioTargetProfile::defaults();
+            migrated.name = "Default";
+            migrated.renderer = defaultGraphicsBackend_;
+            (void) validateStudioTargetProfile(migrated);
+            targetProfiles_.push_back(std::move(migrated));
+
+            if (document.contains("defaultGraphicsBackend"))
+            {
+                result.warnings.push_back(
+                    "this project predates build target profiles; its renderer '"
+                    + defaultGraphicsBackend_ + "' became the profile 'Default'. Saving the project "
+                    "writes the profile and keeps the old field in step.");
+            }
+        }
+
+        activeTargetProfile_ = 0;
+        const int requested = document["activeTargetProfile"].asInt(0);
+        if (requested > 0 && static_cast<std::size_t>(requested) < targetProfiles_.size())
+        {
+            activeTargetProfile_ = static_cast<std::size_t>(requested);
+        }
+        else if (requested != 0)
+        {
+            result.warnings.push_back(
+                "activeTargetProfile " + std::to_string(requested) + " is out of range; using the "
+                "first profile.");
         }
 
         targetPlatforms_.clear();

@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 17 of 25 complete `███████░░░░░`
+**Progress:** 19 of 25 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -29,8 +29,8 @@
 | `STUDIO-02037` | Guard test: authored files are byte-deterministic across repeated saves | ⬜ | — |
 | `STUDIO-02038` | Legacy renderer-name migration for projects written by the prototype | ✅ | `STUDIO-02030` |
 | `STUDIO-02039` | Guard test: no two public headers define the same type in one namespace | ✅ | — |
-| `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ⬜ | `STUDIO-02020` |
-| `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | 🔄 | `STUDIO-02040` |
+| `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ✅ | `STUDIO-02020` |
+| `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | ✅ | `STUDIO-02040` |
 | `STUDIO-02050` | Define the service decomposition of the application shell | ⬜ | — |
 | `STUDIO-02060` | Restore the CNA-backed build against current CNA | ✅ | `STUDIO-02001` |
 | `STUDIO-02061` | Screenshot success is reported honestly | ✅ | `STUDIO-02060` |
@@ -165,6 +165,42 @@ start buries its own point when padded with things that are not the reason
 ### `STUDIO-02041` — Separate the Studio host renderer from the game target renderer throughout
 
 **Acceptance.** No code path treats the two as one value. A project using only classic functionality is not denied a renderer merely because it cannot host Studio's UI
+
+### `STUDIO-02040` — Define the target-profile model
+
+**Acceptance.** Six axes — operating system, architecture, platform, renderer, configuration and
+features — replacing the prototype's single "backend" string, which could express none of "SDL3
+windowing with a Vulkan renderer", a 32-bit Windows build, or a game that does not want the
+networking layer compiled in
+
+**How it was met.** `StudioTargetProfile` is a value, so a project holds as many as it ships on and
+none of them is privileged. It validates against what CNA declares — registered renderer identities,
+implemented platforms, legacy alias migration — and against the per-renderer operating-system gates
+CNA's own `cmake/RendererSelection.cmake` enforces as hard configure errors, so Studio says
+"CNA cannot build DirectX 11 for Linux" before the build rather than after it. It translates to the
+exact CMake arguments Studio would run, with every feature passed explicitly on *or* off: passing
+only the enabled ones lets a stale cache keep a feature the profile turned off, which is a build
+that works for whoever configured it and for nobody else.
+
+A project written before profiles existed — which is every project the prototype wrote — has its one
+renderer string migrated into one profile, and is told so. `defaultGraphicsBackend` stays on disk
+and follows the active profile, because it is a serialized contract the player's build discovery
+depends on
+
+**Verification.** `tests/StudioTargetProfileTests.cpp`, and `STUDIO-29007` for the transcription
+
+### `STUDIO-02041` — Separate the Studio host renderer from the game target renderer throughout
+
+**Acceptance.** A renderer that cannot host Studio's UI is still offered as a game target
+
+**How it was met.** Two models that share no code: `StudioHostRequirements` answers "can this device
+draw Studio" and `StudioTargetProfile` answers "what does this game build for". A test walks every
+renderer Studio classifies as unable to host it, picks an operating system CNA will build it for,
+and asserts the profile validates — because the day those decisions share a path is the day a user
+is told they cannot ship for a platform because the tool could not run on it
+
+**Verification.** `tests/StudioTargetProfileTests.cpp`: every non-hosting renderer is a valid game
+target, and the profile validator never consults the host contract
 
 ### `STUDIO-02050` — Define the service decomposition of the application shell
 

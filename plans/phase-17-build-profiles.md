@@ -6,21 +6,55 @@
 
 **Exit criteria.** A user picks a named profile, and Studio offers only combinations that can actually be built.
 
-**Progress:** 0 of 11 complete `░░░░░░░░░░░░`
+**Progress:** 5 of 11 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-17001` | Target profile data model | ⬜ | `STUDIO-02040` |
+| `STUDIO-17001` | Target profile data model | ✅ | `STUDIO-02040` |
 | `STUDIO-17002` | Profile editing UI | ⬜ | `STUDIO-17001` |
-| `STUDIO-17003` | Target OS and platform implementation selection | ⬜ | `STUDIO-17001` |
-| `STUDIO-17004` | CPU architecture selection | ⬜ | `STUDIO-17001` |
-| `STUDIO-17005` | Renderer selection, validated by capability rather than by name | ⬜ | `STUDIO-17001`, `STUDIO-02030` |
-| `STUDIO-17006` | Build configuration: Debug, Development, Release, Shipping | ⬜ | `STUDIO-17001` |
+| `STUDIO-17003` | Target OS and platform implementation selection | ✅ | `STUDIO-17001` |
+| `STUDIO-17004` | CPU architecture selection | ✅ | `STUDIO-17001` |
+| `STUDIO-17005` | Renderer selection, validated against what CNA can build | ✅ | `STUDIO-17001`, `STUDIO-02030` |
+| `STUDIO-17006` | Build configuration: Debug, Release, RelWithDebInfo, MinSizeRel | ✅ | `STUDIO-17001` |
 | `STUDIO-17007` | Feature profile: what the game requires of a renderer | ⬜ | `STUDIO-17005` |
 | `STUDIO-17008` | The GUI offers only meaningful combinations | ⬜ | `STUDIO-17007` |
 | `STUDIO-17009` | Studio drives the project's own CMake, showing the exact commands | ⬜ | `STUDIO-17001` |
 | `STUDIO-17010` | Build output parsed for navigation, with the original log always retained | ⬜ | `STUDIO-17009` |
 | `STUDIO-17011` | Clean and incremental build | ⬜ | `STUDIO-17009` |
+
+## Acceptance and verification
+
+Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-17001` — Target profile data model
+
+**Delivered by `STUDIO-02040`.** `CNA/Studio/Project/TargetProfile.hpp`: six axes as a value, with a
+project carrying as many profiles as it ships on and none of them privileged
+
+### `STUDIO-17003` — Target OS and platform implementation selection
+
+**Acceptance.** Operating system and CNA platform implementation are separate choices, and a
+platform CNA reserves but has not implemented is refused rather than quietly replaced by the default
+
+**Also fixed here, and it was a real defect.** Studio's build runner passed
+`-DCNA_GRAPHICS_BACKEND` when configuring a *user's game*. Current CNA does not define that variable
+at all, so every game Studio configured silently took CNA's default renderer instead of the one the
+user chose — and the build **succeeded**, which is exactly why it survived. It now passes
+`CNA_GRAPHICS_RENDERER` and `CNA_PLATFORM`, and a test asserts the old name appears nowhere in the
+configure command
+
+### `STUDIO-17005` — Renderer selection, validated against what CNA can build
+
+**Acceptance.** A profile naming a renderer CNA cannot build for its operating system is refused
+before the build, with CNA's own reason. Note the scope: this is *buildability*, not capability —
+whether the chosen renderer can do what the game needs is `STUDIO-17007`, and whether it can host
+Studio is a different question again that must never be asked here
+
+### `STUDIO-17006` — Build configuration
+
+**Acceptance.** CMake's four: Debug, Release, RelWithDebInfo, MinSizeRel. The task originally said
+"Debug, Development, Release, Shipping", which is another engine's vocabulary; Studio drives the
+project's own CMake, so it uses CMake's
 
 ## Acceptance and verification
 

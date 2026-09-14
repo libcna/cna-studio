@@ -153,6 +153,7 @@ target_link_libraries(cna-studio-assets PUBLIC cna-studio-core PRIVATE cna-studi
 add_library(cna-studio-project STATIC
     src/project/RendererCatalog.cpp
     src/project/StudioHostRequirements.cpp
+    src/project/TargetProfile.cpp
     src/project/Project.cpp
     src/project/RecoveryStore.cpp
     src/project/BuildRunner.cpp)

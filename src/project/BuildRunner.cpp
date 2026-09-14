@@ -111,6 +111,39 @@ namespace CNA::Studio
         return request;
     }
 
+    BuildRequest makeBuildRequestFromActiveProfile(const Project& project)
+    {
+        const StudioTargetProfile& profile = project.getActiveTargetProfile();
+
+        BuildRequest request;
+        request.projectRoot = project.getRootPath();
+        request.targetPlatform = std::string{studioTargetOsName(profile.os)} + "-"
+                               + std::string{studioArchitectureName(profile.architecture)};
+        request.configuration = std::string{studioBuildConfigurationName(profile.configuration)};
+
+        // Translated by the profile, not here. It is the one place that knows how Studio's
+        // lower-case names map to CNA's upper-case identities, and a second translation would be a
+        // second chance to get it wrong.
+        for (const std::string& argument : studioTargetProfileCMakeArguments(profile))
+        {
+            if (argument.rfind("-DCNA_GRAPHICS_RENDERER=", 0) == 0)
+            {
+                request.graphicsBackend = argument.substr(std::string{"-DCNA_GRAPHICS_RENDERER="}.size());
+            }
+            else if (argument.rfind("-DCNA_PLATFORM=", 0) == 0)
+            {
+                request.platform = argument.substr(std::string{"-DCNA_PLATFORM="}.size());
+            }
+            else if (argument.rfind("-DCMAKE_BUILD_TYPE=", 0) != 0)
+            {
+                request.extraDefinitions.push_back(argument);
+            }
+        }
+
+        request.buildDirectory = getDefaultBuildDirectory(request);
+        return request;
+    }
+
     std::string describeBuildProblem(const BuildRequest& request)
     {
         if (request.projectRoot.empty()) { return "no project is open"; }
@@ -161,12 +194,25 @@ namespace CNA::Studio
                                "-B", buildDirectory,
                                "-DCMAKE_BUILD_TYPE=" + configuration};
 
-        // The one option the editor genuinely knows about. Everything else a game's build needs is
-        // the game's own business, and passing more would be the editor guessing at somebody's
-        // CMakeLists.
+        // CNA_GRAPHICS_RENDERER, not the CNA_GRAPHICS_BACKEND this used to pass. Current CNA
+        // separates renderer from platform and does not define the old name at all, so every game
+        // Studio configured silently took CNA's default renderer rather than the one the user
+        // chose -- and the build *succeeded*, which is exactly what made it survive this long.
         if (!request.graphicsBackend.empty())
         {
-            configure.arguments.push_back("-DCNA_GRAPHICS_BACKEND=" + request.graphicsBackend);
+            configure.arguments.push_back("-DCNA_GRAPHICS_RENDERER=" + request.graphicsBackend);
+        }
+        if (!request.platform.empty())
+        {
+            configure.arguments.push_back("-DCNA_PLATFORM=" + request.platform);
+        }
+
+        // Whatever else the target profile decides. Studio still passes nothing it was not told to:
+        // a game's build is the game's business, and guessing at somebody's CMakeLists is how a
+        // tool becomes something people work around.
+        for (const std::string& definition : request.extraDefinitions)
+        {
+            configure.arguments.push_back(definition);
         }
 
         BuildStep build;
