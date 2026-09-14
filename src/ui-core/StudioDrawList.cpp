@@ -58,6 +58,14 @@ namespace CNA::Studio
         commandOpen_ = false;
     }
 
+    void StudioDrawList::setDefaultTexture(UiTextureId texture, float u, float v)
+    {
+        defaultTexture_ = texture;
+        defaultU_ = u;
+        defaultV_ = v;
+        commandOpen_ = false;
+    }
+
     void StudioDrawList::pushClip(const UiRect& rect)
     {
         // Intersect rather than replace: a scroll area inside a panel inside a dock must be
@@ -117,18 +125,21 @@ namespace CNA::Studio
         if (x1 <= x0 || y1 <= y0 || color.a == 0) { return; }
         if (isClippedAway(x0, y0, x1, y1)) { return; }
 
-        ensureCommand(kUiTextureNone);
+        ensureCommand(defaultTexture_);
         UiDrawList& list = data_.lists.back();
 
         const auto base = static_cast<std::uint16_t>(list.vertices.size());
         const std::uint32_t packed = packUiColor(color);
 
-        // A single white texel would be the usual trick for untextured geometry; kUiTextureNone
-        // already means "no texture" to the renderer, so UVs are simply unused here.
-        list.vertices.push_back(UiVertex{x0, y0, 0.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x1, y0, 1.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x1, y1, 1.0f, 1.0f, packed});
-        list.vertices.push_back(UiVertex{x0, y1, 0.0f, 1.0f, packed});
+        // All four corners on the same texel. With a white pixel reserved in the font atlas this
+        // is a no-op that lets fills batch with glyphs; with no atlas the texture is
+        // kUiTextureNone and the UVs are simply unused.
+        const float u = defaultU_;
+        const float v = defaultV_;
+        list.vertices.push_back(UiVertex{x0, y0, u, v, packed});
+        list.vertices.push_back(UiVertex{x1, y0, u, v, packed});
+        list.vertices.push_back(UiVertex{x1, y1, u, v, packed});
+        list.vertices.push_back(UiVertex{x0, y1, u, v, packed});
 
         const std::uint16_t order[6] = {0, 1, 2, 0, 2, 3};
         for (const std::uint16_t offset : order)
@@ -136,6 +147,43 @@ namespace CNA::Studio
             list.indices.push_back(static_cast<std::uint16_t>(base + offset));
         }
         list.commands.back().indexCount += 6;
+    }
+
+    void StudioDrawList::addTexturedQuad(float x0, float y0, float x1, float y1, float u0, float v0,
+                                         float u1, float v1, UiTextureId texture, StudioColor color)
+    {
+        if (x1 <= x0 || y1 <= y0 || color.a == 0) { return; }
+        if (isClippedAway(x0, y0, x1, y1)) { return; }
+
+        ensureCommand(texture);
+        UiDrawList& list = data_.lists.back();
+
+        const auto base = static_cast<std::uint16_t>(list.vertices.size());
+        const std::uint32_t packed = packUiColor(color);
+
+        list.vertices.push_back(UiVertex{x0, y0, u0, v0, packed});
+        list.vertices.push_back(UiVertex{x1, y0, u1, v0, packed});
+        list.vertices.push_back(UiVertex{x1, y1, u1, v1, packed});
+        list.vertices.push_back(UiVertex{x0, y1, u0, v1, packed});
+
+        const std::uint16_t order[6] = {0, 1, 2, 0, 2, 3};
+        for (const std::uint16_t offset : order)
+        {
+            list.indices.push_back(static_cast<std::uint16_t>(base + offset));
+        }
+        list.commands.back().indexCount += 6;
+    }
+
+    void StudioDrawList::drawGlyph(const UiRect& rect, float u0, float v0, float u1, float v1,
+                                   UiTextureId texture, StudioColor color)
+    {
+        addTexturedQuad(rect.left(), rect.top(), rect.right(), rect.bottom(), u0, v0, u1, v1,
+                        texture, color);
+    }
+
+    void StudioDrawList::addTextureRequest(const UiTextureRequest& request)
+    {
+        data_.textureRequests.push_back(request);
     }
 
     void StudioDrawList::addTriangle(float x0, float y0, float x1, float y1, float x2, float y2,
@@ -148,14 +196,14 @@ namespace CNA::Studio
             return;
         }
 
-        ensureCommand(kUiTextureNone);
+        ensureCommand(defaultTexture_);
         UiDrawList& list = data_.lists.back();
 
         const auto base = static_cast<std::uint16_t>(list.vertices.size());
         const std::uint32_t packed = packUiColor(color);
-        list.vertices.push_back(UiVertex{x0, y0, 0.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x1, y1, 0.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x2, y2, 0.0f, 0.0f, packed});
+        list.vertices.push_back(UiVertex{x0, y0, defaultU_, defaultV_, packed});
+        list.vertices.push_back(UiVertex{x1, y1, defaultU_, defaultV_, packed});
+        list.vertices.push_back(UiVertex{x2, y2, defaultU_, defaultV_, packed});
         list.indices.push_back(base);
         list.indices.push_back(static_cast<std::uint16_t>(base + 1));
         list.indices.push_back(static_cast<std::uint16_t>(base + 2));

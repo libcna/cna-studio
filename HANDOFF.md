@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **14** — `studio: implement the host renderer capability contract` |
+| HEAD | commit **15** — `studio-ui: replace placeholder text with real glyph rendering` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 4 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 5 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -90,9 +90,9 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **671 test cases, 22 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **671 test cases, 22 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **671 test cases, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, no CNA | **692 test cases, 22 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **692 test cases, 22 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **692 test cases, 0 failures, no sanitizer reports** |
 | GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
 
 Baseline at import, for comparison: 442 test cases, 12 CTest suites.
@@ -105,7 +105,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 85 of 454 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 87 of 456 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -125,8 +125,9 @@ per-frame collision detection, retained widget state with reclamation, geometry 
 draw-list layer, input routing with capture and focus, the explicit five-phase frame lifecycle,
 cursor requests, the widget interaction helpers and the text-measurement seam.
 
-**Phase 4 — CNAEXT UI renderer** (5 of 16). Vertex/index management, draw-call batching, nested
-scissor clipping, rounded rectangles, separators, triangles and clip culling.
+**Phase 4 — CNAEXT UI renderer** (7 of 18). Vertex/index management, draw-call batching, nested
+scissor clipping, rounded rectangles, separators, triangles, clip culling, and **real text**: a
+glyph atlas, per-size rasterization, kerning and correct baselines.
 
 **Phase 5 — Docking** (8 of 14). The dock node tree, splits, draggable splitters with minimum
 sizes and cursor shapes, tab strips, opening and closing panels, layout serialization, restoring
@@ -233,8 +234,13 @@ Nothing is failing. What is **not** done, and should not be mistaken for done:
 - **Submenus are not implemented.** The arrow is drawn for an item that declares one and nothing
   opens (`STUDIO-06017`). No menu in the default set declares a submenu, so nothing is visibly
   broken today.
-- **Text is a placeholder.** `drawTextPlaceholder` fills a measured box, deliberately at reduced
-  alpha so an unfinished build looks unfinished. Real glyphs need the font atlas of `STUDIO-04005`.
+- **Icons are not drawn yet.** Toolbar buttons carry text labels. The decision recorded on
+  `STUDIO-04009` is to draw Studio's icons as vector paths in code rather than vendor an icon
+  font — no third-party asset, crisp at every DPI scale, and a visual language that is Studio's
+  own (`STUDIO-04008`).
+- **The glyph atlas re-uploads whole.** A dirty atlas sends all four megabytes rather than the
+  changed region (`STUDIO-04017`), and a full one drops glyphs and counts them rather than growing
+  (`STUDIO-04018`). Both are start-up costs — the atlas settles within a few frames.
 - **Studio's CMake still uses `CNA_GRAPHICS_BACKEND`**, the variable name from before CNA split
   renderer from platform. Current CNA uses `CNA_GRAPHICS_RENDERER` and `CNA_PLATFORM`. Migrating
   the build option is `STUDIO-02040`/`STUDIO-17003`.

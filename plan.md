@@ -48,18 +48,18 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**85 of 454 tasks complete** `████░░░░░░░░░░░░░░░░░░░░`  18.7%
+**87 of 456 tasks complete** `█████░░░░░░░░░░░░░░░░░░░`  19.1%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 85 |
-| 🔄 In progress | 11 |
-| ⬜ Not started | 353 |
+| ✅ Complete | 87 |
+| 🔄 In progress | 14 |
+| ⬜ Not started | 350 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **454** |
+| **Total** | **456** |
 
-> **On the task count.** 454 tasks are decomposed today. That is not the final number: the
+> **On the task count.** 456 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
 > Tasks are added when the work is understood well enough to state a completion condition — never
 > to reach a number. A phase whose detail is still coarse says so by having few rows, which is
@@ -73,7 +73,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
 | 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 25 | 17 | `███████░░░` |
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 28 | 18 | `██████░░░░` |
-| 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 16 | 5 | `███░░░░░░░` |
+| 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 18 | 7 | `████░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 14 | 8 | `██████░░░░` |
 | 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 19 | 7 | `████░░░░░░` |
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 21 | 0 | `░░░░░░░░░░` |

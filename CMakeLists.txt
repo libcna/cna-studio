@@ -178,6 +178,35 @@ target_link_libraries(cna-studio-ui PUBLIC cna-studio-core)
 #
 # It is deliberately separate from cna-studio-ui: that module is the *abstraction* every panel
 # talks to, and this one is an implementation being grown underneath it.
+# The shipped typefaces, turned into byte arrays at build time. The .ttf files are the source of
+# truth; the generated .cpp files are artefacts and are never committed (see cmake/EmbedBinary.cmake
+# for why a committed copy of the same bytes would be a second source of truth free to drift).
+set(CNA_STUDIO_EMBEDDED_FONT_SOURCES "")
+foreach(_font
+        "IBMPlexSans-Regular.ttf|kPlexSansRegular"
+        "IBMPlexSans-SemiBold.ttf|kPlexSansSemiBold"
+        "IBMPlexMono-Regular.ttf|kPlexMonoRegular")
+    string(REPLACE "|" ";" _parts "${_font}")
+    list(GET _parts 0 _fontFile)
+    list(GET _parts 1 _fontSymbol)
+
+    set(_fontInput "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/${_fontFile}")
+    set(_fontOutput "${CMAKE_CURRENT_BINARY_DIR}/generated/${_fontSymbol}.cpp")
+
+    add_custom_command(
+        OUTPUT "${_fontOutput}"
+        COMMAND "${CMAKE_COMMAND}"
+                -DINPUT=${_fontInput}
+                -DOUTPUT=${_fontOutput}
+                -DSYMBOL=${_fontSymbol}
+                -DNAMESPACE=CNA::Studio::Generated
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
+        DEPENDS "${_fontInput}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedBinary.cmake"
+        COMMENT "Embedding ${_fontFile}"
+        VERBATIM)
+    list(APPEND CNA_STUDIO_EMBEDDED_FONT_SOURCES "${_fontOutput}")
+endforeach()
+
 add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioTheme.cpp
     src/ui-core/StudioThemeNames.cpp
@@ -191,6 +220,9 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioFrame.cpp
     src/ui-core/StudioTextMeasure.cpp
     src/ui-core/StudioWidgets.cpp
+    src/ui-core/StudioFontAtlas.cpp
+    src/ui-core/StudioEmbeddedFonts.cpp
+    ${CNA_STUDIO_EMBEDDED_FONT_SOURCES}
     src/ui-core/StudioActionRegistry.cpp
     src/ui-core/StudioShell.cpp
     src/ui-core/UiSoftwareRasterizer.cpp)
@@ -199,6 +231,10 @@ add_library(cna-studio-ui-core STATIC
 # leverage of the strangler migration: the new UI inherits a working, tested CNA renderer on its
 # first frame instead of needing one written for it.
 target_link_libraries(cna-studio-ui-core PUBLIC cna-studio-core cna-studio-ui)
+# The vendored glyph rasterizer (public domain / MIT; third_party/stb/LICENSE). PRIVATE: exactly one
+# translation unit includes it, so nothing above the font atlas can reach for it and no consumer of
+# cna-studio-ui-core inherits a third-party header on its include path.
+target_include_directories(cna-studio-ui-core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 
 # Dear ImGui itself. Vendored core only -- none of ImGui's own platform or renderer backends are
 # built, because cna-studio supplies its own through CNA's public API (ANALYSIS.md decision D-14).

@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 
+#include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
+
 #include <algorithm>
 
 namespace CNA::Studio
@@ -112,11 +114,28 @@ namespace CNA::Studio
 
         draw_.begin(pendingInput_.displayWidth, pendingInput_.displayHeight,
                     pendingInput_.framebufferScaleX);
+
+        if (atlas_ != nullptr)
+        {
+            draw_.setDefaultTexture(StudioFontAtlas::kTextureId, atlas_->whitePixelU(),
+                                    atlas_->whitePixelV());
+        }
     }
 
     void StudioFrame::endFrame()
     {
         enter(StudioFramePhase::Retain, StudioFramePhase::Draw);
+
+        // Emitted here rather than at the start of the draw pass, and the difference matters: a
+        // glyph can be rasterised at any point in the frame -- by a measurement during layout, or
+        // by a widget that draws text nothing measured -- and the renderer applies every texture
+        // request before it draws anything. Uploading last therefore covers glyphs that appeared
+        // after the draw pass began, which the obvious ordering would show one frame late. The
+        // prototype shipped exactly that (legacy ED-119).
+        if (atlas_ != nullptr && atlas_->hasPendingUpload())
+        {
+            draw_.addTextureRequest(atlas_->takeUploadRequest());
+        }
 
         draw_.end();
 
@@ -133,6 +152,12 @@ namespace CNA::Studio
     {
         if (!require(phase_ == StudioFramePhase::Idle, "setTheme")) { return; }
         theme_ = std::move(theme);
+    }
+
+    void StudioFrame::setFontAtlas(StudioFontAtlas* atlas)
+    {
+        atlas_ = atlas;
+        fonts_ = atlas;
     }
 
     StudioTextMetrics StudioFrame::measureText(StudioFontRole role, std::string_view utf8) const

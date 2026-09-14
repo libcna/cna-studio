@@ -6,9 +6,11 @@
 
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
+#include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioTextMeasure.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace CNA::Studio
 {
@@ -178,29 +180,84 @@ namespace CNA::Studio
     UiRect studioDrawText(StudioFrame& frame, const UiRect& box, std::string_view text,
                           StudioFontRole role, StudioColor color, StudioTextAlign align)
     {
-        if (!frame.isDrawPass() || text.empty() || box.isEmpty()) { return UiRect{}; }
+        if (text.empty() || box.isEmpty()) { return UiRect{}; }
 
         const StudioFontStyle style = frame.theme().font(role);
         const std::string fitted = studioTruncateText(frame, style, text, box.width);
         if (fitted.empty()) { return UiRect{}; }
 
         const StudioTextMetrics metrics = frame.measureText(style, fitted);
-        const float baseline = metrics.centeredBaseline(box.top(), box.height);
+
+        // Whole pixels. A baseline at a fractional y lands every glyph in the line on a half pixel,
+        // which is the difference between text that looks crisp and text that looks faintly
+        // smeared at exactly the sizes a UI uses.
+        const float baseline = std::round(metrics.centeredBaseline(box.top(), box.height));
 
         float x = box.left();
         if (align == StudioTextAlign::Center)
         {
-            x = box.left() + std::max(0.0f, (box.width - metrics.width) * 0.5f);
+            x = box.left() + std::max(0.0f, std::round((box.width - metrics.width) * 0.5f));
         }
         else if (align == StudioTextAlign::Right)
         {
             x = box.right() - std::min(metrics.width, box.width);
         }
+        x = std::round(x);
 
-        // Positioned from the baseline rather than from the box, so that the day glyphs replace
-        // the placeholder nothing above this line has to move (STUDIO-04006).
         const UiRect ink{x, baseline - metrics.ascent, metrics.width, metrics.height()};
-        frame.drawList().drawTextPlaceholder(ink, color);
+
+        StudioFontAtlas* atlas = frame.fontAtlas();
+        if (atlas == nullptr)
+        {
+            // No atlas: the measured box, at reduced alpha, so a build without fonts looks
+            // visibly unfinished rather than silently empty.
+            if (frame.isDrawPass()) { frame.drawList().drawTextPlaceholder(ink, color); }
+            return ink;
+        }
+
+        if (frame.isInputPass())
+        {
+            // Rasterise now, while there is still a whole pass before anything is drawn. Doing it
+            // during the draw pass works too -- the atlas upload is emitted at end of frame for
+            // exactly that reason -- but doing it here keeps the draw pass free of allocation.
+            atlas->prepare(style, fitted);
+            return ink;
+        }
+        if (!frame.isDrawPass()) { return ink; }
+
+        const StudioFontFace& face = atlas->face(style);
+        StudioDrawList& list = frame.drawList();
+
+        float pen = x;
+        char32_t previous = 0;
+        std::size_t offset = 0;
+        while (offset < fitted.size())
+        {
+            const char32_t codepoint = StudioFontAtlas::decodeUtf8(fitted, offset);
+            if (codepoint == 0) { break; }
+
+            // Kerning is applied before the glyph, not after the previous one, so a run that is
+            // clipped mid-word still positions every glyph it does draw exactly where an unclipped
+            // run would have.
+            if (previous != 0) { pen += face.kerning(previous, codepoint); }
+
+            const StudioGlyph* glyph = face.glyph(codepoint);
+            if (glyph == nullptr) { previous = codepoint; continue; }
+
+            if (glyph->hasInk())
+            {
+                const UiRect quad{std::round(pen + glyph->bearingX),
+                                  std::round(baseline + glyph->bearingY),
+                                  static_cast<float>(glyph->width),
+                                  static_cast<float>(glyph->height)};
+                list.drawGlyph(quad, glyph->u0, glyph->v0, glyph->u1, glyph->v1,
+                               StudioFontAtlas::kTextureId, color);
+            }
+
+            pen += glyph->advance;
+            previous = codepoint;
+        }
+
         return ink;
     }
 

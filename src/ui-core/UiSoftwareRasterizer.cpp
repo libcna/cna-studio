@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <utility>
 
 namespace CNA::Studio
@@ -45,6 +46,47 @@ namespace CNA::Studio
             dst[1] = static_cast<std::uint8_t>((src.g * src.a + dst[1] * inv + 127) / 255);
             dst[2] = static_cast<std::uint8_t>((src.b * src.a + dst[2] * inv + 127) / 255);
             dst[3] = static_cast<std::uint8_t>(std::min(255, src.a + dst[3] * inv / 255));
+        }
+
+        /**
+         * @brief A texture the rasterizer can sample, gathered from this frame's requests.
+         *
+         * The rasterizer honours texture requests for the same reason the CNA renderer does: the
+         * golden images are the only place the UI's *appearance* is asserted, and a rasterizer
+         * that drew every glyph as a flat rectangle would let real text regress without a single
+         * test noticing.
+         */
+        struct SampledTexture
+        {
+            int width = 0;
+            int height = 0;
+            int pitch = 0;
+            const std::uint8_t* pixels = nullptr;
+        };
+
+        /**
+         * @brief Samples a texture with nearest-neighbour filtering.
+         *
+         * Nearest rather than bilinear, deliberately. The UI draws glyph quads at exactly their
+         * rasterised pixel size, so every sample lands on a texel centre and the two filters agree
+         * -- except that bilinear's rounding would differ between this rasterizer and a GPU's, and
+         * a golden image that disagreed with a real renderer by one least-significant bit per
+         * pixel would be worse than useless.
+         */
+        Rgba sampleTexture(const SampledTexture& texture, float u, float v)
+        {
+            if (texture.pixels == nullptr || texture.width <= 0 || texture.height <= 0)
+            {
+                return Rgba{255, 255, 255, 255};
+            }
+            const int x = std::clamp(static_cast<int>(u * static_cast<float>(texture.width)),
+                                     0, texture.width - 1);
+            const int y = std::clamp(static_cast<int>(v * static_cast<float>(texture.height)),
+                                     0, texture.height - 1);
+            const std::uint8_t* texel =
+                texture.pixels + static_cast<std::size_t>(y) * texture.pitch
+                + static_cast<std::size_t>(x) * 4;
+            return Rgba{texel[0], texel[1], texel[2], texel[3]};
         }
 
         /** @brief Twice the signed area of a triangle; its sign gives the winding. */
@@ -86,7 +128,8 @@ namespace CNA::Studio
          * `edgeFunction > 0` and the UI does not guarantee a consistent winding.
          */
         void fillTriangle(ImageBuffer& image, const UiVertex& v0, const UiVertex& v1,
-                          const UiVertex& v2, const UiClipRect& clip)
+                          const UiVertex& v2, const UiClipRect& clip,
+                          const SampledTexture* texture)
         {
             float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
             if (std::abs(area) < 1e-6f) { return; }
@@ -140,11 +183,25 @@ namespace CNA::Studio
                     const float w1 = e1 * invArea;
                     const float w2 = e2 * invArea;
 
-                    const Rgba src{
+                    Rgba src{
                         static_cast<int>(std::lround(w0 * ca.r + w1 * cb.r + w2 * cc.r)),
                         static_cast<int>(std::lround(w0 * ca.g + w1 * cb.g + w2 * cc.g)),
                         static_cast<int>(std::lround(w0 * ca.b + w1 * cb.b + w2 * cc.b)),
                         static_cast<int>(std::lround(w0 * ca.a + w1 * cb.a + w2 * cc.a))};
+
+                    if (texture != nullptr)
+                    {
+                        const float u = w0 * a.u + w1 * b.u + w2 * c.u;
+                        const float v = w0 * a.v + w1 * b.v + w2 * c.v;
+                        const Rgba texel = sampleTexture(*texture, u, v);
+                        // Modulate, exactly as the CNA renderer's BasicEffect does with a textured
+                        // vertex-coloured draw: the atlas carries coverage in alpha and white in
+                        // colour, so the vertex colour is what the glyph ends up being.
+                        src.r = src.r * texel.r / 255;
+                        src.g = src.g * texel.g / 255;
+                        src.b = src.b * texel.b / 255;
+                        src.a = src.a * texel.a / 255;
+                    }
 
                     blendPixel(&image.pixels[(static_cast<std::size_t>(y) * image.width + x) * 4], src);
                 }
@@ -175,6 +232,26 @@ namespace CNA::Studio
         const float scaleX = drawData.framebufferScaleX;
         const float scaleY = drawData.framebufferScaleY;
 
+        // Texture requests first, exactly as the CNA renderer applies them before drawing. The
+        // pixels stay owned by whoever produced the request; this only records where they are.
+        std::map<UiTextureId, SampledTexture> textures;
+        for (const UiTextureRequest& request : drawData.textureRequests)
+        {
+            if (request.action == UiTextureAction::Destroy)
+            {
+                textures.erase(request.texture);
+                continue;
+            }
+            if (request.pixels == nullptr || request.width <= 0 || request.height <= 0) { continue; }
+
+            SampledTexture texture;
+            texture.width = request.width;
+            texture.height = request.height;
+            texture.pitch = request.pitch > 0 ? request.pitch : request.width * 4;
+            texture.pixels = request.pixels;
+            textures[request.texture] = texture;
+        }
+
         for (const UiDrawList& list : drawData.lists)
         {
             for (const UiDrawCommand& command : list.commands)
@@ -185,6 +262,16 @@ namespace CNA::Studio
                                 command.clipRect.right * scaleX, command.clipRect.bottom * scaleY};
                 clip = clip.clampTo(static_cast<float>(width), static_cast<float>(height));
                 if (clip.isEmpty()) { continue; }
+
+                const SampledTexture* texture = nullptr;
+                if (command.texture != kUiTextureNone)
+                {
+                    const auto found = textures.find(command.texture);
+                    // A command naming a texture the frame never uploaded draws untextured rather
+                    // than being skipped: dropping it would hide the mistake, and drawing it flat
+                    // makes the missing upload visible as a solid block where the glyphs belong.
+                    if (found != textures.end()) { texture = &found->second; }
+                }
 
                 for (std::uint32_t i = 0; i + 2 < command.indexCount; i += 3)
                 {
@@ -207,7 +294,7 @@ namespace CNA::Studio
                     v1.x *= scaleX; v1.y *= scaleY;
                     v2.x *= scaleX; v2.y *= scaleY;
 
-                    fillTriangle(image, v0, v1, v2, clip);
+                    fillTriangle(image, v0, v1, v2, clip, texture);
                 }
             }
         }

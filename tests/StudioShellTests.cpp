@@ -20,6 +20,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <map>
 #include <string>
 
@@ -30,6 +31,18 @@ namespace
     /** @brief One frame of the real shell: its geometry, its totals and its resolved regions. */
     struct ShellRender
     {
+        /**
+         * @brief The shell that produced this frame, kept alive deliberately.
+         *
+         * `UiDrawData` carries texture requests whose pixels are *borrowed* from whoever produced
+         * them -- the font atlas, here -- and are valid only while that owner lives. Copying the
+         * draw data out of a shell that then went out of scope left the atlas pointer dangling,
+         * and because every primitive now samples the atlas's white texel, the result was a frame
+         * rasterised entirely from freed memory. Holding the shell is the fix; the contract is
+         * documented on `UiTextureRequest::pixels` and is easy to overlook exactly once.
+         */
+        std::shared_ptr<StudioShell> owner;
+
         UiDrawData data;
         std::size_t vertices = 0;
         std::size_t commands = 0;
@@ -52,21 +65,22 @@ namespace
         StudioTheme theme = StudioTheme::dark();
         theme.setScale(scale);
 
-        StudioShell shell{theme};
-        for (const std::string& panel : closedPanels) { shell.dockTree().removePanel(panel); }
+        auto shell = std::make_shared<StudioShell>(theme);
+        for (const std::string& panel : closedPanels) { shell->dockTree().removePanel(panel); }
 
         UiInputState input;
         input.displayWidth = width;
         input.displayHeight = height;
         input.mouseInWindow = false;
-        shell.renderFrame(input);
+        shell->renderFrame(input);
 
         ShellRender result;
-        result.data = shell.drawData();
-        result.layout = shell.layout();
-        result.phaseViolations = shell.frame().phaseViolations();
-        result.viewportBounds = shell.panelBounds("viewport");
-        result.outlinerBounds = shell.panelBounds("outliner");
+        result.owner = shell;
+        result.data = shell->drawData();
+        result.layout = shell->layout();
+        result.phaseViolations = shell->frame().phaseViolations();
+        result.viewportBounds = shell->panelBounds("viewport");
+        result.outlinerBounds = shell->panelBounds("outliner");
         for (const UiDrawList& list : result.data.lists)
         {
             result.vertices += list.vertices.size();

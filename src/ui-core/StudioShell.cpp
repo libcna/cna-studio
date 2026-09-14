@@ -41,6 +41,7 @@ namespace CNA::Studio
 
     StudioShell::StudioShell(StudioTheme theme) : frame_(std::move(theme))
     {
+        frame_.setFontAtlas(&fonts_);
         registerCoreStudioActions(actions_);
         menus_ = defaultMenus();
         toolbar_ = defaultToolbar();

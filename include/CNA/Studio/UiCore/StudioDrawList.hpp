@@ -59,6 +59,20 @@ namespace CNA::Studio
         [[nodiscard]] const UiDrawData& drawData() const { return data_; }
 
         /**
+         * @brief Points untextured geometry at a white texel in a texture.
+         *
+         * Every flat fill then samples one opaque white pixel and multiplies it by its vertex
+         * colour, which is a no-op visually and means a fill and the glyphs beside it share a draw
+         * call instead of forcing a texture change between them. Set to @ref kUiTextureNone to go
+         * back to binding no texture, which is what a build with no font atlas does.
+         *
+         * @param texture Texture holding the white texel.
+         * @param u Texture coordinate of the texel.
+         * @param v Texture coordinate of the texel.
+         */
+        void setDefaultTexture(UiTextureId texture, float u, float v);
+
+        /**
          * @brief Pushes a clip rectangle, intersected with the one already in force.
          *
          * Nested clipping composes: a scroll area inside a panel inside a dock cannot draw outside
@@ -154,6 +168,36 @@ namespace CNA::Studio
         void drawFocusRing(const UiRect& rect, StudioColor color, float thickness = 1.0f);
 
         /**
+         * @brief Draws one glyph from a texture atlas.
+         *
+         * The colour multiplies the atlas sample, so one white-with-coverage-in-alpha atlas serves
+         * every text colour in the theme -- which is what keeps text in three fonts, four sizes and
+         * a dozen colours inside a single draw call.
+         *
+         * @param rect Where the glyph's ink goes, in logical units.
+         * @param u0 Left texture coordinate.
+         * @param v0 Top texture coordinate.
+         * @param u1 Right texture coordinate.
+         * @param v1 Bottom texture coordinate.
+         * @param texture The atlas.
+         * @param color Text colour.
+         */
+        void drawGlyph(const UiRect& rect, float u0, float v0, float u1, float v1,
+                       UiTextureId texture, StudioColor color);
+
+        /**
+         * @brief Queues a texture creation or update for the renderer to perform before drawing.
+         *
+         * Requests are applied ahead of every draw command in the frame, so a glyph rasterised at
+         * any point during the frame still reaches the GPU before the quad that samples it. The
+         * prototype shipped the opposite once (legacy ED-119): glyphs first needed on a frame that
+         * did not upload appeared one frame late, which reads as text flickering in.
+         *
+         * @param request The request. Its pixels must stay valid until the frame is rendered.
+         */
+        void addTextureRequest(const UiTextureRequest& request);
+
+        /**
          * @brief Reserves a text run as a solid block of its measured extent.
          *
          * Glyph rasterization is STUDIO-04005 and needs a font atlas. Until that exists, text
@@ -183,6 +227,10 @@ namespace CNA::Studio
         /** @brief Appends one quad, batching into the open command. */
         void addQuad(float x0, float y0, float x1, float y1, StudioColor color);
 
+        /** @brief Appends one textured quad, batching into the open command. */
+        void addTexturedQuad(float x0, float y0, float x1, float y1, float u0, float v0, float u1,
+                             float v1, UiTextureId texture, StudioColor color);
+
         /** @brief Appends one triangle. */
         void addTriangle(float x0, float y0, float x1, float y1, float x2, float y2,
                          StudioColor color);
@@ -190,6 +238,10 @@ namespace CNA::Studio
         UiDrawData data_;
         std::vector<UiRect> clipStack_;
         bool commandOpen_ = false;
+
+        UiTextureId defaultTexture_ = kUiTextureNone;
+        float defaultU_ = 0.0f;
+        float defaultV_ = 0.0f;
     };
 
     /**

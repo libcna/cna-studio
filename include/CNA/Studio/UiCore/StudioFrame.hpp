@@ -65,6 +65,8 @@
 
 namespace CNA::Studio
 {
+    class StudioFontAtlas;
+
     /** @brief Which phase of the frame is currently running. */
     enum class StudioFramePhase : std::uint8_t
     {
@@ -214,6 +216,20 @@ namespace CNA::Studio
 
         /** @brief The font set in use, or null when measuring approximately. */
         [[nodiscard]] const StudioFontSet* fontSet() const { return fonts_; }
+
+        /**
+         * @brief Supplies the glyph atlas: real text rather than measured boxes.
+         *
+         * Sets the measurement source too, so the extents a layout computes and the glyphs a draw
+         * pass emits can never come from different fonts. The pointer is borrowed; the atlas must
+         * outlive the frame.
+         *
+         * @param atlas Atlas to draw and measure through, or null for neither.
+         */
+        void setFontAtlas(StudioFontAtlas* atlas);
+
+        /** @brief The glyph atlas, or null when this frame draws no real text. */
+        [[nodiscard]] StudioFontAtlas* fontAtlas() const { return atlas_; }
 
         /**
          * @brief Measures one line of text in a theme font role.
@@ -367,6 +383,7 @@ namespace CNA::Studio
         std::vector<std::pair<WidgetId, StudioInteraction>> interactions_;
 
         const StudioFontSet* fonts_ = nullptr;
+        StudioFontAtlas* atlas_ = nullptr;
 
         StudioCursor cursor_ = StudioCursor::Arrow;
         std::vector<std::string> violations_;

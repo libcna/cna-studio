@@ -31,7 +31,7 @@
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
 | `STUDIO-03024` | Text selection model for text fields | ⬜ | `STUDIO-03007` |
 | `STUDIO-03025` | Clipboard integration through the platform seam | ⬜ | `STUDIO-03024` |
-| `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | ⬜ | `STUDIO-03024` |
+| `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | 🔄 | `STUDIO-03024` |
 | `STUDIO-03027` | IME support where the platform provides it | ⬜ | `STUDIO-03026` |
 | `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | 🔄 | `STUDIO-03004` |
 | `STUDIO-03029` | Keyboard shortcut matching and chords | ✅ | `STUDIO-03012` |
@@ -168,6 +168,13 @@ not bytes, and truncation cuts on code-point boundaries
 **Acceptance.** Grapheme-aware cursor movement and selection; no byte-index bugs on multi-byte text
 
 **Verification.** Tests over combining marks, CJK and emoji
+
+**In progress.** The *rendering* half is done: a decoder that always advances — a decoder that can
+stand still turns one corrupt byte into a hang — measurement and truncation on code-point
+boundaries, and a visible replacement glyph where a face has no outline, because a silent gap reads
+as a spacing bug while a box is something a user can report. Cursor movement and selection wait on
+the text fields of `STUDIO-03024`, and grapheme clustering — where a combining mark or an emoji
+sequence is one thing to a reader and several code points to a decoder — waits with them
 
 ### `STUDIO-03027` — IME support where the platform provides it
 

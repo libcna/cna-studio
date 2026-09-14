@@ -51,6 +51,7 @@
 #include "CNA/Studio/Ui/UiInputState.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
 #include "CNA/Studio/UiCore/StudioDockTree.hpp"
+#include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
@@ -132,6 +133,12 @@ namespace CNA::Studio
 
         /** @brief The frame the shell drives. */
         [[nodiscard]] const StudioFrame& frame() const { return frame_; }
+
+        /** @brief The glyph atlas the shell draws its text through. */
+        [[nodiscard]] StudioFontAtlas& fontAtlas() { return fonts_; }
+
+        /** @brief The glyph atlas. */
+        [[nodiscard]] const StudioFontAtlas& fontAtlas() const { return fonts_; }
 
         /** @brief The workspace arrangement. */
         [[nodiscard]] StudioDockTree& dockTree() { return dock_; }
@@ -448,6 +455,14 @@ namespace CNA::Studio
         void openMenuAt(int index);
 
         StudioFrame frame_;
+        /**
+         * @brief Declared after the frame so it outlives it.
+         *
+         * The frame holds a borrowed pointer to this atlas, and members are destroyed in reverse
+         * declaration order -- so the atlas must be declared *after* the frame to be destroyed
+         * before it, which is the order that keeps the pointer valid for the frame's whole life.
+         */
+        StudioFontAtlas fonts_;
         StudioActionRegistry actions_;
         StudioDockTree dock_;
         std::vector<StudioPanelDescriptor> panels_;
