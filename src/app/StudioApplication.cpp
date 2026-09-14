@@ -65,6 +65,7 @@ namespace CNA::Studio
             if (argument == "--headless") { options.headless = true; continue; }
             if (argument == "--list-backends") { options.listBackends = true; continue; }
             if (argument == "--compare-backends") { options.compareBackends = true; continue; }
+            if (argument == "--shell-mouse-down") { options.shellPreviewMouseDown = true; continue; }
 
             if (splitOption(argument, name, value))
             {
@@ -125,6 +126,34 @@ namespace CNA::Studio
                         options.hasError = true;
                         options.errorMessage = "--shell-scale must be greater than zero";
                     }
+                    continue;
+                }
+                if (name == "--shell-pointer")
+                {
+                    // X,Y. Malformed is an error for the same reason --shell-size is: the flag
+                    // exists to make a hover state reproducible from a script that cannot see it.
+                    const std::size_t separator = value.find(',');
+                    bool parsed = false;
+                    if (separator != std::string::npos)
+                    {
+                        try
+                        {
+                            options.shellPreviewPointerX = std::stod(value.substr(0, separator));
+                            options.shellPreviewPointerY = std::stod(value.substr(separator + 1));
+                            parsed = true;
+                        }
+                        catch (const std::exception&) { parsed = false; }
+                    }
+                    if (!parsed)
+                    {
+                        options.hasError = true;
+                        options.errorMessage = "--shell-pointer expects X,Y, got '" + value + "'";
+                    }
+                    continue;
+                }
+                if (name == "--shell-open-menu")
+                {
+                    options.shellPreviewOpenMenu = value;
                     continue;
                 }
                 if (name == "--recovery-dir") { options.recoveryDirectory = value; continue; }
@@ -249,6 +278,9 @@ namespace CNA::Studio
             "  --scene=PATH       Open this .cnascene, overriding the project's startup scene.\n"
             "  --ui=NAME          UI toolkit to use: 'imgui' or 'null'. Default: imgui.\n"
             "  --shell-preview=P  Render the native Studio shell to PNG at P and exit.\n"
+            "  --shell-pointer=X,Y  Place the pointer, so hover states are capturable.\n"
+            "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
+            "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
             "  --shell-size=WxH   Size of the shell preview. Default: 1920x1080.\n"
             "  --shell-scale=N    DPI scale of the shell preview. Default: 1.0.\n"
             "  --shell-theme=T    Shell preview theme: 'dark' or 'light'. Default: dark.\n"

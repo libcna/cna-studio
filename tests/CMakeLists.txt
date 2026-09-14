@@ -16,6 +16,7 @@ add_executable(cna-studio-tests
     UiCoreTests.cpp
     StudioShellTests.cpp
     StudioFrameTests.cpp
+    StudioShellInteractionTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -142,6 +143,28 @@ add_test(NAME CnaStudioShellPreviewHiDpi
     COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-200.png
                        --shell-size=1280x720 --shell-scale=2.0)
 set_tests_properties(CnaStudioShellPreviewHiDpi PROPERTIES TIMEOUT 60)
+
+# The interactive states. A shell captured only at rest leaves every hover, pressed, highlight and
+# popup token untested by any image -- and those are exactly the tokens a theme gets wrong.
+add_test(NAME CnaStudioShellPreviewOpenMenu
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-menu.png
+                       --shell-size=1280x720 --shell-open-menu=File --shell-pointer=40,90)
+set_tests_properties(CnaStudioShellPreviewOpenMenu PROPERTIES TIMEOUT 60)
+
+add_test(NAME CnaStudioShellPreviewPressedToolbar
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-pressed.png
+                       --shell-size=1280x720 --shell-pointer=40,40 --shell-mouse-down)
+set_tests_properties(CnaStudioShellPreviewPressedToolbar PROPERTIES TIMEOUT 60)
+
+# A menu title that does not exist is an error naming the ones that do, rather than a picture of a
+# closed menu that looks exactly like a working run.
+add_test(NAME CnaStudioRejectsUnknownShellMenu
+    COMMAND cna-studio --shell-preview=never.png --shell-open-menu=Nonexistent)
+set_tests_properties(CnaStudioRejectsUnknownShellMenu PROPERTIES WILL_FAIL TRUE)
+
+add_test(NAME CnaStudioRejectsMalformedShellPointer
+    COMMAND cna-studio --shell-preview=never.png --shell-pointer=40)
+set_tests_properties(CnaStudioRejectsMalformedShellPointer PROPERTIES WILL_FAIL TRUE)
 
 # A malformed size or theme is an error rather than a silent default, for the same reason --view is:
 # these flags exist to be set from a script that cannot see the picture it asked for.

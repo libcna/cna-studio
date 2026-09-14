@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 1 of 12 complete `█░░░░░░░░░░░`
+**Progress:** 2 of 13 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,10 +22,19 @@
 | `STUDIO-05010` | Named saved layouts | ⬜ | `STUDIO-05008` |
 | `STUDIO-05011` | Layout migration across Studio versions | ⬜ | `STUDIO-05008` |
 | `STUDIO-05012` | A corrupt layout file never prevents Studio from starting | ⬜ | `STUDIO-05011` |
+| `STUDIO-05013` | Tab strips that switch the active panel on click | ✅ | `STUDIO-03031` |
 
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-05013` — Tab strips that switch the active panel on click
+
+**Acceptance.** Each dock region draws a tab per panel, the active one is marked by an accent rule
+rather than a fill alone, and clicking a tab makes its panel active. The modified marker is a dot
+rather than an asterisk in the label, so editing a document does not shift every tab in the strip
+
+**Verification.** `tests/StudioShellInteractionTests.cpp`
 
 ### `STUDIO-05006` — Undock to a floating panel
 

@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **11** — `studio-ui: add the frame lifecycle and widget interaction helpers` |
+| HEAD | commit **12** — `studio-ui: make the application shell interactive and action-driven` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 1 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 2 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -66,6 +66,14 @@ See the native Studio UI, headless:
 ./build/cna-studio --shell-preview=light.png --shell-theme=light --shell-scale=2.0
 ```
 
+See it with a menu open and the pointer over a row, which is where the hover, highlight and popup
+tokens are actually exercised:
+
+```bash
+./build/cna-studio --shell-preview=menu.png --shell-open-menu=File --shell-pointer=40,90
+./build/cna-studio --shell-preview=pressed.png --shell-pointer=40,40 --shell-mouse-down
+```
+
 Collect the visual-test captures as CI artefacts:
 
 ```bash
@@ -76,9 +84,9 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **603 test cases, 17 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **603 test cases, 17 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **603 test cases, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, no CNA | **628 test cases, 21 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **628 test cases, 21 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **628 test cases, 0 failures, no sanitizer reports** |
 | GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
 
 Baseline at import, for comparison: 442 test cases, 12 CTest suites.
@@ -91,7 +99,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 70 of 448 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 75 of 452 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -112,8 +120,12 @@ cursor requests, the widget interaction helpers and the text-measurement seam.
 **Phase 4 — CNAEXT UI renderer** (5 of 16). Vertex/index management, draw-call batching, nested
 scissor clipping, rounded rectangles, separators, triangles and clip culling.
 
-**Phase 6 — Studio shell** (1 of 16, 4 in progress). Menu bar, toolbar, status bar and the shell
-preview entry point.
+**Phase 5 — Docking** (2 of 13). Dock splitting, and tab strips that switch the active panel.
+
+**Phase 6 — Studio shell** (7 of 19, 5 in progress). The action registry and the core action set;
+an interactive menu bar, toolbar, tab strips and status bar driven entirely by that registry;
+shortcut dispatch with scope precedence; and a preview entry point that can capture the shell's
+interaction states.
 
 **Phase 29 — Renderer matrix** (2 of 6). The renderer and platform catalogue.
 
@@ -202,11 +214,12 @@ file appearing **is** the test. Split into `screenshotAttempted` (stop retrying)
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **The shell is not yet wired to the input layer.** The frame lifecycle, the router and the widget
-  helpers all exist and are tested (`STUDIO-03007`…`03015`, `STUDIO-03031`), but `drawStudioShell`
-  still only *draws*: its menus and toolbar do not yet call `interact()`. That wiring is the next
-  commit-sized piece of work, and it is why the entry point is still `--shell-preview` rather than
-  `--ui=studio`.
+- **The shell is interactive but not yet dockable.** Menus, toolbar, tabs and shortcuts all work.
+  Splitters draw but do not drag, panels cannot be rearranged, and no layout is persisted — so the
+  entry point is still `--shell-preview` rather than `--ui=studio`, which waits on `STUDIO-05009`.
+- **Submenus are not implemented.** The arrow is drawn for an item that declares one and nothing
+  opens (`STUDIO-06017`). No menu in the default set declares a submenu, so nothing is visibly
+  broken today.
 - **Text is a placeholder.** `drawTextPlaceholder` fills a measured box, deliberately at reduced
   alpha so an unfinished build looks unfinished. Real glyphs need the font atlas of `STUDIO-04005`.
 - **Studio's CMake still uses `CNA_GRAPHICS_BACKEND`**, the variable name from before CNA split

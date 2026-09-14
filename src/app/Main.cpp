@@ -16,8 +16,8 @@
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
+#include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
-#include "CNA/Studio/UiCore/StudioShellRenderer.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 #include "CNA/Studio/RuntimeBridge/BackendComparison.hpp"
@@ -138,20 +138,47 @@ namespace
             : CNA::Studio::StudioTheme::dark();
         theme.setScale(static_cast<float>(options.shellPreviewScale));
 
-        const auto width = static_cast<float>(options.shellPreviewWidth);
-        const auto height = static_cast<float>(options.shellPreviewHeight);
+        CNA::Studio::StudioShell shell{theme};
 
-        const CNA::Studio::StudioShellLayout layout =
-            CNA::Studio::computeStudioShellLayout(width, height, theme);
+        if (!options.shellPreviewOpenMenu.empty())
+        {
+            const auto& menus = shell.menus();
+            int index = -1;
+            for (std::size_t i = 0; i < menus.size(); ++i)
+            {
+                if (menus[i].title == options.shellPreviewOpenMenu) { index = static_cast<int>(i); }
+            }
+            if (index < 0)
+            {
+                std::cerr << "cna-studio: no menu titled '" << options.shellPreviewOpenMenu
+                          << "'. This shell has:";
+                for (const CNA::Studio::StudioMenuDefinition& menu : menus)
+                {
+                    std::cerr << " " << menu.title;
+                }
+                std::cerr << "\n";
+                return 2;
+            }
+            shell.setOpenMenu(index);
+        }
 
-        CNA::Studio::StudioDrawList list;
-        list.begin(width, height, 1.0f);
-        CNA::Studio::drawStudioShell(list, layout, theme,
-                                     CNA::Studio::StudioShellContent::defaults());
-        list.end();
+        CNA::Studio::UiInputState input;
+        input.displayWidth = static_cast<float>(options.shellPreviewWidth);
+        input.displayHeight = static_cast<float>(options.shellPreviewHeight);
+        input.mouseX = static_cast<float>(options.shellPreviewPointerX);
+        input.mouseY = static_cast<float>(options.shellPreviewPointerY);
+        input.mouseInWindow = options.shellPreviewPointerX >= 0.0
+                           && options.shellPreviewPointerY >= 0.0;
+        input.setMouseDown(CNA::Studio::UiMouseButton::Left, options.shellPreviewMouseDown);
+
+        // Two frames, not one. The first establishes the input snapshot the second diffs against,
+        // and hover resolved on a frame with no predecessor is hover nobody has moved onto yet --
+        // so a one-frame preview would capture every control at rest however the pointer is placed.
+        shell.renderFrame(input);
+        shell.renderFrame(input);
 
         const CNA::Studio::ImageBuffer image =
-            CNA::Studio::rasterizeUiDrawData(list.drawData(),
+            CNA::Studio::rasterizeUiDrawData(shell.drawData(),
                                              theme.color(CNA::Studio::StudioColorRole::AppBackground));
         if (!image.isWellFormed())
         {
@@ -166,10 +193,32 @@ namespace
             return 4;
         }
 
+        const CNA::Studio::UiDrawData& data = shell.drawData();
+        std::size_t vertices = 0;
+        std::size_t commands = 0;
+        for (const CNA::Studio::UiDrawList& list : data.lists)
+        {
+            vertices += list.vertices.size();
+            commands += list.commands.size();
+        }
+
         std::cout << "cna-studio: shell preview " << image.width << "x" << image.height
                   << ", theme '" << theme.name() << "', scale " << theme.scale()
-                  << ", " << list.commandCount() << " draw calls, "
-                  << list.vertexCount() << " vertices -> " << options.shellPreviewPath << "\n";
+                  << ", " << commands << " draw calls, " << vertices << " vertices, "
+                  << shell.frame().interactionCount() << " interactive widgets, cursor "
+                  << CNA::Studio::studioCursorName(shell.cursor())
+                  << " -> " << options.shellPreviewPath << "\n";
+
+        if (shell.frame().phaseViolations() > 0)
+        {
+            // The frame refused an operation somewhere. That is a Studio defect rather than a bad
+            // command line, and it must not produce a picture that looks fine.
+            for (const std::string& violation : shell.frame().phaseViolationLog())
+            {
+                std::cerr << "cna-studio: frame phase violation: " << violation << "\n";
+            }
+            return 5;
+        }
         return 0;
     }
 

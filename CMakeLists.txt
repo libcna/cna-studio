@@ -190,7 +190,7 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioTextMeasure.cpp
     src/ui-core/StudioWidgets.cpp
     src/ui-core/StudioActionRegistry.cpp
-    src/ui-core/StudioShellRenderer.cpp
+    src/ui-core/StudioShell.cpp
     src/ui-core/UiSoftwareRasterizer.cpp)
 # cna-studio-ui links in because the native UI emits UiDrawData -- the same seam the prototype's
 # toolkit filled and CnaUiRenderer already consumes through CNA's public API. That is the whole

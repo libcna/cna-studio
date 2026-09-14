@@ -13,7 +13,7 @@
 #include "CNA/Studio/Core/ImageDiff.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
-#include "CNA/Studio/UiCore/StudioShellRenderer.hpp"
+#include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 #include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
@@ -27,21 +27,48 @@ using namespace CNA::Studio;
 
 namespace
 {
-    /** @brief Renders the default shell at a size and scale, returning the geometry. */
-    StudioDrawList renderShell(float width, float height, float scale = 1.0f,
-                               const StudioShellProportions& proportions = {})
+    /** @brief One frame of the real shell: its geometry, its totals and its resolved regions. */
+    struct ShellRender
+    {
+        UiDrawData data;
+        std::size_t vertices = 0;
+        std::size_t commands = 0;
+        StudioShellLayout layout;
+        std::size_t phaseViolations = 0;
+    };
+
+    /**
+     * @brief Renders the default shell at a size and scale through the real application frame.
+     *
+     * Drives `StudioShell` rather than a draw-only function, so these tests measure what a user
+     * actually sees. The pointer is deliberately outside the window: this is the shell at rest,
+     * which is the state a golden image should pin.
+     */
+    ShellRender renderShell(float width, float height, float scale = 1.0f,
+                            const StudioShellProportions& proportions = {})
     {
         StudioTheme theme = StudioTheme::dark();
         theme.setScale(scale);
 
-        const StudioShellLayout layout =
-            computeStudioShellLayout(width, height, theme, proportions);
+        StudioShell shell{theme};
+        shell.proportions() = proportions;
 
-        StudioDrawList list;
-        list.begin(width, height, 1.0f);
-        drawStudioShell(list, layout, theme, StudioShellContent::defaults());
-        list.end();
-        return list;
+        UiInputState input;
+        input.displayWidth = width;
+        input.displayHeight = height;
+        input.mouseInWindow = false;
+        shell.renderFrame(input);
+
+        ShellRender result;
+        result.data = shell.drawData();
+        result.layout = shell.layout();
+        result.phaseViolations = shell.frame().phaseViolations();
+        for (const UiDrawList& list : result.data.lists)
+        {
+            result.vertices += list.vertices.size();
+            result.commands += list.commands.size();
+        }
+        return result;
     }
 
     /** @brief Where golden images and failure artefacts are written. */
@@ -351,12 +378,13 @@ CNA_STUDIO_TEST(ARoundedRectangleWithAnAbsurdRadiusDoesNotFoldThroughItself)
 
 CNA_STUDIO_TEST(TheShellProducesAWellFormedFrame)
 {
-    const StudioDrawList list = renderShell(1920.0f, 1080.0f);
-    const UiDrawData& data = list.drawData();
+    const ShellRender shell = renderShell(1920.0f, 1080.0f);
+    const UiDrawData& data = shell.data;
 
     CNA_STUDIO_EXPECT(!data.lists.empty());
-    CNA_STUDIO_EXPECT(list.vertexCount() > 0);
-    CNA_STUDIO_EXPECT(list.commandCount() > 0);
+    CNA_STUDIO_EXPECT(shell.vertices > 0);
+    CNA_STUDIO_EXPECT(shell.commands > 0);
+    CNA_STUDIO_EXPECT_EQ(shell.phaseViolations, std::size_t{0});
 
     // Every index must address a vertex that exists: an out-of-range index is a GPU crash on a
     // real renderer and silently wrong pixels here.
@@ -376,8 +404,8 @@ CNA_STUDIO_TEST(TheShellProducesAWellFormedFrame)
 
 CNA_STUDIO_TEST(TheShellDrawsNothingOutsideItsWindow)
 {
-    const StudioDrawList list = renderShell(800.0f, 600.0f);
-    for (const UiVertex& v : list.drawData().lists.front().vertices)
+    const ShellRender shell = renderShell(800.0f, 600.0f);
+    for (const UiVertex& v : shell.data.lists.front().vertices)
     {
         CNA_STUDIO_EXPECT(v.x >= -1.0f && v.x <= 801.0f);
         CNA_STUDIO_EXPECT(v.y >= -1.0f && v.y <= 601.0f);
@@ -388,8 +416,8 @@ CNA_STUDIO_TEST(TheShellFrameCostsABoundedNumberOfDrawCalls)
 {
     // Not a performance micro-optimisation: an unbatched UI issues a draw call per rectangle, and
     // the number climbing quietly is exactly how that regresses.
-    const StudioDrawList list = renderShell(1920.0f, 1080.0f);
-    CNA_STUDIO_EXPECT(list.commandCount() < 32);
+    const ShellRender shell = renderShell(1920.0f, 1080.0f);
+    CNA_STUDIO_EXPECT(shell.commands < 32);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -401,16 +429,16 @@ CNA_STUDIO_TEST(TheShellRasterisesToAStableImage)
     // The first screenshot test for the Studio shell, and it needs no GPU: the geometry the CNA
     // renderer will draw is rasterised on the CPU instead. A clean process exit cannot tell a
     // working shell from one that drew nothing; this can.
-    const StudioDrawList list = renderShell(640.0f, 360.0f);
-    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const ShellRender shell = renderShell(640.0f, 360.0f);
+    const ImageBuffer image = rasterizeUiDrawData(shell.data, StudioColor{0, 0, 0, 255});
 
     CNA_STUDIO_EXPECT(image.isWellFormed());
     CNA_STUDIO_EXPECT_EQ(image.width, 640);
     CNA_STUDIO_EXPECT_EQ(image.height, 360);
 
     // Rendering twice must be byte-identical. Without determinism a golden image is a coin toss.
-    const StudioDrawList again = renderShell(640.0f, 360.0f);
-    const ImageBuffer second = rasterizeUiDrawData(again.drawData(), StudioColor{0, 0, 0, 255});
+    const ShellRender again = renderShell(640.0f, 360.0f);
+    const ImageBuffer second = rasterizeUiDrawData(again.data, StudioColor{0, 0, 0, 255});
     CNA_STUDIO_EXPECT(image.pixels == second.pixels);
 }
 
@@ -418,9 +446,9 @@ CNA_STUDIO_TEST(TheShellActuallyDrawsSomethingRatherThanClearing)
 {
     // The failure a clean exit cannot distinguish: a window that opened and drew nothing. The
     // clear colour is one no theme uses, so any pixel still holding it was never covered.
-    const StudioDrawList list = renderShell(640.0f, 360.0f);
+    const ShellRender shell = renderShell(640.0f, 360.0f);
     const StudioColor sentinel{255, 0, 255, 255};
-    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), sentinel);
+    const ImageBuffer image = rasterizeUiDrawData(shell.data, sentinel);
 
     std::size_t untouched = 0;
     for (std::size_t i = 0; i < image.pixels.size(); i += 4)
@@ -438,15 +466,9 @@ CNA_STUDIO_TEST(EveryShellRegionIsVisiblyDistinct)
 {
     // A layered UI whose layers all resolve to the same pixel value is a UI with no depth. Sampling
     // the middle of each region catches a theme or a draw order that flattened them.
-    StudioTheme theme = StudioTheme::dark();
-    const StudioShellLayout layout = computeStudioShellLayout(1280.0f, 720.0f, theme);
-
-    StudioDrawList list;
-    list.begin(1280.0f, 720.0f);
-    drawStudioShell(list, layout, theme, StudioShellContent::defaults());
-    list.end();
-
-    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const ShellRender shell = renderShell(1280.0f, 720.0f);
+    const StudioShellLayout& layout = shell.layout;
+    const ImageBuffer image = rasterizeUiDrawData(shell.data, StudioColor{0, 0, 0, 255});
     const auto sample = [&image](const UiRect& r) {
         const int x = std::clamp(static_cast<int>(r.centerX()), 0, image.width - 1);
         const int y = std::clamp(static_cast<int>(r.centerY()), 0, image.height - 1);
@@ -479,8 +501,8 @@ CNA_STUDIO_TEST(TheShellRendersAtEveryTestedResolutionAndScale)
     const std::string artifacts = artifactDirectory();
     for (const Case& c : cases)
     {
-        const StudioDrawList list = renderShell(c.width, c.height, c.scale);
-        const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{255, 0, 255, 255});
+        const ShellRender rendered = renderShell(c.width, c.height, c.scale);
+        const ImageBuffer image = rasterizeUiDrawData(rendered.data, StudioColor{255, 0, 255, 255});
 
         if (!image.isWellFormed())
         {
@@ -505,13 +527,13 @@ CNA_STUDIO_TEST(TwoRendersOfDifferentContentDifferMeasurably)
 {
     // Guards the golden comparison itself: if compareImages reported everything as matching, every
     // visual test above would pass vacuously.
-    const StudioDrawList wide = renderShell(640.0f, 360.0f);
+    const ShellRender wide = renderShell(640.0f, 360.0f);
     StudioShellProportions hidden;
     hidden.leftDockVisible = false;
-    const StudioDrawList narrow = renderShell(640.0f, 360.0f, 1.0f, hidden);
+    const ShellRender narrow = renderShell(640.0f, 360.0f, 1.0f, hidden);
 
-    const ImageBuffer a = rasterizeUiDrawData(wide.drawData(), StudioColor{0, 0, 0, 255});
-    const ImageBuffer b = rasterizeUiDrawData(narrow.drawData(), StudioColor{0, 0, 0, 255});
+    const ImageBuffer a = rasterizeUiDrawData(wide.data, StudioColor{0, 0, 0, 255});
+    const ImageBuffer b = rasterizeUiDrawData(narrow.data, StudioColor{0, 0, 0, 255});
 
     const ImageDifference difference = compareImages(a, b, 8);
     CNA_STUDIO_EXPECT(difference.comparable);
@@ -520,8 +542,8 @@ CNA_STUDIO_TEST(TwoRendersOfDifferentContentDifferMeasurably)
 
 CNA_STUDIO_TEST(APngIsWrittenAndIsReadableAsOne)
 {
-    const StudioDrawList list = renderShell(64.0f, 48.0f);
-    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const ShellRender shell = renderShell(64.0f, 48.0f);
+    const ImageBuffer image = rasterizeUiDrawData(shell.data, StudioColor{0, 0, 0, 255});
     const std::vector<std::uint8_t> png = encodeImageAsPng(image);
 
     CNA_STUDIO_EXPECT(png.size() > 8);

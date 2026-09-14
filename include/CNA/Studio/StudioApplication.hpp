@@ -139,6 +139,24 @@ namespace CNA::Studio
         std::string shellPreviewTheme = "dark";
 
         /**
+         * @brief Pointer position for the shell preview, in logical units.
+         *
+         * A preview with the pointer parked off-screen shows the shell at rest, which is exactly
+         * the state in which every hover, pressed and highlight token is untested. Placing the
+         * pointer makes those states capturable as golden images.
+         */
+        double shellPreviewPointerX = -1.0;
+
+        /** @brief Pointer y for the shell preview, in logical units. */
+        double shellPreviewPointerY = -1.0;
+
+        /** @brief True to hold the primary mouse button down in the shell preview. */
+        bool shellPreviewMouseDown = false;
+
+        /** @brief Title of the menu to open in the shell preview, e.g. `"File"`. */
+        std::string shellPreviewOpenMenu;
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a
