@@ -19,7 +19,10 @@
 
 #include "TestHarness.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -356,6 +359,106 @@ CNA_STUDIO_TEST(EverySourceFileCarriesItsLicenceIdentifier)
                 file.relativePath + " has no SPDX-License-Identifier header.");
         }
     }
+    CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
+}
+
+CNA_STUDIO_TEST(NoTwoPublicHeadersDeclareTheSameTypeName)
+{
+    // Everything public lives in one namespace, CNA::Studio, so two headers declaring the same
+    // type name is an ODR violation: each translation unit believes whichever definition it saw,
+    // and the two disagree about layout.
+    //
+    // This guard exists because that happened. A second CNA::Studio::StudioCommand -- the undoable
+    // document mutation already had the name -- compiled cleanly, linked cleanly, and corrupted
+    // memory at run time. It presented as a std::string destructor freeing a pointer into the data
+    // segment, in a test hundreds of cases away from either definition, and moved when unrelated
+    // code changed the allocation pattern. Nothing about the symptom pointed at the cause.
+    //
+    // The scan looks for definitions at namespace indentation (four spaces), which is this
+    // codebase's convention. Nested types are indented further and are correctly ignored: they are
+    // scoped by their enclosing type and cannot collide.
+    std::map<std::string, std::string> declaredIn;
+    std::size_t violations = 0;
+
+    for (const SourceFile& file : collectSources({"include"}))
+    {
+        const std::string code = stripCommentsAndStrings(file.text);
+        std::size_t lineStart = 0;
+
+        // Names are qualified by their enclosing namespace before being compared. Without this the
+        // guard reports CNA::Studio::SceneLoadResult and CNA::Studio::Runtime::SceneLoadResult as
+        // a collision, which they are not -- and a guard that cries wolf gets switched off.
+        std::string currentNamespace;
+
+        while (lineStart < code.size())
+        {
+            const std::size_t lineEnd = std::min(code.find('\n', lineStart), code.size());
+            const std::string line = code.substr(lineStart, lineEnd - lineStart);
+            lineStart = lineEnd + 1;
+
+            if (line.rfind("namespace ", 0) == 0)
+            {
+                std::size_t end = 10;
+                while (end < line.size()
+                       && (std::isalnum(static_cast<unsigned char>(line[end])) != 0
+                           || line[end] == '_' || line[end] == ':'))
+                {
+                    ++end;
+                }
+                const std::string name = line.substr(10, end - 10);
+                // An anonymous or extension namespace block re-opening the same scope keeps it.
+                if (!name.empty()) { currentNamespace = name; }
+                continue;
+            }
+
+            if (line.rfind("    ", 0) != 0 || line.size() < 10) { continue; }
+            if (line[4] == ' ') { continue; }   // nested: indented deeper
+
+            std::string keyword;
+            std::size_t nameStart = 0;
+            for (const char* candidate : {"class ", "struct ", "enum class "})
+            {
+                const std::string prefix = std::string{"    "} + candidate;
+                if (line.rfind(prefix, 0) == 0) { keyword = candidate; nameStart = prefix.size(); break; }
+            }
+            if (keyword.empty()) { continue; }
+
+            std::size_t nameEnd = nameStart;
+            while (nameEnd < line.size()
+                   && (std::isalnum(static_cast<unsigned char>(line[nameEnd])) != 0
+                       || line[nameEnd] == '_'))
+            {
+                ++nameEnd;
+            }
+            if (nameEnd == nameStart) { continue; }
+
+            const std::string name = currentNamespace + "::" + line.substr(nameStart, nameEnd - nameStart);
+
+            // A forward declaration repeats a name legitimately; only definitions collide.
+            const std::string rest = line.substr(nameEnd);
+            if (rest.find(';') != std::string::npos && rest.find('{') == std::string::npos)
+            {
+                continue;
+            }
+
+            const auto existing = declaredIn.find(name);
+            if (existing != declaredIn.end() && existing->second != file.relativePath)
+            {
+                ++violations;
+                CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                    "type '" + name + "' is defined in both " + existing->second + " and "
+                    + file.relativePath + ". Both are in namespace CNA::Studio, so this is an ODR "
+                      "violation: it compiles, links, and corrupts memory at run time.");
+            }
+            else
+            {
+                declaredIn[name] = file.relativePath;
+            }
+        }
+    }
+
+    // The scan must actually have found types, or it passes by finding nothing.
+    CNA_STUDIO_EXPECT(declaredIn.size() > 50);
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
 

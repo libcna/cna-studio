@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 13 of 24 complete `██████░░░░░░`
+**Progress:** 14 of 25 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -28,6 +28,7 @@
 | `STUDIO-02036` | Guard test: unknown plugin components survive a save/load round trip | ✅ | — |
 | `STUDIO-02037` | Guard test: authored files are byte-deterministic across repeated saves | ⬜ | — |
 | `STUDIO-02038` | Legacy renderer-name migration for projects written by the prototype | ✅ | `STUDIO-02030` |
+| `STUDIO-02039` | Guard test: no two public headers define the same type in one namespace | ✅ | — |
 | `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ⬜ | `STUDIO-02020` |
 | `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | 🔄 | `STUDIO-02040` |
 | `STUDIO-02050` | Define the service decomposition of the application shell | ⬜ | — |
@@ -118,6 +119,12 @@ Tasks whose completion condition is not obvious from the title.
 **Acceptance.** A `.cnaproject` naming `easygl`, `d3d11`, `d3d12`, `d3d9` or `dx3` opens and is migrated to the current identity, with a warning saying what changed and why. `ascii` is reported as removed with no substitute chosen for the user
 
 **Verification.** Round-trip tests for a migrated name, a removed name, and alias-table consistency
+
+### `STUDIO-02039` — Guard test: no two public headers define the same type in one namespace
+
+**Acceptance.** A duplicate type name in CNA::Studio fails the suite, naming both headers. Names are qualified by enclosing namespace, so CNA::Studio::SceneLoadResult and CNA::Studio::Runtime::SceneLoadResult are correctly not a collision
+
+**Verification.** Verified against a deliberately injected duplicate; reported both files exactly
 
 ### `STUDIO-02040` — Define the target-profile model: OS, platform, architecture, renderer, configuration, features
 

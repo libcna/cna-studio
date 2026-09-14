@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 7 of 26 complete `███░░░░░░░░░`
+**Progress:** 14 of 26 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,25 +16,25 @@
 | `STUDIO-03004` | Design token model: the single source of visual truth | ✅ | `STUDIO-03001` |
 | `STUDIO-03005` | Theme system with a dark professional default | ✅ | `STUDIO-03004` |
 | `STUDIO-03006` | Semantic colour roles: normal, hover, pressed, selected, focused, disabled, warning, error, success | ✅ | `STUDIO-03004` |
-| `STUDIO-03007` | Focus model: focus ring, focus scopes, focus restoration | ⬜ | `STUDIO-03002` |
-| `STUDIO-03008` | Tab navigation order | ⬜ | `STUDIO-03007` |
-| `STUDIO-03009` | Event model and input routing | ⬜ | `STUDIO-03002` |
-| `STUDIO-03010` | Mouse capture | ⬜ | `STUDIO-03009` |
-| `STUDIO-03011` | Hit-testing with nested clipping | 🔄 | `STUDIO-03009` |
-| `STUDIO-03012` | Command routing from the UI to the command registry | ⬜ | `STUDIO-03009` |
+| `STUDIO-03007` | Focus model: focus ring, focus scopes, focus restoration | ✅ | `STUDIO-03002` |
+| `STUDIO-03008` | Tab navigation order | ✅ | `STUDIO-03007` |
+| `STUDIO-03009` | Event model and input routing | ✅ | `STUDIO-03002` |
+| `STUDIO-03010` | Mouse capture | ✅ | `STUDIO-03009` |
+| `STUDIO-03011` | Hit-testing with nested clipping | ✅ | `STUDIO-03009` |
+| `STUDIO-03012` | Command routing from the UI to the command registry | ✅ | `STUDIO-03009` |
 | `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state | ⬜ | `STUDIO-03002` |
 | `STUDIO-03014` | Headless test renderer capturing draw data and widget geometry | ✅ | `STUDIO-03009` |
 | `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain | ⬜ | `STUDIO-03003` |
 | `STUDIO-03020` | Cursor shape requests from widgets | ⬜ | `STUDIO-03009` |
 | `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ⬜ | `STUDIO-03009` |
-| `STUDIO-03022` | Popup and modal layering with correct input blocking | ⬜ | `STUDIO-03009` |
+| `STUDIO-03022` | Popup and modal layering with correct input blocking | 🔄 | `STUDIO-03009` |
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
 | `STUDIO-03024` | Text selection model for text fields | ⬜ | `STUDIO-03007` |
 | `STUDIO-03025` | Clipboard integration through the platform seam | ⬜ | `STUDIO-03024` |
 | `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | ⬜ | `STUDIO-03024` |
 | `STUDIO-03027` | IME support where the platform provides it | ⬜ | `STUDIO-03026` |
 | `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | 🔄 | `STUDIO-03004` |
-| `STUDIO-03029` | Keyboard shortcut matching and chords | ⬜ | `STUDIO-03012` |
+| `STUDIO-03029` | Keyboard shortcut matching and chords | ✅ | `STUDIO-03012` |
 | `STUDIO-03030` | Restrained animation model: state transitions only, no decorative motion | ⬜ | `STUDIO-03004` |
 
 ## Acceptance and verification

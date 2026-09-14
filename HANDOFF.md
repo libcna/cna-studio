@@ -35,8 +35,16 @@ cmake --build build -j4
 ctest --test-dir build --output-on-failure
 ```
 
-Also run the configuration CI does not yet cover, because it is where the two latent defects fixed
-this session were found:
+Also run the configurations CI does not yet cover, because they are where the latent defects fixed
+this session were found — an ignored `freopen` result, a dangling reference, and an ODR violation
+that no compiler diagnosed:
+
+```bash
+cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+cmake --build build-asan -j4 && ./build-asan/tests/cna-studio-tests
+```
+
 
 ```bash
 cmake -S . -B build-werror -G Ninja -DCMAKE_BUILD_TYPE=Release -DCNA_STUDIO_WARNINGS_AS_ERRORS=ON
@@ -61,8 +69,8 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **531 assertions, 17 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **531 assertions, 17 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug, no CNA | **566 assertions, 17 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **566 assertions, 17 CTest suites, 0 failures, 0 warnings** |
 | GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
 
 Baseline at import, for comparison: 442 assertions, 12 CTest suites.
@@ -75,7 +83,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 53 of 442 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 65 of 445 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -148,6 +156,16 @@ configuration the prototype's CI did not run: an ignored `freopen` result that w
 build's output nowhere while leaving an apparently empty log, and a dangling reference to a member
 of a by-value `std::optional` temporary in a recovery test.
 
+**An ODR violation of my own making, and what it cost.** Declaring a second
+`CNA::Studio::StudioCommand` for the action registry — the undoable document mutation already had
+that name — compiled cleanly, linked cleanly, and corrupted memory at run time. It surfaced as a
+`std::string` destructor freeing a pointer into the data segment, in a test hundreds of cases away
+from either definition, and it moved when unrelated code changed the allocation pattern. The
+registry type is now `StudioAction`, which is the better name anyway, and `STUDIO-02039` is a guard
+test that refuses a duplicate type name in one namespace — it found the collision immediately when
+pointed at it, and correctly does not flag `CNA::Studio::SceneLoadResult` against
+`CNA::Studio::Runtime::SceneLoadResult`.
+
 **A test fixture had quietly become valid.** The "unknown renderer" test used `"glide"`; CNA has a
 Glide renderer now, so the test asserted nothing.
 
@@ -175,9 +193,11 @@ file appearing **is** the test. Split into `screenshotAttempted` (stop retrying)
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **The shell is not interactive.** It is geometry: menus do not open, nothing responds to a click.
-  That is why it is `--shell-preview` and not `--ui=studio`. The widget and input layer is
-  `STUDIO-03007` … `STUDIO-03012`.
+- **The shell is not yet wired to the input layer.** Hover, click, capture, focus, Tab and the
+  action registry all exist and are tested (`STUDIO-03007`…`03012`, `STUDIO-06001`/`06002`), but
+  the shell still only *draws*: its menus and toolbar do not yet call `interact()`. That wiring is
+  the next commit-sized piece of work, and it is why the entry point is still `--shell-preview`
+  rather than `--ui=studio`.
 - **Text is a placeholder.** `drawTextPlaceholder` fills a measured box, deliberately at reduced
   alpha so an unfinished build looks unfinished. Real glyphs need the font atlas of `STUDIO-04005`.
 - **Studio's CMake still uses `CNA_GRAPHICS_BACKEND`**, the variable name from before CNA split
@@ -223,14 +243,9 @@ In dependency order. The first block is what makes the shell a UI rather than a 
 
 | Id | Task |
 |----|------|
-| `STUDIO-03009` | Event model and input routing |
-| `STUDIO-03011` | Hit-testing with nested clipping (partially present; finish and test) |
-| `STUDIO-03010` | Mouse capture |
-| `STUDIO-03007` | Focus model: focus ring, scopes, restoration |
-| `STUDIO-03008` | Tab navigation order |
-| `STUDIO-06001` | Central command and action registry |
-| `STUDIO-06002` | Register the core command set |
-| `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain |
+| `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain — then wire the shell to the input router |
+| `STUDIO-03003` | Widget helpers over `interact()`: button, toggle, tab, menu item |
+| `STUDIO-06004` | Menus that actually open, driven by the action registry |
 | `STUDIO-05001` | Dock node tree model |
 | `STUDIO-05003` | Resizable splitters with minimum sizes and cursor shapes |
 | `STUDIO-02020` | Define the Studio host capability contract as data |

@@ -10,7 +10,7 @@ reimplementation of the XNA 4.0 framework.
 > *new* is the goal: CNA Studio is a long-lived professional tool, not a prototype, and the roadmap
 > to get there is [`plan.md`](plan.md).
 >
-> The default build stays dependency-free: no CNA checkout, no GPU, no window, 509 assertions
+> The default build stays dependency-free: no CNA checkout, no GPU, no window, 566 assertions
 > across 17 CTest suites in about seven seconds.
 
 ![CNA Studio running on the EASYGL renderer](docs/images/studio-easygl.png)
@@ -237,7 +237,7 @@ cna-studio/
 ├── src/                     One directory per module
 ├── third_party/imgui/       Dear ImGui — legacy UI, being replaced
 ├── third_party/cgltf/       cgltf, with its symbols prefixed
-├── tests/                   509 assertions, no third-party framework
+├── tests/                   566 assertions, no third-party framework
 └── examples/HelloSprites/   A project Studio opens end to end
 ```
 
