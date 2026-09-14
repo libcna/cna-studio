@@ -73,6 +73,7 @@ namespace CNA::Studio
             {
                 if (name == "--project") { options.projectPath = value; continue; }
                 if (name == "--export") { options.exportPath = value; continue; }
+                if (name == "--workspace") { options.workspacePath = value; continue; }
                 if (name == "--scene") { options.scenePath = value; continue; }
                 if (name == "--ui") { options.uiBackend = value; continue; }
                 if (name == "--screenshot") { options.screenshotPath = value; continue; }
@@ -285,6 +286,7 @@ namespace CNA::Studio
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
             "  --ui=studio        Run the native Studio UI in a window (needs a CNA build).\n"
+            "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"
             "  --export=DIR       Export the project as a standalone CNA game and exit.\n"
             "  --export-overwrite  Let --export write into a non-empty directory.\n"
             "  --host-capabilities  Report what Studio requires of a host renderer, evaluate it\n"

@@ -22,6 +22,7 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
@@ -61,6 +62,21 @@ namespace CNA::Studio
                 theme.setScale(options.uiScale);
                 shell_ = std::make_unique<StudioShell>(std::move(theme));
 
+                // Restored before the window opens, so the first frame the user sees is already
+                // their arrangement rather than the default one rearranging itself.
+                if (!options.workspacePath.empty())
+                {
+                    const StudioWorkspaceStore store{options.workspacePath};
+                    const StudioWorkspaceDocument stored = store.load();
+                    layoutProblem_ = stored.problem;
+                    if (stored.found)
+                    {
+                        std::string problem;
+                        layoutRestored_ = shell_->loadLayout(stored.layout, &problem);
+                        if (!problem.empty()) { layoutProblem_ = problem; }
+                    }
+                }
+
                 setIsMouseVisibleProperty(true);
                 getWindowProperty().setTitleProperty(options.windowTitle);
                 getWindowProperty().setAllowUserResizingProperty(true);
@@ -74,6 +90,24 @@ namespace CNA::Studio
             [[nodiscard]] bool screenshotWritten() const { return screenshotWritten_; }
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
+            [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
+            [[nodiscard]] bool layoutRestored() const { return layoutRestored_; }
+
+            /**
+             * @brief Writes the arrangement back, if this session was asked to remember one.
+             *
+             * Called after Run() returns rather than from a destructor: saving is the kind of thing
+             * that reports a problem, and a destructor is the one place that cannot.
+             *
+             * @param outProblem Receives the reason on failure.
+             * @return Whether anything was written.
+             */
+            bool storeWorkspace(std::string* outProblem) const
+            {
+                if (options_.workspacePath.empty() || shell_ == nullptr) { return false; }
+                const StudioWorkspaceStore store{options_.workspacePath};
+                return store.save(shell_->saveLayout(), outProblem);
+            }
 
         protected:
             void Initialize() override
@@ -235,6 +269,8 @@ namespace CNA::Studio
             bool contentLoaded_ = false;
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
+            std::string layoutProblem_;
+            bool layoutRestored_ = false;
             std::uint64_t frames_ = 0;
             std::size_t drawCalls_ = 0;
             std::size_t triangles_ = 0;
@@ -260,6 +296,15 @@ namespace CNA::Studio
         result.capabilityReport = game.capabilities().report();
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();
+        result.layoutRestored = game.layoutRestored();
+        result.layoutProblem = game.layoutProblem();
+
+        // After the loop, not in a destructor: this reports a problem, and a destructor is the one
+        // place that cannot. A layout that could not be stored is worth saying out loud -- the user
+        // arranged it, and next start will quietly not have it.
+        std::string storeProblem;
+        result.layoutStored = game.storeWorkspace(&storeProblem);
+        if (!storeProblem.empty()) { result.layoutProblem = storeProblem; }
 
         if (!result.rendererCanHostStudio)
         {

@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 9 of 14 complete `███████░░░░░`
+**Progress:** 10 of 14 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-05011` | Layout migration across Studio versions | ✅ | `STUDIO-05008` |
 | `STUDIO-05012` | A corrupt layout file never prevents Studio from starting | ✅ | `STUDIO-05011` |
 | `STUDIO-05013` | Tab strips that switch the active panel on click | ✅ | `STUDIO-03031` |
-| `STUDIO-05014` | Store the workspace layout in user preferences on disk | ⬜ | `STUDIO-05008`, `STUDIO-06010` |
+| `STUDIO-05014` | Store the workspace layout in user preferences on disk | ✅ | `STUDIO-05008` |
 
 ## Acceptance and verification
 
@@ -99,3 +99,34 @@ rather than an asterisk in the label, so editing a document does not shift every
 
 **Acceptance.** Falls back to the default layout and reports what it could not read
 
+### `STUDIO-05014` — Store the workspace layout in user preferences on disk
+
+**Acceptance.** An arrangement a user made is there when they open Studio again, in the place their
+platform keeps configuration — `$XDG_CONFIG_HOME`, `%APPDATA%`, `$HOME/.config` — not beside the
+executable and not in the project. A workspace is the user's, not the install's and not the
+project's
+
+**How it was met.** `StudioWorkspaceStore` owns the file, the enclosing format version, and the ways
+writing to disk goes wrong. It knows nothing about panels, leaves or splits: reconciling a stored
+arrangement against the panels a build actually has is `StudioShell::loadLayout`'s job already
+(`STUDIO-05011`), and answering that question in two places would mean two answers. The seam between
+them is a `JsonValue`
+
+**Losing a layout is never losing work.** Every failure here is recoverable by definition — the
+worst outcome is the default arrangement, one menu item away. So nothing throws, nothing refuses to
+start, and nothing is silent. The file is written to a temporary beside itself and renamed over the
+original, so a Studio killed mid-save leaves the previous layout rather than a truncated one: one
+rename, and the only way this could lose something is gone
+
+**Note on the dependency.** Originally listed as depending on `STUDIO-06010`, preferences
+persistence. It does not: a layout file is its own file, in the same directory preferences will
+live in, and waiting for the preferences system would have meant shipping a shell that forgets its
+arrangement for no reason
+
+**Verification.** `tests/StudioWorkspaceStoreTests.cpp` — the round trip through a changed
+arrangement, a first run reporting nothing, a truncated file costing the arrangement and saying so,
+a file from a newer Studio refused rather than half-read, no temporary left behind by either a first
+or a second save, forgetting twice, a store with nowhere to write failing with a reason, and
+configuration kept apart from state. Plus `CnaStudioWorkspacePersistence`, which runs the real
+binary four times against one file: the failure it catches — a shell that saves nothing and silently
+starts fresh every time — is invisible to any test that never exits

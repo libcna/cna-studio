@@ -54,6 +54,15 @@ namespace CNA::Studio
          * that works are identical from the outside, and the file appearing *is* the test.
          */
         std::string screenshotPath;
+
+        /**
+         * @brief Where to remember the workspace arrangement between runs. Empty disables it.
+         *
+         * A path rather than a flag, so the tests can point it at a temporary file and a developer
+         * can point two builds at different ones. `StudioWorkspaceStore::defaultPath()` is what the
+         * application passes.
+         */
+        std::string workspacePath;
     };
 
     /** @brief What a native-shell session did. */
@@ -63,6 +72,15 @@ namespace CNA::Studio
         int exitCode = 0;
 
         std::uint64_t frames = 0;
+
+        /** @brief Whether a stored workspace arrangement was found and applied at start-up. */
+        bool layoutRestored = false;
+
+        /** @brief Whether the arrangement was written back on exit. */
+        bool layoutStored = false;
+
+        /** @brief Why a stored layout was not used or not written, when either happened. */
+        std::string layoutProblem;
         std::size_t drawCalls = 0;
         std::size_t triangles = 0;
 

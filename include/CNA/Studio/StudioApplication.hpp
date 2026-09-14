@@ -181,6 +181,15 @@ namespace CNA::Studio
         bool exportOverwrite = false;
 
         /**
+         * @brief Where the native shell remembers its workspace arrangement.
+         *
+         * Defaults to the user's configuration directory. `--workspace=none` turns remembering off,
+         * which is what a screenshot test wants: a capture whose layout depends on what the last
+         * run happened to leave behind is a capture that compares against nothing.
+         */
+        std::string workspacePath;
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a

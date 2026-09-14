@@ -23,6 +23,7 @@ add_executable(cna-studio-tests
     StudioHighDpiTests.cpp
     StudioTargetProfileTests.cpp
     ProjectExportTests.cpp
+    StudioWorkspaceStoreTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -238,7 +239,7 @@ if(CNA_STUDIO_WITH_CNA)
     # perfectly valid screenshot of an empty frame and exit zero; requiring a non-zero count of
     # draw calls and triangles is what separates that from a shell that actually drew.
     add_test(NAME CnaStudioNativeShellWindowSmoke
-        COMMAND cna-studio --ui=studio
+        COMMAND cna-studio --ui=studio --workspace=none
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke.png)
     set_tests_properties(CnaStudioNativeShellWindowSmoke PROPERTIES
@@ -249,7 +250,7 @@ if(CNA_STUDIO_WITH_CNA)
     # invisible on a dark background is exactly the kind of thing one theme catches and the other
     # does not.
     add_test(NAME CnaStudioNativeShellWindowSmokeLightTheme
-        COMMAND cna-studio --ui=studio --shell-theme=light
+        COMMAND cna-studio --ui=studio --shell-theme=light --workspace=none
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-light.png)
     set_tests_properties(CnaStudioNativeShellWindowSmokeLightTheme PROPERTIES
@@ -258,7 +259,7 @@ if(CNA_STUDIO_WITH_CNA)
     # At 2x, where the atlas, the layout and the input mapping all change together. The unit tests
     # cover High-DPI geometry, but only a real device proves the scaled texture actually uploads.
     add_test(NAME CnaStudioNativeShellWindowSmokeHiDpi
-        COMMAND cna-studio --ui=studio --shell-scale=2
+        COMMAND cna-studio --ui=studio --shell-scale=2 --workspace=none
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-2x.png)
     set_tests_properties(CnaStudioNativeShellWindowSmokeHiDpi PROPERTIES
@@ -278,6 +279,26 @@ if(CNA_STUDIO_WITH_CNA)
                              CnaStudioNativeShellWindowSmokeHiDpi
             PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
                        LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # The workspace layout survives a real process exit. Two processes rather than one, because
+    # that is the thing being tested: a unit test proves the store round-trips in memory, and only
+    # a second process proves Studio writes on the way out and reads on the way in. The failure it
+    # catches -- a shell that saves nothing and silently starts fresh every time -- is invisible to
+    # any test that never exits.
+    add_test(NAME CnaStudioWorkspacePersistence
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTUDIO=$<TARGET_FILE:cna-studio>"
+            "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/workspace-persistence"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/WorkspacePersistenceTest.cmake")
+    set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES TIMEOUT 300)
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    else()
+        set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display")
     endif()
 
     # The invariant the whole product rests on, checked by doing it: export the example project
@@ -318,7 +339,7 @@ if(CNA_STUDIO_WITH_CNA)
     # closed. A screenshot asked for on those terms can never be taken, so the run has to be
     # rejected before the window opens -- if it were not, this test would hang instead of failing.
     add_test(NAME CnaStudioNativeShellScreenshotNeedsFrameLimit
-        COMMAND cna-studio --ui=studio
+        COMMAND cna-studio --ui=studio --workspace=none
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-never-written.png)
     set_tests_properties(CnaStudioNativeShellScreenshotNeedsFrameLimit PROPERTIES
         WILL_FAIL TRUE TIMEOUT 60)

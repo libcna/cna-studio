@@ -22,6 +22,7 @@
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
+#include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 #include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 #include "CNA/Studio/RuntimeBridge/BackendComparison.hpp"
 
@@ -409,6 +410,13 @@ int main(int argc, char** argv)
         hostOptions.uiScale = static_cast<float>(options.shellPreviewScale);
         hostOptions.theme = options.shellPreviewTheme;
 
+        // "none" rather than an empty string for off, because an empty --workspace= reads as a
+        // mistake and defaulting it to the user's real file would be the wrong guess: a test that
+        // meant to isolate itself would silently write over the developer's layout.
+        if (options.workspacePath == "none") { hostOptions.workspacePath.clear(); }
+        else if (!options.workspacePath.empty()) { hostOptions.workspacePath = options.workspacePath; }
+        else { hostOptions.workspacePath = CNA::Studio::StudioWorkspaceStore::defaultPath(); }
+
         const CNA::Studio::CnaStudioShellHostResult result =
             CNA::Studio::runStudioShellInWindow(hostOptions);
 
@@ -423,6 +431,10 @@ int main(int argc, char** argv)
                          "back its own back buffer.\n";
             return 4;
         }
+        if (!result.layoutProblem.empty())
+        {
+            std::cerr << "cna-studio: " << result.layoutProblem << "\n";
+        }
         if (options.frameLimit > 0)
         {
             // A window that opens, loops and closes having issued zero draw calls looks identical
@@ -430,7 +442,16 @@ int main(int argc, char** argv)
             std::cout << "cna-studio: native shell on " << result.renderer << ", " << result.frames
                       << " frames, " << result.displayWidth << "x" << result.displayHeight
                       << " display, " << result.drawCalls << " draw calls, " << result.triangles
-                      << " triangles\n";
+                      << " triangles";
+            if (!hostOptions.workspacePath.empty())
+            {
+                // Said out loud because it is otherwise unobservable: a restored layout and a
+                // default one draw the same number of triangles, so a test that only counted
+                // geometry could not tell "remembered the arrangement" from "quietly did not".
+                std::cout << ", workspace " << (result.layoutRestored ? "restored" : "default")
+                          << (result.layoutStored ? " and stored" : " and not stored");
+            }
+            std::cout << "\n";
         }
         return result.exitCode;
     }

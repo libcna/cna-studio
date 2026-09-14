@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Project/RecoveryStore.hpp"
 
+#include "CNA/Studio/Core/UserPaths.hpp"
+
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
@@ -161,32 +163,13 @@ namespace CNA::Studio
 
     std::string getDefaultRecoveryDirectory()
     {
-        const auto environment = [](const char* name) -> std::string {
-            const char* value = std::getenv(name);
-            return value != nullptr ? std::string{value} : std::string{};
-        };
-
-        std::filesystem::path base;
-
-        const std::string stateHome = environment("XDG_STATE_HOME");
-        const std::string localAppData = environment("LOCALAPPDATA");
-        const std::string appData = environment("APPDATA");
-        const std::string home = environment("HOME");
-
-        if (!stateHome.empty()) { base = stateHome; }
-        else if (!localAppData.empty()) { base = localAppData; }
-        else if (!appData.empty()) { base = appData; }
-        else if (!home.empty()) { base = std::filesystem::path{home} / ".local" / "state"; }
-        else
-        {
-            // Worse than the others -- a temporary directory can be swept between reboots -- but
-            // never nothing. A user with no home directory still deserves an autosave.
-            std::error_code errorCode;
-            base = std::filesystem::temp_directory_path(errorCode);
-            if (errorCode) { return {}; }
-        }
-
-        return (base / "cna-studio" / "recovery").generic_string();
+        // State, not configuration: a recovery snapshot is a thing Studio can recreate by the user
+        // working again, and a machine that sweeps it between reboots has done nothing wrong. The
+        // resolution itself lives in CNA/Studio/Core/UserPaths.hpp, so the layout store and this
+        // agree about where a user's files go rather than each deciding separately.
+        const std::string base = getStudioStateDirectory();
+        if (base.empty()) { return {}; }
+        return (std::filesystem::path{base} / "recovery").generic_string();
     }
 }
 
