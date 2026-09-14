@@ -10,8 +10,8 @@ reimplementation of the XNA 4.0 framework.
 > *new* is the goal: CNA Studio is a long-lived professional tool, not a prototype, and the roadmap
 > to get there is [`plan.md`](plan.md).
 >
-> The default build stays dependency-free: no CNA checkout, no GPU, no window, 442 assertions
-> across 12 CTest suites in about two seconds.
+> The default build stays dependency-free: no CNA checkout, no GPU, no window, 509 assertions
+> across 17 CTest suites in about seven seconds.
 
 ![CNA Studio running on the EASYGL renderer](docs/images/studio-easygl.png)
 
@@ -128,6 +128,23 @@ working clipboard.
 
 Run `cna-studio --help` for the command-line options.
 
+### Seeing the new Studio UI
+
+The native Studio UI ([`plan.md`](plan.md) Phases 3-7) is being grown underneath the existing
+Dear ImGui presentation. Its shell -- menu bar, toolbar, docks, viewport, status bar -- is real
+geometry today but is not yet interactive, so it is reachable as a preview rather than as a UI
+you can click:
+
+```bash
+./build/cna-studio --shell-preview=shell.png --shell-size=1280x720
+# cna-studio: shell preview 1280x720, theme 'CNA Studio Dark', scale 1,
+#             3 draw calls, 1380 vertices -> shell.png
+```
+
+This needs **no GPU and no display**. The shell's geometry is CNA-free and is rasterised on the
+CPU, which is the same property that gives it golden-image regression tests before graphical CI
+exists. `--shell-theme=light` and `--shell-scale=2.0` render the other theme and High-DPI.
+
 ---
 
 ## Architecture at a glance
@@ -220,7 +237,7 @@ cna-studio/
 ├── src/                     One directory per module
 ├── third_party/imgui/       Dear ImGui — legacy UI, being replaced
 ├── third_party/cgltf/       cgltf, with its symbols prefixed
-├── tests/                   442 assertions, no third-party framework
+├── tests/                   509 assertions, no third-party framework
 └── examples/HelloSprites/   A project Studio opens end to end
 ```
 
@@ -235,7 +252,7 @@ House rules, matching CNA's own:
 - Doxygen `@brief` on every public type and method.
 - Every document mutation goes through a `StudioCommand`.
 - Only `cna-studio-viewport` may include CNA headers.
-- New behaviour comes with a test. The suite runs headless in about two seconds.
+- New behaviour comes with a test. The suite runs headless in a few seconds.
 - The UI layer talks to `UiDrawData`/`UiInputState`, never straight to a toolkit or to CNA.
 
 ---

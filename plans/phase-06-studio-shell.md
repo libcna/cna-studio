@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 0 of 15 complete `░░░░░░░░░░░░`
+**Progress:** 1 of 16 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,8 @@
 | `STUDIO-06012` | Shortcut rebinding UI with conflict detection | ⬜ | `STUDIO-06008` |
 | `STUDIO-06013` | Empty states for every panel | ⬜ | `STUDIO-06003` |
 | `STUDIO-06014` | Notification and toast system for background results | ⬜ | `STUDIO-06007` |
-| `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | ⬜ | `STUDIO-06003`, `STUDIO-05009` |
+| `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
+| `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | 🔄 | `STUDIO-06003`, `STUDIO-05009` |
 
 ## Acceptance and verification
 
@@ -65,6 +66,12 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-06013` — Empty states for every panel
 
 **Acceptance.** A panel with nothing in it explains what it is for and what to do next, rather than showing blank space
+
+### `STUDIO-06016` — Shell preview entry point on the real executable
+
+**Acceptance.** `cna-studio --shell-preview=PATH` renders the native shell and writes a PNG, with `--shell-size`, `--shell-scale` and `--shell-theme`. Headless: no GPU, no display. A preview rather than `--ui=studio`, because the shell is not yet interactive and a flag that opened an unresponsive window would be the worse lie
+
+**Verification.** Five CTest cases: three renders and two malformed-argument rejections
 
 ### `STUDIO-06015` — The `cna-studio` executable starts on the new shell by default
 

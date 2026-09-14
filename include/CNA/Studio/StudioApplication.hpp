@@ -116,6 +116,29 @@ namespace CNA::Studio
         std::string screenshotPath;
 
         /**
+         * @brief Render the native Studio shell to this PNG and exit.
+         *
+         * The shell of `plan.md` Phase 6 is real geometry but not yet interactive, so it is
+         * reachable as a preview rather than as `--ui=studio`: a flag that opened an unresponsive
+         * window would be a worse lie than one that says what it does. It runs headless, because
+         * the shell's geometry is CNA-free and is rasterised on the CPU -- which is also how its
+         * screenshot tests run without a GPU.
+         */
+        std::string shellPreviewPath;
+
+        /** @brief Width of the shell preview, in logical units. */
+        int shellPreviewWidth = 1920;
+
+        /** @brief Height of the shell preview, in logical units. */
+        int shellPreviewHeight = 1080;
+
+        /** @brief DPI scale of the shell preview. 1.0 is 100%. */
+        double shellPreviewScale = 1.0;
+
+        /** @brief Shell preview theme: `"dark"` or `"light"`. */
+        std::string shellPreviewTheme = "dark";
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a

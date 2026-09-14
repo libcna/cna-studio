@@ -72,6 +72,61 @@ namespace CNA::Studio
                 if (name == "--scene") { options.scenePath = value; continue; }
                 if (name == "--ui") { options.uiBackend = value; continue; }
                 if (name == "--screenshot") { options.screenshotPath = value; continue; }
+                if (name == "--shell-preview") { options.shellPreviewPath = value; continue; }
+                if (name == "--shell-theme")
+                {
+                    if (value != "dark" && value != "light")
+                    {
+                        options.hasError = true;
+                        options.errorMessage = "--shell-theme expects dark or light, got '" + value + "'";
+                    }
+                    options.shellPreviewTheme = value;
+                    continue;
+                }
+                if (name == "--shell-size")
+                {
+                    // WxH. A malformed size is an error rather than a silent default, for the same
+                    // reason --view is: this flag exists to be set from a script that cannot see
+                    // the picture it asked for.
+                    const std::size_t separator = value.find('x');
+                    bool parsed = false;
+                    if (separator != std::string::npos)
+                    {
+                        try
+                        {
+                            const int width = std::stoi(value.substr(0, separator));
+                            const int height = std::stoi(value.substr(separator + 1));
+                            if (width > 0 && height > 0)
+                            {
+                                options.shellPreviewWidth = width;
+                                options.shellPreviewHeight = height;
+                                parsed = true;
+                            }
+                        }
+                        catch (const std::exception&) { parsed = false; }
+                    }
+                    if (!parsed)
+                    {
+                        options.hasError = true;
+                        options.errorMessage = "--shell-size expects WIDTHxHEIGHT, got '" + value + "'";
+                    }
+                    continue;
+                }
+                if (name == "--shell-scale")
+                {
+                    try { options.shellPreviewScale = std::stod(value); }
+                    catch (const std::exception&)
+                    {
+                        options.hasError = true;
+                        options.errorMessage = "--shell-scale expects a number, got '" + value + "'";
+                    }
+                    if (options.shellPreviewScale <= 0.0)
+                    {
+                        options.hasError = true;
+                        options.errorMessage = "--shell-scale must be greater than zero";
+                    }
+                    continue;
+                }
                 if (name == "--recovery-dir") { options.recoveryDirectory = value; continue; }
                 if (name == "--autosave")
                 {
@@ -193,6 +248,10 @@ namespace CNA::Studio
             "  --project=PATH     Open this .cnaproject at start-up.\n"
             "  --scene=PATH       Open this .cnascene, overriding the project's startup scene.\n"
             "  --ui=NAME          UI toolkit to use: 'imgui' or 'null'. Default: imgui.\n"
+            "  --shell-preview=P  Render the native Studio shell to PNG at P and exit.\n"
+            "  --shell-size=WxH   Size of the shell preview. Default: 1920x1080.\n"
+            "  --shell-scale=N    DPI scale of the shell preview. Default: 1.0.\n"
+            "  --shell-theme=T    Shell preview theme: 'dark' or 'light'. Default: dark.\n"
             "  --headless         Run with no window, on the null UI. Implies --ui=null.\n"
             "  --view=2d|3d       Which viewport camera to start in. Defaults to 2d.\n"
             "  --orbit=YAW,PITCH  Orbit the 3D camera to these angles, in degrees. Needs --view=3d.\n"

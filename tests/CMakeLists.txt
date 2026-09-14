@@ -114,6 +114,36 @@ add_test(NAME CnaStudioHeadlessSmoke3DOrbited
         --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioHeadlessSmoke3DOrbited PROPERTIES TIMEOUT 60)
 
+# The native Studio shell, rendered end to end through the real binary and written as a PNG.
+#
+# Headless on purpose: the shell's geometry is CNA-free and is rasterised on the CPU, so this runs
+# on a build machine with no GPU and no display. The assertion is the image -- a run that merely
+# exited cleanly cannot tell a working shell from one that drew nothing.
+add_test(NAME CnaStudioShellPreview
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview.png
+                       --shell-size=1280x720)
+set_tests_properties(CnaStudioShellPreview PROPERTIES TIMEOUT 60)
+
+add_test(NAME CnaStudioShellPreviewLightTheme
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-light.png
+                       --shell-size=1280x720 --shell-theme=light)
+set_tests_properties(CnaStudioShellPreviewLightTheme PROPERTIES TIMEOUT 60)
+
+add_test(NAME CnaStudioShellPreviewHiDpi
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-200.png
+                       --shell-size=1280x720 --shell-scale=2.0)
+set_tests_properties(CnaStudioShellPreviewHiDpi PROPERTIES TIMEOUT 60)
+
+# A malformed size or theme is an error rather than a silent default, for the same reason --view is:
+# these flags exist to be set from a script that cannot see the picture it asked for.
+add_test(NAME CnaStudioRejectsMalformedShellSize
+    COMMAND cna-studio --shell-preview=never.png --shell-size=1280)
+set_tests_properties(CnaStudioRejectsMalformedShellSize PROPERTIES WILL_FAIL TRUE)
+
+add_test(NAME CnaStudioRejectsUnknownShellTheme
+    COMMAND cna-studio --shell-preview=never.png --shell-theme=neon)
+set_tests_properties(CnaStudioRejectsUnknownShellTheme PROPERTIES WILL_FAIL TRUE)
+
 add_test(NAME CnaStudioHelp COMMAND cna-studio --help)
 add_test(NAME CnaStudioListBackends COMMAND cna-studio --list-backends)
 

@@ -342,6 +342,7 @@ add_executable(cna-studio
     src/app/StudioApplication.cpp
     ${CNA_STUDIO_PANEL_SOURCES})
 target_link_libraries(cna-studio PRIVATE
+    cna-studio-ui-core
     cna-studio-context
     cna-studio-plugins
     cna-studio-runtime-bridge)

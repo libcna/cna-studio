@@ -48,16 +48,16 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**44 of 440 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  10.0%
+**45 of 441 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  10.2%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 44 |
-| 🔄 In progress | 9 |
-| ⬜ Not started | 382 |
+| ✅ Complete | 45 |
+| 🔄 In progress | 10 |
+| ⬜ Not started | 381 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **440** |
+| **Total** | **441** |
 
 > **On the task count.** 439 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
@@ -75,7 +75,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 26 | 7 | `███░░░░░░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 15 | 4 | `███░░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 12 | 1 | `█░░░░░░░░░` |
-| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 15 | 0 | `░░░░░░░░░░` |
+| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 16 | 1 | `█░░░░░░░░░` |
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 21 | 0 | `░░░░░░░░░░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |
@@ -211,7 +211,10 @@ The repository is at the end of the **first implementation tranche**. What exist
   into an image in-process, so the shell has golden-image coverage at six resolution and DPI
   combinations long before the graphical CI of `STUDIO-33010` exists.
 
-The suite is **509 assertions across 12 CTest suites**, green and warning-free in both GCC Debug
+`cna-studio --shell-preview=shell.png` renders it from the real binary with no GPU and no
+display.
+
+The suite is **509 assertions across 17 CTest suites**, green and warning-free in both GCC Debug
 and GCC Release at `-Werror`. Two latent defects inherited from the prototype were found by
 building at `-O3 -Werror`, which the prototype's CI did not do, and both are fixed: an ignored
 `freopen` result that would have sent a build's output nowhere while leaving an empty log, and a

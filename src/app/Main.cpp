@@ -14,6 +14,11 @@
 #include <memory>
 
 #include "CNA/Studio/StudioApplication.hpp"
+#include "CNA/Studio/UiCore/StudioDrawList.hpp"
+#include "CNA/Studio/UiCore/StudioShellLayout.hpp"
+#include "CNA/Studio/UiCore/StudioShellRenderer.hpp"
+#include "CNA/Studio/UiCore/StudioTheme.hpp"
+#include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 #include "CNA/Studio/RuntimeBridge/BackendComparison.hpp"
 
 #if defined(CNA_STUDIO_HAS_IMGUI)
@@ -115,6 +120,58 @@ namespace
     }
 #endif
 
+    /**
+     * @brief Renders the native Studio shell to a PNG and reports what it produced.
+     *
+     * Headless by construction: the shell's geometry is CNA-free and is rasterised on the CPU, so
+     * this works on a build machine with no GPU and no display -- the same property that lets the
+     * shell have screenshot tests before graphical CI exists.
+     *
+     * @param options Parsed command line.
+     * @return Process exit code.
+     */
+    int renderShellPreview(const CNA::Studio::StudioOptions& options)
+    {
+        CNA::Studio::StudioTheme theme = options.shellPreviewTheme == "light"
+            ? CNA::Studio::StudioTheme::light()
+            : CNA::Studio::StudioTheme::dark();
+        theme.setScale(static_cast<float>(options.shellPreviewScale));
+
+        const auto width = static_cast<float>(options.shellPreviewWidth);
+        const auto height = static_cast<float>(options.shellPreviewHeight);
+
+        const CNA::Studio::StudioShellLayout layout =
+            CNA::Studio::computeStudioShellLayout(width, height, theme);
+
+        CNA::Studio::StudioDrawList list;
+        list.begin(width, height, 1.0f);
+        CNA::Studio::drawStudioShell(list, layout, theme,
+                                     CNA::Studio::StudioShellContent::defaults());
+        list.end();
+
+        const CNA::Studio::ImageBuffer image =
+            CNA::Studio::rasterizeUiDrawData(list.drawData(),
+                                             theme.color(CNA::Studio::StudioColorRole::AppBackground));
+        if (!image.isWellFormed())
+        {
+            std::cerr << "cna-studio: the shell produced no image at "
+                      << options.shellPreviewWidth << "x" << options.shellPreviewHeight << "\n";
+            return 4;
+        }
+
+        if (!CNA::Studio::writeImageAsPng(image, options.shellPreviewPath))
+        {
+            std::cerr << "cna-studio: could not write '" << options.shellPreviewPath << "'\n";
+            return 4;
+        }
+
+        std::cout << "cna-studio: shell preview " << image.width << "x" << image.height
+                  << ", theme '" << theme.name() << "', scale " << theme.scale()
+                  << ", " << list.commandCount() << " draw calls, "
+                  << list.vertexCount() << " vertices -> " << options.shellPreviewPath << "\n";
+        return 0;
+    }
+
     void printBackends()
     {
         std::cout << "CNA graphics backends known to Studio:\n\n";
@@ -159,6 +216,13 @@ int main(int argc, char** argv)
     {
         printBackends();
         return 0;
+    }
+
+    // Before the UI selection below, because the preview needs no window, no toolkit and no
+    // graphics device at all.
+    if (!options.shellPreviewPath.empty())
+    {
+        return renderShellPreview(options);
     }
 
     // This is the one place that decides which concrete StudioUi and StudioViewport the
