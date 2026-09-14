@@ -48,18 +48,18 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**87 of 456 tasks complete** `█████░░░░░░░░░░░░░░░░░░░`  19.1%
+**104 of 460 tasks complete** `█████░░░░░░░░░░░░░░░░░░░`  22.6%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 87 |
-| 🔄 In progress | 14 |
-| ⬜ Not started | 350 |
+| ✅ Complete | 100 |
+| 🔄 In progress | 11 |
+| ⬜ Not started | 341 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **456** |
+| **Total** | **460** |
 
-> **On the task count.** 456 tasks are decomposed today. That is not the final number: the
+> **On the task count.** 460 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
 > Tasks are added when the work is understood well enough to state a completion condition — never
 > to reach a number. A phase whose detail is still coarse says so by having few rows, which is
@@ -71,11 +71,11 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 |------:|-------|-----|:------:|------:|-----:|----------|
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
-| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 25 | 17 | `███████░░░` |
-| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 28 | 18 | `██████░░░░` |
+| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 25 | 19 | `████████░░` |
+| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 28 | 19 | `███████░░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 18 | 7 | `████░░░░░░` |
-| 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 14 | 8 | `██████░░░░` |
-| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 19 | 7 | `████░░░░░░` |
+| 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 14 | 9 | `██████░░░░` |
+| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 21 | 9 | `████░░░░░░` |
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 21 | 0 | `░░░░░░░░░░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |
@@ -86,7 +86,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 14 | [Details Inspector 2](plans/phase-14-inspector.md) | `STUDIO-14NNN` | ⬜ | 18 | 0 | `░░░░░░░░░░` |
 | 15 | [C++ gameplay component workflow](plans/phase-15-cpp-gameplay.md) | `STUDIO-15NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 16 | [Play In Editor 2](plans/phase-16-play-in-editor.md) | `STUDIO-16NNN` | ⬜ | 14 | 0 | `░░░░░░░░░░` |
-| 17 | [Build profiles](plans/phase-17-build-profiles.md) | `STUDIO-17NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
+| 17 | [Build profiles](plans/phase-17-build-profiles.md) | `STUDIO-17NNN` | 🔄 | 11 | 5 | `█████░░░░░` |
 | 18 | [Cook, package and export](plans/phase-18-package-export.md) | `STUDIO-18NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
 | 19 | [Materials](plans/phase-19-materials.md) | `STUDIO-19NNN` | ⬜ | 9 | 0 | `░░░░░░░░░░` |
 | 20 | [Lighting](plans/phase-20-lighting.md) | `STUDIO-20NNN` | ⬜ | 8 | 0 | `░░░░░░░░░░` |
@@ -98,11 +98,11 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 26 | [Physics and navigation tooling](plans/phase-26-physics-nav.md) | `STUDIO-26NNN` | ⬜ | 8 | 0 | `░░░░░░░░░░` |
 | 27 | [Profiling and diagnostics](plans/phase-27-profiling.md) | `STUDIO-27NNN` | ⬜ | 14 | 0 | `░░░░░░░░░░` |
 | 28 | [Plugins and SDK](plans/phase-28-plugins.md) | `STUDIO-28NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
-| 29 | [Renderer and platform matrix](plans/phase-29-renderer-matrix.md) | `STUDIO-29NNN` | 🔄 | 6 | 2 | `███░░░░░░░` |
+| 29 | [Renderer and platform matrix](plans/phase-29-renderer-matrix.md) | `STUDIO-29NNN` | 🔄 | 7 | 5 | `███████░░░` |
 | 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 31 | [Reliability](plans/phase-31-reliability.md) | `STUDIO-31NNN` | 🔄 | 13 | 1 | `█░░░░░░░░░` |
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
-| 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 15 | 2 | `█░░░░░░░░░` |
+| 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 16 | 5 | `███░░░░░░░` |
 | 34 | [Release engineering](plans/phase-34-release.md) | `STUDIO-34NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | ⬜ | 10 | 0 | `░░░░░░░░░░` |
 

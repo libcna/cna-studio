@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 8 of 14 complete `██████░░░░░░`
+**Progress:** 9 of 14 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|

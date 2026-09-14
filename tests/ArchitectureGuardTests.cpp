@@ -492,3 +492,287 @@ CNA_STUDIO_TEST(NoStudioCodeHardCodesARendererName)
     }
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
+
+// -------------------------------------------------------------------------------------------
+// Plan integrity
+// -------------------------------------------------------------------------------------------
+//
+// The roadmap is only worth reading if its status is true, and the failure mode is not dishonesty
+// but drift: a task gets its tick, the phase file's own header and `plan.md`'s table keep the
+// number they had, and the discrepancy survives because nobody adds up a column by hand. These
+// checks add it up. They assert arithmetic, never judgement -- whether a ✅ is *deserved* is a
+// question no test can answer, and pretending otherwise would be worse than not checking.
+
+namespace
+{
+    /** @brief One row of a phase file's task table. */
+    struct PlanTask
+    {
+        std::string id;
+        std::string status;
+    };
+
+    /** @brief Reads a whole file, or returns an empty string when it is not there. */
+    std::string readFileOrEmpty(const std::filesystem::path& path)
+    {
+        std::ifstream stream{path, std::ios::binary};
+        if (!stream) { return {}; }
+        return std::string{std::istreambuf_iterator<char>{stream},
+                           std::istreambuf_iterator<char>{}};
+    }
+
+    /** @brief Splits text into lines, dropping the line terminators. */
+    std::vector<std::string> splitLines(const std::string& text)
+    {
+        std::vector<std::string> lines;
+        std::string current;
+        for (const char character : text)
+        {
+            if (character == '\n') { lines.push_back(current); current.clear(); }
+            else if (character != '\r') { current.push_back(character); }
+        }
+        if (!current.empty()) { lines.push_back(current); }
+        return lines;
+    }
+
+    /** @brief The cells of a Markdown table row, trimmed, or empty when the line is not one. */
+    std::vector<std::string> tableCells(const std::string& line)
+    {
+        if (line.size() < 2 || line.front() != '|') { return {}; }
+
+        std::vector<std::string> cells;
+        std::string current;
+        for (std::size_t index = 1; index < line.size(); ++index)
+        {
+            if (line[index] == '|') { cells.push_back(current); current.clear(); }
+            else { current.push_back(line[index]); }
+        }
+
+        for (std::string& cell : cells)
+        {
+            const std::size_t first = cell.find_first_not_of(" \t");
+            const std::size_t last = cell.find_last_not_of(" \t");
+            cell = (first == std::string::npos) ? std::string{} : cell.substr(first, last - first + 1);
+        }
+        return cells;
+    }
+
+    /** @brief Strips the backticks Markdown uses to set an id in code style. */
+    std::string withoutBackticks(std::string text)
+    {
+        text.erase(std::remove(text.begin(), text.end(), '`'), text.end());
+        return text;
+    }
+
+    /**
+     * @brief Reads the task rows of one phase file.
+     *
+     * A phase file's table is the authority on that phase: `plan.md` summarises it, and the
+     * summary is what drifts.
+     *
+     * @param path The phase file.
+     * @return Every `| `STUDIO-NNNNN` | … | status | … |` row, in file order.
+     */
+    std::vector<PlanTask> readPhaseTasks(const std::filesystem::path& path)
+    {
+        std::vector<PlanTask> tasks;
+        for (const std::string& line : splitLines(readFileOrEmpty(path)))
+        {
+            const std::vector<std::string> cells = tableCells(line);
+            if (cells.size() < 3) { continue; }
+
+            const std::string id = withoutBackticks(cells[0]);
+            if (id.rfind("STUDIO-", 0) != 0 || id.size() != 12) { continue; }
+            if (id.find_first_not_of("0123456789", 7) != std::string::npos) { continue; }
+
+            tasks.push_back(PlanTask{id, cells[2]});
+        }
+        return tasks;
+    }
+}
+
+CNA_STUDIO_TEST(EveryPhaseFileAgreesWithItsOwnProgressHeader)
+{
+    // The header line each phase file carries above its table. It is written by hand and read by
+    // everyone, which is the worst combination a number can have.
+    std::size_t phasesChecked = 0;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator{sourceRoot() / "plans"})
+    {
+        if (entry.path().extension() != ".md") { continue; }
+
+        const std::string text = readFileOrEmpty(entry.path());
+        const std::string relative = "plans/" + entry.path().filename().string();
+
+        const std::vector<PlanTask> tasks = readPhaseTasks(entry.path());
+        if (tasks.empty()) { continue; }
+        ++phasesChecked;
+
+        const auto complete = static_cast<std::size_t>(
+            std::count_if(tasks.begin(), tasks.end(),
+                          [](const PlanTask& task) { return task.status == "✅"; }));
+
+        const std::size_t headerStart = text.find("**Progress:** ");
+        if (headerStart == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                relative + " has a task table but no '**Progress:** N of M complete' header.");
+            continue;
+        }
+
+        const std::string header =
+            text.substr(headerStart, text.find('\n', headerStart) - headerStart);
+
+        const std::string expected = "**Progress:** " + std::to_string(complete) + " of "
+                                   + std::to_string(tasks.size()) + " complete";
+        if (header.rfind(expected, 0) != 0)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                relative + " says '" + header + "' but its table holds " + std::to_string(tasks.size())
+                + " tasks of which " + std::to_string(complete) + " are ✅. Expected it to start '"
+                + expected + "'.");
+        }
+    }
+
+    // A scan that found no phase files would report perfect agreement.
+    CNA_STUDIO_EXPECT(phasesChecked >= 30);
+}
+
+CNA_STUDIO_TEST(TheMasterPlanTableAgreesWithEveryPhaseFile)
+{
+    // `plan.md`'s phase table is a summary of thirty-six files nobody re-reads when ticking a box
+    // in one of them, so it is the number most likely to be wrong and the one most likely to be
+    // quoted. Each row is checked against the file it links to, and the totals against the rows.
+    std::size_t rowsChecked = 0;
+    std::size_t totalTasks = 0;
+    std::size_t totalComplete = 0;
+    std::size_t declaredTotal = 0;
+
+    for (const std::string& line : splitLines(readFileOrEmpty(sourceRoot() / "plan.md")))
+    {
+        const std::vector<std::string> cells = tableCells(line);
+
+        if (cells.size() >= 2 && cells[0] == "**Total**")
+        {
+            declaredTotal = static_cast<std::size_t>(
+                std::stoul(withoutBackticks(cells[1]).substr(2)));
+            continue;
+        }
+
+        // | N | [Name](plans/phase-NN-….md) | `STUDIO-NNNNN` | status | tasks | complete | bar |
+        if (cells.size() < 6) { continue; }
+        const std::size_t linkStart = cells[1].find("(plans/");
+        if (linkStart == std::string::npos) { continue; }
+
+        const std::size_t linkEnd = cells[1].find(')', linkStart);
+        const std::string relative =
+            cells[1].substr(linkStart + 1, linkEnd - linkStart - 1);
+
+        std::size_t declaredTasksInRow = 0;
+        std::size_t declaredCompleteInRow = 0;
+        try
+        {
+            declaredTasksInRow = static_cast<std::size_t>(std::stoul(cells[4]));
+            declaredCompleteInRow = static_cast<std::size_t>(std::stoul(cells[5]));
+        }
+        catch (const std::exception&)
+        {
+            continue;
+        }
+
+        ++rowsChecked;
+        totalTasks += declaredTasksInRow;
+        totalComplete += declaredCompleteInRow;
+
+        const std::vector<PlanTask> tasks = readPhaseTasks(sourceRoot() / relative);
+        const auto complete = static_cast<std::size_t>(
+            std::count_if(tasks.begin(), tasks.end(),
+                          [](const PlanTask& task) { return task.status == "✅"; }));
+
+        if (tasks.size() != declaredTasksInRow || complete != declaredCompleteInRow)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "plan.md says " + relative + " holds " + std::to_string(declaredTasksInRow)
+                + " tasks with " + std::to_string(declaredCompleteInRow) + " complete, but the file "
+                  "holds " + std::to_string(tasks.size()) + " with " + std::to_string(complete)
+                + " complete.");
+        }
+    }
+
+    CNA_STUDIO_EXPECT(rowsChecked >= 30);
+    CNA_STUDIO_EXPECT_EQ(declaredTotal, totalTasks);
+
+    // The headline figure, which is the one that ends up in a commit message or a status report.
+    const std::string headline =
+        std::to_string(totalComplete) + " of " + std::to_string(totalTasks) + " tasks complete";
+    const std::string plan = readFileOrEmpty(sourceRoot() / "plan.md");
+    if (plan.find("**" + headline + "**") == std::string::npos)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            "plan.md's headline does not read '**" + headline
+            + "**', which is what its own phase table adds up to.");
+    }
+}
+
+CNA_STUDIO_TEST(NoTaskIdIsUsedTwiceAcrossTheWholePlan)
+{
+    // Ids are promised to be stable and never reused (plan.md, 'Id scheme'). A collision breaks
+    // every reference to the id -- in commit messages, in code comments, in this test suite -- and
+    // is invisible until someone follows one of them to the wrong task.
+    std::map<std::string, std::string> seenIn;
+    std::size_t collisions = 0;
+
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator{sourceRoot() / "plans"})
+    {
+        if (entry.path().extension() != ".md") { continue; }
+        const std::string relative = "plans/" + entry.path().filename().string();
+
+        std::map<std::string, std::size_t> countsInThisFile;
+        for (const PlanTask& task : readPhaseTasks(entry.path()))
+        {
+            ++countsInThisFile[task.id];
+
+            const auto existing = seenIn.find(task.id);
+            if (existing != seenIn.end() && existing->second != relative)
+            {
+                ++collisions;
+                CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                    "task id " + task.id + " appears in both " + existing->second + " and "
+                    + relative + ". Ids are never reused.");
+            }
+            seenIn[task.id] = relative;
+        }
+
+        for (const auto& [id, count] : countsInThisFile)
+        {
+            if (count > 1)
+            {
+                ++collisions;
+                CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                    "task id " + id + " has " + std::to_string(count) + " rows in " + relative + ".");
+            }
+        }
+
+        // A task's id must belong to the phase whose file it lives in, or the id scheme's promise
+        // that `STUDIO-06020` is phase 6's twentieth task means nothing.
+        const std::string stem = entry.path().filename().string();
+        if (stem.rfind("phase-", 0) == 0)
+        {
+            const std::string phaseNumber = stem.substr(6, 2);
+            for (const PlanTask& task : readPhaseTasks(entry.path()))
+            {
+                if (task.id.substr(7, 2) != phaseNumber)
+                {
+                    ++collisions;
+                    CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                        "task " + task.id + " lives in " + relative
+                        + ", whose ids must all start STUDIO-" + phaseNumber + ".");
+                }
+            }
+        }
+    }
+
+    CNA_STUDIO_EXPECT(seenIn.size() > 300);
+    CNA_STUDIO_EXPECT_EQ(collisions, std::size_t{0});
+}
