@@ -6,16 +6,16 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 0 of 26 complete `░░░░░░░░░░░░`
+**Progress:** 6 of 26 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-03001` | Create the `cna-studio-ui-core` module with no CNA dependency | ⬜ | `STUDIO-02001` |
-| `STUDIO-03002` | Widget identity: stable ids derived from a scoped id stack | ⬜ | `STUDIO-03001` |
-| `STUDIO-03003` | Persistent per-widget state store keyed by id | ⬜ | `STUDIO-03002` |
-| `STUDIO-03004` | Design token model: the single source of visual truth | ⬜ | `STUDIO-03001` |
-| `STUDIO-03005` | Theme system with a dark professional default | ⬜ | `STUDIO-03004` |
-| `STUDIO-03006` | Semantic colour roles: normal, hover, pressed, selected, focused, disabled, warning, error, success | ⬜ | `STUDIO-03004` |
+| `STUDIO-03001` | Create the `cna-studio-ui-core` module with no CNA dependency | ✅ | `STUDIO-02001` |
+| `STUDIO-03002` | Widget identity: stable ids derived from a scoped id stack | ✅ | `STUDIO-03001` |
+| `STUDIO-03003` | Persistent per-widget state store keyed by id | ✅ | `STUDIO-03002` |
+| `STUDIO-03004` | Design token model: the single source of visual truth | ✅ | `STUDIO-03001` |
+| `STUDIO-03005` | Theme system with a dark professional default | ✅ | `STUDIO-03004` |
+| `STUDIO-03006` | Semantic colour roles: normal, hover, pressed, selected, focused, disabled, warning, error, success | ✅ | `STUDIO-03004` |
 | `STUDIO-03007` | Focus model: focus ring, focus scopes, focus restoration | ⬜ | `STUDIO-03002` |
 | `STUDIO-03008` | Tab navigation order | ⬜ | `STUDIO-03007` |
 | `STUDIO-03009` | Event model and input routing | ⬜ | `STUDIO-03002` |
@@ -33,7 +33,7 @@
 | `STUDIO-03025` | Clipboard integration through the platform seam | ⬜ | `STUDIO-03024` |
 | `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | ⬜ | `STUDIO-03024` |
 | `STUDIO-03027` | IME support where the platform provides it | ⬜ | `STUDIO-03026` |
-| `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | ⬜ | `STUDIO-03004` |
+| `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | 🔄 | `STUDIO-03004` |
 | `STUDIO-03029` | Keyboard shortcut matching and chords | ⬜ | `STUDIO-03012` |
 | `STUDIO-03030` | Restrained animation model: state transitions only, no decorative motion | ⬜ | `STUDIO-03004` |
 

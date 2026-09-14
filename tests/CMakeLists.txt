@@ -13,6 +13,7 @@ add_executable(cna-studio-tests
     ModelImportTests.cpp
     ApplicationTests.cpp
     UiTests.cpp
+    UiCoreTests.cpp
     PlayerTests.cpp
     ViewportTests.cpp)
 
@@ -51,6 +52,7 @@ target_compile_definitions(cna-studio-tests PRIVATE
 
 target_include_directories(cna-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cna-studio-tests PRIVATE
+    cna-studio-ui-core
     cna-studio-context
     cna-studio-plugins
     cna-studio-runtime-bridge

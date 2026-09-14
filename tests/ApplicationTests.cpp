@@ -2732,7 +2732,13 @@ CNA_STUDIO_TEST(RecoveredWorkIsOfferedRatherThanRestoredBehindTheUsersBack)
     reopened.renderFrame(5.0);
 
     const RecoveryStore store{options.recoveryDirectory};
-    CNA_STUDIO_EXPECT_EQ(store.findForProject(options.projectPath)->sceneName, std::string{"Level01"});
+    // The optional is held in a named variable rather than dereferenced inline: findForProject
+    // returns by value, and binding a reference through operator-> to a member of the temporary
+    // does not extend its lifetime. GCC diagnoses the inline form as a dangling pointer at -O2
+    // and upwards, and it is right to.
+    const std::optional<RecoverySnapshot> snapshot = store.findForProject(options.projectPath);
+    CNA_STUDIO_EXPECT(snapshot.has_value());
+    CNA_STUDIO_EXPECT_EQ(snapshot->sceneName, std::string{"Level01"});
 
     // Accepting it brings the work back, leaves the file alone, and reports the document as
     // holding changes that were never saved.

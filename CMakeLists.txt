@@ -166,6 +166,23 @@ add_library(cna-studio-ui STATIC
     src/ui/UiInputState.cpp)
 target_link_libraries(cna-studio-ui PUBLIC cna-studio-core)
 
+# cna-studio-ui-core -- the foundations of the native CNA Studio UI (plan.md Phase 3).
+#
+# This is the module that will replace the Dear ImGui presentation, and the most important thing
+# about it is what it does NOT link: no CNA, no toolkit, no window system. Layout, widget identity,
+# retained state, focus and styling are all decided by code that runs in CI with no GPU, which is
+# what keeps the UI workstream testable rather than only lookable-at. Only the pixels need a
+# device, and those are cna-studio-ui-renderer's problem (Phase 4).
+#
+# It is deliberately separate from cna-studio-ui: that module is the *abstraction* every panel
+# talks to, and this one is an implementation being grown underneath it.
+add_library(cna-studio-ui-core STATIC
+    src/ui-core/StudioTheme.cpp
+    src/ui-core/StudioThemeNames.cpp
+    src/ui-core/WidgetId.cpp
+    src/ui-core/WidgetStateStore.cpp)
+target_link_libraries(cna-studio-ui-core PUBLIC cna-studio-core)
+
 # Dear ImGui itself. Vendored core only -- none of ImGui's own platform or renderer backends are
 # built, because cna-studio supplies its own through CNA's public API (ANALYSIS.md decision D-14).
 if(CNA_STUDIO_WITH_IMGUI)

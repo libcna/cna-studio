@@ -48,13 +48,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**31 of 439 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  7.1%
+**37 of 439 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  8.4%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 31 |
-| 🔄 In progress | 2 |
-| ⬜ Not started | 401 |
+| ✅ Complete | 37 |
+| 🔄 In progress | 3 |
+| ⬜ Not started | 394 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
 | **Total** | **439** |
@@ -72,7 +72,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
 | 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 21 | 5 | `██░░░░░░░░` |
-| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | ⬜ | 26 | 0 | `░░░░░░░░░░` |
+| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 26 | 6 | `██░░░░░░░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | ⬜ | 15 | 0 | `░░░░░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | ⬜ | 15 | 0 | `░░░░░░░░░░` |
@@ -197,6 +197,16 @@ The repository is at the end of the **first implementation tranche**. What exist
   model. See `docs/ARCHITECTURE.md`.
 - Six CNA gaps are registered, two of them re-verified as fixed upstream since the prototype filed
   them. See `docs/CNA-GAPS.md`.
+- The **first foundations of the native Studio UI** exist and are tested headless: the design token
+  model with both shipped themes (`STUDIO-03004`/`03005`/`03006`), widget identity with per-frame
+  collision detection (`STUDIO-03002`), and retained widget state with reclamation
+  (`STUDIO-03003`), in a `cna-studio-ui-core` module that links no CNA at all.
+
+The suite is **478 assertions across 12 CTest suites**, green and warning-free in both GCC Debug
+and GCC Release at `-Werror`. Two latent defects inherited from the prototype were found by
+building at `-O3 -Werror`, which the prototype's CI did not do, and both are fixed: an ignored
+`freopen` result that would have sent a build's output nowhere while leaving an empty log, and a
+dangling reference to a member of a by-value `std::optional` temporary in a recovery test.
 
 What the prototype already provides, and what Phase 7 must carry across rather than rewrite:
 scene and prefab documents with undo on every mutation; a UUID-stable asset database; a 2D and a 3D

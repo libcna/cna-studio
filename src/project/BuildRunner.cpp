@@ -308,10 +308,18 @@ namespace CNA::Studio
             {
                 // Both streams to the log, appended: a build's errors and its progress interleave
                 // in the order they happened, which is the order anyone reading them wants.
-                if (std::freopen(logPath.c_str(), "a", stdout) != nullptr)
-                {
-                    (void)std::freopen(logPath.c_str(), "a", stderr);
-                }
+                //
+                // The results are inspected rather than discarded. glibc marks freopen
+                // warn_unused_result, and a (void) cast does not silence that under GCC -- which is
+                // just as well, because a redirect that failed means the build's output goes
+                // nowhere and the log looks empty for a reason that has nothing to do with the
+                // build. There is nowhere useful to report it from inside a forked child whose
+                // streams have just been taken away, so the child exits instead: an exec that runs
+                // with no captured output would produce a build whose log cannot be read.
+                const std::FILE* const outRedirected = std::freopen(logPath.c_str(), "a", stdout);
+                const std::FILE* const errRedirected =
+                    outRedirected != nullptr ? std::freopen(logPath.c_str(), "a", stderr) : nullptr;
+                if (outRedirected == nullptr || errRedirected == nullptr) { ::_exit(126); }
 
                 ::execv(step.executable.c_str(), argv.data());
 
