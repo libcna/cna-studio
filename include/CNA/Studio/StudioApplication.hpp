@@ -157,6 +157,16 @@ namespace CNA::Studio
         std::string shellPreviewOpenMenu;
 
         /**
+         * @brief Report the Studio host capability contract and exit.
+         *
+         * Prints what Studio requires of a host renderer, and -- on a build with a window host --
+         * evaluates it against the live device and prints the verdict before exiting. "Which of
+         * Studio's requirements does this build's renderer actually meet" is the first question of
+         * every graphics bug report, and it should not need a debugger to answer.
+         */
+        bool hostCapabilities = false;
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a

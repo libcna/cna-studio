@@ -19,6 +19,7 @@
 #include "Microsoft/Xna/Framework/Graphics/Viewport.hpp"
 
 #include "CNA/Studio/Ui/ImGuiStudioUi.hpp"
+#include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
 #include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
 #include "CNA/Studio/Viewport/StudioAudio.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
@@ -59,6 +60,9 @@ namespace CNA::Studio
         [[nodiscard]] bool wasScreenshotWritten() const;
 
     protected:
+        /** @brief The start-up host capability verdict (STUDIO-02021). */
+        [[nodiscard]] const StudioHostEvaluation& getCapabilities() const;
+
         void Initialize() override;
         void LoadContent() override;
         void Update(Xna::GameTime& gameTime) override;
@@ -90,6 +94,10 @@ namespace CNA::Studio
         bool screenshotAttempted = false;
         std::uint64_t frameCount = 0;
         bool contentLoaded = false;
+
+        /** @brief The start-up host capability verdict (STUDIO-02021). */
+        StudioHostEvaluation capabilities;
+        bool capabilitiesEvaluated = false;
     };
 
     CnaStudioHost::CnaStudioHost(const CnaStudioHostOptions& options,
@@ -145,6 +153,11 @@ namespace CNA::Studio
 
     bool CnaStudioHost::wasScreenshotWritten() const { return impl_->screenshotWritten; }
 
+    const StudioHostEvaluation& CnaStudioHost::getCapabilities() const
+    {
+        return impl_->capabilities;
+    }
+
     void CnaStudioHost::Initialize()
     {
         // Constructed here rather than in the constructor: CnaUiPlatform subscribes to
@@ -188,6 +201,36 @@ namespace CNA::Studio
             createCnaStudioAudio(impl_->application->getContext().getAssets()));
 
         impl_->contentLoaded = true;
+
+        // STUDIO-02021: the earliest point a real device exists to be asked. Evaluated on every
+        // run, not only when something is wrong, because "which of Studio's requirements does this
+        // build's renderer meet" is the first question of every graphics bug report and the last
+        // one anybody thinks to ask.
+        impl_->capabilities = evaluateStudioHost(captureStudioCapabilitySnapshot(
+            getGraphicsDeviceProperty(), getHostPlatformName(), /*modernApiAvailable=*/true));
+        impl_->capabilitiesEvaluated = true;
+
+        if (impl_->options.reportCapabilities || !impl_->capabilities.canHostStudio)
+        {
+            std::cout << impl_->capabilities.report();
+        }
+
+        if (!impl_->capabilities.canHostStudio)
+        {
+            // STUDIO-02022. The device only exists once a window does, so this is as close to
+            // "no window is opened" as an honest implementation gets: stop before drawing a frame,
+            // and say exactly which requirements were unmet and whether each was refused or merely
+            // never classified.
+            std::cerr << impl_->capabilities.diagnostic();
+            Exit();
+            return;
+        }
+
+        if (impl_->options.checkCapabilitiesOnly)
+        {
+            Exit();
+            return;
+        }
 
         impl_->application->getContext().log(
             LogSeverity::Info,
@@ -386,6 +429,14 @@ namespace CNA::Studio
         result.displayWidth = host.getLastDisplayWidth();
         result.displayHeight = host.getLastDisplayHeight();
         result.screenshotWritten = host.wasScreenshotWritten();
+        result.capabilityReport = host.getCapabilities().report();
+        result.rendererCanHostStudio = host.getCapabilities().canHostStudio;
+
+        if (!result.rendererCanHostStudio)
+        {
+            result.exitCode = kCnaStudioHostUnsupportedRendererExitCode;
+            result.errorMessage = "the compiled renderer cannot host CNA Studio";
+        }
         return result;
     }
 

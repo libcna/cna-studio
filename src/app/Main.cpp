@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "CNA/Studio/Project/RendererCatalog.hpp"
+#include "CNA/Studio/Project/StudioHostRequirements.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -222,6 +223,47 @@ namespace
         return 0;
     }
 
+    /**
+     * @brief Prints the Studio host capability contract.
+     *
+     * Capabilities, never renderer names: a renderer becomes eligible the moment it can do what
+     * Studio needs, and no Studio source file changes when CNA adds one.
+     */
+    void printHostCapabilityContract()
+    {
+        std::cout << "CNA Studio host capability contract\n\n"
+                     "Studio asks the live graphics device what it can do, by CNA capability name,\n"
+                     "and never which renderer it is. A renderer becomes eligible to host Studio\n"
+                     "the moment it reports these, with no change to Studio.\n\n";
+
+        const auto severity = [](CNA::Studio::StudioRequirementSeverity value) {
+            return value == CNA::Studio::StudioRequirementSeverity::Required ? "[required]   "
+                                                                            : "[recommended]";
+        };
+
+        std::cout << "Capabilities:\n\n";
+        for (const CNA::Studio::StudioHostFeatureRequirement& requirement :
+             CNA::Studio::studioHostFeatureRequirements())
+        {
+            std::cout << "  " << severity(requirement.severity) << " " << requirement.feature;
+            if (!requirement.restrictedIsEnough) { std::cout << "  (a restricted subset is not enough)"; }
+            std::cout << "\n      " << requirement.reason << "\n\n";
+        }
+
+        std::cout << "Limits:\n\n";
+        for (const CNA::Studio::StudioHostLimitRequirement& requirement :
+             CNA::Studio::studioHostLimitRequirements())
+        {
+            std::cout << "  " << severity(requirement.severity) << " " << requirement.limit
+                      << " >= " << requirement.minimum << "\n      " << requirement.reason << "\n\n";
+        }
+
+        std::cout << "An unclassified answer counts as unmet for a required capability. It means\n"
+                     "the renderer has not audited it, which is not the same as no -- and is still\n"
+                     "not a yes. A tool that starts and then cannot draw is worse than one that\n"
+                     "refuses with a reason.\n";
+    }
+
     void printBackends()
     {
         std::cout << "CNA graphics backends known to Studio:\n\n";
@@ -266,6 +308,17 @@ int main(int argc, char** argv)
     {
         printBackends();
         return 0;
+    }
+    if (options.hostCapabilities)
+    {
+        printHostCapabilityContract();
+#if !defined(CNA_STUDIO_HAS_HOST)
+        // Said plainly rather than left as an absence. The contract above is the whole answer this
+        // build can give: evaluating it needs a real device, and this binary has no window host.
+        std::cout << "\nThis build has no window host, so there is no device to evaluate the\n"
+                     "contract against. Rebuild with -DCNA_STUDIO_WITH_CNA=ON for the live verdict.\n";
+        return 0;
+#endif
     }
 
     // Before the UI selection below, because the preview needs no window, no toolkit and no
@@ -319,6 +372,8 @@ int main(int argc, char** argv)
         }
 
         CNA::Studio::CnaStudioHostOptions hostOptions;
+        hostOptions.reportCapabilities = options.hostCapabilities;
+        hostOptions.checkCapabilitiesOnly = options.hostCapabilities;
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.layoutPath = resolveLayoutPath();
         hostOptions.screenshotPath = options.screenshotPath;
@@ -330,6 +385,14 @@ int main(int argc, char** argv)
             CNA::Studio::runStudioInWindow(hostOptions, std::move(application));
 
         if (!result.errorMessage.empty()) { std::cerr << "cna-studio: " << result.errorMessage << "\n"; }
+
+        // STUDIO-02022: a distinct exit code, so a build matrix can tell "this renderer cannot host
+        // Studio" from "Studio crashed" without parsing a message.
+        if (!result.rendererCanHostStudio)
+        {
+            return CNA::Studio::kCnaStudioHostUnsupportedRendererExitCode;
+        }
+        if (options.hostCapabilities) { return 0; }
 
         if (!options.screenshotPath.empty() && !result.screenshotWritten)
         {

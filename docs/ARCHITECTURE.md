@@ -157,6 +157,23 @@ opening a window it cannot draw into.
 Requirements are introduced as the UI needs them, not speculatively. The *shape* is fixed now; the
 membership is a living list owned by `STUDIO-02020`.
 
+**Implemented.** `CNA/Studio/Project/StudioHostRequirements.hpp` holds the contract and the whole
+of its evaluation, in a module that links no CNA: requirements name CNA's `RendererFeature` and
+`RendererLimit` entries by the stable English identifiers `CNA::GetRendererFeatureName` returns,
+so the contract is expressed in exactly the terms the device answers in while every branch of the
+decision — including ones only a renderer nobody owns could reach — is tested in CI with no GPU.
+
+`CNA/Studio/Viewport/CnaCapabilityBridge.hpp` is the only place in Studio that touches a real
+`RendererCapabilityProfile`. It copies every declared feature and limit across, converts nothing
+and decides nothing. That division is deliberate: anything it judged would be testable only on
+hardware.
+
+Requirements carry a **severity**. A missing *required* capability stops Studio and produces the
+diagnostic; a missing *recommended* one disables the panel that needs it and is reported. Each also
+states whether a `Restricted` answer is enough for what Studio does with it. Two required
+capabilities, one required limit and six recommended ones today —
+`cna-studio --host-capabilities` prints the current contract.
+
 ---
 
 ## 5. Module architecture

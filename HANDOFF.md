@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **13** — `studio-ui: replace the fixed dock regions with a real docking model` |
+| HEAD | commit **14** — `studio: implement the host renderer capability contract` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 3 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 4 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -74,6 +74,12 @@ tokens are actually exercised:
 ./build/cna-studio --shell-preview=pressed.png --shell-pointer=40,40 --shell-mouse-down
 ```
 
+See what Studio requires of a host renderer, and — on a CNA build — whether this one meets it:
+
+```bash
+./build/cna-studio --host-capabilities
+```
+
 Collect the visual-test captures as CI artefacts:
 
 ```bash
@@ -84,9 +90,9 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **656 test cases, 21 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **656 test cases, 21 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **656 test cases, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, no CNA | **671 test cases, 22 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **671 test cases, 22 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **671 test cases, 0 failures, no sanitizer reports** |
 | GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
 
 Baseline at import, for comparison: 442 test cases, 12 CTest suites.
@@ -99,7 +105,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 81 of 453 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 85 of 454 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -109,8 +115,10 @@ re-audited current CNA.
 `CNA::Studio` namespace, `include/CNA/Studio/`, `CNA_STUDIO_*` options, user-visible text, README.
 94 files moved with `git mv` so per-file history survived.
 
-**Phase 2 — Architecture refresh** (10 of 22). `docs/ARCHITECTURE.md`, `docs/CNA-GAPS.md`,
-`docs/LEGACY-EDITOR-TASK-MAP.md`, the roadmap, and ten architecture guard tests.
+**Phase 2 — Architecture refresh** (17 of 25). `docs/ARCHITECTURE.md`, `docs/CNA-GAPS.md`,
+`docs/LEGACY-EDITOR-TASK-MAP.md`, the roadmap, ten architecture guard tests, the restored
+CNA-backed build, and the Studio host capability contract with its live evaluation and its refusal
+diagnostic.
 
 **Phase 3 — Studio UI core** (18 of 28). Design tokens and two themes, widget identity with
 per-frame collision detection, retained widget state with reclamation, geometry primitives, the
@@ -230,7 +238,6 @@ Nothing is failing. What is **not** done, and should not be mistaken for done:
 - **Studio's CMake still uses `CNA_GRAPHICS_BACKEND`**, the variable name from before CNA split
   renderer from platform. Current CNA uses `CNA_GRAPHICS_RENDERER` and `CNA_PLATFORM`. Migrating
   the build option is `STUDIO-02040`/`STUDIO-17003`.
-- **The host capability contract is designed but not implemented** (`STUDIO-02020`…`02022`).
 - **No graphical CI.** `STUDIO-00013`'s reference screenshots and the real-device smoke tests are
   blocked on `STUDIO-33010`.
 - **Visual-test PNGs are large** (~8 MB at 1080p): the encoder uses stored deflate, which is

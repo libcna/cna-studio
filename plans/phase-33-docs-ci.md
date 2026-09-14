@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 1 of 14 complete `█░░░░░░░░░░░`
+**Progress:** 2 of 15 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,12 +22,23 @@
 | `STUDIO-33014` | Visual tests at multiple DPI scales | ⬜ | `STUDIO-33013`, `STUDIO-03028` |
 | `STUDIO-33015` | Visual regressions surface as CI artifacts | ⬜ | `STUDIO-33011` |
 | `STUDIO-33016` | Compressing PNG encoder for visual-test artifacts | ⬜ | `STUDIO-33011` |
+| `STUDIO-33017` | The equality assertion copies its operands rather than binding references | ✅ | — |
 | `STUDIO-33020` | Headless test seams maintained for every core subsystem | ⬜ | — |
 | `STUDIO-33021` | CI matrix: Linux, Windows, macOS as infrastructure allows | ⬜ | — |
 
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-33017` — The equality assertion copies its operands rather than binding references
+
+**Acceptance.** `CNA_STUDIO_EXPECT_EQ` copies what it is given. Binding `const auto&` to a subobject
+reached *through* a temporary — `evaluation.unmetRequired().front().subject`, say — extends
+nothing's lifetime: the container dies at the end of the full expression and the reference dangles.
+That reads as a perfectly ordinary assertion, passes under a normal build, and is only ever found
+by a sanitizer. This session found exactly that, in a new test, under ASan; the prototype's
+inherited code had the same class of defect in a recovery test. Copying costs nothing a test will
+notice and removes the whole category
 
 ### `STUDIO-33010` — Graphical CI with a real CNA build and a display
 

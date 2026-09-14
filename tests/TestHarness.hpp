@@ -105,11 +105,20 @@ namespace CnaStudioTest
         }                                                                                          \
     } while (false)
 
-/** @brief Fails the current case unless @p actual equals @p expected, printing both. */
+/**
+ * @brief Fails the current case unless @p actual equals @p expected, printing both.
+ *
+ * The operands are **copied**, not bound to references. Binding `const auto&` to a subobject
+ * reached through a temporary -- `evaluation.unmetRequired().front().subject`, say -- does not
+ * extend anything's lifetime: the container dies at the end of the full expression and the
+ * reference dangles. That reads as a perfectly ordinary assertion, passes under a normal build,
+ * and is only ever found by a sanitizer. Copying costs nothing a test will notice and removes the
+ * whole class of mistake.
+ */
 #define CNA_STUDIO_EXPECT_EQ(actual, expected)                                                     \
     do {                                                                                           \
-        const auto& actualValue = (actual);                                                        \
-        const auto& expectedValue = (expected);                                                    \
+        const auto actualValue = (actual);                                                         \
+        const auto expectedValue = (expected);                                                     \
         if (!(actualValue == expectedValue))                                                       \
         {                                                                                          \
             std::ostringstream message;                                                            \

@@ -66,6 +66,7 @@ namespace CNA::Studio
             if (argument == "--list-backends") { options.listBackends = true; continue; }
             if (argument == "--compare-backends") { options.compareBackends = true; continue; }
             if (argument == "--shell-mouse-down") { options.shellPreviewMouseDown = true; continue; }
+            if (argument == "--host-capabilities") { options.hostCapabilities = true; continue; }
 
             if (splitOption(argument, name, value))
             {
@@ -281,6 +282,8 @@ namespace CNA::Studio
             "  --shell-pointer=X,Y  Place the pointer, so hover states are capturable.\n"
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
+            "  --host-capabilities  Report what Studio requires of a host renderer, evaluate it\n"
+            "                       against this build's device where there is one, and exit.\n"
             "  --shell-size=WxH   Size of the shell preview. Default: 1920x1080.\n"
             "  --shell-scale=N    DPI scale of the shell preview. Default: 1.0.\n"
             "  --shell-theme=T    Shell preview theme: 'dark' or 'light'. Default: dark.\n"

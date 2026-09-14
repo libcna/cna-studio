@@ -152,6 +152,7 @@ target_link_libraries(cna-studio-assets PUBLIC cna-studio-core PRIVATE cna-studi
 # cna-studio-project -- the .cnaproject format and the backend capability table.
 add_library(cna-studio-project STATIC
     src/project/RendererCatalog.cpp
+    src/project/StudioHostRequirements.cpp
     src/project/Project.cpp
     src/project/RecoveryStore.cpp
     src/project/BuildRunner.cpp)
@@ -301,7 +302,8 @@ if(CNA_STUDIO_WITH_CNA)
         src/viewport/CnaModelPass.cpp
         src/viewport/CnaSceneRenderer.cpp
         src/viewport/CnaUiRenderer.cpp
-        src/viewport/CnaUiPlatform.cpp)
+        src/viewport/CnaUiPlatform.cpp
+        src/viewport/CnaCapabilityBridge.cpp)
 
     # The window host needs both CNA and Dear ImGui, so it only exists when both are built.
     # Without it the editor still compiles and runs headless -- the CNA-linked renderer and
@@ -315,7 +317,8 @@ if(CNA_STUDIO_WITH_CNA)
     # PlayerHost is the CNA-free half that owns it. The dependency runs one way only -- the player
     # module knows nothing about the viewport -- so this adds no cycle.
     target_link_libraries(cna-studio-viewport
-        PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-player PRIVATE CNA)
+        PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-project
+               cna-studio-player PRIVATE CNA)
     target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_CNA=1)
 
     if(CNA_STUDIO_WITH_IMGUI)

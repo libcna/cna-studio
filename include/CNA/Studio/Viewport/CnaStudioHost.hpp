@@ -34,6 +34,9 @@
 
 namespace CNA::Studio
 {
+    /** @brief Exit code used when the compiled renderer cannot host Studio (`STUDIO-02022`). */
+    inline constexpr int kCnaStudioHostUnsupportedRendererExitCode = 6;
+
     /** @brief Window and loop settings for the hosted editor. */
     struct CnaStudioHostOptions
     {
@@ -56,6 +59,24 @@ namespace CNA::Studio
          * mechanism is what plan.md ED-510's backend comparison mode will capture through.
          */
         std::string screenshotPath;
+
+        /**
+         * @brief Print the host capability report to the log on start-up.
+         *
+         * Off by default because it is a dozen lines nobody reads on a working build, and on by
+         * `--host-capabilities` when somebody is asking exactly that question.
+         */
+        bool reportCapabilities = false;
+
+        /**
+         * @brief Run the host capability check and exit without entering the loop.
+         *
+         * For `--host-capabilities`: the device has to exist to be interrogated, so the check
+         * cannot happen before a window does. Stopping immediately afterwards is the closest an
+         * honest implementation gets to "no window is opened", and pretending otherwise would be
+         * worse than saying so.
+         */
+        bool checkCapabilitiesOnly = false;
     };
 
     /**
@@ -98,6 +119,18 @@ namespace CNA::Studio
 
         /** @brief Set when the session could not start; @c exitCode is then non-zero. */
         std::string errorMessage;
+
+        /**
+         * @brief The start-up host capability report (`STUDIO-02021`).
+         *
+         * Always produced, whether or not the renderer can host Studio, because "which of Studio's
+         * requirements does this build's renderer actually meet" is the first question of every
+         * graphics bug report and the last one anybody thinks to ask.
+         */
+        std::string capabilityReport;
+
+        /** @brief True when the compiled renderer satisfies the Studio host contract. */
+        bool rendererCanHostStudio = true;
     };
 
     /**

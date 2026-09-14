@@ -126,6 +126,16 @@ and has not been re-measured against the current renderer set. Re-measuring it i
 rather than assuming the best. A tool that starts and then fails to draw is worse than one that
 refuses with a reason.
 
+**Implemented in Studio, and the gap stands.** `CNA/Studio/Project/StudioHostRequirements.hpp`
+owns the requirement set and evaluates it; `CNA/Studio/Viewport/CnaCapabilityBridge.hpp` reads a
+live profile into it. Building it confirmed the workaround is practical and confirmed the shape of
+the missing helper: what Studio wrote is a general evaluation over a requirement set, with nothing
+Studio-specific in the mechanism — only in the *membership* of the set. That is the part that
+belongs to the consumer; the evaluation is the part that does not. Re-framing this as a request for
+`RendererCapabilityProfile::Evaluate(std::span<const RendererFeature>)` returning the unmet and
+unknown subsets is therefore right, and every consumer that needs it will otherwise write the same
+loop.
+
 ---
 
 ## 🔴 G-07 — `GetBackBufferData` is unavailable under the Reach profile, and that is only discoverable by trying

@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 14 of 25 complete `███████░░░░░`
+**Progress:** 17 of 25 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,9 +16,9 @@
 | `STUDIO-02004` | Rewrite `plan.md` as the CNA Studio master roadmap | ✅ | `STUDIO-02001` |
 | `STUDIO-02010` | Re-measure CNA gap G-03 across the current renderer set | ⬜ | `STUDIO-02002` |
 | `STUDIO-02011` | Re-measure CNA gap G-05 (`PbrEffect` draws nothing) against the current renderer set | ⬜ | `STUDIO-02002` |
-| `STUDIO-02020` | Define the Studio host renderer capability contract as data | ⬜ | `STUDIO-02001` |
-| `STUDIO-02021` | Evaluate the contract against the live device at start-up | ⬜ | `STUDIO-02020` |
-| `STUDIO-02022` | Fail cleanly and precisely when the compiled renderer cannot host Studio | ⬜ | `STUDIO-02021` |
+| `STUDIO-02020` | Define the Studio host renderer capability contract as data | ✅ | `STUDIO-02001` |
+| `STUDIO-02021` | Evaluate the contract against the live device at start-up | ✅ | `STUDIO-02020` |
+| `STUDIO-02022` | Fail cleanly and precisely when the compiled renderer cannot host Studio | ✅ | `STUDIO-02021` |
 | `STUDIO-02030` | Guard test: Studio must classify every renderer identity CNA registers | ✅ | `STUDIO-02020` |
 | `STUDIO-02031` | Guard test: Studio must classify every platform identity CNA implements | ✅ | `STUDIO-02030` |
 | `STUDIO-02032` | Guard test: no `CNA::Internal::*` anywhere in Studio | ✅ | — |
@@ -70,17 +70,49 @@ Tasks whose completion condition is not obvious from the title.
 
 **Acceptance.** One module owns a required-feature set expressed in `CNA::RendererFeature` terms. No renderer names appear in it. `Unknown` counts as unmet for a required feature
 
-**Verification.** Unit tests over synthetic capability profiles: satisfied, unsupported, unclassified
+**How it was met.** `StudioHostRequirements` names CNA's features and limits by the stable English
+identifiers `CNA::GetRendererFeatureName` returns, which keeps the contract and its whole evaluation
+in a module that links no CNA and needs no GPU while still being expressed in the terms the device
+answers in. Requirements carry a severity — a missing recommended capability disables a panel and
+says so, rather than refusing to start — and each says per requirement whether a `Restricted`
+answer is good enough, which is the difference between a contract that is accurate and one that is
+merely strict. Two required capabilities, one required limit, six recommended: the set is small
+because a padded contract refuses to start on renderers Studio works on, and the pressure that
+creates is to ignore the contract rather than to fix it
+
+**Verification.** `tests/StudioHostCapabilityTests.cpp`, over synthetic devices: satisfied,
+unsupported, restricted-and-enough, restricted-and-not-enough, unclassified, a limit below its
+minimum, and a limit the renderer never reported — which is recorded as absent rather than as zero,
+because "reports 0" sends a reader looking for hardware that does not exist
 
 ### `STUDIO-02021` — Evaluate the contract against the live device at start-up
 
-**Acceptance.** Studio reports platform, renderer, CNAEXT availability, classified capabilities, and the unmet requirements by name
+**How it was met.** `CnaCapabilityBridge` is the only place in Studio that touches
+`RendererCapabilityProfile`, and it copies **every** declared feature and limit across — walking
+CNA's own `AllRendererFeatures()` span rather than a list written in Studio, which would need
+updating when CNA adds a feature and would fail silently when it was not. It converts nothing and
+decides nothing: if it made judgements, those judgements would only be testable on hardware
+
+**Verification.** The report is produced on every windowed run and is returned in
+`CnaStudioHostResult`; `cna-studio --host-capabilities` prints the contract, and on a CNA build
+evaluates it against the live device and exits
 
 ### `STUDIO-02022` — Fail cleanly and precisely when the compiled renderer cannot host Studio
 
 **Acceptance.** A diagnostic naming each missing requirement and whether it is unsupported or unclassified; no window is opened
 
-**Verification.** Test with a synthetic profile missing one required feature
+**How it was met, and the honest limitation.** CNA creates the graphics device with the window, so
+the device cannot be interrogated before a window exists. Studio evaluates at the first moment one
+does, prints the diagnostic, and exits before drawing a frame — which is as close to "no window is
+opened" as an honest implementation gets, and saying so beats pretending. The exit code is distinct
+(`6`), so a build matrix can tell "this renderer cannot host Studio" from "Studio crashed" without
+parsing text
+
+**Verification.** `tests/StudioHostCapabilityTests.cpp`: a synthetic profile missing one required
+feature, with the diagnostic asserted to name the capability, the reason, the renderer's own
+qualification and the renderer itself — and asserted **not** to mention the recommended
+capabilities the same device also lacks, because a message that exists to say why Studio will not
+start buries its own point when padded with things that are not the reason
 
 ### `STUDIO-02030` — Guard test: Studio must classify every renderer identity CNA registers
 

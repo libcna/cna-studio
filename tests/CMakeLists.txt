@@ -18,6 +18,7 @@ add_executable(cna-studio-tests
     StudioFrameTests.cpp
     StudioShellInteractionTests.cpp
     StudioDockTests.cpp
+    StudioHostCapabilityTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -176,6 +177,14 @@ set_tests_properties(CnaStudioRejectsMalformedShellSize PROPERTIES WILL_FAIL TRU
 add_test(NAME CnaStudioRejectsUnknownShellTheme
     COMMAND cna-studio --shell-preview=never.png --shell-theme=neon)
 set_tests_properties(CnaStudioRejectsUnknownShellTheme PROPERTIES WILL_FAIL TRUE)
+
+# The host capability contract, printed from the real binary. Capability-driven eligibility is an
+# architectural invariant (docs/ARCHITECTURE.md §4), and a contract nobody can read is one nobody
+# will notice has quietly grown a renderer name in it.
+add_test(NAME CnaStudioHostCapabilityContract COMMAND cna-studio --host-capabilities)
+set_tests_properties(CnaStudioHostCapabilityContract PROPERTIES
+    PASS_REGULAR_EXPRESSION "ThreeDimensionalPipeline"
+    TIMEOUT 60)
 
 add_test(NAME CnaStudioHelp COMMAND cna-studio --help)
 add_test(NAME CnaStudioListBackends COMMAND cna-studio --list-backends)
