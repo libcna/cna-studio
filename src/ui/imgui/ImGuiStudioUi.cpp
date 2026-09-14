@@ -119,7 +119,6 @@ namespace CNA::Studio
         ImGuiContext* context = nullptr;
         UiInputState input;
         UiDrawData drawData;
-        std::vector<std::pair<LogSeverity, std::string>> log;
         std::string layoutPath;
         /** @brief Source of UiTextureIds. Zero stays reserved as the "no texture" sentinel. */
         UiTextureId nextTextureId = 1;
@@ -431,10 +430,6 @@ namespace CNA::Studio
         return ImGui::GetIO().WantCaptureMouse;
     }
 
-    const std::vector<std::pair<LogSeverity, std::string>>& ImGuiStudioUi::getLog() const
-    {
-        return impl_->log;
-    }
 
     bool ImGuiStudioUi::beginFrame()
     {
@@ -913,12 +908,22 @@ namespace CNA::Studio
         // Rendered here rather than in the panel layer because the scroll position and the
         // severity colours are toolkit state; the panel decides *that* a console exists and what
         // it should show, and passes the latter in.
-        for (const auto& [severity, message] : impl_->log)
+        for (const StudioLogEntry& entry : logModel_.entries())
         {
-            if (severity < options.minimumSeverity) { continue; }
+            if (entry.severity < options.minimumSeverity) { continue; }
 
-            ImGui::PushStyleColor(ImGuiCol_Text, toImGuiColor(severity));
-            ImGui::TextUnformatted(message.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, toImGuiColor(entry.severity));
+            if (entry.repeats > 1)
+            {
+                // The repeat count belongs on screen for the same reason it is kept at all: a
+                // message collapsed without saying so would understate what happened.
+                ImGui::TextUnformatted((entry.message + "  (x" + std::to_string(entry.repeats)
+                                        + ")").c_str());
+            }
+            else
+            {
+                ImGui::TextUnformatted(entry.message.c_str());
+            }
             ImGui::PopStyleColor();
         }
 
@@ -931,19 +936,6 @@ namespace CNA::Studio
         }
     }
 
-    std::string ImGuiStudioUi::getLogText(LogSeverity minimumSeverity) const
-    {
-        std::string text;
-        for (const auto& [severity, message] : impl_->log)
-        {
-            if (severity < minimumSeverity) { continue; }
-            text += message;
-            text += '\n';
-        }
-        return text;
-    }
-
-    void ImGuiStudioUi::clearLog() { impl_->log.clear(); }
 
     void ImGuiStudioUi::setClipboardText(const std::string& text)
     {
@@ -1109,16 +1101,11 @@ namespace CNA::Studio
 
     void ImGuiStudioUi::log(LogSeverity severity, const std::string& message)
     {
-        impl_->log.emplace_back(severity, message);
-
-        // Bounded so that a game logging every frame through the runtime bridge cannot grow the
-        // editor's memory without limit over a long session.
-        constexpr std::size_t kMaxEntries = 10000;
-        if (impl_->log.size() > kMaxEntries)
-        {
-            impl_->log.erase(impl_->log.begin(),
-                             impl_->log.begin() + static_cast<std::ptrdiff_t>(impl_->log.size() - kMaxEntries));
-        }
+        // Into the shared model, not a private vector. Both consoles read it, so a user can put
+        // the legacy panel beside the ported one and see the same output -- which is the only way
+        // anybody can tell whether the port is faithful. The bound and the repeat collapsing live
+        // in the model, where one implementation of each is enough.
+        logModel_.append(severity, message);
     }
 
     void ImGuiStudioUi::loadLayout(const std::string& path)

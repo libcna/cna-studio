@@ -24,6 +24,7 @@ add_executable(cna-studio-tests
     StudioTargetProfileTests.cpp
     ProjectExportTests.cpp
     StudioWorkspaceStoreTests.cpp
+    StudioLogPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -279,6 +280,26 @@ if(CNA_STUDIO_WITH_CNA)
                              CnaStudioNativeShellWindowSmokeHiDpi
             PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
                        LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # The first ported panel, drawn on a real device (STUDIO-07005). Raised to the front, because
+    # a panel sharing a tab strip with three others cannot be photographed otherwise -- and the
+    # capture is the assertion: the ported panel draws considerably more geometry than the empty
+    # surface it replaced, so a content function that silently stopped running would show up here
+    # as a triangle count that fell back to the unported one.
+    add_test(NAME CnaStudioNativeShellOutputLog
+        COMMAND cna-studio --ui=studio --workspace=none --panel=output
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-output-log.png)
+    set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
+        PASS_REGULAR_EXPRESSION "output log showing [1-9][0-9]* of [1-9][0-9]* messages")
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+    else()
+        set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
     endif()
 
     # The workspace layout survives a real process exit. Two processes rather than one, because

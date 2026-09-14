@@ -413,6 +413,7 @@ int main(int argc, char** argv)
         // "none" rather than an empty string for off, because an empty --workspace= reads as a
         // mistake and defaulting it to the user's real file would be the wrong guess: a test that
         // meant to isolate itself would silently write over the developer's layout.
+        hostOptions.focusPanel = options.focusPanel;
         if (options.workspacePath == "none") { hostOptions.workspacePath.clear(); }
         else if (!options.workspacePath.empty()) { hostOptions.workspacePath = options.workspacePath; }
         else { hostOptions.workspacePath = CNA::Studio::StudioWorkspaceStore::defaultPath(); }
@@ -443,6 +444,11 @@ int main(int argc, char** argv)
                       << " frames, " << result.displayWidth << "x" << result.displayHeight
                       << " display, " << result.drawCalls << " draw calls, " << result.triangles
                       << " triangles";
+            if (result.logRowsMatching > 0 || result.logRowsDrawn > 0)
+            {
+                std::cout << ", output log showing " << result.logRowsDrawn << " of "
+                          << result.logRowsMatching << " messages";
+            }
             if (!hostOptions.workspacePath.empty())
             {
                 // Said out loud because it is otherwise unobservable: a restored layout and a

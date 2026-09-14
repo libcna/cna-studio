@@ -57,6 +57,7 @@
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -193,6 +194,33 @@ namespace CNA::Studio
          */
         bool setPanelModified(std::string_view id, bool modified);
 
+        /**
+         * @brief What draws inside a panel.
+         *
+         * Called once per pass with the panel's content rectangle, inside the panel's own clip and
+         * id scope — so a widget in one panel can share an id with a widget in another without the
+         * two colliding, and content that overruns its panel is cut off rather than drawn over the
+         * neighbour.
+         *
+         * Only the active tab of each leaf is called: a panel behind another is not drawn, and not
+         * described either, so it costs nothing.
+         */
+        using StudioPanelContent = std::function<void(StudioFrame&, const UiRect&)>;
+
+        /**
+         * @brief Sets what draws inside a registered panel.
+         *
+         * This is the strangler seam for Phase 7: a panel is ported by giving the shell its content
+         * function, and the ImGui implementation keeps working untouched until it is deleted. A
+         * panel with no content function is drawn as an empty surface, which is what every panel
+         * looks like before it is ported.
+         *
+         * @param id Panel id.
+         * @param content What to draw, or an empty function to go back to an empty surface.
+         * @return True when the panel is registered.
+         */
+        bool setPanelContent(std::string_view id, StudioPanelContent content);
+
         /** @brief Arranges the registered panels into Studio's default workspace. */
         void resetLayout();
 
@@ -214,6 +242,20 @@ namespace CNA::Studio
          * @return True when it was registered and is now open.
          */
         bool openPanel(std::string_view id);
+
+        /**
+         * @brief Brings an open panel to the front of its tab group.
+         *
+         * Distinct from @ref openPanel, which docks a panel that is not open at all. A panel
+         * sharing a tab strip with five others is invisible until something raises it, and which
+         * one happens to be in front is whichever docked last — so a script that wants to
+         * photograph a particular panel, or a command that wants to show the user a result, has to
+         * be able to say which.
+         *
+         * @param id Panel id.
+         * @return True when it was open and is now the active tab.
+         */
+        bool activatePanel(std::string_view id);
 
         /**
          * @brief Removes a panel from the workspace.
@@ -465,6 +507,7 @@ namespace CNA::Studio
         StudioFontAtlas fonts_;
         StudioActionRegistry actions_;
         StudioDockTree dock_;
+        std::vector<std::pair<std::string, StudioPanelContent>> panelContent_;
         std::vector<StudioPanelDescriptor> panels_;
 
         std::vector<StudioMenuDefinition> menus_;

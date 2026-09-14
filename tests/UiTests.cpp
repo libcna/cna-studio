@@ -376,18 +376,31 @@ CNA_STUDIO_TEST(ImGuiUiExitsWhenTheWindowIsClosed)
     CNA_STUDIO_EXPECT(!ui.isRunning());
 }
 
-CNA_STUDIO_TEST(ImGuiUiRoutesLogMessagesAndBoundsThem)
+CNA_STUDIO_TEST(ImGuiUiRoutesLogMessagesIntoTheSharedModel)
 {
+    // The seam the Phase 7 migration turns on. Both consoles read StudioLog, so a user can put the
+    // legacy panel beside the ported one and see the same output -- and every difference between
+    // them is then a difference in how it was drawn, which is the only kind worth arguing about.
     ImGuiStudioUi ui;
     ui.log(LogSeverity::Info, "hello");
     ui.log(LogSeverity::Error, "boom");
 
-    CNA_STUDIO_EXPECT_EQ(ui.getLog().size(), std::size_t{2});
-    CNA_STUDIO_EXPECT(ui.getLog()[1].first == LogSeverity::Error);
+    CNA_STUDIO_EXPECT_EQ(ui.getLogModel().entries().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(ui.getLogModel().entries()[1].severity == LogSeverity::Error);
+    CNA_STUDIO_EXPECT(ui.getLogText().find("boom") != std::string::npos);
 
     // A game logging every frame through the runtime bridge must not grow editor memory forever.
-    for (int index = 0; index < 12000; ++index) { ui.log(LogSeverity::Trace, "spam"); }
-    CNA_STUDIO_EXPECT(ui.getLog().size() <= std::size_t{10000});
+    // Twelve thousand *distinct* messages, because identical ones now collapse into one entry and
+    // would prove nothing about the bound.
+    for (int index = 0; index < 12000; ++index)
+    {
+        ui.log(LogSeverity::Trace, "spam " + std::to_string(index));
+    }
+    CNA_STUDIO_EXPECT(ui.getLogModel().entries().size() <= StudioLog::kDefaultCapacity);
+    CNA_STUDIO_EXPECT(ui.getLogModel().droppedCount() > 0);
+
+    ui.clearLog();
+    CNA_STUDIO_EXPECT(ui.getLogModel().entries().empty());
 }
 
 #endif  // CNA_STUDIO_HAS_IMGUI

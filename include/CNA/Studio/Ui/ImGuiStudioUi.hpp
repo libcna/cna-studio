@@ -112,8 +112,6 @@ namespace CNA::Studio
         void separator() override;
         void sameLine() override;
         void drawLogView(const UiLogViewOptions& options = {}) override;
-        [[nodiscard]] std::string getLogText(LogSeverity minimumSeverity = LogSeverity::Trace) const override;
-        void clearLog() override;
         void setClipboardText(const std::string& text) override;
 
         [[nodiscard]] UiRegion getContentRegion() const override;
@@ -170,7 +168,6 @@ namespace CNA::Studio
         [[nodiscard]] bool wantsMouseCapture() const;
 
         /** @brief Returns the console messages accumulated so far. */
-        [[nodiscard]] const std::vector<std::pair<LogSeverity, std::string>>& getLog() const;
 
         /**
          * @brief Loads ImGui's `.ini` layout from @p path, if it exists.

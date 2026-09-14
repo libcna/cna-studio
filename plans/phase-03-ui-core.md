@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 19 of 28 complete `████████░░░░`
+**Progress:** 20 of 29 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -38,6 +38,7 @@
 | `STUDIO-03030` | Restrained animation model: state transitions only, no decorative motion | ⬜ | `STUDIO-03004` |
 | `STUDIO-03031` | Widget interaction helpers over `interact()`: button, toggle, checkbox, tab, menu item | ✅ | `STUDIO-03015` |
 | `STUDIO-03032` | Text measurement seam: code-point-correct extents, baselines and truncation | ✅ | `STUDIO-03015` |
+| `STUDIO-03033` | Scrollable regions: wheel, draggable thumb, and row virtualisation | ✅ | `STUDIO-03031`, `STUDIO-03018` |
 
 ## Acceptance and verification
 
@@ -210,3 +211,27 @@ cases cover the same set through the real binary
 
 **Acceptance.** Durations are tokens; animation can be disabled wholesale; nothing animates that a professional tool would not
 
+### `STUDIO-03033` — Scrollable regions: wheel, draggable thumb, and row virtualisation
+
+**Acceptance.** A region takes an area and a content size and gives back a viewport, a scroll
+position and a clip. The wheel scrolls it while the pointer is over it; the thumb drags; both stop
+at the ends rather than running past them. The bar appears only when the content does not fit — a
+gutter reserved for a scrollbar that is not there is a column of wasted space on every panel that
+does. The thumb's length is its share of the content but never smaller than a person can grab: all
+the way proportional means a million-line log gets a one-pixel thumb, which is a scrollbar in name
+only
+
+**Virtualisation is part of the widget, not left to callers.** `visibleRows` answers "which rows are
+worth describing", because the clip stops the *pixels* and only this stops the work of measuring and
+laying out text that was never going to be seen. A hundred-thousand-line log has to cost what a
+ten-line one costs, or the console stalls the editor exactly when somebody is reading it
+
+**Following new content stops the moment the reader scrolls away.** Measured against how far the
+content reached *last* frame, not this one: against the grown content the view is never already at
+the end — that is why it grew — so comparing with the new extent would mean following never once
+engaged. The opposite mistake, yanking the view back down while somebody is reading further up, is
+the single most common complaint about log windows
+
+**Verification.** `tests/StudioLogPanelTests.cpp` — the bar appearing only on overflow, the wheel
+stopping at both ends, following engaging and then yielding to the reader, and `visibleRows` culling
+a hundred thousand rows to a screenful and coming back empty past the end

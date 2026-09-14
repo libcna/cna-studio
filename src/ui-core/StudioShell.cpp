@@ -255,6 +255,35 @@ namespace CNA::Studio
         return false;
     }
 
+    bool StudioShell::activatePanel(std::string_view id)
+    {
+        const StudioDockNodeId leaf = dock_.findPanel(id);
+        if (leaf == kInvalidDockNode) { return false; }
+
+        StudioDockNode& node = dock_.node(leaf);
+        for (std::size_t i = 0; i < node.panels.size(); ++i)
+        {
+            if (node.panels[i] == id) { node.activePanel = i; return true; }
+        }
+        return false;
+    }
+
+    bool StudioShell::setPanelContent(std::string_view id, StudioPanelContent content)
+    {
+        if (panel(id) == nullptr) { return false; }
+
+        const auto found = std::find_if(panelContent_.begin(), panelContent_.end(),
+            [&](const auto& entry) { return entry.first == id; });
+        if (found != panelContent_.end())
+        {
+            found->second = std::move(content);
+            return true;
+        }
+
+        panelContent_.emplace_back(std::string{id}, std::move(content));
+        return true;
+    }
+
     UiRect StudioShell::panelBounds(std::string_view id) const
     {
         const StudioDockNodeId leaf = dock_.findPanel(id);
@@ -827,27 +856,44 @@ namespace CNA::Studio
             frame_.popClip();
             frame_.ids().pop();
 
-            if (!frame_.isDrawPass()) { continue; }
-
-            frame_.drawList().drawHorizontalSeparator(
-                UiRect{geometry.tabStrip.left(), geometry.tabStrip.bottom(),
-                       geometry.tabStrip.width, 0.0f},
-                theme.color(StudioColorRole::Separator),
-                metricOf(theme, StudioMetric::SeparatorThickness));
+            if (frame_.isDrawPass())
+            {
+                frame_.drawList().drawHorizontalSeparator(
+                    UiRect{geometry.tabStrip.left(), geometry.tabStrip.bottom(),
+                           geometry.tabStrip.width, 0.0f},
+                    theme.color(StudioColorRole::Separator),
+                    metricOf(theme, StudioMetric::SeparatorThickness));
+            }
 
             const std::string& active = node.panels[std::min(node.activePanel,
                                                              node.panels.size() - 1)];
             const StudioPanelDescriptor* descriptor = panel(active);
             if (descriptor != nullptr && descriptor->isViewport)
             {
-                describeViewportBody(geometry.body);
+                if (frame_.isDrawPass()) { describeViewportBody(geometry.body); }
+                continue;
             }
-            else
+
+            if (frame_.isDrawPass())
             {
-                // A panel surface awaiting the panel that will be ported into it (Phase 7).
                 frame_.drawList().fillRect(geometry.body,
                                            theme.color(StudioColorRole::PanelBackground));
             }
+
+            // The strangler seam. A panel with content described here is ported; one without is
+            // the empty surface every panel starts as, and the ImGui implementation keeps drawing
+            // it until it is deleted (Phase 7).
+            const auto content = std::find_if(panelContent_.begin(), panelContent_.end(),
+                [&](const auto& entry) { return entry.first == active; });
+            if (content == panelContent_.end() || !content->second) { continue; }
+
+            // The panel's own id scope, so two panels can each have a widget called "clear"
+            // without the two sharing retained state, focus or capture.
+            frame_.ids().push(active);
+            frame_.pushClip(geometry.body);
+            content->second(frame_, geometry.body);
+            frame_.popClip();
+            frame_.ids().pop();
         }
         frame_.ids().pop();
     }

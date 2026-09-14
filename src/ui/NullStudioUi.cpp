@@ -92,18 +92,7 @@ namespace CNA::Studio
 
     void NullStudioUi::log(LogSeverity severity, const std::string& message)
     {
-        log_.push_back(LogEntry{severity, message});
+        logModel_.append(severity, message);
     }
 
-    std::string NullStudioUi::getLogText(LogSeverity minimumSeverity) const
-    {
-        std::string text;
-        for (const LogEntry& entry : log_)
-        {
-            if (entry.severity < minimumSeverity) { continue; }
-            text += entry.message;
-            text += '\n';
-        }
-        return text;
-    }
 }

@@ -588,4 +588,147 @@ namespace CNA::Studio
                        textColor, StudioTextAlign::Left);
         return result;
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Scrolling
+    // ---------------------------------------------------------------------------------------
+
+    void StudioScrollResult::visibleRows(float rowHeight, std::size_t rowCount,
+                                         std::size_t& outFirst, std::size_t& outLast) const
+    {
+        outFirst = 0;
+        outLast = 0;
+        if (rowHeight <= 0.0f || rowCount == 0) { return; }
+
+        const auto first = static_cast<std::size_t>(std::max(0.0f, std::floor(offsetY / rowHeight)));
+        if (first >= rowCount) { outFirst = outLast = rowCount; return; }
+
+        // One row of slack at each end, so a row scrolled half out of view is still described and
+        // the edge of the list does not pop in and out as the offset crosses a row boundary.
+        const auto visible =
+            static_cast<std::size_t>(std::ceil(viewport.height / rowHeight)) + std::size_t{2};
+
+        outFirst = first;
+        outLast = std::min(rowCount, first + visible);
+    }
+
+    StudioScrollResult studioBeginScroll(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                         const StudioScrollOptions& options)
+    {
+        const StudioTheme& theme = frame.theme();
+
+        StudioScrollResult result;
+        result.viewport = bounds;
+
+        const float contentHeight = std::max(0.0f, options.contentHeight);
+        const float maximumOffset = std::max(0.0f, contentHeight - bounds.height);
+        result.hasVerticalBar = maximumOffset > 0.0f && bounds.height > 0.0f;
+
+        const float thickness = metricOf(theme, StudioMetric::ScrollbarThickness);
+        UiRect track;
+        if (result.hasVerticalBar)
+        {
+            UiRect area = bounds;
+            track = area.splitRight(std::min(thickness, area.width));
+            result.viewport = area;
+        }
+
+        WidgetState& state = frame.state().get(id);
+
+        // Only the input pass moves the view. The draw pass reads what it left, so both passes
+        // agree about where the content is -- which is what makes a click land on the row the user
+        // saw rather than the row that was there before the wheel turned.
+        if (frame.isInputPass())
+        {
+            // Sticking to the end is honoured only while the view is *already* there. A console
+            // that yanked the view back down while somebody was reading further up would be
+            // unusable, and it is the single most common complaint about log windows.
+            //
+            // Measured against how far the content reached *last* frame, not this one. Against the
+            // grown content the view is never already at the end -- that is the whole reason it
+            // grew -- so comparing with the new maximum would mean following never once engaged.
+            const float previousMaximum = state.scalar;
+            const bool wasAtEnd = state.scrollY >= previousMaximum - 0.5f;
+
+            if (bounds.contains(frame.input().mouseX, frame.input().mouseY)
+                && frame.input().wheelY != 0.0f)
+            {
+                const float step = options.wheelStep > 0.0f
+                                 ? options.wheelStep
+                                 : metricOf(theme, StudioMetric::RowHeight) * 3.0f;
+                state.scrollY -= frame.input().wheelY * step;
+            }
+            else if (options.stickToEnd && wasAtEnd)
+            {
+                state.scrollY = maximumOffset;
+            }
+
+            state.scrollY = std::clamp(state.scrollY, 0.0f, maximumOffset);
+            state.scalar = maximumOffset;
+        }
+
+        result.offsetY = std::clamp(state.scrollY, 0.0f, maximumOffset);
+        result.atEnd = result.offsetY >= maximumOffset - 0.5f;
+
+        if (result.hasVerticalBar)
+        {
+            // A thumb whose length is its share of the content, floored at something a person can
+            // actually grab: proportional all the way down means a million-line log gets a thumb
+            // one pixel high, which is a scrollbar in name only.
+            const float minimumThumb = std::max(metricOf(theme, StudioMetric::MinimumHitTarget),
+                                                thickness * 2.0f);
+            const float proportion = contentHeight > 0.0f ? bounds.height / contentHeight : 1.0f;
+            const float thumbHeight =
+                std::max(minimumThumb, std::min(track.height, track.height * proportion));
+
+            const float travel = std::max(0.0f, track.height - thumbHeight);
+            const float position = maximumOffset > 0.0f ? result.offsetY / maximumOffset : 0.0f;
+
+            const UiRect thumb{track.left(), std::round(track.top() + travel * position),
+                               track.width, std::round(thumbHeight)};
+
+            const WidgetId thumbId = frame.ids().make("scrollthumb");
+            const StudioInteraction interaction = frame.interact(thumbId, thumb);
+
+            if (frame.isInputPass() && interaction.pressed && travel > 0.0f)
+            {
+                // Dragged by where the pointer is *within* the thumb, not by the frame's delta:
+                // grabbing the thumb an inch from its top and dragging must not teleport it so the
+                // pointer sits at its centre, and accumulating deltas drifts away from the pointer
+                // over a long drag.
+                WidgetState& thumbState = frame.state().get(thumbId);
+                if (!thumbState.active)
+                {
+                    thumbState.active = true;
+                    thumbState.scalar = frame.input().mouseY - thumb.top();
+                }
+
+                const float wanted = frame.input().mouseY - thumbState.scalar - track.top();
+                state.scrollY = std::clamp(wanted / travel, 0.0f, 1.0f) * maximumOffset;
+                result.offsetY = state.scrollY;
+                result.atEnd = result.offsetY >= maximumOffset - 0.5f;
+            }
+            else if (frame.isInputPass())
+            {
+                frame.state().get(thumbId).active = false;
+            }
+
+            if (frame.isDrawPass())
+            {
+                frame.drawList().fillRect(track, theme.color(StudioColorRole::ScrollbarTrack));
+                frame.drawList().fillRect(
+                    thumb, theme.color(interaction.pressed || interaction.hovered
+                                           ? StudioColorRole::ScrollbarThumbHover
+                                           : StudioColorRole::ScrollbarThumb));
+            }
+        }
+
+        frame.pushClip(result.viewport);
+        return result;
+    }
+
+    void studioEndScroll(StudioFrame& frame)
+    {
+        frame.popClip();
+    }
 } // namespace CNA::Studio

@@ -346,4 +346,91 @@ namespace CNA::Studio
      * @return Row height in logical units.
      */
     [[nodiscard]] float studioMenuSeparatorHeight(const StudioTheme& theme);
+
+    // ---------------------------------------------------------------------------------------
+    // Scrolling
+    // ---------------------------------------------------------------------------------------
+
+    /** @brief What a scroll view is being asked to show. */
+    struct StudioScrollOptions
+    {
+        /** @brief Total height of the content, in logical units. */
+        float contentHeight = 0.0f;
+
+        /** @brief Total width of the content. Zero, or less than the view, means no horizontal bar. */
+        float contentWidth = 0.0f;
+
+        /**
+         * @brief Keep the view pinned to the end as content grows.
+         *
+         * Honoured only while the user is already at the end. A console that yanked the view back
+         * to the bottom while somebody was reading further up would be unusable, and "auto-scroll"
+         * has never meant "take the scrollbar away from me".
+         */
+        bool stickToEnd = false;
+
+        /** @brief How far one wheel notch scrolls, in logical units. Zero uses the theme's row height. */
+        float wheelStep = 0.0f;
+    };
+
+    /** @brief A scroll view's resolved geometry and position. */
+    struct StudioScrollResult
+    {
+        /**
+         * @brief Where content should be drawn, excluding any scrollbar.
+         *
+         * In view coordinates, not content coordinates: a caller draws a row at
+         * `viewport.top() - offsetY + rowIndex * rowHeight`.
+         */
+        UiRect viewport;
+
+        /** @brief How far the content is scrolled down, in logical units. Never negative. */
+        float offsetY = 0.0f;
+
+        /** @brief How far the content is scrolled right, in logical units. */
+        float offsetX = 0.0f;
+
+        /** @brief Whether the view is showing the end of the content. */
+        bool atEnd = true;
+
+        /** @brief Whether a vertical scrollbar was needed. */
+        bool hasVerticalBar = false;
+
+        /**
+         * @brief The range of rows worth describing, given a uniform row height.
+         *
+         * Culling by hand rather than relying on the clip is what keeps a hundred-thousand-line log
+         * costing the same as a ten-line one: the clip stops the pixels, but only this stops the
+         * work of measuring and laying out text that was never going to be seen.
+         *
+         * @param rowHeight Height of one row.
+         * @param rowCount How many rows there are.
+         * @param outFirst Receives the first visible row index.
+         * @param outLast Receives one past the last visible row index.
+         */
+        void visibleRows(float rowHeight, std::size_t rowCount,
+                         std::size_t& outFirst, std::size_t& outLast) const;
+    };
+
+    /**
+     * @brief A scrollable region: wheel, draggable thumb, and a clipped viewport.
+     *
+     * Call it with the area the region occupies and the size of the content that goes in it, draw
+     * the content into @ref StudioScrollResult::viewport offset by the returned position, then call
+     * @ref studioEndScroll. It pushes a clip, so the two must be paired in both passes.
+     *
+     * The scroll position is retained state keyed by @p id, so it survives the frame and survives
+     * the content changing underneath it.
+     *
+     * @param frame The frame.
+     * @param id Identity of the view.
+     * @param bounds Area the view occupies, scrollbar included.
+     * @param options What the content is.
+     * @return Where and how to draw the content.
+     */
+    StudioScrollResult studioBeginScroll(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                         const StudioScrollOptions& options);
+
+    /** @brief Ends the region opened by @ref studioBeginScroll, popping its clip. */
+    void studioEndScroll(StudioFrame& frame);
 } // namespace CNA::Studio

@@ -63,6 +63,14 @@ namespace CNA::Studio
          * application passes.
          */
         std::string workspacePath;
+
+        /**
+         * @brief Bring this panel to the front of its tab group before drawing.
+         *
+         * A panel sharing a tab strip with five others cannot be photographed at all otherwise,
+         * because the tab in front is whichever docked last. Empty leaves the layout alone.
+         */
+        std::string focusPanel;
     };
 
     /** @brief What a native-shell session did. */
@@ -72,6 +80,19 @@ namespace CNA::Studio
         int exitCode = 0;
 
         std::uint64_t frames = 0;
+
+        /**
+         * @brief How many Output Log rows the ported panel put on screen in the last drawn frame.
+         *
+         * Reported because it is otherwise unobservable. A ported panel and the empty surface it
+         * replaced both draw *some* geometry, so a triangle count cannot tell them apart -- and a
+         * content function that silently stopped running would look, from outside, exactly like a
+         * panel that has not been ported yet.
+         */
+        std::size_t logRowsDrawn = 0;
+
+        /** @brief How many log entries the panel's filter was showing. */
+        std::size_t logRowsMatching = 0;
 
         /** @brief Whether a stored workspace arrangement was found and applied at start-up. */
         bool layoutRestored = false;

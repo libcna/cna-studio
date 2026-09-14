@@ -22,6 +22,8 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/Ui/StudioLog.hpp"
+#include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 #include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
@@ -77,6 +79,42 @@ namespace CNA::Studio
                     }
                 }
 
+                // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI
+                // owns -- which is the whole shape of the strangler migration: the ImGui Console
+                // reads the same model and keeps working until it is deleted.
+                shell_->setPanelContent("output",
+                    [this](StudioFrame& frame, const UiRect& bounds) {
+                        const StudioLogPanelResult panelResult = studioLogPanel(frame, bounds, log_);
+                        if (frame.isDrawPass())
+                        {
+                            logRowsDrawn_ = panelResult.rowsDrawn;
+                            logRowsMatching_ = panelResult.rowsMatching;
+                        }
+                        if (panelResult.cleared) { log_.clear(); }
+                        if (panelResult.copyRequested)
+                        {
+                            // CNA gap G-02: the clipboard is behind a default-off CNA option, so
+                            // this degrades visibly rather than silently doing nothing.
+                            if (CnaUiPlatform::hasClipboard())
+                            {
+                                CnaUiPlatform::setClipboardText(panelResult.copyText);
+                                log_.append(LogSeverity::Info, "Copied the log to the clipboard.");
+                            }
+                            else
+                            {
+                                log_.append(LogSeverity::Warning,
+                                            "This build has no clipboard: CNA's Devices module is "
+                                            "off (CNA gap G-02). Rebuild CNA with CNA_DEVICES=ON.");
+                            }
+                        }
+                    });
+
+                if (!options.focusPanel.empty() && !shell_->activatePanel(options.focusPanel))
+                {
+                    log_.append(LogSeverity::Warning,
+                                "No panel called '" + options.focusPanel + "' is open.");
+                }
+
                 setIsMouseVisibleProperty(true);
                 getWindowProperty().setTitleProperty(options.windowTitle);
                 getWindowProperty().setAllowUserResizingProperty(true);
@@ -90,6 +128,8 @@ namespace CNA::Studio
             [[nodiscard]] bool screenshotWritten() const { return screenshotWritten_; }
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
+            [[nodiscard]] std::size_t logRowsDrawn() const { return logRowsDrawn_; }
+            [[nodiscard]] std::size_t logRowsMatching() const { return logRowsMatching_; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
             [[nodiscard]] bool layoutRestored() const { return layoutRestored_; }
 
@@ -136,6 +176,35 @@ namespace CNA::Studio
 
                 shell_->setStatusRight("Renderer: " + CnaUiRenderer::getBackendName()
                                        + "   Platform: " + getHostPlatformName());
+
+                // Real output, not a placeholder. The first question of every graphics bug report
+                // is which renderer this build actually got, and the Output Log is where somebody
+                // looks for it.
+                log_.append(LogSeverity::Info,
+                            "CNA Studio on the " + CnaUiRenderer::getBackendName()
+                            + " renderer, " + getHostPlatformName() + " platform.");
+                // Only what is *not* met. A console that recited twenty satisfied requirements
+                // on every start would train the user to scroll past the one that matters.
+                for (const StudioRequirementOutcome& outcome : capabilities_.unmetRecommended())
+                {
+                    log_.append(LogSeverity::Warning,
+                                outcome.subject + " is not available: " + outcome.reason
+                                + (outcome.detail.empty() ? "" : " (" + outcome.detail + ")"));
+                }
+                if (!layoutProblem_.empty())
+                {
+                    log_.append(LogSeverity::Warning, layoutProblem_);
+                }
+                else if (layoutRestored_)
+                {
+                    log_.append(LogSeverity::Info, "Restored the saved workspace layout.");
+                }
+                if (!CnaUiPlatform::hasClipboard())
+                {
+                    log_.append(LogSeverity::Warning,
+                                "Clipboard unavailable: CNA's Devices module is off in this build "
+                                "(CNA gap G-02).");
+                }
                 contentLoaded_ = true;
                 Game::LoadContent();
             }
@@ -269,6 +338,9 @@ namespace CNA::Studio
             bool contentLoaded_ = false;
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
+            StudioLog log_;
+            std::size_t logRowsDrawn_ = 0;
+            std::size_t logRowsMatching_ = 0;
             std::string layoutProblem_;
             bool layoutRestored_ = false;
             std::uint64_t frames_ = 0;
@@ -296,6 +368,8 @@ namespace CNA::Studio
         result.capabilityReport = game.capabilities().report();
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();
+        result.logRowsDrawn = game.logRowsDrawn();
+        result.logRowsMatching = game.logRowsMatching();
         result.layoutRestored = game.layoutRestored();
         result.layoutProblem = game.layoutProblem();
 

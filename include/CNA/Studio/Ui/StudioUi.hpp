@@ -27,23 +27,12 @@
 #include "CNA/Studio/Core/StudioMath.hpp"
 #include "CNA/Studio/Core/PropertyValue.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
+#include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/Ui/UiDrawData.hpp"
 #include "CNA/Studio/Ui/UiInputState.hpp"
 
 namespace CNA::Studio
 {
-    /** @brief Severity of a console message, used for filtering and colouring. */
-    enum class LogSeverity
-    {
-        Trace,
-        Info,
-        Warning,
-        Error
-    };
-
-    /** @brief Returns the short display name of @p severity, e.g. "warn". */
-    const char* toString(LogSeverity severity);
-
     /** @brief Where a panel is docked by default. The implementation may ignore this. */
     enum class DockSide
     {
@@ -505,15 +494,33 @@ namespace CNA::Studio
          */
         [[nodiscard]] virtual std::string getLogText(LogSeverity minimumSeverity = LogSeverity::Trace) const
         {
-            (void)minimumSeverity;
-            return {};
+            return logModel_.toText(minimumSeverity);
         }
 
         /** @brief Discards every console message. */
-        virtual void clearLog() {}
+        virtual void clearLog() { logModel_.clear(); }
+
+        /**
+         * @brief The messages themselves, as a model no UI owns.
+         *
+         * The seam the Phase 7 migration turns on. Both consoles -- the Dear ImGui one and the
+         * Studio one -- read *this*, so a user can put them side by side and see the same output.
+         * Two logs would make the port impossible to check: every difference would be a difference
+         * in what was logged rather than in how it was drawn.
+         */
+        [[nodiscard]] const StudioLog& getLogModel() const { return logModel_; }
 
         /** @brief Puts @p text on the system clipboard. */
         virtual void setClipboardText(const std::string& text) { (void)text; }
+
+    protected:
+        /**
+         * @brief Where every message goes, whichever UI is running.
+         *
+         * Protected rather than private so an implementation can draw it; written to only through
+         * @ref log, so the bound and the repeat collapsing cannot be bypassed by accident.
+         */
+        StudioLog logModel_;
     };
 
     /**
@@ -530,12 +537,14 @@ namespace CNA::Studio
     class NullStudioUi : public StudioUi
     {
     public:
-        /** @brief One captured log message. */
-        struct LogEntry
-        {
-            LogSeverity severity = LogSeverity::Info;
-            std::string message;
-        };
+        /**
+         * @brief One captured log message.
+         *
+         * An alias now that the log is a shared model rather than this class's own storage. Kept
+         * because a good deal of test code names it, and renaming that would be churn in service
+         * of nothing.
+         */
+        using LogEntry = StudioLogEntry;
 
         [[nodiscard]] const char* getBackendName() const override { return "null"; }
         [[nodiscard]] bool isRunning() const override { return running_; }
@@ -598,8 +607,6 @@ namespace CNA::Studio
 
         void log(LogSeverity severity, const std::string& message) override;
 
-        [[nodiscard]] std::string getLogText(LogSeverity minimumSeverity = LogSeverity::Trace) const override;
-        void clearLog() override { log_.clear(); }
         void setClipboardText(const std::string& text) override { clipboard_ = text; }
 
         /** @brief Returns whatever was last copied. Lets a test assert on the Copy button. */
@@ -609,7 +616,10 @@ namespace CNA::Studio
         void requestExit() override { running_ = false; }
 
         /** @brief Returns every message logged so far. */
-        [[nodiscard]] const std::vector<LogEntry>& getLog() const { return log_; }
+        [[nodiscard]] const std::deque<StudioLogEntry>& getLog() const
+        {
+            return getLogModel().entries();
+        }
 
         /** @brief Returns the number of frames begun. */
         [[nodiscard]] std::uint64_t getFrameCount() const { return frameCount_; }
@@ -628,7 +638,6 @@ namespace CNA::Studio
         bool running_ = true;
         std::uint64_t frameCount_ = 0;
         std::vector<PendingShortcut> shortcuts_;
-        std::vector<LogEntry> log_;
         std::string clipboard_;
         std::vector<std::string> currentFramePanels_;
         std::vector<std::string> lastFramePanels_;

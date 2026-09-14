@@ -201,6 +201,7 @@ target_link_libraries(cna-studio-project PUBLIC cna-studio-core)
 # decisions D-02 and D-14.
 add_library(cna-studio-ui STATIC
     src/ui/NullStudioUi.cpp
+    src/ui/StudioLog.cpp
     src/ui/UiDrawData.cpp
     src/ui/UiInputState.cpp)
 target_link_libraries(cna-studio-ui PUBLIC cna-studio-core)
@@ -253,6 +254,7 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioDrawList.cpp
     src/ui-core/StudioShellLayout.cpp
     src/ui-core/StudioWorkspaceStore.cpp
+    src/ui-core/StudioLogPanel.cpp
     src/ui-core/StudioDockTree.cpp
     src/ui-core/StudioInputRouter.cpp
     src/ui-core/StudioFrame.cpp
