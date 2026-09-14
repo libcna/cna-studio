@@ -26,31 +26,31 @@ namespace CNA::Studio
         // requirement than being able to run a game.
         static const std::vector<BackendInfo> backends{
             {"EASYGL", "easygl", "EasyGL (OpenGL ES)", BackendStudioSupport::StudioSupported,
-             "CNA's default on Linux and Emscripten. The reference target for the editor UI."},
+             "CNA's default on Linux and Emscripten. The reference target for the Studio UI."},
             {"VULKAN", "vulkan", "Vulkan", BackendStudioSupport::StudioSupported,
-             "Full editor UI support."},
+             "Full Studio UI support."},
             {"SDL_RENDERER", "sdlrenderer", "SDL_Renderer (2D only)", BackendStudioSupport::StudioSupported,
-             "CNA's default off Linux. 2D-only, which the editor UI itself does not mind."},
-            {"BGFX", "bgfx", "bgfx", BackendStudioSupport::StudioSupported, "Full editor UI support."},
-            {"SDL_GPU", "sdlgpu", "SDL_GPU", BackendStudioSupport::StudioSupported, "Full editor UI support."},
+             "CNA's default off Linux. 2D-only, which the Studio UI itself does not mind."},
+            {"BGFX", "bgfx", "bgfx", BackendStudioSupport::StudioSupported, "Full Studio UI support."},
+            {"SDL_GPU", "sdlgpu", "SDL_GPU", BackendStudioSupport::StudioSupported, "Full Studio UI support."},
             {"D3D11", "d3d11", "Direct3D 11", BackendStudioSupport::StudioSupported,
-             "Windows only. Full editor UI support there."},
+             "Windows only. Full Studio UI support there."},
             {"D3D12", "d3d12", "Direct3D 12", BackendStudioSupport::StudioSupported,
-             "Windows only. Full editor UI support there."},
+             "Windows only. Full Studio UI support there."},
             {"WEBGPU", "webgpu", "WebGPU", BackendStudioSupport::PreviewOnly,
              "Experimental in CNA. Useful for previewing a browser build's rendering."},
             {"D3D9", "d3d9", "Direct3D 9", BackendStudioSupport::PreviewOnly,
-             "Fixed-function-era feature set. Suitable for a player process, not for the editor UI."},
+             "Fixed-function-era feature set. Suitable for a player process, not for the Studio UI."},
             {"SOFTWARE", "software", "Software (CPU rasterizer)", BackendStudioSupport::PreviewOnly,
              "Correct but slow. Ideal as a comparison reference, unusable as an interactive UI host."},
             {"CANVAS", "canvas", "HTML Canvas 2D", BackendStudioSupport::RuntimeOnly,
-             "Emscripten only; there is no desktop editor process to host."},
+             "Emscripten only; there is no desktop Studio process to host."},
             {"ASCII", "ascii", "ASCII glyph grid", BackendStudioSupport::RuntimeOnly,
              "A deliberately lossy presentation filter. Meaningful for a game, not for a UI."},
             {"DX3", "dx3", "DirectX 3 (DirectDraw)", BackendStudioSupport::RuntimeOnly,
              "Historical backend. Exactly the case the separate player process exists for."},
             {"HEADLESS", "headless", "Headless (no GPU or window)", BackendStudioSupport::RuntimeOnly,
-             "No window by definition. Used by the editor's own automated tests."},
+             "No window by definition. Used by Studio's own automated tests."},
         };
         return backends;
     }
@@ -207,7 +207,7 @@ namespace CNA::Studio
 
         if (kind_ == ProjectKind::XnaCompatible && !startupScene_.empty())
         {
-            result.warnings.push_back("an XnaCompatible project declares a startupScene; the editor will "
+            result.warnings.push_back("an XnaCompatible project declares a startupScene; Studio will "
                                       "not use it, because scene loading is the game's own responsibility");
         }
 

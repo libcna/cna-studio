@@ -768,7 +768,7 @@ namespace CNA::Studio
             {
                 ui_.sameLine();
                 ui_.text("| " + std::to_string(lastModelBatch_.draws.size())
-                         + " model(s), editor view only -- the player does not draw them yet");
+                         + " model(s), Studio view only -- the player does not draw them yet");
             }
 
             // A model still importing looks identical to an entity that never had one, and only

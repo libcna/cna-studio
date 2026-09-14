@@ -226,7 +226,7 @@ int main(int argc, char** argv)
             {
                 // The editor went away. A player that kept running would be an orphan window the
                 // user has to hunt down and close.
-                std::cout << "cna-player: editor disconnected (" << channel.getError() << "); exiting\n";
+                std::cout << "cna-player: Studio disconnected (" << channel.getError() << "); exiting\n";
                 return false;
             }
         }

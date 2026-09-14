@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MS-PL
 /**
  * @file CnaUiPlatform.cpp
- * @brief Drives the editor UI from CNA's public input API.
+ * @brief Drives the Studio UI from CNA's public input API.
  *
  * See CnaUiPlatform.hpp for the full mapping. Everything here goes through
  * `Microsoft::Xna::Framework::Input::*` and `CNA::Devices::*`; nothing touches SDL or any

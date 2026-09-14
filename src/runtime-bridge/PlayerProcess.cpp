@@ -45,7 +45,7 @@ namespace CNA::Studio
             case PlayerExitReason::StillRunning: return "still running";
             case PlayerExitReason::Exited: return "exited";
             case PlayerExitReason::Crashed: return "crashed";
-            case PlayerExitReason::StoppedByStudio: return "stopped by the editor";
+            case PlayerExitReason::StoppedByStudio: return "stopped by Studio";
             case PlayerExitReason::FailedToStart: return "failed to start";
         }
         return "still running";

@@ -3536,7 +3536,7 @@ CNA_STUDIO_TEST(TheDiagnosticsPanelReportsWhatThisBuildIsAndCanDo)
 
     // The whole backend table, not only the one this binary was built against: the editor has to
     // be able to talk about a backend it cannot itself run.
-    CNA_STUDIO_EXPECT(ui->sawText("Backends this editor knows about"));
+    CNA_STUDIO_EXPECT(ui->sawText("Backends Studio knows about"));
 
     // A headless run has no device to ask, and says so rather than showing an empty list that
     // reads as "not implemented".
@@ -3645,8 +3645,8 @@ CNA_STUDIO_TEST(TheBuildPanelExplainsItselfBeforeOfferingToBuild)
     // The example-shaped project has no CMakeLists, and that is said plainly instead of the button
     // being offered and CMake producing a wall of text about a missing file.
     CNA_STUDIO_EXPECT(ui->sawText("Cannot build: the project has no CMakeLists.txt, so there is "
-                                 "nothing for the editor to build. A CNA game's build is the "
-                                 "game's own -- the editor only runs it."));
+                                 "nothing for Studio to build. A CNA game's build is the "
+                                 "game's own -- Studio only runs it."));
     CNA_STUDIO_EXPECT(!ui->sawButton("Build##build"));
 
     // Give it one, and the panel shows the exact commands. A real build has options the editor

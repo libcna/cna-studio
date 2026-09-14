@@ -8,7 +8,7 @@
  * This is the answer to ANALYSIS.md question Q-01, and the proof of decision D-01: the editor's
  * own user interface is rendered using only the API a CNA *game* has. No `CNA::Internal::*`, no
  * per-backend code, no shader authored here. One implementation serves every backend CNA supports
- * for the editor UI, because everything it uses is backend-independent by construction:
+ * for the Studio UI, because everything it uses is backend-independent by construction:
  *
  * | ImGui needs                            | CNA public API used                                    |
  * |----------------------------------------|--------------------------------------------------------|

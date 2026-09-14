@@ -113,7 +113,7 @@ namespace CNA::Studio
         history_.clear();
         clearSelection();
 
-        // A scene with no camera renders nothing, which reads as "the editor is broken" rather
+        // A scene with no camera renders nothing, which reads as "Studio is broken" rather
         // than "you have not added a camera yet". Starting with one avoids that entirely.
         StudioEntity camera{Uuid::generate(), "Main Camera"};
         StudioComponent transform{BuiltinComponentIds::kTransform};

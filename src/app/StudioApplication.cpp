@@ -159,10 +159,10 @@ namespace CNA::Studio
                     // users a mental model CNA does not support (see StudioOptions::uiBackend).
                     options.hasError = true;
                     options.errorMessage =
-                        "--graphics is not an editor option: CNA selects its graphics backend at "
-                        "compile time, so this editor binary is fixed to the backend it was built "
+                        "--graphics is not a Studio option: CNA selects its graphics backend at "
+                        "compile time, so this Studio binary is fixed to the backend it was built "
                         "against. Pass --graphics to cna-player instead, or use --ui to choose the "
-                        "editor's UI toolkit.";
+                        "Studio UI toolkit.";
                     continue;
                 }
             }
@@ -184,7 +184,7 @@ namespace CNA::Studio
     std::string StudioOptions::getUsage()
     {
         return
-            "cna-studio -- editor and asset tooling for CNA\n"
+            "cna-studio -- professional authoring environment for CNA\n"
             "\n"
             "Usage:\n"
             "  cna-studio [options] [project.cnaproject]\n"
@@ -200,19 +200,19 @@ namespace CNA::Studio
             "  --screenshot=PATH  Write a PNG of the final frame. Requires --frames.\n"
             "  --autosave=SECONDS Crash-recovery snapshot interval. 0 disables. Default: 30.\n"
             "  --recovery-dir=DIR Where snapshots are kept. Default: the per-user state directory.\n"
-            "  --list-backends    Print the CNA graphics backends this editor knows about.\n"
+            "  --list-backends    Print the CNA graphics backends Studio knows about.\n"
             "  --compare-backends Run the open scene on every installed cna-player build, compare\n"
             "                     the frames, print the result and exit non-zero if they differ.\n"
             "                     Needs a graphics device, so it does not combine with --headless.\n"
             "  --tolerance=N      Largest per-channel difference --compare-backends still counts as\n"
             "                     identical. Default: 2, because two backends are never bit-equal.\n"
             "  --panel=TITLE      Bring the panel with this exact title to the front, e.g. Assets.\n"
-            "  --plugins=DIR      Where to look for plugins. Defaults to plugins/ beside the editor.\n"
+            "  --plugins=DIR      Where to look for plugins. Defaults to plugins/ beside Studio.\n"
             "  --version          Print the version and exit.\n"
             "  -h, --help         Print this help and exit.\n"
             "\n"
             "Note: there is no --graphics option. CNA selects its graphics backend at compile\n"
-            "time, so this editor binary is fixed to the backend it was built against. To preview\n"
+            "time, so this Studio binary is fixed to the backend it was built against. To preview\n"
             "a game on a different backend, launch the matching cna-player build:\n"
             "\n"
             "  cna-player --project=MyGame.cnaproject --graphics=software --studio-port=34781\n";
@@ -854,7 +854,7 @@ namespace CNA::Studio
         if (playerBuilds_.empty())
         {
             context_.log(LogSeverity::Warning,
-                         "No cna-player build was found beside the editor. Build one -- play mode "
+                         "No cna-player build was found beside Studio. Build one -- play mode "
                          "runs the game in a separate process, so it needs a player executable.");
             return;
         }
@@ -1103,7 +1103,7 @@ namespace CNA::Studio
 
         if (directory.empty())
         {
-            // "Beside the editor" needs to know where the editor is. With no executable path --
+            // "Beside Studio" needs to know where the editor is. With no executable path --
             // which is every embedded and test caller -- the same expression would resolve to
             // "plugins" relative to the *working directory*, so an editor started from the wrong
             // folder would load a stranger's plugins and one started from the right one would

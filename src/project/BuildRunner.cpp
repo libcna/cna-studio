@@ -126,8 +126,8 @@ namespace CNA::Studio
         if (!std::filesystem::is_regular_file(std::filesystem::path{request.projectRoot} / "CMakeLists.txt",
                                               errorCode))
         {
-            return "the project has no CMakeLists.txt, so there is nothing for the editor to build. "
-                   "A CNA game's build is the game's own -- the editor only runs it";
+            return "the project has no CMakeLists.txt, so there is nothing for Studio to build. "
+                   "A CNA game's build is the game's own -- Studio only runs it";
         }
 
         const std::string cmake = request.cmakePath.empty() ? findCMake() : request.cmakePath;

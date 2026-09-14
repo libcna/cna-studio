@@ -117,20 +117,20 @@ namespace
 
     void printBackends()
     {
-        std::cout << "CNA graphics backends known to this editor:\n\n";
+        std::cout << "CNA graphics backends known to Studio:\n\n";
         for (const CNA::Studio::BackendInfo& backend : CNA::Studio::getKnownBackends())
         {
             const char* support = "runtime-only  ";
             switch (backend.support)
             {
-                case CNA::Studio::BackendStudioSupport::StudioSupported: support = "editor        "; break;
+                case CNA::Studio::BackendStudioSupport::StudioSupported: support = "studio        "; break;
                 case CNA::Studio::BackendStudioSupport::PreviewOnly: support = "preview-only  "; break;
                 case CNA::Studio::BackendStudioSupport::RuntimeOnly: support = "runtime-only  "; break;
             }
             std::cout << "  " << support << backend.commandLineName << "  (" << backend.cmakeName << ")\n"
                       << "      " << backend.displayName << " -- " << backend.note << "\n";
         }
-        std::cout << "\nThese are the backends a cna-player build can use. The editor's own backend\n"
+        std::cout << "\nThese are the backends a cna-player build can use. Studio's own backend\n"
                      "is fixed at compile time by CNA_GRAPHICS_BACKEND.\n";
     }
 }

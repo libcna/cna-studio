@@ -42,7 +42,7 @@ namespace CNA::Studio
         /** @brief The kStudioPluginApiVersion the plugin was built against. */
         int studioApiVersion = 0;
 
-        /** @brief Library file name, relative to the manifest, e.g. "libmc3-editor-plugin.so". */
+        /** @brief Library file name, relative to the manifest, e.g. "libmc3-studio-plugin.so". */
         std::string library;
 
         /** @brief Ids of plugins that must load first. */

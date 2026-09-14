@@ -40,7 +40,7 @@ namespace CNA::Studio
 {
     namespace
     {
-        /** @brief Background behind the scene, distinct from the editor chrome around it. */
+        /** @brief Background behind the scene, distinct from the Studio chrome around it. */
         const Xna::Color kBackground{24, 24, 27, 255};
 
         /** @brief Behind a model thumbnail: lighter than the viewport, so a dark model still reads. */
@@ -698,7 +698,7 @@ namespace CNA::Studio
 
         // Sprites after the opaque models and before the overlay: transparency has to be blended
         // against what is already there, so it cannot go first, and it is scene content rather
-        // than editor chrome, so it cannot go last.
+        // than Studio chrome, so it cannot go last.
         const ModelPassStats spriteStats = impl_->modelPass.renderSprites(
             sprites, models,
             [this, &modelStats](const Uuid& assetId)
@@ -814,7 +814,7 @@ namespace CNA::Studio
         }
 
         // Pass 1: the grid, beneath everything. An editor artefact, so the game view has none --
-        // and skipping the pass is the whole of "the player must not draw editor chrome", because
+        // and skipping the pass is the whole of "the player must not draw Studio chrome", because
         // the separation is structural rather than a filter applied to a shared list.
         if (editorOverlays)
         {

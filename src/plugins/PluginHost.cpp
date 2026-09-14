@@ -119,8 +119,8 @@ namespace CNA::Studio
                 entry.manifest = *iterator;
                 if (!entry.manifest.isCompatible())
                 {
-                    entry.error = "built against editor API version "
-                                + std::to_string(entry.manifest.studioApiVersion) + ", this editor speaks "
+                    entry.error = "built against Studio plugin API version "
+                                + std::to_string(entry.manifest.studioApiVersion) + ", Studio speaks "
                                 + std::to_string(kStudioPluginApiVersion);
                 }
                 else if (entry.manifest.library.empty())
@@ -318,7 +318,7 @@ namespace CNA::Studio
             // The entry point's own way of refusing: it is handed the editor's API version and may
             // decide it cannot work with it, which is a cleaner refusal than the manifest check
             // because the plugin is the one that knows what it needs.
-            entry.error = "refused this editor's plugin API version";
+            entry.error = "refused Studio's plugin API version";
             entry.active = false;
             return false;
         }

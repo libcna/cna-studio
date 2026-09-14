@@ -3,10 +3,10 @@
 > **Result: yes, completely.** Every capability an immediate-mode UI needs is present in
 > `Microsoft::Xna::Framework::*` and `CNA::*`. No `CNA::Internal::*` header is used, no shader is
 > authored, and no per-backend code exists — one implementation serves every backend CNA can host
-> the editor UI on.
+> Studio UI on.
 >
 > This closes ANALYSIS.md question **Q-01** and is the concrete evidence for decision **D-01**
-> ("the editor uses CNA's public API only").
+> ("Studio uses CNA's public API only").
 >
 > **Verified against** `openeggbert/cna` at `ac3aaae` and `openeggbert/sharp-runtime` at
 > `b797928`, by compiling `src/viewport/CnaUiRenderer.cpp` and `src/viewport/CnaUiPlatform.cpp`
@@ -18,10 +18,10 @@
 
 The alternative to a public-API renderer was one ImGui backend per CNA graphics backend — seven of
 them for the *Studio Supported* tier alone, each needing its own shader, buffer management and
-scissor handling, each a place for the editor to render differently from the game.
+scissor handling, each a place for Studio to render differently from the game.
 
 Writing the renderer against `SpriteBatch`-level primitives instead makes it backend-independent
-*by construction*. If CNA can draw the editor's UI, it can draw anything a 2D game needs; if it
+*by construction*. If CNA can draw Studio's UI, it can draw anything a 2D game needs; if it
 could not, that would be a gap in CNA worth finding, which is the whole point of D-01.
 
 ## 2. Capability mapping
@@ -64,7 +64,7 @@ pure loss, and would have to get surrogate pairs right twice instead of once.
 
 ## 3. Gaps found in CNA
 
-Two, both minor. Neither blocks the editor; both are worth filing upstream, since finding exactly
+Two, both minor. Neither blocks Studio; both are worth filing upstream, since finding exactly
 this kind of thing is what D-01 exists for.
 
 ### G-01 — `Color` is not default-constructible
@@ -92,7 +92,7 @@ ordinary thing to do when generating a texture.
 An editor built against a default CNA configuration therefore has no clipboard, and copy/paste in
 inspector text fields silently does nothing.
 
-This is a reasonable place for CNA to draw the line, and the editor degrades cleanly
+This is a reasonable place for CNA to draw the line, and Studio degrades cleanly
 (`CnaUiPlatform::hasClipboard()` reports it), but it is worth knowing that **a usable editor build
 needs `-DCNA_DEVICES=ON`**. Worth documenting on the CNA side as "tooling expects this on".
 
@@ -117,13 +117,13 @@ per backend, resolved at compile time from `CNA::getCurrentGraphicsBackendType()
 the V coordinates when drawing the image. Swapping UVs rather than geometry keeps the widget
 rectangle unchanged, so hit-testing and the cursor-to-world mapping are unaffected.
 
-That is backend knowledge living in the editor, which decision D-01 would rather avoid. It is here
+That is backend knowledge living in Studio, which decision D-01 would rather avoid. It is here
 because the alternative — probing at run time with a render target and a read-back — costs more to
 learn something CNA already knows.
 
 **SOFTWARE returning white is the more serious half**, and it is a genuine limitation rather than a
 convention difference. It is also consistent with the tier table (F-02): SOFTWARE is classified
-*Preview Only* precisely because it cannot host the editor UI. The editor is not broken there so
+*Preview Only* precisely because it cannot host Studio UI. Studio is not broken there so
 much as unsupported there, which is what the table already said.
 
 **Suggested fix upstream:** normalise render-target texture orientation on sample, or expose the
@@ -142,7 +142,7 @@ It happens exactly once, on the UI side, while filling `UiDrawData` (ANALYSIS.md
 so the renderer receives a layout it can hand almost straight to CNA. Structuring it any other way
 would perform the same copy in a worse place.
 
-**One `DrawUserIndexedPrimitives` call per ImGui draw command.** The editor's typical frame is
+**One `DrawUserIndexedPrimitives` call per ImGui draw command.** Studio's typical frame is
 20–60 of them. `DrawUserIndexedPrimitives` re-uploads its vertex data each call, so a very heavy UI
 would eventually want persistent `DynamicVertexBuffer`/`DynamicIndexBuffer` objects instead. That
 is a contained optimisation inside `CnaUiRenderer` — `plan.md` ED-115 — and profiling should ask
@@ -165,7 +165,7 @@ ImGui rasterises glyphs it has not seen before — not per frame.
 | `src/viewport/CnaUiPlatform.cpp` | Fills `UiInputState` from CNA's public API | **yes** |
 
 The seam matters as much as the result: because the toolkit talks to `UiDrawData` and the renderer
-reads it, **`CnaUiRenderer.cpp` contains no ImGui header**. "The editor UI renders through CNA's
+reads it, **`CnaUiRenderer.cpp` contains no ImGui header**. "Studio UI renders through CNA's
 public API" is therefore a structural property of the build graph, not a claim to be re-checked by
 hand.
 
@@ -197,16 +197,16 @@ hazard disappears rather than being worked around.
 
 The spike's claim was checked by building the whole thing against a real CNA checkout
 (`CNA_GRAPHICS_BACKEND=SOFTWARE`, SDL and FFmpeg dependencies installed, `CNA_DEVICES=ON`) and
-running the editor for real:
+running Studio for real:
 
 ```
 $ SDL_VIDEODRIVER=dummy ./cna-studio --project=examples/HelloSprites/HelloSprites.cnaproject \
-      --frames=20 --screenshot=editor.png
+      --frames=20 --screenshot=studio.png
 cna-studio: backend SOFTWARE, 56 frames, 1600x900 display, 14 draw calls, 1858 triangles,
             1 textures created, 0 texture updates, 0 commands clipped away
 ```
 
-![The editor running on EASYGL](images/editor-easygl.png)
+![Studio running on EASYGL](images/studio-easygl.png)
 
 The PNG shows a working editor: a menu bar, Scene Hierarchy on the left listing the example
 project's three entities, a central Viewport, an Inspector on the right, and Assets/Console tabbed
@@ -221,7 +221,7 @@ from one that opened a blank window.
 
 **The window size must come from the graphics device, not the window.** The first attempt read
 `GameWindow::getClientBoundsProperty()`, which reports 0×0 on SOFTWARE — that backend creates no
-SDL window at all. The editor dutifully rendered a zero-sized UI and issued zero draw calls. The
+SDL window at all. Studio dutifully rendered a zero-sized UI and issued zero draw calls. The
 fix is to take the size from `GraphicsDevice::getViewportProperty()`, the surface actually being
 drawn into, and fall back to the window only if that is unavailable. This is more correct
 generally: on a scaled or letterboxed presentation the two differ, and the viewport is what the

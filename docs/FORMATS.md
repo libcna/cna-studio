@@ -12,7 +12,7 @@ Three properties are maintained on purpose:
 - **Integers are written as integers.** `120`, never `120.0`. Coordinates, counts and layer indices
   stay readable in a diff.
 - **Two relaxations for hand editing.** The parser accepts `//` line comments and trailing commas.
-  The editor never writes either.
+  Studio never writes either.
 
 Every format carries a `formatVersion`. A file from the future is **rejected with a clear message**
 rather than partially read; a file from the past is read and upgraded.
@@ -62,7 +62,7 @@ What a Ctrl-drag in the viewport rounds to, in world units. A project laid out o
 grid says so once instead of having every user zoom until the drawn grid happens to agree.
 
 Zero is **not** "no snapping" — Ctrl is what turns snapping on. It is "use the grid the viewport is
-drawing", which is what the editor did before the setting existed and therefore what a project
+drawing", which is what Studio did before the setting existed and therefore what a project
 written before it means. A separate enabled flag would have been a second way to say the same thing
 and a second thing to get out of step.
 
@@ -83,27 +83,27 @@ practice; a project written before layers existed opens and gains the default.
 
 The list drives `CNA.Layer`'s choices by re-registering that component's descriptor. Renaming a
 layer therefore leaves entities holding a name that is no longer offered — and they are left that
-way on purpose. Which of the remaining layers the user meant is their decision, not the editor's, so
+way on purpose. Which of the remaining layers the user meant is their decision, not Studio's, so
 the Validation panel reports it (`unknown-enum-value`) instead.
 
 ### `kind`
 
 This field is how CNA avoids becoming a mandatory engine.
 
-**`CnaNative`** opts into the editor's model: scenes, entities, components, the inspector, gizmos,
+**`CnaNative`** opts into Studio's model: scenes, entities, components, the inspector, gizmos,
 prefabs and the runtime bridge.
 
-**`XnaCompatible`** does not. The editor offers the asset browser, importer settings, content
+**`XnaCompatible`** does not. Studio offers the asset browser, importer settings, content
 preview, backend configuration and Play — and stops there. The game keeps its own hand-written
 `Game::Initialize`/`LoadContent`/`Update`/`Draw`, with no editor concepts in it. Declaring a
-`startupScene` for such a project produces a warning, because the editor will not load it and the
+`startupScene` for such a project produces a warning, because Studio will not load it and the
 mismatch is worth surfacing.
 
 ### `defaultGraphicsBackend`
 
 The lower-case command-line name of a CNA backend (`cna-studio --list-backends` prints them). This
-selects which **player build** the Play button launches, not anything about the editor: CNA fixes
-its backend at compile time, so the editor binary is bound to whatever it was built against. An
+selects which **player build** the Play button launches, not anything about Studio: CNA fixes
+its backend at compile time, so Studio binary is bound to whatever it was built against. An
 unrecognised value loads with a warning rather than failing.
 
 ---
@@ -166,13 +166,13 @@ One per scene. Lives under `sceneDirectory` by convention, but any path works.
 | `enabled` | bool | `true` | Omitted when true |
 | `sortOrder` | int | `0` | Sibling ordering; omitted when zero |
 | `components` | object | `{}` | Keyed by component type id |
-| `studioState` | object | absent | Studio-only, never seen by the runtime |
+| `editorState` | object | absent | Studio-only, never seen by the runtime |
 
 `parent` is stored on the child rather than as a child list on the parent, because every operation
-the editor performs — reparent, delete, "which entities are roots" — is cheaper and harder to
+Studio performs — reparent, delete, "which entities are roots" — is cheaper and harder to
 corrupt that way.
 
-### `studioState`
+### `editorState`
 
 Cosmetic, editor-only data: tree expansion, layer colour, notes, icon overrides. Keeping it in a
 named sub-object means the runtime scene compiler drops it wholesale rather than needing to know
@@ -228,13 +228,13 @@ Lists do not nest: a list of lists is a table, and a table deserves its own type
 widget that recurses.
 
 Note that a **2-, 3- or 4-element array on an unregistered component** is still read as a vector,
-because nothing declares otherwise and that guess has been the one the editor makes since Phase 0.
+because nothing declares otherwise and that guess has been the one Studio makes since Phase 0.
 Any other length is read as a list, element by element, which is what makes a scene whose plugin is
 missing save back byte-for-byte instead of losing the field.
 
 ### Loading is forgiving on purpose
 
-An editor that refuses to open a slightly broken file is an editor you cannot use to *fix* a broken
+An editor that refuses to open a slightly broken file is one you cannot use to *fix* a broken
 file. A scene loads with warnings, never a partial failure:
 
 | Problem | Behaviour |
@@ -290,7 +290,7 @@ first — and the way that disagreement surfaces is a property reverting to a va
 chose, which is the worst thing a prefab system can do. It also means prefabs added **no** new field
 to the scene format: a scene written before they existed is still a valid scene.
 
-What an instance does store is the link, in `studioState` because it is editor bookkeeping rather
+What an instance does store is the link, in `editorState` because it is editor bookkeeping rather
 than something the game runs (D-07):
 
 | Key | On | Meaning |
@@ -342,7 +342,7 @@ changes.
 
 ### Why size and time rather than a content hash
 
-Hashing every asset on every project open is how an editor comes to take thirty seconds to start.
+Hashing every asset on every project open is how a Studio comes to take thirty seconds to start.
 Size plus modification time is enough for reimport decisions and costs a `stat`. A content hash can
 be added later as an opt-in for pipelines that need the guarantee.
 
@@ -379,7 +379,7 @@ matches again. Nothing in a project ever references one, and none is ever writte
 ```
 
 The file name is `<sceneId>.cnarecovery`, so a scene has one snapshot rather than an accumulating
-pile. `projectPath` is what the editor matches on when a project is reopened: the scene someone was
+pile. `projectPath` is what Studio matches on when a project is reopened: the scene someone was
 editing when the process died is not necessarily the project's startup scene, and offering only the
 latter would silently drop the work.
 
@@ -400,7 +400,7 @@ the dying process at all.
 
 ### Recovery is offered, never applied
 
-On reopening a project with a snapshot, the editor says so and puts two items in the File menu. It
+On reopening a project with a snapshot, Studio says so and puts two items in the File menu. It
 does not load the snapshot. Replacing what someone opened with something whose provenance they
 cannot see turns one loss into two. While the offer is outstanding, autosave for that scene is
 suspended and says so — the current session's unsaved seconds are worth less than the previous
@@ -445,7 +445,7 @@ peer built from a different revision. A malformed line is counted and skipped; a
 revision cannot kill a play session.
 
 **`setProperty` carries its own `valueType`,** unlike a scene file. The player resolves component
-schemas from its own registry, which may not match the editor's after a plugin reload, so the wire
+schemas from its own registry, which may not match Studio's after a plugin reload, so the wire
 has to be self-describing.
 
 **`reloadAsset` names an asset by id, not by path.** Asset identity is a Uuid everywhere in the
@@ -458,7 +458,7 @@ player queues the request and answers it from the frame loop that owns the devic
 the only place a back buffer can be read; a reply sent when the message arrived would claim a file
 existed before anything had been written to it. When the capture fails -- a build with no graphics,
 a backend that cannot read its own back buffer -- the reply carries `written: false` and an `error`
-string rather than nothing at all, since an editor waiting for a reply that never comes is worse
+string rather than nothing at all, since a Studio waiting for a reply that never comes is worse
 off than one told no. The asking side must not fall back to looking for the file: a stale one from
 an earlier run answers a different question.
 
@@ -491,7 +491,7 @@ One per plugin directory.
   "description": "Mesh-Craft import, export and primitive editing",
   "author": "OpenEggbert",
   "editorApiVersion": 1,
-  "library": "libmc3-editor-plugin.so",
+  "library": "libmc3-studio-plugin.so",
   "dependencies": []
 }
 ```
@@ -499,7 +499,7 @@ One per plugin directory.
 | Field | Type | Meaning |
 |-------|------|---------|
 | `id` | string | Reverse-DNS, unique. Also the component type id prefix a plugin should use |
-| `editorApiVersion` | int | Must match the editor's exactly, or the plugin is rejected unloaded |
+| `editorApiVersion` | int | Must match Studio's exactly, or the plugin is rejected unloaded |
 | `library` | string | Shared library file name, relative to the manifest |
 | `dependencies` | string[] | Plugin ids that must load first |
 

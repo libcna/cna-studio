@@ -19,7 +19,7 @@ namespace CNA::Studio
             if (name == "Spot") { return SceneLightKind::Spot; }
 
             // Directional for anything unrecognised, rather than skipping the light. A scene
-            // written by a newer editor with a fourth kind in it should still light something:
+            // written by a newer Studio with a fourth kind in it should still light something:
             // the wrong kind of light is a visible, correctable state, and no light at all reads
             // as the component being ignored.
             return SceneLightKind::Directional;

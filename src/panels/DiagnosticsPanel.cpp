@@ -92,13 +92,13 @@ namespace CNA::Studio
         }
         ui_.separator();
 
-        ui_.text("Backends this editor knows about");
+        ui_.text("Backends Studio knows about");
         for (const BackendInfo& backend : getKnownBackends())
         {
             const char* support = "runtime only";
             switch (backend.support)
             {
-                case BackendStudioSupport::StudioSupported: support = "editor      "; break;
+                case BackendStudioSupport::StudioSupported: support = "studio      "; break;
                 case BackendStudioSupport::PreviewOnly: support = "preview only"; break;
                 case BackendStudioSupport::RuntimeOnly: support = "runtime only"; break;
             }

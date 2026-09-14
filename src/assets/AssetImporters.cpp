@@ -151,7 +151,7 @@ namespace CNA::Studio
                     PropertyDescriptor size = makeProperty("pixelSize", "Pixel Size",
                                                            PropertyType::Vector2,
                                                            PropertyValue{StudioVector2{}},
-                                                           "Read from the file's header. Zero means the format is one the editor cannot measure yet.");
+                                                           "Read from the file's header. Zero means the format is one Studio cannot measure yet.");
                     size.readOnly = true;
                     return size;
                 }(),

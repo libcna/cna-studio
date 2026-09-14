@@ -71,7 +71,7 @@ namespace CNA::Studio
             return "a comparison needs at least two cna-player builds; "
                    + std::to_string(request.builds.size())
                    + " was found. CNA fixes its backend at compile time, so each backend is a "
-                     "separate player binary -- build another and install it beside the editor.";
+                     "separate player binary -- build another and install it beside Studio.";
         }
 
         if (request.outputDirectory.empty()) { return "no output directory was given"; }

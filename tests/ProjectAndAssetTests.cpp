@@ -367,7 +367,7 @@ CNA_STUDIO_TEST(PluginHostRejectsIncompatibleManifestsWithoutLoadingThem)
     std::size_t acceptedCount = 0;
     for (const LoadedPlugin& plugin : plugins)
     {
-        if (plugin.error.find("editor API version") != std::string::npos) { ++apiMismatchCount; }
+        if (plugin.error.find("Studio plugin API version") != std::string::npos) { ++apiMismatchCount; }
         if (plugin.error.find("malformed") != std::string::npos) { ++malformedCount; }
         if (plugin.loaded) { ++acceptedCount; }
 

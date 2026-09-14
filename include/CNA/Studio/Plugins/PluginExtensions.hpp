@@ -72,7 +72,7 @@ namespace CNA::Studio
          *
          * A name rather than an enumerator, so a plugin can put a command under a menu this build
          * has never heard of and get that menu created for it. An exporter belongs under File
-         * beside the editor's own; a level generator belongs under a menu only the plugin knows
+         * beside Studio's own; a level generator belongs under a menu only the plugin knows
          * the name of.
          */
         std::string menu = "Tools";

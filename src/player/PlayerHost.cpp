@@ -91,7 +91,7 @@ namespace CNA::Studio
                     // state rather than being torn down: the editor can then tell the user which
                     // build to rebuild, which it could not do from a silently dropped connection.
                     outbox.push_back(StudioMessage::makeReportLog(
-                        "error", "protocol version mismatch: editor speaks " + std::to_string(peerVersion)
+                        "error", "protocol version mismatch: Studio speaks " + std::to_string(peerVersion)
                                      + ", this player speaks " + std::to_string(kStudioProtocolVersion)));
                 }
                 else
@@ -304,7 +304,7 @@ namespace CNA::Studio
         // Trace, not info, because a gizmo drag produces one of these per frame -- and the console
         // has a severity filter precisely so this can be turned off. It earns its place because
         // when a live edit does not take effect, this line is the only thing that distinguishes
-        // "the editor never sent it" from "the player would not apply it", which is exactly the
+        // "Studio never sent it" from "the player would not apply it", which is exactly the
         // question live editing raises.
         outbox.push_back(StudioMessage::makeReportLog(
             "trace", "set " + entity->getName() + "." + componentTypeId + "." + propertyName));

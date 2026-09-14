@@ -8,7 +8,7 @@
  * This type is the seam between "what to draw" and "how to draw it" (ANALYSIS.md decision D-14).
  * `ImGuiStudioUi` fills it; `CnaUiRenderer` consumes it through CNA's public graphics API. Neither
  * knows about the other, and in particular **the renderer never includes a Dear ImGui header** --
- * which is what makes "the editor UI renders through CNA's public API" a structural property
+ * which is what makes "the Studio UI renders through CNA's public API" a structural property
  * rather than a claim.
  *
  * It costs nothing. ImGui's own vertex layout (`ImVec2 pos; ImVec2 uv; ImU32 col`) does not match

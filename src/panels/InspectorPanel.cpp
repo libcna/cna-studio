@@ -550,7 +550,7 @@ namespace CNA::Studio
         {
             // Refused rather than shown as defaults. Offering an editable form over a file this
             // build could not read is offering to overwrite it with less than it holds.
-            ui_.text("This material was written by a newer editor, or is not valid JSON.");
+            ui_.text("This material was written by a newer Studio, or is not valid JSON.");
             return;
         }
 

@@ -59,7 +59,7 @@ namespace CNA::Studio
         /** @brief The editor UI itself can be hosted on this backend. */
         StudioSupported,
 
-        /** @brief Usable for a preview/player process, not for the editor UI. */
+        /** @brief Usable for a preview/player process, not for the Studio UI. */
         PreviewOnly,
 
         /** @brief Ships games only; no editor or preview role. */

@@ -381,7 +381,7 @@ namespace CNA::Studio
             {
                 ++result.skippedPrimitives;
                 addWarning(name, "it is drawn as lines or points rather than triangles, which this "
-                                 "editor has nothing to draw it with");
+                                 "Studio has nothing to draw it with");
                 return;
             }
             if (indices->empty()) { return; }

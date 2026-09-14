@@ -8,7 +8,7 @@
 # Dear ImGui UI be built and tested on a machine with none of CNA's dependencies installed.
 #
 # A CNA-configuration job would need four sibling checkouts, CNA's SDL submodules and an X server,
-# and would take an order of magnitude longer. It is worth adding once the editor has a reason to
+# and would take an order of magnitude longer. It is worth adding once Studio has a reason to
 # regress there; until then this job catches nearly everything and stays fast enough to be run on
 # every push.
 

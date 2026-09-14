@@ -116,7 +116,7 @@ namespace CNA::Studio
         std::string screenshotPath;
 
         /**
-         * @brief argv[0], used to find the `cna-player-*` binaries beside the editor.
+         * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a
          * direct consequence of CNA fixing its backend at compile time (ANALYSIS.md finding F-01).
@@ -489,7 +489,7 @@ namespace CNA::Studio
         AnimationPreview animationPreview_;
 
         /**
-         * @brief The player builds installed beside the editor, and which one Play will launch.
+         * @brief The player builds installed beside Studio, and which one Play will launch.
          *
          * A list rather than a single choice because CNA fixes its backend at compile time
          * (ANALYSIS.md finding F-01): "play this on Vulkan" means "launch `cna-player-vulkan`", so

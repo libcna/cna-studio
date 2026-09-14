@@ -123,7 +123,7 @@ namespace CNA::Studio
          * @brief Returns true once the Hello has gone out.
          *
          * The player considers the handshake incomplete until it arrives, and nothing it sends
-         * back says so -- without this, "the editor forgot to introduce itself" is a state no test
+         * back says so -- without this, "Studio forgot to introduce itself" is a state no test
          * could observe from this side.
          */
         [[nodiscard]] bool isHelloSent() const { return helloSent_; }
