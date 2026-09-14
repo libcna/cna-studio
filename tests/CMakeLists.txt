@@ -14,6 +14,7 @@ add_executable(cna-studio-tests
     ApplicationTests.cpp
     UiTests.cpp
     UiCoreTests.cpp
+    StudioShellTests.cpp
     PlayerTests.cpp
     ViewportTests.cpp)
 

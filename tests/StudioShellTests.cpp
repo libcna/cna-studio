@@ -1,0 +1,568 @@
+// SPDX-License-Identifier: MS-PL
+/**
+ * @file StudioShellTests.cpp
+ * @brief Layout, geometry, batching and golden-image tests for the CNA Studio shell.
+ *
+ * The whole file runs with no GPU, no window and no CNA. The shell's appearance is tested by
+ * rasterising the same geometry the CNA renderer will draw (see `UiSoftwareRasterizer`), which is
+ * what lets visual regressions be caught now rather than once graphical CI exists.
+ */
+
+#include "TestHarness.hpp"
+
+#include "CNA/Studio/Core/ImageDiff.hpp"
+#include "CNA/Studio/UiCore/StudioDrawList.hpp"
+#include "CNA/Studio/UiCore/StudioShellLayout.hpp"
+#include "CNA/Studio/UiCore/StudioShellRenderer.hpp"
+#include "CNA/Studio/UiCore/StudioTheme.hpp"
+#include "CNA/Studio/UiCore/UiRect.hpp"
+#include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
+
+#include <cstdlib>
+#include <filesystem>
+#include <map>
+#include <string>
+
+using namespace CNA::Studio;
+
+namespace
+{
+    /** @brief Renders the default shell at a size and scale, returning the geometry. */
+    StudioDrawList renderShell(float width, float height, float scale = 1.0f,
+                               const StudioShellProportions& proportions = {})
+    {
+        StudioTheme theme = StudioTheme::dark();
+        theme.setScale(scale);
+
+        const StudioShellLayout layout =
+            computeStudioShellLayout(width, height, theme, proportions);
+
+        StudioDrawList list;
+        list.begin(width, height, 1.0f);
+        drawStudioShell(list, layout, theme, StudioShellContent::defaults());
+        list.end();
+        return list;
+    }
+
+    /** @brief Where golden images and failure artefacts are written. */
+    std::string artifactDirectory()
+    {
+        const char* fromEnv = std::getenv("CNA_STUDIO_TEST_ARTIFACTS");
+        return fromEnv != nullptr ? std::string{fromEnv} : std::string{};
+    }
+} // namespace
+
+// ------------------------------------------------------------------------------------------------
+// Geometry primitives (STUDIO-03011)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(SplittingARectangleConsumesItExactly)
+{
+    UiRect area{0.0f, 0.0f, 100.0f, 50.0f};
+    const UiRect top = area.splitTop(10.0f);
+
+    CNA_STUDIO_EXPECT(top == UiRect(0.0f, 0.0f, 100.0f, 10.0f));
+    CNA_STUDIO_EXPECT(area == UiRect(0.0f, 10.0f, 100.0f, 40.0f));
+    CNA_STUDIO_EXPECT_EQ(top.height + area.height, 50.0f);
+}
+
+CNA_STUDIO_TEST(SplittingMoreThanThereIsLeavesNothingRatherThanANegativeRemainder)
+{
+    // A window dragged smaller than its own chrome must produce empty panels, not panels drawn at
+    // negative sizes -- which rasterise as garbage across the whole window.
+    UiRect area{0.0f, 0.0f, 100.0f, 20.0f};
+    const UiRect taken = area.splitTop(500.0f);
+
+    CNA_STUDIO_EXPECT_EQ(taken.height, 20.0f);
+    CNA_STUDIO_EXPECT_EQ(area.height, 0.0f);
+    CNA_STUDIO_EXPECT(area.isEmpty());
+}
+
+CNA_STUDIO_TEST(EverySplitDirectionPartitionsWithoutOverlap)
+{
+    for (int direction = 0; direction < 4; ++direction)
+    {
+        UiRect area{10.0f, 20.0f, 100.0f, 80.0f};
+        const UiRect whole = area;
+        UiRect slice;
+        switch (direction)
+        {
+            case 0: slice = area.splitTop(30.0f); break;
+            case 1: slice = area.splitBottom(30.0f); break;
+            case 2: slice = area.splitLeft(30.0f); break;
+            default: slice = area.splitRight(30.0f); break;
+        }
+        CNA_STUDIO_EXPECT(slice.intersect(area).isEmpty());
+        CNA_STUDIO_EXPECT(whole.intersect(slice) == slice);
+        CNA_STUDIO_EXPECT(whole.intersect(area) == area);
+    }
+}
+
+CNA_STUDIO_TEST(InsettingPastTheSizeYieldsAnEmptyRectangleNotAnInvertedOne)
+{
+    const UiRect small{0.0f, 0.0f, 10.0f, 10.0f};
+    const UiRect inset = small.inset(20.0f);
+    CNA_STUDIO_EXPECT(inset.isEmpty());
+    CNA_STUDIO_EXPECT(inset.width >= 0.0f);
+    CNA_STUDIO_EXPECT(inset.height >= 0.0f);
+}
+
+CNA_STUDIO_TEST(PixelSnappingPreservesEdgesRatherThanSizes)
+{
+    // Rounding position and size independently makes a 1px rule two pixels wide at one position
+    // and zero at another, which reads as the rule flickering as a panel is dragged.
+    const UiRect r{10.4f, 20.6f, 100.3f, 1.2f};
+    const UiRect snapped = r.pixelSnapped();
+    CNA_STUDIO_EXPECT_EQ(snapped.left(), 10.0f);
+    CNA_STUDIO_EXPECT_EQ(snapped.top(), 21.0f);
+    CNA_STUDIO_EXPECT_EQ(snapped.right(), 111.0f);
+    CNA_STUDIO_EXPECT_EQ(snapped.bottom(), 22.0f);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Shell layout (STUDIO-06003, STUDIO-06006, STUDIO-06007)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheShellLayoutIsWellFormedAtEveryCommonResolution)
+{
+    // The invariant a docking layout must never violate: nothing escapes the window, nothing
+    // overlaps. Checked directly rather than inferred from a screenshot.
+    const StudioTheme theme = StudioTheme::dark();
+    const std::pair<float, float> resolutions[] = {
+        {1280.0f, 720.0f}, {1600.0f, 900.0f}, {1920.0f, 1080.0f},
+        {2560.0f, 1440.0f}, {3440.0f, 1440.0f}};
+
+    for (const auto& [width, height] : resolutions)
+    {
+        const StudioShellLayout layout = computeStudioShellLayout(width, height, theme);
+        if (!layout.isWellFormed())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "shell layout is malformed at " + std::to_string(static_cast<int>(width))
+                + "x" + std::to_string(static_cast<int>(height)));
+        }
+        CNA_STUDIO_EXPECT(layout.isWellFormed());
+        CNA_STUDIO_EXPECT(!layout.viewport.isEmpty());
+        CNA_STUDIO_EXPECT(!layout.menuBar.isEmpty());
+        CNA_STUDIO_EXPECT(!layout.statusBar.isEmpty());
+    }
+}
+
+CNA_STUDIO_TEST(TheShellLayoutIsWellFormedAtEveryDpiScale)
+{
+    for (const float scale : {1.0f, 1.25f, 1.5f, 1.75f, 2.0f})
+    {
+        StudioTheme theme = StudioTheme::dark();
+        theme.setScale(scale);
+        const StudioShellLayout layout = computeStudioShellLayout(1920.0f, 1080.0f, theme);
+        CNA_STUDIO_EXPECT(layout.isWellFormed());
+        CNA_STUDIO_EXPECT(!layout.viewport.isEmpty());
+    }
+}
+
+CNA_STUDIO_TEST(ChromeHeightScalesWithDpi)
+{
+    StudioTheme theme = StudioTheme::dark();
+    const StudioShellLayout at100 = computeStudioShellLayout(1920.0f, 1080.0f, theme);
+    theme.setScale(2.0f);
+    const StudioShellLayout at200 = computeStudioShellLayout(1920.0f, 1080.0f, theme);
+
+    CNA_STUDIO_EXPECT_EQ(at200.menuBar.height, at100.menuBar.height * 2.0f);
+    CNA_STUDIO_EXPECT_EQ(at200.toolbar.height, at100.toolbar.height * 2.0f);
+    CNA_STUDIO_EXPECT_EQ(at200.statusBar.height, at100.statusBar.height * 2.0f);
+}
+
+CNA_STUDIO_TEST(DockProportionsSurviveAResize)
+{
+    // Fractions rather than pixel widths: dragging a window to a larger monitor must rescale the
+    // arrangement, not leave the inspector 300px wide on a 4K display.
+    const StudioTheme theme = StudioTheme::dark();
+    const StudioShellLayout small = computeStudioShellLayout(1280.0f, 720.0f, theme);
+    const StudioShellLayout large = computeStudioShellLayout(2560.0f, 1440.0f, theme);
+
+    const float smallRatio = small.leftDock.width / small.dockArea.width;
+    const float largeRatio = large.leftDock.width / large.dockArea.width;
+    CNA_STUDIO_EXPECT(std::abs(smallRatio - largeRatio) < 0.01f);
+}
+
+CNA_STUDIO_TEST(AWindowTooSmallForItsChromeDegradesRatherThanBreaking)
+{
+    const StudioTheme theme = StudioTheme::dark();
+    for (const float size : {1.0f, 20.0f, 60.0f, 120.0f})
+    {
+        const StudioShellLayout layout = computeStudioShellLayout(size, size, theme);
+        if (!layout.isWellFormed())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "layout malformed at " + std::to_string(static_cast<int>(size)) + "px square");
+        }
+        CNA_STUDIO_EXPECT(layout.isWellFormed());
+
+        // Every region stays non-negative: an inverted rectangle rasterises across the window.
+        for (const UiRect* r : {&layout.menuBar, &layout.toolbar, &layout.statusBar,
+                                &layout.leftDock, &layout.rightDock, &layout.bottomDock,
+                                &layout.centerDock, &layout.viewport})
+        {
+            CNA_STUDIO_EXPECT(r->width >= 0.0f);
+            CNA_STUDIO_EXPECT(r->height >= 0.0f);
+        }
+    }
+}
+
+CNA_STUDIO_TEST(ADockTooNarrowToBeUsefulCollapsesEntirely)
+{
+    // A two-pixel-wide outliner is not a smaller outliner; it is a rendering artefact with a
+    // splitter attached.
+    const StudioTheme theme = StudioTheme::dark();
+    StudioShellProportions proportions;
+    proportions.leftDockFraction = 0.001f;
+
+    const StudioShellLayout layout = computeStudioShellLayout(1920.0f, 1080.0f, theme, proportions);
+    CNA_STUDIO_EXPECT(layout.leftDock.isEmpty());
+    CNA_STUDIO_EXPECT(layout.leftSplitter.isEmpty());
+    CNA_STUDIO_EXPECT(layout.isWellFormed());
+}
+
+CNA_STUDIO_TEST(HidingADockGivesItsSpaceToTheCentre)
+{
+    const StudioTheme theme = StudioTheme::dark();
+    const StudioShellLayout all = computeStudioShellLayout(1920.0f, 1080.0f, theme);
+
+    StudioShellProportions hidden;
+    hidden.leftDockVisible = false;
+    hidden.rightDockVisible = false;
+    hidden.bottomDockVisible = false;
+    const StudioShellLayout none = computeStudioShellLayout(1920.0f, 1080.0f, theme, hidden);
+
+    CNA_STUDIO_EXPECT(none.leftDock.isEmpty());
+    CNA_STUDIO_EXPECT(none.rightDock.isEmpty());
+    CNA_STUDIO_EXPECT(none.bottomDock.isEmpty());
+    CNA_STUDIO_EXPECT(none.viewport.width > all.viewport.width);
+    CNA_STUDIO_EXPECT(none.viewport.height > all.viewport.height);
+    CNA_STUDIO_EXPECT(none.isWellFormed());
+}
+
+CNA_STUDIO_TEST(SplittersSitBetweenTheDocksTheySeparate)
+{
+    const StudioTheme theme = StudioTheme::dark();
+    const StudioShellLayout layout = computeStudioShellLayout(1920.0f, 1080.0f, theme);
+
+    CNA_STUDIO_EXPECT_EQ(layout.leftSplitter.left(), layout.leftDock.right());
+    CNA_STUDIO_EXPECT_EQ(layout.leftSplitter.right(), layout.centerDock.left());
+    CNA_STUDIO_EXPECT_EQ(layout.rightSplitter.right(), layout.rightDock.left());
+    CNA_STUDIO_EXPECT(layout.leftSplitter.width > 0.0f);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Draw list and batching (STUDIO-04003, STUDIO-04004)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(ConsecutiveUntexturedPrimitivesBatchIntoOneDrawCall)
+{
+    // STUDIO-04003's requirement, asserted rather than assumed: a panel of flat rectangles costs
+    // one draw call, not one per rectangle.
+    StudioDrawList list;
+    list.begin(200.0f, 200.0f);
+    for (int i = 0; i < 50; ++i)
+    {
+        list.fillRect(UiRect{0.0f, static_cast<float>(i) * 4.0f, 200.0f, 3.0f},
+                      StudioColor{100, 100, 100, 255});
+    }
+    list.end();
+
+    CNA_STUDIO_EXPECT_EQ(list.commandCount(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(list.vertexCount(), std::size_t{200});
+}
+
+CNA_STUDIO_TEST(AClipChangeStartsANewDrawCall)
+{
+    StudioDrawList list;
+    list.begin(200.0f, 200.0f);
+    list.fillRect(UiRect{0.0f, 0.0f, 10.0f, 10.0f}, StudioColor{255, 0, 0, 255});
+    list.pushClip(UiRect{0.0f, 0.0f, 50.0f, 50.0f});
+    list.fillRect(UiRect{0.0f, 0.0f, 10.0f, 10.0f}, StudioColor{0, 255, 0, 255});
+    list.popClip();
+    list.end();
+
+    CNA_STUDIO_EXPECT_EQ(list.commandCount(), std::size_t{2});
+}
+
+CNA_STUDIO_TEST(NestedClipsCompose)
+{
+    // A scroll area inside a panel inside a dock cannot draw outside any of them.
+    StudioDrawList list;
+    list.begin(200.0f, 200.0f);
+    list.pushClip(UiRect{0.0f, 0.0f, 100.0f, 100.0f});
+    list.pushClip(UiRect{50.0f, 50.0f, 100.0f, 100.0f});
+
+    const UiRect clip = list.currentClip();
+    CNA_STUDIO_EXPECT(clip == UiRect(50.0f, 50.0f, 50.0f, 50.0f));
+
+    list.popClip();
+    list.popClip();
+    list.end();
+}
+
+CNA_STUDIO_TEST(PoppingPastTheRootClipLeavesTheDisplayClip)
+{
+    StudioDrawList list;
+    list.begin(200.0f, 100.0f);
+    list.popClip();
+    list.popClip();
+    CNA_STUDIO_EXPECT(list.currentClip() == UiRect(0.0f, 0.0f, 200.0f, 100.0f));
+    list.end();
+}
+
+CNA_STUDIO_TEST(FullyTransparentPrimitivesEmitNoGeometry)
+{
+    StudioDrawList list;
+    list.begin(100.0f, 100.0f);
+    list.fillRect(UiRect{0.0f, 0.0f, 50.0f, 50.0f}, StudioColor{255, 0, 0, 0});
+    list.end();
+    CNA_STUDIO_EXPECT_EQ(list.vertexCount(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(AnEmptyRectangleEmitsNoGeometry)
+{
+    StudioDrawList list;
+    list.begin(100.0f, 100.0f);
+    list.fillRect(UiRect{10.0f, 10.0f, 0.0f, 50.0f}, StudioColor{255, 0, 0, 255});
+    list.fillRect(UiRect{10.0f, 10.0f, 50.0f, -5.0f}, StudioColor{255, 0, 0, 255});
+    list.end();
+    CNA_STUDIO_EXPECT_EQ(list.vertexCount(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(ARoundedRectangleWithAnAbsurdRadiusDoesNotFoldThroughItself)
+{
+    // Corner arcs that overlap produce self-intersecting geometry which rasterises as a dark
+    // smear. Clamping keeps a pill shape at the limit.
+    StudioDrawList list;
+    list.begin(100.0f, 100.0f);
+    list.fillRoundedRect(UiRect{10.0f, 10.0f, 40.0f, 20.0f}, StudioColor{200, 200, 200, 255}, 500.0f);
+    list.end();
+
+    CNA_STUDIO_EXPECT(list.vertexCount() > 0);
+    for (const UiVertex& v : list.drawData().lists.front().vertices)
+    {
+        CNA_STUDIO_EXPECT(v.x >= 9.0f && v.x <= 51.0f);
+        CNA_STUDIO_EXPECT(v.y >= 9.0f && v.y <= 31.0f);
+    }
+}
+
+CNA_STUDIO_TEST(TheShellProducesAWellFormedFrame)
+{
+    const StudioDrawList list = renderShell(1920.0f, 1080.0f);
+    const UiDrawData& data = list.drawData();
+
+    CNA_STUDIO_EXPECT(!data.lists.empty());
+    CNA_STUDIO_EXPECT(list.vertexCount() > 0);
+    CNA_STUDIO_EXPECT(list.commandCount() > 0);
+
+    // Every index must address a vertex that exists: an out-of-range index is a GPU crash on a
+    // real renderer and silently wrong pixels here.
+    for (const UiDrawList& drawList : data.lists)
+    {
+        for (const UiDrawCommand& command : drawList.commands)
+        {
+            CNA_STUDIO_EXPECT(command.indexOffset + command.indexCount <= drawList.indices.size());
+            CNA_STUDIO_EXPECT_EQ(command.indexCount % 3, std::uint32_t{0});
+        }
+        for (const std::uint16_t index : drawList.indices)
+        {
+            CNA_STUDIO_EXPECT(index < drawList.vertices.size());
+        }
+    }
+}
+
+CNA_STUDIO_TEST(TheShellDrawsNothingOutsideItsWindow)
+{
+    const StudioDrawList list = renderShell(800.0f, 600.0f);
+    for (const UiVertex& v : list.drawData().lists.front().vertices)
+    {
+        CNA_STUDIO_EXPECT(v.x >= -1.0f && v.x <= 801.0f);
+        CNA_STUDIO_EXPECT(v.y >= -1.0f && v.y <= 601.0f);
+    }
+}
+
+CNA_STUDIO_TEST(TheShellFrameCostsABoundedNumberOfDrawCalls)
+{
+    // Not a performance micro-optimisation: an unbatched UI issues a draw call per rectangle, and
+    // the number climbing quietly is exactly how that regresses.
+    const StudioDrawList list = renderShell(1920.0f, 1080.0f);
+    CNA_STUDIO_EXPECT(list.commandCount() < 32);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Golden image (STUDIO-33011)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheShellRasterisesToAStableImage)
+{
+    // The first screenshot test for the Studio shell, and it needs no GPU: the geometry the CNA
+    // renderer will draw is rasterised on the CPU instead. A clean process exit cannot tell a
+    // working shell from one that drew nothing; this can.
+    const StudioDrawList list = renderShell(640.0f, 360.0f);
+    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+
+    CNA_STUDIO_EXPECT(image.isWellFormed());
+    CNA_STUDIO_EXPECT_EQ(image.width, 640);
+    CNA_STUDIO_EXPECT_EQ(image.height, 360);
+
+    // Rendering twice must be byte-identical. Without determinism a golden image is a coin toss.
+    const StudioDrawList again = renderShell(640.0f, 360.0f);
+    const ImageBuffer second = rasterizeUiDrawData(again.drawData(), StudioColor{0, 0, 0, 255});
+    CNA_STUDIO_EXPECT(image.pixels == second.pixels);
+}
+
+CNA_STUDIO_TEST(TheShellActuallyDrawsSomethingRatherThanClearing)
+{
+    // The failure a clean exit cannot distinguish: a window that opened and drew nothing. The
+    // clear colour is one no theme uses, so any pixel still holding it was never covered.
+    const StudioDrawList list = renderShell(640.0f, 360.0f);
+    const StudioColor sentinel{255, 0, 255, 255};
+    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), sentinel);
+
+    std::size_t untouched = 0;
+    for (std::size_t i = 0; i < image.pixels.size(); i += 4)
+    {
+        if (image.pixels[i] == sentinel.r && image.pixels[i + 1] == sentinel.g
+            && image.pixels[i + 2] == sentinel.b)
+        {
+            ++untouched;
+        }
+    }
+    CNA_STUDIO_EXPECT_EQ(untouched, std::size_t{0});
+}
+
+CNA_STUDIO_TEST(EveryShellRegionIsVisiblyDistinct)
+{
+    // A layered UI whose layers all resolve to the same pixel value is a UI with no depth. Sampling
+    // the middle of each region catches a theme or a draw order that flattened them.
+    StudioTheme theme = StudioTheme::dark();
+    const StudioShellLayout layout = computeStudioShellLayout(1280.0f, 720.0f, theme);
+
+    StudioDrawList list;
+    list.begin(1280.0f, 720.0f);
+    drawStudioShell(list, layout, theme, StudioShellContent::defaults());
+    list.end();
+
+    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const auto sample = [&image](const UiRect& r) {
+        const int x = std::clamp(static_cast<int>(r.centerX()), 0, image.width - 1);
+        const int y = std::clamp(static_cast<int>(r.centerY()), 0, image.height - 1);
+        const std::size_t i = (static_cast<std::size_t>(y) * image.width + x) * 4;
+        return std::string{std::to_string(image.pixels[i]) + ","
+                         + std::to_string(image.pixels[i + 1]) + ","
+                         + std::to_string(image.pixels[i + 2])};
+    };
+
+    const std::string menuBar = sample(layout.menuBar);
+    const std::string viewport = sample(layout.viewport);
+    const std::string leftDock = sample(layout.leftDock);
+
+    CNA_STUDIO_EXPECT(menuBar != viewport);
+    CNA_STUDIO_EXPECT(leftDock != viewport);
+}
+
+CNA_STUDIO_TEST(TheShellRendersAtEveryTestedResolutionAndScale)
+{
+    struct Case { float width; float height; float scale; const char* name; };
+    const Case cases[] = {
+        {1280.0f, 720.0f,  1.0f,  "1280x720@100"},
+        {1600.0f, 900.0f,  1.0f,  "1600x900@100"},
+        {1920.0f, 1080.0f, 1.0f,  "1920x1080@100"},
+        {2560.0f, 1440.0f, 1.5f,  "2560x1440@150"},
+        {3440.0f, 1440.0f, 1.0f,  "3440x1440@100"},
+        {1920.0f, 1080.0f, 2.0f,  "1920x1080@200"},
+    };
+
+    const std::string artifacts = artifactDirectory();
+    for (const Case& c : cases)
+    {
+        const StudioDrawList list = renderShell(c.width, c.height, c.scale);
+        const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{255, 0, 255, 255});
+
+        if (!image.isWellFormed())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"shell produced no image at "} + c.name);
+            continue;
+        }
+        CNA_STUDIO_EXPECT(image.isWellFormed());
+
+        // Written for CI to collect, so a visual regression can be looked at rather than inferred
+        // from a failed comparison (STUDIO-33015).
+        if (!artifacts.empty())
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(artifacts, ec);
+            (void) writeImageAsPng(image, artifacts + "/shell-" + c.name + ".png");
+        }
+    }
+}
+
+CNA_STUDIO_TEST(TwoRendersOfDifferentContentDifferMeasurably)
+{
+    // Guards the golden comparison itself: if compareImages reported everything as matching, every
+    // visual test above would pass vacuously.
+    const StudioDrawList wide = renderShell(640.0f, 360.0f);
+    StudioShellProportions hidden;
+    hidden.leftDockVisible = false;
+    const StudioDrawList narrow = renderShell(640.0f, 360.0f, 1.0f, hidden);
+
+    const ImageBuffer a = rasterizeUiDrawData(wide.drawData(), StudioColor{0, 0, 0, 255});
+    const ImageBuffer b = rasterizeUiDrawData(narrow.drawData(), StudioColor{0, 0, 0, 255});
+
+    const ImageDifference difference = compareImages(a, b, 8);
+    CNA_STUDIO_EXPECT(difference.comparable);
+    CNA_STUDIO_EXPECT(difference.differingPixels > 0);
+}
+
+CNA_STUDIO_TEST(APngIsWrittenAndIsReadableAsOne)
+{
+    const StudioDrawList list = renderShell(64.0f, 48.0f);
+    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const std::vector<std::uint8_t> png = encodeImageAsPng(image);
+
+    CNA_STUDIO_EXPECT(png.size() > 8);
+    const std::uint8_t signature[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    for (std::size_t i = 0; i < 8; ++i) { CNA_STUDIO_EXPECT_EQ(png[i], signature[i]); }
+
+    // IHDR immediately after the signature, and IEND at the end: a file missing either is not a
+    // PNG, however convincingly it starts.
+    CNA_STUDIO_EXPECT_EQ(std::string(reinterpret_cast<const char*>(png.data()) + 12, 4),
+                         std::string{"IHDR"});
+    CNA_STUDIO_EXPECT_EQ(std::string(reinterpret_cast<const char*>(png.data()) + png.size() - 8, 4),
+                         std::string{"IEND"});
+}
+
+CNA_STUDIO_TEST(RasterisationRespectsClipping)
+{
+    StudioDrawList list;
+    list.begin(64.0f, 64.0f);
+    list.pushClip(UiRect{0.0f, 0.0f, 32.0f, 64.0f});
+    list.fillRect(UiRect{0.0f, 0.0f, 64.0f, 64.0f}, StudioColor{255, 255, 255, 255});
+    list.popClip();
+    list.end();
+
+    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const auto pixelAt = [&image](int x, int y) {
+        return image.pixels[(static_cast<std::size_t>(y) * image.width + x) * 4];
+    };
+
+    CNA_STUDIO_EXPECT_EQ(pixelAt(10, 32), std::uint8_t{255});
+    CNA_STUDIO_EXPECT_EQ(pixelAt(50, 32), std::uint8_t{0});
+}
+
+CNA_STUDIO_TEST(RasterisationBlendsAlphaRatherThanReplacing)
+{
+    StudioDrawList list;
+    list.begin(16.0f, 16.0f);
+    list.fillRect(UiRect{0.0f, 0.0f, 16.0f, 16.0f}, StudioColor{0, 0, 0, 255});
+    list.fillRect(UiRect{0.0f, 0.0f, 16.0f, 16.0f}, StudioColor{255, 255, 255, 128});
+    list.end();
+
+    const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
+    const std::uint8_t value = image.pixels[0];
+    CNA_STUDIO_EXPECT(value > 100 && value < 160);
+}

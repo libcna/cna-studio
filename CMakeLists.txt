@@ -180,8 +180,17 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioTheme.cpp
     src/ui-core/StudioThemeNames.cpp
     src/ui-core/WidgetId.cpp
-    src/ui-core/WidgetStateStore.cpp)
-target_link_libraries(cna-studio-ui-core PUBLIC cna-studio-core)
+    src/ui-core/WidgetStateStore.cpp
+    src/ui-core/UiRect.cpp
+    src/ui-core/StudioDrawList.cpp
+    src/ui-core/StudioShellLayout.cpp
+    src/ui-core/StudioShellRenderer.cpp
+    src/ui-core/UiSoftwareRasterizer.cpp)
+# cna-studio-ui links in because the native UI emits UiDrawData -- the same seam the prototype's
+# toolkit filled and CnaUiRenderer already consumes through CNA's public API. That is the whole
+# leverage of the strangler migration: the new UI inherits a working, tested CNA renderer on its
+# first frame instead of needing one written for it.
+target_link_libraries(cna-studio-ui-core PUBLIC cna-studio-core cna-studio-ui)
 
 # Dear ImGui itself. Vendored core only -- none of ImGui's own platform or renderer backends are
 # built, because cna-studio supplies its own through CNA's public API (ANALYSIS.md decision D-14).

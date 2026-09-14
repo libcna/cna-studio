@@ -12,11 +12,11 @@
 |----|------|:------:|------------|
 | `STUDIO-06001` | Central command and action registry | ⬜ | `STUDIO-03012` |
 | `STUDIO-06002` | Register the core command set | ⬜ | `STUDIO-06001` |
-| `STUDIO-06003` | Application menu bar | ⬜ | `STUDIO-06002` |
+| `STUDIO-06003` | Application menu bar | 🔄 | `STUDIO-06002` |
 | `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | ⬜ | `STUDIO-06003` |
 | `STUDIO-06005` | Context menus | ⬜ | `STUDIO-06003` |
-| `STUDIO-06006` | Main toolbar | ⬜ | `STUDIO-06002` |
-| `STUDIO-06007` | Status bar | ⬜ | `STUDIO-06001` |
+| `STUDIO-06006` | Main toolbar | 🔄 | `STUDIO-06002` |
+| `STUDIO-06007` | Status bar | 🔄 | `STUDIO-06001` |
 | `STUDIO-06008` | Keyboard shortcut dispatch with scope precedence | ⬜ | `STUDIO-06001` |
 | `STUDIO-06009` | Preferences model, separate from project settings | ⬜ | `STUDIO-06001` |
 | `STUDIO-06010` | Preferences persistence, versioning and migration | ⬜ | `STUDIO-06009` |

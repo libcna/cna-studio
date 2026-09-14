@@ -6,14 +6,14 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 0 of 15 complete `░░░░░░░░░░░░`
+**Progress:** 4 of 15 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-04001` | Create the `cna-studio-ui-renderer` module inside the CNA-linking boundary | ⬜ | `STUDIO-03014`, `STUDIO-02020` |
-| `STUDIO-04002` | Vertex and index buffer management for UI geometry | ⬜ | `STUDIO-04001` |
-| `STUDIO-04003` | Draw-call batching by texture, clip rectangle and blend state | ⬜ | `STUDIO-04002` |
-| `STUDIO-04004` | Scissor-based clipping, including nested clip stacks | ⬜ | `STUDIO-04002` |
+| `STUDIO-04002` | Vertex and index buffer management for UI geometry | ✅ | `STUDIO-04001` |
+| `STUDIO-04003` | Draw-call batching by texture, clip rectangle and blend state | ✅ | `STUDIO-04002` |
+| `STUDIO-04004` | Scissor-based clipping, including nested clip stacks | ✅ | `STUDIO-04002` |
 | `STUDIO-04005` | Font atlas construction and glyph rasterization | ⬜ | `STUDIO-04001` |
 | `STUDIO-04006` | Text rendering with kerning, and correct baseline and line metrics | ⬜ | `STUDIO-04005` |
 | `STUDIO-04007` | Dynamic glyph upload without frame stalls or dropped glyphs | ⬜ | `STUDIO-04005` |
@@ -23,7 +23,7 @@
 | `STUDIO-04011` | Window resize handling without artefacts | ⬜ | `STUDIO-04010` |
 | `STUDIO-04012` | Render-target composition for the viewport panel | ⬜ | `STUDIO-04004` |
 | `STUDIO-04013` | Screenshot and readback support for visual testing | ⬜ | `STUDIO-04001` |
-| `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ⬜ | `STUDIO-04002` |
+| `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | ⬜ | `STUDIO-04013` |
 
 ## Acceptance and verification

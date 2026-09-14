@@ -48,16 +48,16 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**37 of 439 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  8.4%
+**44 of 440 tasks complete** `██░░░░░░░░░░░░░░░░░░░░░░`  10.0%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 37 |
-| 🔄 In progress | 3 |
-| ⬜ Not started | 394 |
+| ✅ Complete | 44 |
+| 🔄 In progress | 9 |
+| ⬜ Not started | 382 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **439** |
+| **Total** | **440** |
 
 > **On the task count.** 439 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
@@ -72,10 +72,10 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
 | 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 21 | 5 | `██░░░░░░░░` |
-| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 26 | 6 | `██░░░░░░░░` |
-| 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | ⬜ | 15 | 0 | `░░░░░░░░░░` |
-| 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
-| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | ⬜ | 15 | 0 | `░░░░░░░░░░` |
+| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 26 | 7 | `███░░░░░░░` |
+| 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 15 | 4 | `███░░░░░░░` |
+| 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 12 | 1 | `█░░░░░░░░░` |
+| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 15 | 0 | `░░░░░░░░░░` |
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 21 | 0 | `░░░░░░░░░░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |
@@ -102,7 +102,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 31 | [Reliability](plans/phase-31-reliability.md) | `STUDIO-31NNN` | 🔄 | 13 | 1 | `█░░░░░░░░░` |
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
-| 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 13 | 0 | `░░░░░░░░░░` |
+| 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 14 | 1 | `█░░░░░░░░░` |
 | 34 | [Release engineering](plans/phase-34-release.md) | `STUDIO-34NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | ⬜ | 10 | 0 | `░░░░░░░░░░` |
 
@@ -202,7 +202,16 @@ The repository is at the end of the **first implementation tranche**. What exist
   collision detection (`STUDIO-03002`), and retained widget state with reclamation
   (`STUDIO-03003`), in a `cna-studio-ui-core` module that links no CNA at all.
 
-The suite is **478 assertions across 12 CTest suites**, green and warning-free in both GCC Debug
+- A **running Studio shell**: menu bar, grouped toolbar, three docks with tab strips, a gridded
+  viewport and a status bar, laid out from theme metrics so the whole frame scales with DPI
+  (`STUDIO-06003`/`06006`/`06007`, `STUDIO-05002`). It emits `UiDrawData` — the same seam
+  `CnaUiRenderer` already draws through CNA's public API — so the native UI inherits a working CNA
+  renderer rather than needing one written for it.
+- The **first screenshot tests**, running with no GPU at all: a CPU rasteriser turns that geometry
+  into an image in-process, so the shell has golden-image coverage at six resolution and DPI
+  combinations long before the graphical CI of `STUDIO-33010` exists.
+
+The suite is **509 assertions across 12 CTest suites**, green and warning-free in both GCC Debug
 and GCC Release at `-Werror`. Two latent defects inherited from the prototype were found by
 building at `-O3 -Werror`, which the prototype's CI did not do, and both are fixed: an ignored
 `freopen` result that would have sent a build's output nowhere while leaving an empty log, and a

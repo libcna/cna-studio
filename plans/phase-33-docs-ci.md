@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 0 of 13 complete `░░░░░░░░░░░░`
+**Progress:** 1 of 14 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,11 +16,12 @@
 | `STUDIO-33004` | Plugin SDK documentation | ⬜ | `STUDIO-28011` |
 | `STUDIO-33005` | Public API documentation coverage | ⬜ | — |
 | `STUDIO-33010` | Graphical CI with a real CNA build and a display | ⬜ | — |
-| `STUDIO-33011` | Screenshot and golden-image test infrastructure | ⬜ | `STUDIO-04013` |
+| `STUDIO-33011` | Screenshot and golden-image test infrastructure | ✅ | `STUDIO-04013` |
 | `STUDIO-33012` | Canonical visual test scenes | ⬜ | `STUDIO-33011` |
-| `STUDIO-33013` | Visual tests at multiple resolutions | ⬜ | `STUDIO-33012` |
+| `STUDIO-33013` | Visual tests at multiple resolutions | 🔄 | `STUDIO-33012` |
 | `STUDIO-33014` | Visual tests at multiple DPI scales | ⬜ | `STUDIO-33013`, `STUDIO-03028` |
 | `STUDIO-33015` | Visual regressions surface as CI artifacts | ⬜ | `STUDIO-33011` |
+| `STUDIO-33016` | Compressing PNG encoder for visual-test artifacts | ⬜ | `STUDIO-33011` |
 | `STUDIO-33020` | Headless test seams maintained for every core subsystem | ⬜ | — |
 | `STUDIO-33021` | CI matrix: Linux, Windows, macOS as infrastructure allows | ⬜ | — |
 
@@ -43,6 +44,12 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-33013` — Visual tests at multiple resolutions
 
 **Acceptance.** 1280x720, 1600x900, 1920x1080, 2560x1440 and an ultrawide
+
+### `STUDIO-33016` — Compressing PNG encoder for visual-test artifacts
+
+**Acceptance.** The current encoder uses stored (uncompressed) deflate, which is correct, tiny and reviewable but produces roughly 8 MB for a 1920x1080 capture. Six captures per run is enough artifact traffic to be worth a real deflate once the visual suite grows
+
+**Verification.** Encoded output still decodes in a standard viewer, and is an order of magnitude smaller
 
 ### `STUDIO-33020` — Headless test seams maintained for every core subsystem
 

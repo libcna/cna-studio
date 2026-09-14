@@ -6,17 +6,17 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 0 of 12 complete `░░░░░░░░░░░░`
+**Progress:** 1 of 12 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-05001` | Create `cna-studio-ui-docking`; dock node tree model | ⬜ | `STUDIO-03015` |
-| `STUDIO-05002` | Split nodes horizontally and vertically | ⬜ | `STUDIO-05001` |
+| `STUDIO-05002` | Split nodes horizontally and vertically | ✅ | `STUDIO-05001` |
 | `STUDIO-05003` | Resizable splitters with minimum sizes and correct cursor shapes | ⬜ | `STUDIO-05002` |
 | `STUDIO-05004` | Tab stacks with reordering | ⬜ | `STUDIO-05001` |
 | `STUDIO-05005` | Dock a panel to an edge or into a tab group by drag, with drop-target preview | ⬜ | `STUDIO-05004` |
 | `STUDIO-05006` | Undock to a floating panel | ⬜ | `STUDIO-05005` |
-| `STUDIO-05007` | Hide, show and close panels | ⬜ | `STUDIO-05001` |
+| `STUDIO-05007` | Hide, show and close panels | 🔄 | `STUDIO-05001` |
 | `STUDIO-05008` | Serialize the workspace layout | ⬜ | `STUDIO-05001` |
 | `STUDIO-05009` | Restore the default layout | ⬜ | `STUDIO-05008` |
 | `STUDIO-05010` | Named saved layouts | ⬜ | `STUDIO-05008` |

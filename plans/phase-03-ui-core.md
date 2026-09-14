@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 6 of 26 complete `███░░░░░░░░░`
+**Progress:** 7 of 26 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -20,10 +20,10 @@
 | `STUDIO-03008` | Tab navigation order | ⬜ | `STUDIO-03007` |
 | `STUDIO-03009` | Event model and input routing | ⬜ | `STUDIO-03002` |
 | `STUDIO-03010` | Mouse capture | ⬜ | `STUDIO-03009` |
-| `STUDIO-03011` | Hit-testing with nested clipping | ⬜ | `STUDIO-03009` |
+| `STUDIO-03011` | Hit-testing with nested clipping | 🔄 | `STUDIO-03009` |
 | `STUDIO-03012` | Command routing from the UI to the command registry | ⬜ | `STUDIO-03009` |
 | `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state | ⬜ | `STUDIO-03002` |
-| `STUDIO-03014` | Headless test renderer capturing draw data and widget geometry | ⬜ | `STUDIO-03009` |
+| `STUDIO-03014` | Headless test renderer capturing draw data and widget geometry | ✅ | `STUDIO-03009` |
 | `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain | ⬜ | `STUDIO-03003` |
 | `STUDIO-03020` | Cursor shape requests from widgets | ⬜ | `STUDIO-03009` |
 | `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ⬜ | `STUDIO-03009` |
