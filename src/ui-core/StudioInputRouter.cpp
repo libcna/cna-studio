@@ -215,6 +215,7 @@ namespace CNA::Studio
             if (mouseReleased(UiMouseButton::Left))
             {
                 result.released = true;
+                result.releasedOver = inside;
                 // A click is press AND release on the same widget. Releasing elsewhere cancels it,
                 // which is what lets a user press a button, think better of it, and slide off.
                 result.clicked = inside && pressedIn_ == id;
@@ -237,6 +238,11 @@ namespace CNA::Studio
             result.pressed = true;
             result.held = true;
         }
+
+        // Reported even though this widget never held the mouse: see StudioInteraction::releasedOver
+        // for the menu gesture that depends on it. Nothing else in the router changes, so a widget
+        // that ignores the flag behaves exactly as it did.
+        if (mouseReleased(UiMouseButton::Left)) { result.releasedOver = true; }
 
         if (mouseReleased(UiMouseButton::Right) && pressedIn_ != id)
         {

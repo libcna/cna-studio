@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: MS-PL
+/**
+ * @file StudioFrame.cpp
+ * @brief Phase sequencing, the interaction record, and cursor resolution.
+ */
+
+#include "CNA/Studio/UiCore/StudioFrame.hpp"
+
+#include <algorithm>
+
+namespace CNA::Studio
+{
+    std::string_view studioFramePhaseName(StudioFramePhase phase)
+    {
+        switch (phase)
+        {
+            case StudioFramePhase::Idle:   return "Idle";
+            case StudioFramePhase::Build:  return "Build";
+            case StudioFramePhase::Layout: return "Layout";
+            case StudioFramePhase::Input:  return "Input";
+            case StudioFramePhase::Draw:   return "Draw";
+            case StudioFramePhase::Retain: return "Retain";
+        }
+        return "";
+    }
+
+    std::string_view studioCursorName(StudioCursor cursor)
+    {
+        switch (cursor)
+        {
+            case StudioCursor::Arrow:            return "Arrow";
+            case StudioCursor::Hand:             return "Hand";
+            case StudioCursor::Text:             return "Text";
+            case StudioCursor::ResizeHorizontal: return "ResizeHorizontal";
+            case StudioCursor::ResizeVertical:   return "ResizeVertical";
+            case StudioCursor::ResizeNwSe:       return "ResizeNwSe";
+            case StudioCursor::ResizeNeSw:       return "ResizeNeSw";
+            case StudioCursor::Crosshair:        return "Crosshair";
+            case StudioCursor::NotAllowed:       return "NotAllowed";
+            case StudioCursor::Wait:             return "Wait";
+            case StudioCursor::Count:            break;
+        }
+        return "";
+    }
+
+    StudioFrame::StudioFrame() : StudioFrame(StudioTheme::dark()) {}
+
+    StudioFrame::StudioFrame(StudioTheme theme) : theme_(std::move(theme)) {}
+
+    bool StudioFrame::require(bool allowed, const char* operation)
+    {
+        if (allowed) { return true; }
+        violations_.emplace_back(std::string{operation} + " during phase "
+                                 + std::string{studioFramePhaseName(phase_)});
+        return false;
+    }
+
+    void StudioFrame::enter(StudioFramePhase next, StudioFramePhase expectedCurrent)
+    {
+        if (phase_ != expectedCurrent)
+        {
+            violations_.emplace_back(std::string{"entered phase "}
+                                     + std::string{studioFramePhaseName(next)} + " from "
+                                     + std::string{studioFramePhaseName(phase_)} + " rather than "
+                                     + std::string{studioFramePhaseName(expectedCurrent)});
+        }
+        phase_ = next;
+    }
+
+    void StudioFrame::beginFrame(const UiInputState& input, int blockingLayer)
+    {
+        violations_.clear();
+        enter(StudioFramePhase::Build, StudioFramePhase::Idle);
+
+        pendingInput_ = input;
+        blockingLayer_ = blockingLayer;
+
+        // Once per frame, not once per pass: the retention sweep counts frames, and advancing it
+        // twice would halve every widget's retention window without anything looking wrong.
+        state_.beginFrame();
+
+        interactions_.clear();
+        cursor_ = StudioCursor::Arrow;
+    }
+
+    void StudioFrame::beginLayout() { enter(StudioFramePhase::Layout, StudioFramePhase::Build); }
+
+    void StudioFrame::beginInput()
+    {
+        enter(StudioFramePhase::Input, StudioFramePhase::Layout);
+
+        // The router's frame starts here rather than in beginFrame(), because it computes edges by
+        // diffing against the previous snapshot: starting it twice per frame would make the second
+        // diff empty and every press and release would vanish.
+        router_.beginFrame(pendingInput_, blockingLayer_);
+        ids_.beginFrame();
+    }
+
+    void StudioFrame::beginDraw()
+    {
+        enter(StudioFramePhase::Draw, StudioFramePhase::Input);
+
+        // The same ids, issued again in the same order. Resetting the stack is what makes the
+        // second pass produce identical identities rather than a second set collided against the
+        // first.
+        ids_.beginFrame();
+
+        // Resolved from the draw pass alone. By now hover and capture are final, so a widget's
+        // request can be answered with the truth rather than with a partial answer that a later
+        // widget in the input pass would have overturned.
+        cursor_ = StudioCursor::Arrow;
+
+        draw_.begin(pendingInput_.displayWidth, pendingInput_.displayHeight,
+                    pendingInput_.framebufferScaleX);
+    }
+
+    void StudioFrame::endFrame()
+    {
+        enter(StudioFramePhase::Retain, StudioFramePhase::Draw);
+
+        draw_.end();
+
+        // After both passes: Tab moves focus for the *next* frame, so the ring is drawn on the
+        // widget that had focus while this frame's input was routed. Resolving it between the
+        // passes would draw the ring on one widget and have sent the keystrokes to another.
+        router_.endFrame();
+
+        ++frameIndex_;
+        phase_ = StudioFramePhase::Idle;
+    }
+
+    void StudioFrame::setTheme(StudioTheme theme)
+    {
+        if (!require(phase_ == StudioFramePhase::Idle, "setTheme")) { return; }
+        theme_ = std::move(theme);
+    }
+
+    StudioTextMetrics StudioFrame::measureText(StudioFontRole role, std::string_view utf8) const
+    {
+        return measureText(theme_.font(role), utf8);
+    }
+
+    StudioTextMetrics StudioFrame::measureText(const StudioFontStyle& style,
+                                               std::string_view utf8) const
+    {
+        if (fonts_ != nullptr) { return fonts_->measure(style, utf8); }
+        return approximateStudioTextMetrics(style, utf8);
+    }
+
+    StudioDrawList& StudioFrame::drawList()
+    {
+        require(phase_ == StudioFramePhase::Draw, "drawList");
+        return draw_;
+    }
+
+    StudioInteraction StudioFrame::interact(WidgetId id, const UiRect& bounds, bool enabled)
+    {
+        if (phase_ == StudioFramePhase::Input)
+        {
+            const StudioInteraction result = router_.interact(id, bounds, enabled);
+            interactions_.emplace_back(id, result);
+            return result;
+        }
+
+        if (phase_ == StudioFramePhase::Draw)
+        {
+            // Replayed, never recomputed. Re-running the hit test here would let the two passes
+            // disagree whenever anything the router owns had moved on -- and a widget that routes
+            // a click in one pass and draws itself unpressed in the other is the bug the two-pass
+            // design exists to remove, not one to reintroduce at the last step.
+            return recordedInteraction(id);
+        }
+
+        require(false, "interact");
+        StudioInteraction result;
+        result.disabled = !enabled;
+        return result;
+    }
+
+    StudioInteraction StudioFrame::recordedInteraction(WidgetId id) const
+    {
+        const auto found = std::find_if(interactions_.begin(), interactions_.end(),
+                                        [id](const auto& entry) { return entry.first == id; });
+        if (found != interactions_.end()) { return found->second; }
+        return StudioInteraction{};
+    }
+
+    void StudioFrame::pushClip(const UiRect& rect)
+    {
+        router_.pushClip(rect);
+        if (phase_ == StudioFramePhase::Draw) { draw_.pushClip(rect); }
+    }
+
+    void StudioFrame::popClip()
+    {
+        router_.popClip();
+        if (phase_ == StudioFramePhase::Draw) { draw_.popClip(); }
+    }
+
+    void StudioFrame::pushLayer(int layer) { router_.pushLayer(layer); }
+
+    void StudioFrame::popLayer() { router_.popLayer(); }
+
+    bool StudioFrame::requestCursor(WidgetId id, StudioCursor cursor)
+    {
+        if (!id.isValid()) { return false; }
+
+        // The widget holding the mouse outranks the one under it. Halfway through dragging a
+        // splitter the pointer is usually over a panel, and handing that panel the cursor would
+        // make the shape flicker back to an arrow for the whole gesture.
+        const WidgetId active = router_.activeId();
+        const bool owns = active.isValid() ? active == id : router_.hoveredId() == id;
+        if (!owns) { return false; }
+
+        cursor_ = cursor;
+        return true;
+    }
+
+    void runStudioFrame(StudioFrame& frame, const UiInputState& input,
+                        const std::function<void(StudioFrame&)>& describe, int blockingLayer)
+    {
+        frame.beginFrame(input, blockingLayer);
+        frame.beginLayout();
+        frame.beginInput();
+        if (describe) { describe(frame); }
+        frame.beginDraw();
+        if (describe) { describe(frame); }
+        frame.endFrame();
+    }
+} // namespace CNA::Studio

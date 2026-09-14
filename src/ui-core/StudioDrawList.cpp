@@ -101,9 +101,21 @@ namespace CNA::Studio
         commandOpen_ = true;
     }
 
+    bool StudioDrawList::isClippedAway(float x0, float y0, float x1, float y1) const
+    {
+        // Geometry entirely outside the clip is dropped here rather than left for the scissor test
+        // to discard. Two reasons, and neither is micro-optimisation: a virtualised list that
+        // describes a thousand rows to show twenty would otherwise fill a vertex buffer with
+        // 980 invisible ones, and a test asking "is this row actually hidden" has nothing to
+        // assert on when the answer is buried in a scissor rectangle the UI core never applies.
+        const UiRect clip = currentClip();
+        return x1 <= clip.left() || x0 >= clip.right() || y1 <= clip.top() || y0 >= clip.bottom();
+    }
+
     void StudioDrawList::addQuad(float x0, float y0, float x1, float y1, StudioColor color)
     {
         if (x1 <= x0 || y1 <= y0 || color.a == 0) { return; }
+        if (isClippedAway(x0, y0, x1, y1)) { return; }
 
         ensureCommand(kUiTextureNone);
         UiDrawList& list = data_.lists.back();
@@ -130,6 +142,11 @@ namespace CNA::Studio
                                      StudioColor color)
     {
         if (color.a == 0) { return; }
+        if (isClippedAway(std::min({x0, x1, x2}), std::min({y0, y1, y2}),
+                          std::max({x0, x1, x2}), std::max({y0, y1, y2})))
+        {
+            return;
+        }
 
         ensureCommand(kUiTextureNone);
         UiDrawList& list = data_.lists.back();
@@ -206,6 +223,12 @@ namespace CNA::Studio
                             color);
             }
         }
+    }
+
+    void StudioDrawList::fillTriangle(float x0, float y0, float x1, float y1, float x2, float y2,
+                                      StudioColor color)
+    {
+        addTriangle(x0, y0, x1, y1, x2, y2, color);
     }
 
     void StudioDrawList::drawLine(float x0, float y0, float x1, float y1, StudioColor color,

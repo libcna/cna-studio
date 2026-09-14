@@ -1,0 +1,305 @@
+// SPDX-License-Identifier: MS-PL
+#pragma once
+
+/**
+ * @file CNA/Studio/UiCore/StudioWidgets.hpp
+ * @brief Buttons, toggles, tabs and menu items, over the one `interact()` the router provides.
+ *
+ * `plan.md` STUDIO-03003, STUDIO-06003, STUDIO-06004, STUDIO-06006.
+ *
+ * These are the smallest things in Studio a user can press. They are deliberately free functions
+ * over a @ref StudioFrame rather than objects: a widget owns no state of its own — identity comes
+ * from the id stack, retained state from the state store, interaction from the router, appearance
+ * from the theme — and a type with no state and one method is a function with extra ceremony.
+ *
+ * ### The rule that makes the two-pass frame safe
+ *
+ * Every helper is called **twice per frame**: once in the input pass and once in the draw pass.
+ * `interaction` is identical in both, because the frame replays it. But
+ * @ref StudioWidgetResult::activated and @ref StudioWidgetResult::changed are **true only in the
+ * input pass**, and any state a widget owns is mutated only there.
+ *
+ * That is not a convention to remember. It is what stops the single most likely bug in this
+ * architecture: a caller that runs its action on `activated` would otherwise run it twice per
+ * click, and a toggle would flip back to where it started before anybody saw it move. Because the
+ * flag is false in the draw pass, the obvious code is the correct code.
+ *
+ * ### What "professional" costs here, concretely
+ *
+ * - A button acts on **click**, not on press: press-and-slide-off cancels, which is how a user
+ *   changes their mind. A menu item acts on release for the same reason.
+ * - A **disabled** control is drawn disabled, is not a tab stop, does not hover, and still blocks
+ *   the pointer from reaching what is behind it.
+ * - **Keyboard** activation is not an afterthought: Space and Enter activate the focused control,
+ *   and are ignored while a text field is taking input.
+ * - Labels that do not fit are **truncated with an ellipsis** rather than clipped mid-glyph or
+ *   allowed to overrun their control.
+ * - No helper contains a literal colour or a literal pixel size. Every value comes from the theme.
+ */
+
+#include "CNA/Studio/UiCore/StudioFrame.hpp"
+#include "CNA/Studio/UiCore/StudioTheme.hpp"
+#include "CNA/Studio/UiCore/UiRect.hpp"
+#include "CNA/Studio/UiCore/WidgetId.hpp"
+
+#include <string>
+#include <string_view>
+
+namespace CNA::Studio
+{
+    /** @brief Horizontal placement of text inside a box. */
+    enum class StudioTextAlign : std::uint8_t
+    {
+        Left,
+        Center,
+        Right
+    };
+
+    /** @brief What happened to a widget this frame. */
+    struct StudioWidgetResult
+    {
+        /** @brief Hover, press, capture, focus and disabled state. Identical in both passes. */
+        StudioInteraction interaction;
+
+        /**
+         * @brief The user asked for this widget's action.
+         *
+         * A completed click, or Space/Enter on it while it has focus. **True only in the input
+         * pass**, so acting on it runs the action once per gesture.
+         */
+        bool activated = false;
+
+        /**
+         * @brief A value this widget owns changed this frame.
+         *
+         * **True only in the input pass**, for the same reason as @ref activated.
+         */
+        bool changed = false;
+
+        /** @brief Convenience: whether the widget is hovered. */
+        [[nodiscard]] bool hovered() const { return interaction.hovered; }
+        /** @brief Convenience: whether the widget has keyboard focus. */
+        [[nodiscard]] bool focused() const { return interaction.focused; }
+    };
+
+    /** @brief How a button presents itself. */
+    enum class StudioButtonKind : std::uint8_t
+    {
+        /** @brief An ordinary button: filled control surface, border, label. */
+        Normal,
+        /** @brief The primary action: accent fill. */
+        Accent,
+        /** @brief A toolbar button: no fill at rest, fill on hover. */
+        Toolbar,
+        /** @brief Text only, no surface at all, for low-emphasis actions. */
+        Ghost
+    };
+
+    /** @brief The adjustable parts of a button. */
+    struct StudioButtonOptions
+    {
+        /** @brief False to draw and route it as disabled. */
+        bool enabled = true;
+        /** @brief True to draw it as the currently chosen option in a group. */
+        bool selected = false;
+        /** @brief False to remove it from the Tab order, e.g. a redundant toolbar duplicate. */
+        bool focusable = true;
+        /** @brief Presentation. */
+        StudioButtonKind kind = StudioButtonKind::Normal;
+        /** @brief Typographic role for the label. */
+        StudioFontRole font = StudioFontRole::Body;
+        /** @brief Where the label sits. */
+        StudioTextAlign align = StudioTextAlign::Center;
+        /** @brief Cursor requested while the pointer is over it. */
+        StudioCursor cursor = StudioCursor::Arrow;
+    };
+
+    /** @brief The adjustable parts of a tab. */
+    struct StudioTabOptions
+    {
+        /** @brief True for the tab whose panel is showing. */
+        bool active = false;
+        /** @brief False to draw and route it as disabled. */
+        bool enabled = true;
+        /** @brief True when the panel behind it has unsaved changes. */
+        bool modified = false;
+    };
+
+    /** @brief The adjustable parts of a menu item. */
+    struct StudioMenuItemOptions
+    {
+        /** @brief False to draw it greyed and refuse activation. */
+        bool enabled = true;
+        /** @brief True to reserve the check column and draw a mark when checked. */
+        bool checkable = false;
+        /** @brief For a checkable item, whether it is on. */
+        bool checked = false;
+        /** @brief True to draw a submenu arrow instead of a shortcut hint. */
+        bool hasSubmenu = false;
+        /** @brief True to draw it as the keyboard-highlighted item. */
+        bool highlighted = false;
+        /** @brief Shortcut hint, right-aligned, e.g. `"Ctrl+S"`. */
+        std::string_view shortcut;
+    };
+
+    // --- Text ------------------------------------------------------------------------------------
+
+    /**
+     * @brief Returns @p text, truncated with an ellipsis to fit @p maxWidth.
+     *
+     * Truncates on **code-point** boundaries, so a multi-byte character is never cut in half into
+     * bytes no decoder can read. A string that does not fit even as one character plus the
+     * ellipsis returns the ellipsis alone rather than nothing: a blank cell reads as missing data,
+     * and the data is not missing.
+     *
+     * @param frame Frame supplying measurement.
+     * @param style Font style, already DPI-scaled.
+     * @param text Text to fit.
+     * @param maxWidth Space available in logical units.
+     * @return The text to draw.
+     */
+    [[nodiscard]] std::string studioTruncateText(const StudioFrame& frame,
+                                                 const StudioFontStyle& style,
+                                                 std::string_view text, float maxWidth);
+
+    /**
+     * @brief Draws one line of text inside a box, on its correct baseline.
+     *
+     * Does nothing outside the draw pass, so a widget helper can call it unconditionally in both
+     * passes and stay readable.
+     *
+     * @param frame Frame to draw into.
+     * @param box Box to place the text in.
+     * @param text Text to draw.
+     * @param role Typographic role.
+     * @param color Text colour.
+     * @param align Horizontal placement.
+     * @return The rectangle the text occupies.
+     */
+    UiRect studioDrawText(StudioFrame& frame, const UiRect& box, std::string_view text,
+                          StudioFontRole role, StudioColor color,
+                          StudioTextAlign align = StudioTextAlign::Left);
+
+    /**
+     * @brief The width a label needs inside a control, including its horizontal padding.
+     * @param frame Frame supplying measurement and metrics.
+     * @param text Label text.
+     * @param role Typographic role.
+     * @return The control width in logical units.
+     */
+    [[nodiscard]] float studioLabelWidth(const StudioFrame& frame, std::string_view text,
+                                         StudioFontRole role = StudioFontRole::Body);
+
+    // --- Widgets ----------------------------------------------------------------------------------
+
+    /**
+     * @brief A push button.
+     *
+     * @param frame Frame to describe into.
+     * @param id The button's identity.
+     * @param bounds Its rectangle.
+     * @param label Its text. A `"##"` suffix is used for identity and not drawn.
+     * @param options Presentation and state.
+     * @return What happened to it.
+     */
+    StudioWidgetResult studioButton(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                    std::string_view label, const StudioButtonOptions& options = {});
+
+    /**
+     * @brief A button that carries an on/off state the caller owns.
+     *
+     * @p checked is flipped in the input pass only, so the draw pass sees — and draws — the new
+     * value on the same frame the user clicked.
+     *
+     * @param frame Frame to describe into.
+     * @param id The toggle's identity.
+     * @param bounds Its rectangle.
+     * @param label Its text.
+     * @param checked The state to show and flip.
+     * @param options Presentation and state; `selected` is overridden by @p checked.
+     * @return What happened to it; `changed` is true on the frame the state flipped.
+     */
+    StudioWidgetResult studioToggle(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                    std::string_view label, bool& checked,
+                                    const StudioButtonOptions& options = {});
+
+    /**
+     * @brief A checkbox: a square indicator and a label beside it.
+     *
+     * @param frame Frame to describe into.
+     * @param id The checkbox's identity.
+     * @param bounds Its rectangle, including the label.
+     * @param label Its text.
+     * @param checked The state to show and flip.
+     * @param enabled False to draw and route it as disabled.
+     * @return What happened to it.
+     */
+    StudioWidgetResult studioCheckbox(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                      std::string_view label, bool& checked, bool enabled = true);
+
+    /**
+     * @brief One tab in a tab strip.
+     *
+     * @param frame Frame to describe into.
+     * @param id The tab's identity.
+     * @param bounds Its rectangle.
+     * @param label Its text.
+     * @param options Presentation and state.
+     * @return What happened to it; `activated` is true on the frame it was chosen.
+     */
+    StudioWidgetResult studioTab(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                 std::string_view label, const StudioTabOptions& options = {});
+
+    /**
+     * @brief One title in the application menu bar.
+     *
+     * Reports what happened; whether the menu opens is the menu controller's decision, because
+     * "click opens, and then hovering a neighbour switches without another click" is a property of
+     * the *bar*, not of any one title in it.
+     *
+     * @param frame Frame to describe into.
+     * @param id The title's identity.
+     * @param bounds Its rectangle.
+     * @param label Its text.
+     * @param open True while this menu's popup is showing.
+     * @param enabled False to draw and route it as disabled.
+     * @return What happened to it.
+     */
+    StudioWidgetResult studioMenuBarItem(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                         std::string_view label, bool open, bool enabled = true);
+
+    /**
+     * @brief One row inside an open menu.
+     *
+     * @param frame Frame to describe into.
+     * @param id The item's identity.
+     * @param bounds Its rectangle.
+     * @param label Its text.
+     * @param options Enablement, check state, submenu arrow and shortcut hint.
+     * @return What happened to it; `activated` is true on the frame it was chosen.
+     */
+    StudioWidgetResult studioMenuItem(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                      std::string_view label,
+                                      const StudioMenuItemOptions& options = {});
+
+    /**
+     * @brief A horizontal rule between groups of menu items.
+     * @param frame Frame to draw into.
+     * @param bounds The row the separator occupies.
+     */
+    void studioMenuSeparator(StudioFrame& frame, const UiRect& bounds);
+
+    /**
+     * @brief The height one menu row occupies, from theme metrics.
+     * @param theme Theme supplying metrics.
+     * @return Row height in logical units.
+     */
+    [[nodiscard]] float studioMenuItemHeight(const StudioTheme& theme);
+
+    /**
+     * @brief The height a separator row occupies inside a menu.
+     * @param theme Theme supplying metrics.
+     * @return Row height in logical units.
+     */
+    [[nodiscard]] float studioMenuSeparatorHeight(const StudioTheme& theme);
+} // namespace CNA::Studio

@@ -66,6 +66,16 @@ namespace CNA::Studio
         bool held = false;
         /** @brief The primary button came up while this widget held it. */
         bool released = false;
+        /**
+         * @brief The primary button came up with the pointer inside this widget.
+         *
+         * Distinct from @ref released, which requires this widget to have *held* the mouse. A menu
+         * item is the case that needs the difference: the press that opened the menu happened on
+         * the title in the menu bar, so the item was never the capture holder, and yet
+         * press-title, drag-down, release-on-item is the gesture every desktop menu supports. An
+         * item that waited for `clicked` would simply never fire for the user who does that.
+         */
+        bool releasedOver = false;
         /** @brief Press and release both happened on this widget: a completed click. */
         bool clicked = false;
         /** @brief The secondary button completed a click on this widget. */

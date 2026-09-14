@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 14 of 26 complete `██████░░░░░░`
+**Progress:** 18 of 28 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,8 +24,8 @@
 | `STUDIO-03012` | Command routing from the UI to the command registry | ✅ | `STUDIO-03009` |
 | `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state | ⬜ | `STUDIO-03002` |
 | `STUDIO-03014` | Headless test renderer capturing draw data and widget geometry | ✅ | `STUDIO-03009` |
-| `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain | ⬜ | `STUDIO-03003` |
-| `STUDIO-03020` | Cursor shape requests from widgets | ⬜ | `STUDIO-03009` |
+| `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain | ✅ | `STUDIO-03003` |
+| `STUDIO-03020` | Cursor shape requests from widgets | ✅ | `STUDIO-03009` |
 | `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ⬜ | `STUDIO-03009` |
 | `STUDIO-03022` | Popup and modal layering with correct input blocking | 🔄 | `STUDIO-03009` |
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
@@ -36,6 +36,8 @@
 | `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | 🔄 | `STUDIO-03004` |
 | `STUDIO-03029` | Keyboard shortcut matching and chords | ✅ | `STUDIO-03012` |
 | `STUDIO-03030` | Restrained animation model: state transitions only, no decorative motion | ⬜ | `STUDIO-03004` |
+| `STUDIO-03031` | Widget interaction helpers over `interact()`: button, toggle, checkbox, tab, menu item | ✅ | `STUDIO-03015` |
+| `STUDIO-03032` | Text measurement seam: code-point-correct extents, baselines and truncation | ✅ | `STUDIO-03015` |
 
 ## Acceptance and verification
 
@@ -107,9 +109,47 @@ Tasks whose completion condition is not obvious from the title.
 
 **Acceptance.** The phases are explicit and separable so layout can be tested without drawing
 
+**How it was met.** `StudioFrame` sequences the five phases, and the UI is described **twice** per
+frame — once to route input, once to draw — so hover, capture and focus are fully resolved before
+any pixel is decided. An operation attempted in a phase that refuses it is counted and named rather
+than silently tolerated, and a test asserts the count is zero for a well-formed frame and non-zero
+for a malformed one. A layout test therefore runs `beginFrame` and `beginLayout`, asserts on
+rectangles, and never constructs a draw list at all
+
+**Verification.** `tests/StudioFrameTests.cpp`: phase ordering, refused operations, replay
+equivalence between the two passes, identical ids across passes, and one state-store advance per
+frame rather than per pass
+
 ### `STUDIO-03020` — Cursor shape requests from widgets
 
 **Acceptance.** Resize, text, hand and default shapes requested by widgets and resolved once per frame
+
+**How it was met.** A request is honoured only for the widget holding the mouse or — when nothing
+does — the widget under the pointer, and only in the draw pass, when hover is final. "Last caller
+wins" would make the shape depend on description order, and would hand the cursor back to the panel
+underneath a splitter for the whole of a drag
+
+**Verification.** `tests/StudioFrameTests.cpp`: the hovered widget's request wins over a
+neighbour's, the capture holder keeps the cursor when the pointer leaves it, and the shape returns
+to an arrow when nobody asks
+
+### `STUDIO-03031` — Widget interaction helpers over `interact()`
+
+**Acceptance.** Button, toggle, checkbox, tab, menu-bar title and menu item, each built on the one
+`interact()` the router provides rather than on a parallel mechanism. Activation is reported only
+in the input pass, so acting on it runs the action once per gesture however many times the UI is
+described
+
+**Verification.** `tests/StudioFrameTests.cpp`: one activation per click across both passes,
+press-and-slide-off cancels, a disabled control neither activates nor hovers nor tab-stops but
+still blocks the pointer, Space activates the focused control and is suppressed while a field takes
+text, and a menu item commits on release so press-drag-release works
+
+### `STUDIO-03032` — Text measurement seam
+
+**Acceptance.** Extents, ascent, descent and line height are answered behind an interface the font
+atlas implements later, with a font-free approximation until it exists. Widths count code points,
+not bytes, and truncation cuts on code-point boundaries
 
 ### `STUDIO-03022` — Popup and modal layering with correct input blocking
 

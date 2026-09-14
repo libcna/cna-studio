@@ -186,6 +186,9 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioDrawList.cpp
     src/ui-core/StudioShellLayout.cpp
     src/ui-core/StudioInputRouter.cpp
+    src/ui-core/StudioFrame.cpp
+    src/ui-core/StudioTextMeasure.cpp
+    src/ui-core/StudioWidgets.cpp
     src/ui-core/StudioActionRegistry.cpp
     src/ui-core/StudioShellRenderer.cpp
     src/ui-core/UiSoftwareRasterizer.cpp)

@@ -108,6 +108,24 @@ namespace CNA::Studio
         void fillRoundedRect(const UiRect& rect, StudioColor color, float radius);
 
         /**
+         * @brief Fills a triangle.
+         *
+         * The primitive arrows, check marks and disclosure indicators are built from. Exposed
+         * because the alternative -- approximating them with rotated rectangles -- produces
+         * visibly wrong tips at small sizes, which is exactly the size these are drawn at.
+         *
+         * @param x0 First vertex x.
+         * @param y0 First vertex y.
+         * @param x1 Second vertex x.
+         * @param y1 Second vertex y.
+         * @param x2 Third vertex x.
+         * @param y2 Third vertex y.
+         * @param color Fill colour.
+         */
+        void fillTriangle(float x0, float y0, float x1, float y1, float x2, float y2,
+                          StudioColor color);
+
+        /**
          * @brief Draws a one-dimensional rule.
          * @param x0 Start x.
          * @param y0 Start y.
@@ -158,6 +176,9 @@ namespace CNA::Studio
     private:
         /** @brief Ensures the open command matches this texture and clip, starting a new one if not. */
         void ensureCommand(UiTextureId texture);
+
+        /** @brief Whether an axis-aligned bound lies entirely outside the clip in force. */
+        [[nodiscard]] bool isClippedAway(float x0, float y0, float x1, float y1) const;
 
         /** @brief Appends one quad, batching into the open command. */
         void addQuad(float x0, float y0, float x1, float y1, StudioColor color);

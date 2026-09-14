@@ -12,9 +12,16 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | `8fe23bf` — `studio: model CNA's real renderer and platform inventory, and guard the architecture` |
+| HEAD | commit **11** — `studio-ui: add the frame lifecycle and widget interaction helpers` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 8, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 1 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+
+> **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
+> `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
+> hash of the commit that adds it: whatever hash is written is necessarily the *previous* one, and
+> the next commit makes it wrong. A commit count and a subject line are both knowable before the
+> commit is made, so they are correct the moment it lands. Check with
+> `git rev-list --count HEAD` and `git log -1 --format=%s`.
 
 Read in this order to pick the work up:
 
@@ -69,11 +76,12 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **566 assertions, 17 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **566 assertions, 17 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug, no CNA | **603 test cases, 17 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **603 test cases, 17 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **603 test cases, 0 failures, no sanitizer reports** |
 | GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
 
-Baseline at import, for comparison: 442 assertions, 12 CTest suites.
+Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 The CNA-backed configuration was **restored** this session: the prototype's viewport did not
 compile against current CNA, and its player binary was named `cna-player-` with an empty suffix so
@@ -83,7 +91,7 @@ play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 65 of 445 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 70 of 448 tasks are complete.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
@@ -96,12 +104,13 @@ re-audited current CNA.
 **Phase 2 — Architecture refresh** (10 of 22). `docs/ARCHITECTURE.md`, `docs/CNA-GAPS.md`,
 `docs/LEGACY-EDITOR-TASK-MAP.md`, the roadmap, and ten architecture guard tests.
 
-**Phase 3 — Studio UI core** (7 of 27). Design tokens and two themes, widget identity with
-per-frame collision detection, retained widget state with reclamation, geometry primitives, and
-the draw-list layer.
+**Phase 3 — Studio UI core** (18 of 28). Design tokens and two themes, widget identity with
+per-frame collision detection, retained widget state with reclamation, geometry primitives, the
+draw-list layer, input routing with capture and focus, the explicit five-phase frame lifecycle,
+cursor requests, the widget interaction helpers and the text-measurement seam.
 
-**Phase 4 — CNAEXT UI renderer** (4 of 15). Vertex/index management, draw-call batching, nested
-scissor clipping, rounded rectangles and separators.
+**Phase 4 — CNAEXT UI renderer** (5 of 16). Vertex/index management, draw-call batching, nested
+scissor clipping, rounded rectangles, separators, triangles and clip culling.
 
 **Phase 6 — Studio shell** (1 of 16, 4 in progress). Menu bar, toolbar, status bar and the shell
 preview entry point.
@@ -193,11 +202,11 @@ file appearing **is** the test. Split into `screenshotAttempted` (stop retrying)
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **The shell is not yet wired to the input layer.** Hover, click, capture, focus, Tab and the
-  action registry all exist and are tested (`STUDIO-03007`…`03012`, `STUDIO-06001`/`06002`), but
-  the shell still only *draws*: its menus and toolbar do not yet call `interact()`. That wiring is
-  the next commit-sized piece of work, and it is why the entry point is still `--shell-preview`
-  rather than `--ui=studio`.
+- **The shell is not yet wired to the input layer.** The frame lifecycle, the router and the widget
+  helpers all exist and are tested (`STUDIO-03007`…`03015`, `STUDIO-03031`), but `drawStudioShell`
+  still only *draws*: its menus and toolbar do not yet call `interact()`. That wiring is the next
+  commit-sized piece of work, and it is why the entry point is still `--shell-preview` rather than
+  `--ui=studio`.
 - **Text is a placeholder.** `drawTextPlaceholder` fills a measured box, deliberately at reduced
   alpha so an unfinished build looks unfinished. Real glyphs need the font atlas of `STUDIO-04005`.
 - **Studio's CMake still uses `CNA_GRAPHICS_BACKEND`**, the variable name from before CNA split
@@ -243,8 +252,6 @@ In dependency order. The first block is what makes the shell a UI rather than a 
 
 | Id | Task |
 |----|------|
-| `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain — then wire the shell to the input router |
-| `STUDIO-03003` | Widget helpers over `interact()`: button, toggle, tab, menu item |
 | `STUDIO-06004` | Menus that actually open, driven by the action registry |
 | `STUDIO-05001` | Dock node tree model |
 | `STUDIO-05003` | Resizable splitters with minimum sizes and cursor shapes |
