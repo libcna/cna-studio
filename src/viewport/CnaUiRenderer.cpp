@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "CNA/GraphicsBackendType.hpp"
+#include "CNA/GraphicsRendererType.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
@@ -207,7 +207,7 @@ namespace CNA::Studio
     {
         // Compile-time, because CNA resolves its backend at compile time -- there is exactly one
         // in this binary and it cannot change. See ANALYSIS.md finding F-01.
-        return std::string{CNA::getCurrentGraphicsBackendName()};
+        return std::string{CNA::getCurrentGraphicsRendererName()};
     }
 
     UiRenderStats CnaUiRenderer::render(const UiDrawData& drawData)

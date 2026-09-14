@@ -1,3 +1,21 @@
+> ## ⚠️ Historical document
+>
+> This file records the architecture analysis of the **CNA Editor prototype**, written against an
+> **older CNA revision**. It is retained because its sixteen decisions (D-01 … D-16) explain why
+> the imported code looks the way it does, and most of them still hold.
+>
+> **It is out of date about CNA itself.** Its renderer table, backend counts, capability claims and
+> repository layout describe a CNA that no longer exists — the renderer registry has been
+> reorganised, renderer and platform are now separate axes, and a real runtime capability model has
+> replaced the hand-maintained table this document describes.
+>
+> For anything concerning current CNA, read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), which
+> supersedes this file. Where the two disagree, that one is correct.
+>
+> This document is **not** edited to look current. A record that is quietly revised stops being a
+> record of what was actually believed and verified at the time, which is the only thing it is
+> still good for.
+
 # CNA Studio — Architecture Analysis
 
 > **Purpose.** This document is the *reasoning* behind `plan.md`. It takes the original editor

@@ -48,16 +48,16 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**53 of 442 tasks complete** `███░░░░░░░░░░░░░░░░░░░░░`  12.0%
+**55 of 444 tasks complete** `███░░░░░░░░░░░░░░░░░░░░░`  12.4%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 53 |
+| ✅ Complete | 55 |
 | 🔄 In progress | 11 |
 | ⬜ Not started | 373 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **442** |
+| **Total** | **444** |
 
 > **On the task count.** 439 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
@@ -71,7 +71,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 |------:|-------|-----|:------:|------:|-----:|----------|
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
-| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 22 | 11 | `█████░░░░░` |
+| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 24 | 13 | `█████░░░░░` |
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 26 | 7 | `███░░░░░░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 15 | 4 | `███░░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 12 | 1 | `█░░░░░░░░░` |
@@ -223,8 +223,14 @@ display.
   Dear ImGui dependency in the native UI, a missing SPDX header or a hard-coded renderer-name
   comparison — each naming the file, the line and the rule.
 
+- The **CNA-backed build restored against current CNA**. The prototype's viewport did not compile
+  against it, its CMake read a variable CNA no longer defines (so the player built under a name
+  discovery could never find), and both hosts took a graphics profile under which every screenshot
+  throws. All three are fixed (`STUDIO-02060`), and Studio now builds, runs and draws its full UI
+  through real CNA on the SOFTWARE renderer.
+
 The suite is **531 assertions across 17 CTest suites**, green and warning-free in both GCC Debug
-and GCC Release at `-Werror`. Two latent defects inherited from the prototype were found by
+and GCC Release at `-Werror`, plus **22 CTest suites green against a real CNA checkout**. Two latent defects inherited from the prototype were found by
 building at `-O3 -Werror`, which the prototype's CI did not do, and both are fixed: an ignored
 `freopen` result that would have sent a build's output nowhere while leaving an empty log, and a
 dangling reference to a member of a by-value `std::optional` temporary in a recovery test.

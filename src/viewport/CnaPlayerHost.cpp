@@ -10,6 +10,7 @@
 #include "Microsoft/Xna/Framework/GameTime.hpp"
 #include "Microsoft/Xna/Framework/GameWindow.hpp"
 #include "Microsoft/Xna/Framework/GraphicsDeviceManager.hpp"
+#include "Microsoft/Xna/Framework/Graphics/GraphicsProfile.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Viewport.hpp"
@@ -36,6 +37,12 @@ namespace CNA::Studio
                 : options_(options), host_(host), frameHook_(std::move(frameHook)), sink_(std::move(sink))
             {
                 graphics_ = std::make_unique<Xna::GraphicsDeviceManager>(this);
+
+                // HiDef for the same reason Studio's host asks for it: Reach forbids
+                // GetBackBufferData, so --screenshot throws and the player's graphical smoke test
+                // has nothing to assert on. A player previewing a Reach-profile game is a separate
+                // question, and belongs to the target profile (STUDIO-17007), not to the harness.
+                graphics_->setGraphicsProfileProperty(XnaGraphics::GraphicsProfile::HiDef);
                 graphics_->setPreferredBackBufferWidthProperty(options.windowWidth);
                 graphics_->setPreferredBackBufferHeightProperty(options.windowHeight);
 

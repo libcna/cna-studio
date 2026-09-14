@@ -282,7 +282,7 @@ if(CNA_STUDIO_WITH_CNA)
 
     message(STATUS "cna-studio: building the CNA-backed viewport from ${CNA_STUDIO_CNA_ROOT}")
     message(STATUS "cna-studio: CNA selects its graphics backend at compile time; this editor "
-                   "binary will be fixed to whatever CNA_GRAPHICS_BACKEND is set to")
+                   "binary will be fixed to whatever CNA_GRAPHICS_RENDERER is set to")
     add_subdirectory("${CNA_STUDIO_CNA_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/cna")
 
     # The only module that links CNA. It holds three things: the scene viewport, the UI renderer
@@ -399,7 +399,18 @@ target_link_libraries(cna-player PRIVATE cna-studio-player)
 if(CNA_STUDIO_WITH_CNA)
     target_link_libraries(cna-player PRIVATE cna-studio-viewport)
     # The binary is named for its backend so that discovery can tell the builds apart on disk.
-    string(TOLOWER "${CNA_GRAPHICS_BACKEND}" _cna_studio_player_suffix)
+    # CNA_GRAPHICS_RENDERER, not the CNA_GRAPHICS_BACKEND this used to read: current CNA separates
+    # the renderer axis from the platform axis and renamed the variable with it. Reading the old
+    # name produced an EMPTY suffix, so the player built as "cna-player-" and player discovery --
+    # which matches on the "cna-player-<renderer>" shape -- silently found nothing. Play mode
+    # reported no installed builds on a tree that had just built one.
+    string(TOLOWER "${CNA_GRAPHICS_RENDERER}" _cna_studio_player_suffix)
+    if(NOT _cna_studio_player_suffix)
+        message(FATAL_ERROR
+            "cna-studio: CNA_GRAPHICS_RENDERER is empty, so the player binary would be named "
+            "'cna-player-' and discovery would never find it. Configure CNA with a renderer, e.g. "
+            "-DCNA_GRAPHICS_RENDERER=SOFTWARE.")
+    endif()
     set_target_properties(cna-player PROPERTIES OUTPUT_NAME "cna-player-${_cna_studio_player_suffix}")
 endif()
 
@@ -408,7 +419,7 @@ endif()
 #
 # One nested build of this same source tree per requested backend, each producing one
 # cna-player-<backend> beside the editor. A nested build rather than more targets in this one,
-# because CNA_GRAPHICS_BACKEND is a *cache* variable of CNA's build: there is exactly one value per
+# because CNA_GRAPHICS_RENDERER is a *cache* variable of CNA's build: there is exactly one value per
 # build tree, and no arrangement of targets here can change that.
 #
 # Each child is told to build nothing but the player -- no ImGui, no tests, and an empty
@@ -426,7 +437,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_PLAYER_BACKENDS)
 
         # This build tree already produces one. Building it twice would be minutes spent to
         # overwrite a binary with itself.
-        if(_cna_studio_extra_upper STREQUAL "${CNA_GRAPHICS_BACKEND}")
+        if(_cna_studio_extra_upper STREQUAL "${CNA_GRAPHICS_RENDERER}")
             message(STATUS "cna-studio: skipping player backend ${_cna_studio_extra_upper}; "
                            "this build tree already produces it")
             continue()
@@ -442,7 +453,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_PLAYER_BACKENDS)
                 -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
                 -DCNA_STUDIO_WITH_CNA=ON
                 -DCNA_STUDIO_CNA_ROOT=${CNA_STUDIO_CNA_ROOT}
-                -DCNA_GRAPHICS_BACKEND=${_cna_studio_extra_upper}
+                -DCNA_GRAPHICS_RENDERER=${_cna_studio_extra_upper}
                 -DCNA_STUDIO_WITH_IMGUI=OFF
                 -DCNA_STUDIO_BUILD_TESTS=OFF
                 -DCNA_STUDIO_PLAYER_BACKENDS=

@@ -182,7 +182,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
     # the editor and is not. Those get a DISPLAY instead, following the same CNA_TEST_DISPLAY
     # convention CNA itself uses for its window-creating ctests -- point it at an Xvfb server on a
     # build machine with no desktop.
-    if(CNA_GRAPHICS_BACKEND STREQUAL "SOFTWARE" OR CNA_GRAPHICS_BACKEND STREQUAL "HEADLESS")
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaStudioWindowSmoke PROPERTIES
             ENVIRONMENT "SDL_VIDEODRIVER=dummy"
             TIMEOUT 180)
@@ -204,7 +204,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke-3d.png)
 
-    if(CNA_GRAPHICS_BACKEND STREQUAL "SOFTWARE")
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE")
         set_tests_properties(CnaStudioWindowSmoke3D PROPERTIES
             ENVIRONMENT "SDL_VIDEODRIVER=dummy"
             TIMEOUT 180)
@@ -226,7 +226,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
             --assets=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites
             --verbose)
 
-    if(CNA_GRAPHICS_BACKEND STREQUAL "SOFTWARE" OR CNA_GRAPHICS_BACKEND STREQUAL "HEADLESS")
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaSceneLoaderDemo PROPERTIES
             ENVIRONMENT "SDL_VIDEODRIVER=dummy"
             TIMEOUT 180)
@@ -247,7 +247,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/player-smoke.png)
 
-    if(CNA_GRAPHICS_BACKEND STREQUAL "SOFTWARE" OR CNA_GRAPHICS_BACKEND STREQUAL "HEADLESS")
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaPlayerWindowSmoke PROPERTIES
             ENVIRONMENT "SDL_VIDEODRIVER=dummy"
             TIMEOUT 180)

@@ -17,7 +17,7 @@ reporting it.
 | `libcna/sharp-runtime` | `next` | `0c82d9b888bdf5f7d5663c77942f339bcb2a7445` | 2026-09-14 |
 
 The gaps numbered G-01 … G-05 were recorded against an **older** CNA revision by the CNA Editor
-prototype. All five were re-verified against the commit above as part of the CNA Studio bootstrap;
+prototype; G-06 and G-07 are new, filed by CNA Studio. All five were re-verified against the commit above as part of the CNA Studio bootstrap;
 two have since been fixed upstream and are kept here, marked closed, so the record stays honest.
 
 ## Status legend
@@ -125,6 +125,29 @@ and has not been re-measured against the current renderer set. Re-measuring it i
 **Studio treats `Unknown` as not-satisfied for required features**, and says so in its diagnostic
 rather than assuming the best. A tool that starts and then fails to draw is worse than one that
 refuses with a reason.
+
+---
+
+## 🔴 G-07 — `GetBackBufferData` is unavailable under the Reach profile, and that is only discoverable by trying
+
+**New, filed by CNA Studio.**
+
+| Field | Value |
+|-------|-------|
+| Affected API | `GraphicsDevice::GetBackBufferData`, `GraphicsProfile` |
+| Current behaviour | Under `GraphicsProfile::Reach` — the default a `GraphicsDeviceManager` starts with — `GetBackBufferData` throws `"GetBackBufferData is not supported by the Reach graphics profile"` |
+| Expected behaviour | Reasonable as an XNA-compatible restriction. What is missing is a way to ask *before* calling: nothing in the capability model reports it, so a tool discovers it by catching an exception at the moment it wanted the pixels |
+| Studio impact | Every screenshot, every golden image and the whole renderer-comparison harness are built on this call. Studio now requests `HiDef` explicitly, which fixes it — but only after the failure had been observed |
+| Workaround | Request `GraphicsProfile::HiDef` at device creation. Studio does |
+| Suggested fix | Report profile-gated operations through `RendererCapabilityProfile`, so a consumer can check rather than catch |
+| Test needed in CNA | A test asserting the capability answer matches the actual behaviour under both profiles |
+
+**Note on how this was found.** It was invisible for a different reason first: Studio's own host
+set its "screenshot written" flag inside the exception handler, so a failed capture reported
+success and the process exited zero having written nothing. That was a Studio bug, fixed here, and
+it is worth recording because it is the exact failure mode the graphical smoke tests exist to
+prevent — the file appearing *is* the assertion, and a flag that lies about it makes the test pass
+while proving nothing.
 
 ---
 

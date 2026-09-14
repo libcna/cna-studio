@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 11 of 22 complete `██████░░░░░░`
+**Progress:** 13 of 24 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,6 +31,8 @@
 | `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ⬜ | `STUDIO-02020` |
 | `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | 🔄 | `STUDIO-02040` |
 | `STUDIO-02050` | Define the service decomposition of the application shell | ⬜ | — |
+| `STUDIO-02060` | Restore the CNA-backed build against current CNA | ✅ | `STUDIO-02001` |
+| `STUDIO-02061` | Screenshot success is reported honestly | ✅ | `STUDIO-02060` |
 | `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ⬜ | `STUDIO-02050` |
 
 ## Acceptance and verification
@@ -128,6 +130,18 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-02050` — Define the service decomposition of the application shell
 
 **Acceptance.** Explicit services with explicit dependencies — Project, Document, Selection, Command, Asset, Import, Play, Build, Package, Workspace, Preferences, Job — and no service locator. `StudioApplication` stops being the place new subsystems are added
+
+### `STUDIO-02060` — Restore the CNA-backed build against current CNA
+
+**Acceptance.** cna-studio and cna-player build and run against libcna/cna branch next. The viewport uses GraphicsRendererType rather than the removed GraphicsBackendType; the CMake reads CNA_GRAPHICS_RENDERER rather than the removed CNA_GRAPHICS_BACKEND, and fails loudly when it is empty rather than producing an undiscoverable cna-player-; and both hosts request the HiDef graphics profile, without which GetBackBufferData throws and every screenshot is lost
+
+**Verification.** 22 CTest suites green against a real CNA checkout, SOFTWARE renderer, SDL3 platform
+
+### `STUDIO-02061` — Screenshot success is reported honestly
+
+**Acceptance.** A failed capture no longer reports success. `screenshotAttempted` latches the retry; `screenshotWritten` means a file exists. The failure also reaches stderr, because the run that most needs to hear it is the scripted one with nobody watching
+
+**Verification.** CnaStudioWindowSmoke and CnaPlayerWindowSmoke now fail when no file is produced
 
 ### `STUDIO-02051` — Early guard: an exported project configures and builds with Studio unavailable
 

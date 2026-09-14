@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Viewport/CnaStudioHost.hpp"
 
+#include <iostream>
+
 #include <algorithm>
 #include <exception>
 #include <vector>
@@ -10,6 +12,7 @@
 #include "Microsoft/Xna/Framework/GameTime.hpp"
 #include "Microsoft/Xna/Framework/GameWindow.hpp"
 #include "Microsoft/Xna/Framework/GraphicsDeviceManager.hpp"
+#include "Microsoft/Xna/Framework/Graphics/GraphicsProfile.hpp"
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
@@ -84,6 +87,7 @@ namespace CNA::Studio
         float lastDisplayWidth = 0.0f;
         float lastDisplayHeight = 0.0f;
         bool screenshotWritten = false;
+        bool screenshotAttempted = false;
         std::uint64_t frameCount = 0;
         bool contentLoaded = false;
     };
@@ -97,6 +101,17 @@ namespace CNA::Studio
         impl_->ui = dynamic_cast<ImGuiStudioUi*>(&impl_->application->getUi());
 
         impl_->graphics = std::make_unique<Xna::GraphicsDeviceManager>(this);
+
+        // HiDef, not the Reach default. Studio is a desktop authoring tool, not a game targeting
+        // the widest possible hardware, and Reach forbids things Studio genuinely needs -- most
+        // visibly GetBackBufferData, which every screenshot and the whole renderer-comparison
+        // harness are built on. Under Reach that call throws, the capture is lost, and a smoke
+        // test that exists to prove Studio drew something proves nothing.
+        //
+        // This is the compile-time half of the host capability contract (docs/ARCHITECTURE.md §4).
+        // The runtime half -- asking the device what it can actually do and refusing with a
+        // precise diagnostic when it cannot host Studio -- is STUDIO-02020.
+        impl_->graphics->setGraphicsProfileProperty(XnaGraphics::GraphicsProfile::HiDef);
         impl_->graphics->setPreferredBackBufferWidthProperty(options.windowWidth);
         impl_->graphics->setPreferredBackBufferHeightProperty(options.windowHeight);
 
@@ -248,7 +263,7 @@ namespace CNA::Studio
             // the capture -- which can only run in Draw, where the back buffer exists -- never
             // happens at all.
             const bool waitingForScreenshot =
-                !impl_->options.screenshotPath.empty() && !impl_->screenshotWritten;
+                !impl_->options.screenshotPath.empty() && !impl_->screenshotAttempted;
             if (!waitingForScreenshot) { Exit(); }
         }
     }
@@ -275,7 +290,7 @@ namespace CNA::Studio
 
     void CnaStudioHost::captureScreenshotIfRequested()
     {
-        if (impl_->options.screenshotPath.empty() || impl_->screenshotWritten) { return; }
+        if (impl_->options.screenshotPath.empty() || impl_->screenshotAttempted) { return; }
 
         // Only once the frame budget is spent. Capturing earlier would catch the editor
         // mid-warm-up, before the font atlas exists and before the dock layout has settled.
@@ -303,6 +318,7 @@ namespace CNA::Studio
             XnaGraphics::Texture2D capture{device, width, height};
             capture.SetData(pixels.data(), static_cast<int>(pixelCount));
             capture.SaveAsPng(impl_->options.screenshotPath);
+            impl_->screenshotAttempted = true;
             impl_->screenshotWritten = true;
 
             impl_->application->getContext().log(
@@ -310,12 +326,23 @@ namespace CNA::Studio
         }
         catch (const std::exception& exception)
         {
-            // A backend that cannot read its back buffer is a limitation, not a crash: the editor
-            // has already drawn the frame, and losing the capture must not lose the session.
-            impl_->application->getContext().log(
-                LogSeverity::Warning,
-                std::string{"Screenshot failed: "} + exception.what());
-            impl_->screenshotWritten = true;
+            // A renderer that cannot read back its own back buffer is a limitation, not a crash:
+            // Studio has already drawn the frame, and losing the capture must not lose the
+            // session. So the attempt is latched to stop it retrying every frame.
+            //
+            // `screenshotAttempted` and `screenshotWritten` are deliberately two flags. Setting
+            // "written" here -- which this code used to do -- makes a *failed* capture report
+            // success, and that silently defeats the one assertion the graphical smoke tests
+            // rest on: a run that merely exits cleanly cannot tell a working Studio from one that
+            // opened a blank window, so the file appearing IS the test. With the two conflated,
+            // the file never appeared and the test passed.
+            //
+            // The failure also goes to stderr rather than only to the in-Studio console, because
+            // the run that most needs to hear about it is the scripted one with nobody watching.
+            impl_->screenshotAttempted = true;
+            const std::string message = std::string{"Screenshot failed: "} + exception.what();
+            impl_->application->getContext().log(LogSeverity::Warning, message);
+            std::cerr << "cna-studio: " << message << "\n";
         }
     }
     }  // namespace

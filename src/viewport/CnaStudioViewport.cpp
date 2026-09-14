@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-#include "CNA/GraphicsBackendType.hpp"
+#include "CNA/GraphicsRendererType.hpp"
 #include "CNA/GraphicsCapability.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
@@ -53,7 +53,7 @@ namespace CNA::Studio
             // Compile-time: CNA resolves its backend at compile time, so there is exactly one in
             // this binary (ANALYSIS.md finding F-01).
             static const std::string name =
-                std::string{"cna-"} + std::string{CNA::getCurrentGraphicsBackendName()};
+                std::string{"cna-"} + std::string{CNA::getCurrentGraphicsRendererName()};
             return name.c_str();
         }
 
@@ -234,15 +234,29 @@ namespace CNA::Studio
 
         [[nodiscard]] bool isRenderTextureFlippedVertically() const override
         {
-            // Compile-time, from the backend this build was compiled against. Not a runtime probe:
-            // CNA fixes its backend at compile time, so this is a constant, and a probe would
-            // cost a render target and a read-back to learn something already known.
-            switch (CNA::getCurrentGraphicsBackendType())
+            // Compile-time, from the renderer this build was compiled against. Not a runtime
+            // probe: CNA fixes its renderer at compile time, so this is a constant, and a probe
+            // would cost a render target and a read-back to learn something already known.
+            //
+            // This is CNA gap G-03 (docs/CNA-GAPS.md) worked around in the one place the
+            // architecture allows renderer-specific knowledge to live. When CNA normalises the
+            // sampling origin, or publishes the convention as a queryable property, this whole
+            // function is deleted in one edit.
+            //
+            // EasyGL used to be one entry here. It is now a renderer *family* serving several GL
+            // profiles, so the GL profiles are listed individually -- which is also why the list
+            // must never be assumed complete: STUDIO-02010 re-measures it across CNA's current
+            // renderer set rather than inheriting the prototype's two-renderer observation.
+            switch (CNA::getCurrentGraphicsRendererType())
             {
-                case CNA::GraphicsBackendType::EasyGL:
-                case CNA::GraphicsBackendType::WebGPU:
-                case CNA::GraphicsBackendType::Bgfx:
-                case CNA::GraphicsBackendType::SdlGpu:
+                case CNA::GraphicsRendererType::OpenGLES2:
+                case CNA::GraphicsRendererType::OpenGLES3:
+                case CNA::GraphicsRendererType::OpenGL33:
+                case CNA::GraphicsRendererType::WebGL1:
+                case CNA::GraphicsRendererType::WebGL2:
+                case CNA::GraphicsRendererType::WebGPU:
+                case CNA::GraphicsRendererType::Bgfx:
+                case CNA::GraphicsRendererType::SdlGpu:
                     return true;
                 default:
                     return false;
