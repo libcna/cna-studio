@@ -212,6 +212,85 @@ set_tests_properties(CnaStudioRejectsGraphicsFlag PROPERTIES WILL_FAIL TRUE)
 
 add_test(NAME CnaPlayerHelp COMMAND cna-player --help)
 
+if(CNA_STUDIO_WITH_CNA)
+    # Where the two ctests that need a real graphics context find one. Declared here rather than
+    # inside one of the blocks below because both need it and either can be the one that runs:
+    # the native shell needs CNA alone, the ImGui editor needs CNA and Dear ImGui.
+    set(CNA_STUDIO_TEST_DISPLAY ":0" CACHE STRING
+        "DISPLAY used by cna-studio ctests that need a real graphics context")
+
+    # The native Studio shell in a real window, through a real CNA renderer -- the whole strangler
+    # seam end to end: StudioShell describes, CnaUiPlatform fills UiInputState from CNA's input,
+    # CnaUiRenderer draws UiDrawData through CNA's graphics API, and the back buffer comes back as
+    # a PNG. Nothing below CTest can assert this; the headless preview renders the same draw list
+    # through Studio's own software rasterizer, which would pass just as happily if CNA's side of
+    # the seam were broken.
+    #
+    # The assertion is the draw-call count, not the exit code. A shell that built its widget tree
+    # and then submitted nothing would open a window, clear it to the theme background, write a
+    # perfectly valid screenshot of an empty frame and exit zero; requiring a non-zero count of
+    # draw calls and triangles is what separates that from a shell that actually drew.
+    add_test(NAME CnaStudioNativeShellWindowSmoke
+        COMMAND cna-studio --ui=studio
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke.png)
+    set_tests_properties(CnaStudioNativeShellWindowSmoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
+
+    # The light theme through the same path. It is not a redundant run: the theme decides every
+    # colour the renderer uploads, and a vertex-colour or blend-state mistake that happens to be
+    # invisible on a dark background is exactly the kind of thing one theme catches and the other
+    # does not.
+    add_test(NAME CnaStudioNativeShellWindowSmokeLightTheme
+        COMMAND cna-studio --ui=studio --shell-theme=light
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-light.png)
+    set_tests_properties(CnaStudioNativeShellWindowSmokeLightTheme PROPERTIES
+        PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
+
+    # At 2x, where the atlas, the layout and the input mapping all change together. The unit tests
+    # cover High-DPI geometry, but only a real device proves the scaled texture actually uploads.
+    add_test(NAME CnaStudioNativeShellWindowSmokeHiDpi
+        COMMAND cna-studio --ui=studio --shell-scale=2
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-2x.png)
+    set_tests_properties(CnaStudioNativeShellWindowSmokeHiDpi PROPERTIES
+        PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
+
+    # Same reasoning as the ImGui smoke tests: SOFTWARE and HEADLESS need no window system, every
+    # other renderer needs a real context, and forcing the dummy driver there fails for reasons
+    # that have nothing to do with the shell.
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioNativeShellWindowSmoke
+                             CnaStudioNativeShellWindowSmokeLightTheme
+                             CnaStudioNativeShellWindowSmokeHiDpi
+            PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+    else()
+        set_tests_properties(CnaStudioNativeShellWindowSmoke
+                             CnaStudioNativeShellWindowSmokeLightTheme
+                             CnaStudioNativeShellWindowSmokeHiDpi
+            PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
+                       LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # The native shell has no headless mode: without a frame limit it runs until the window is
+    # closed. A screenshot asked for on those terms can never be taken, so the run has to be
+    # rejected before the window opens -- if it were not, this test would hang instead of failing.
+    add_test(NAME CnaStudioNativeShellScreenshotNeedsFrameLimit
+        COMMAND cna-studio --ui=studio
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-never-written.png)
+    set_tests_properties(CnaStudioNativeShellScreenshotNeedsFrameLimit PROPERTIES
+        WILL_FAIL TRUE TIMEOUT 60)
+endif()
+
+if(NOT CNA_STUDIO_WITH_CNA)
+    # Without CNA there is no window and no graphics device, so --ui=studio has nothing to run in.
+    # Failing with that explanation is the contract; silently falling back to the ImGui editor
+    # would give a user who asked for the native shell a different program without saying so.
+    add_test(NAME CnaStudioNativeShellNeedsCna COMMAND cna-studio --ui=studio)
+    set_tests_properties(CnaStudioNativeShellNeedsCna PROPERTIES WILL_FAIL TRUE TIMEOUT 60)
+endif()
+
 if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
     # The real thing: open a window, draw the editor through CNA's public API, and write a PNG of
     # the result. A run that merely exits cleanly cannot tell a working editor from one that opened
@@ -238,8 +317,6 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
             ENVIRONMENT "SDL_VIDEODRIVER=dummy"
             TIMEOUT 180)
     else()
-        set(CNA_STUDIO_TEST_DISPLAY ":0" CACHE STRING
-            "DISPLAY used by cna-studio ctests that need a real graphics context")
         set_tests_properties(CnaStudioWindowSmoke PROPERTIES
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
             LABELS "needs-display"

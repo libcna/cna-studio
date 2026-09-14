@@ -340,7 +340,8 @@ if(CNA_STUDIO_WITH_CNA)
         src/viewport/CnaSceneRenderer.cpp
         src/viewport/CnaUiRenderer.cpp
         src/viewport/CnaUiPlatform.cpp
-        src/viewport/CnaCapabilityBridge.cpp)
+        src/viewport/CnaCapabilityBridge.cpp
+        src/viewport/CnaStudioShellHost.cpp)
 
     # The window host needs both CNA and Dear ImGui, so it only exists when both are built.
     # Without it the editor still compiles and runs headless -- the CNA-linked renderer and
@@ -353,9 +354,11 @@ if(CNA_STUDIO_WITH_CNA)
     # cna-studio-player is here for the player's window host: it draws a PlayerHost's scene, and
     # PlayerHost is the CNA-free half that owns it. The dependency runs one way only -- the player
     # module knows nothing about the viewport -- so this adds no cycle.
+    # cna-studio-ui-core is PUBLIC because the native shell host draws a StudioShell: the shell is
+    # the UI, and the host is only the window it lives in.
     target_link_libraries(cna-studio-viewport
-        PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-project
-               cna-studio-player PRIVATE CNA)
+        PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-ui-core
+               cna-studio-project cna-studio-player PRIVATE CNA)
     target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_CNA=1)
 
     if(CNA_STUDIO_WITH_IMGUI)

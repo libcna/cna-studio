@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 7 of 19 complete `████░░░░░░░░`
+**Progress:** 9 of 21 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -29,6 +29,8 @@
 | `STUDIO-06017` | Nested submenus, opening on hover, with keyboard traversal | ⬜ | `STUDIO-06004` |
 | `STUDIO-06018` | `StudioShell`: the application frame as an interactive object driving the frame lifecycle | ✅ | `STUDIO-03015`, `STUDIO-03031` |
 | `STUDIO-06019` | Capture the shell's interaction states from the preview entry point | ✅ | `STUDIO-06016`, `STUDIO-06018` |
+| `STUDIO-06020` | `--ui=studio`: the native shell in a real window, on a real CNA device | ✅ | `STUDIO-06018`, `STUDIO-02021` |
+| `STUDIO-06021` | Window smoke tests for the native shell, on a real renderer | ✅ | `STUDIO-06020` |
 
 ## Acceptance and verification
 
@@ -135,4 +137,34 @@ action is refused from its shortcut as well as from its menu row
 ### `STUDIO-06015` — The `cna-studio` executable starts on the new shell by default
 
 **Acceptance.** The new shell becomes the default as soon as it is good enough for daily development, with the legacy UI still reachable behind a flag
+
+**Status.** `--ui=studio` exists and runs the real thing (`STUDIO-06020`), so the remaining work is
+the word *default*, not the word *reachable*. It stays 🔄 until the shell hosts a migrated panel:
+a default that opens an editor with no inspector would be a regression however good it looks.
+
+### `STUDIO-06020` — `--ui=studio`: the native shell in a real window, on a real CNA device
+
+**Acceptance.** `cna-studio --ui=studio` opens a window, drives `StudioShell` from CNA's own input
+through `CnaUiPlatform`, and draws its `UiDrawData` through `CnaUiRenderer` on whichever renderer
+the build selected. It refuses, with the reason, on a device that fails the host capability
+contract (`STUDIO-02022`), and refuses `--screenshot` without `--frames` before opening anything --
+the shell runs until the window closes, so a capture it can never reach would hang rather than
+fail. Honours `--shell-scale` and `--shell-theme`; reports renderer, frames, display size, draw
+calls and triangles when given a frame limit
+
+**Why a separate entry point from the ImGui host.** The two draw entirely different things and the
+migration ends by deleting one of them, which is far easier when there is one to delete rather than
+a branch to unpick
+
+### `STUDIO-06021` — Window smoke tests for the native shell, on a real renderer
+
+**Acceptance.** CTest opens the shell on a real CNA device in the dark theme, the light theme and
+at 2x, and asserts a **non-zero** draw-call and triangle count in each. A shell that built its
+widget tree and submitted nothing would clear the window to the theme background, write a valid
+screenshot of an empty frame and exit zero; the counts are what separate that from one that drew.
+Plus a rejection case for `--screenshot` without `--frames`, and, in the CNA-free configuration, a
+case proving `--ui=studio` fails with an explanation rather than silently falling back to ImGui
+
+**Verification.** `CnaStudioNativeShellWindowSmoke`, `…LightTheme`, `…HiDpi`,
+`CnaStudioNativeShellScreenshotNeedsFrameLimit`, `CnaStudioNativeShellNeedsCna`
 

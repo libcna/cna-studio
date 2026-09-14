@@ -59,10 +59,10 @@ namespace CNA::Studio
         /** @brief Returns true when a screenshot was requested and written. */
         [[nodiscard]] bool wasScreenshotWritten() const;
 
-    protected:
         /** @brief The start-up host capability verdict (STUDIO-02021). */
         [[nodiscard]] const StudioHostEvaluation& getCapabilities() const;
 
+    protected:
         void Initialize() override;
         void LoadContent() override;
         void Update(Xna::GameTime& gameTime) override;

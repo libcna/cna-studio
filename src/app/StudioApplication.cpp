@@ -282,6 +282,7 @@ namespace CNA::Studio
             "  --shell-pointer=X,Y  Place the pointer, so hover states are capturable.\n"
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
+            "  --ui=studio        Run the native Studio UI in a window (needs a CNA build).\n"
             "  --host-capabilities  Report what Studio requires of a host renderer, evaluate it\n"
             "                       against this build's device where there is one, and exit.\n"
             "  --shell-size=WxH   Size of the shell preview. Default: 1920x1080.\n"

@@ -33,6 +33,10 @@
 #    include "CNA/Studio/Viewport/CnaStudioHost.hpp"
 #endif
 
+#if defined(CNA_STUDIO_HAS_CNA)
+#    include "CNA/Studio/Viewport/CnaStudioShellHost.hpp"
+#endif
+
 namespace
 {
     /** @brief Prints every log message to stdout. Used by headless runs. */
@@ -280,7 +284,7 @@ namespace
                       << "      " << backend.displayName << " -- " << backend.note << "\n";
         }
         std::cout << "\nThese are the backends a cna-player build can use. Studio's own backend\n"
-                     "is fixed at compile time by CNA_GRAPHICS_BACKEND.\n";
+                     "is fixed at compile time by CNA_GRAPHICS_RENDERER.\n";
     }
 }
 
@@ -328,6 +332,64 @@ int main(int argc, char** argv)
         return renderShellPreview(options);
     }
 
+#if defined(CNA_STUDIO_HAS_CNA)
+    // The native Studio UI in a real window, through a real CNA renderer. Kept a separate entry
+    // point from the ImGui host rather than a branch inside it: the two draw entirely different
+    // things, and the migration ends by deleting one of them -- which is far easier when there is
+    // one to delete rather than a branch to unpick.
+    if (options.uiBackend == "studio")
+    {
+        // Checked before the window opens, not after the loop ends. The native shell has no
+        // headless mode to fall back on: without a frame limit it runs until the user closes the
+        // window, so a run asked for a screenshot it can never reach would hang rather than fail.
+        if (!options.screenshotPath.empty() && options.frameLimit <= 0)
+        {
+            std::cerr << "cna-studio: --screenshot needs --frames. The native shell runs until the "
+                         "window is closed, and the capture is taken on the last frame.\n";
+            return 3;
+        }
+
+        CNA::Studio::CnaStudioShellHostOptions hostOptions;
+        hostOptions.frameLimit = options.frameLimit;
+        hostOptions.screenshotPath = options.screenshotPath;
+        hostOptions.uiScale = static_cast<float>(options.shellPreviewScale);
+        hostOptions.theme = options.shellPreviewTheme;
+
+        const CNA::Studio::CnaStudioShellHostResult result =
+            CNA::Studio::runStudioShellInWindow(hostOptions);
+
+        if (!result.errorMessage.empty())
+        {
+            std::cerr << "cna-studio: " << result.errorMessage << "\n";
+        }
+        if (!options.screenshotPath.empty() && !result.screenshotWritten)
+        {
+            std::cerr << "cna-studio: no screenshot was written to '" << options.screenshotPath
+                      << "'. --screenshot needs --frames, and the renderer must support reading "
+                         "back its own back buffer.\n";
+            return 4;
+        }
+        if (options.frameLimit > 0)
+        {
+            // A window that opens, loops and closes having issued zero draw calls looks identical
+            // to a working one from the outside, so a smoke test needs numbers to assert on.
+            std::cout << "cna-studio: native shell on " << result.renderer << ", " << result.frames
+                      << " frames, " << result.displayWidth << "x" << result.displayHeight
+                      << " display, " << result.drawCalls << " draw calls, " << result.triangles
+                      << " triangles\n";
+        }
+        return result.exitCode;
+    }
+#else
+    if (options.uiBackend == "studio")
+    {
+        std::cerr << "cna-studio: the native Studio UI needs a window and a CNA graphics device.\n"
+                     "Rebuild with -DCNA_STUDIO_WITH_CNA=ON, or use --shell-preview=PATH to render "
+                     "it headless.\n";
+        return 3;
+    }
+#endif
+
     // This is the one place that decides which concrete StudioUi and StudioViewport the
     // application gets. Everything else -- panels, commands, plugins -- is written against the
     // abstractions and does not change when this does (ANALYSIS.md decision D-02).
@@ -345,7 +407,7 @@ int main(int argc, char** argv)
     if (useImGui && options.uiBackend != "imgui")
     {
         std::cerr << "cna-studio: unknown UI backend '" << options.uiBackend
-                  << "'. This binary provides 'imgui' and 'null'.\n";
+                  << "'. This binary provides 'studio', 'imgui' and 'null'.\n";
         return 3;
     }
 
