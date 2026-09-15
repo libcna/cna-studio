@@ -219,7 +219,20 @@ shows something else entirely in a state nobody thought to compare. They are inv
 
 **And what it found about itself.** The native shell is ahead of the prototype on everything a user
 sees first — real type, nine menus to three, a toolbar and a status bar the prototype has not got at
-all — and behind it on one screen's worth of scene-level settings.
+all — and was behind it on one screen's worth of scene-level settings.
+
+**Closed.** The Details panel standing idle shows the project, an editable grid snap, the scene
+environment and the project's layer names with add, rename and remove, each through the command
+history. The reference captures are left as they were: they are the "before" of the migration, and
+re-taking them to hide what the review found would be the wrong kind of tidy.
+
+**And it found something older on the way.** `studioTextField` committed *twice* for any caller that
+normalises what it stores — which is every numeric field in Studio: "00.5" typed, "0.5" written
+back, the editing session left open across the difference, and the next frame reading it as an
+uncommitted edit. Every such edit landed twice, once as the change and once as a no-op that still
+took an undo slot, so Ctrl+Z appeared to do nothing before it did something. Enter ends the session
+now, and `ACallerThatNormalisesWhatItStoresStillCommitsOnce` is the case the plain round-trip test
+could not reach.
 
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 

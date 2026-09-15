@@ -1010,6 +1010,15 @@ namespace CNA::Studio
             else if (router.keyPressed(UiKey::Enter))
             {
                 if (edit.text() != value) { value = edit.text(); result.committed = true; }
+
+                // Enter ends the editing session, not just the focus. The buffer holds what was
+                // typed -- "00.5" -- and the caller is free to normalise what it stored to "0.5",
+                // which is the ordinary case for any field showing a number. A session left open
+                // across that would find the two different on the next frame, take it for an
+                // uncommitted edit, and commit it a second time: every edit through a normalising
+                // caller landing twice, once as the change and once as a no-op that still takes an
+                // undo slot and makes Ctrl+Z appear to do nothing.
+                state.active = false;
                 frame.router().setFocus(WidgetId{});
             }
 

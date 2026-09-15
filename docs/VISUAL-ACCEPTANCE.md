@@ -56,12 +56,20 @@ selected**, and the native Details panel shows only "Select an entity to see its
 
 | What | Where in the prototype | Native | Status |
 |------|------------------------|--------|--------|
-| Scene Environment: ambient colour and fog | `InspectorPanel::drawSceneEnvironment` | — | ⬜ |
-| Grid Snap, editable | `InspectorPanel`, idle | — | ⬜ |
-| The project's layer list, with add | `InspectorPanel::drawLayers` | — | ⬜ |
+| Scene Environment: ambient colour and fog | `InspectorPanel::drawSceneEnvironment` | `details`, idle | ✅ |
+| Grid Snap, editable | `InspectorPanel`, idle | `details`, idle | ✅ |
+| The project's layer list, with add | `InspectorPanel::drawLayers` | `details`, idle | ✅ |
 
 The native Layers panel is not an answer to the third: it lists what is *on* each layer, which is a
 different question from what the layers are called.
+
+**Closed by the review that found them.** The Details panel standing idle now shows the project, an
+editable grid snap, the scene environment and the project's layer names with add, rename and remove
+— each through the command history, so Ctrl+Z reaches them like any other edit. The fog's colour and
+range appear only when fog is on, on the same rule as the prototype's grid-plane menu item: a
+control that changes nothing visible is a bug report waiting to be filed. The reference captures
+above predate the change and are left as they were; they are the "before" of the migration, and
+re-taking them to hide what the review found would be the wrong kind of tidy.
 
 Everything else the captures differ by is already recorded in the inventory as unanswered — the
 tilemap tool strip, the tile index, and 2D/3D — or is a deliberate difference: the prototype's
@@ -70,10 +78,10 @@ application toolbar and in the Backends panel.
 
 ## The verdict
 
-The native shell is ahead of the prototype on everything a user sees first and behind it on one
-screen's worth of scene-level settings. That is the right shape for the migration to be in, and the
-three rows above are what `STUDIO-07030` — deleting the Dear ImGui panels — is waiting for, together
-with the 3D view and tilemap painting the inventory already names.
+The native shell is ahead of the prototype on everything a user sees first, and was behind it on one
+screen's worth of scene-level settings — which this review found and which are now answered. What
+`STUDIO-07030` — deleting the Dear ImGui panels — is still waiting for is the 3D view, tilemap
+painting and plugin menus the inventory already names.
 
 **This review is a judgement and says so.** No test can assert that one editor looks better than
 another. What the suite does check is that the four captures exist, that they are the sizes this

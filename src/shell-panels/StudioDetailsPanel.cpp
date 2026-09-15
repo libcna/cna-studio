@@ -12,6 +12,7 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
+#include "CNA/Studio/ProjectCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
@@ -185,6 +186,58 @@ namespace CNA::Studio
         }
 
         /** @brief The row layout every property shares: a label on the left, a control on the right. */
+        /**
+         * @brief A swatch and four 0..255 channels, edited in place.
+         *
+         * Shared by the component editor and the scene settings rather than written twice: two
+         * colour controls in one panel that disagreed about the range, or about whether the swatch
+         * comes first, would be the sort of difference a user reads as a bug in one of them.
+         *
+         * Not a colour *picker* -- that is its own control and its own task -- but a swatch is
+         * what makes a row of four numbers legible as a colour at all.
+         *
+         * @param frame The frame.
+         * @param bounds Where the control goes.
+         * @param key Identity of the row within the current id scope.
+         * @param colour Read for the displayed value; written when a channel commits.
+         * @return True when a channel committed a new value.
+         */
+        bool colourField(StudioFrame& frame, const UiRect& bounds, std::string_view key,
+                         StudioColor& colour)
+        {
+            const StudioTheme& theme = frame.theme();
+            const float spacing = metricOf(theme, StudioMetric::SpacingSmall);
+
+            UiRect control = bounds;
+            const UiRect swatch = control.splitLeft(
+                std::min(metricOf(theme, StudioMetric::ControlHeight), control.width));
+            control.splitLeft(std::min(spacing, control.width));
+
+            if (frame.isDrawPass())
+            {
+                frame.drawList().fillRect(swatch.inset(UiEdges{0.0f, 2.0f}), colour);
+                frame.drawList().strokeRect(swatch.inset(UiEdges{0.0f, 2.0f}),
+                                            theme.color(StudioColorRole::Border),
+                                            metricOf(theme, StudioMetric::BorderWidth));
+            }
+
+            static const char* const kChannels[] = {"r", "g", "b", "a"};
+            float components[4] = {
+                static_cast<float>(colour.r), static_cast<float>(colour.g),
+                static_cast<float>(colour.b), static_cast<float>(colour.a)};
+
+            frame.ids().push(key);
+            const bool changed =
+                numericComponents(frame, control, kChannels, components, 4, /*integral=*/true);
+            frame.ids().pop();
+
+            if (!changed) { return false; }
+
+            colour = StudioColor{toChannel(components[0]), toChannel(components[1]),
+                                 toChannel(components[2]), toChannel(components[3])};
+            return true;
+        }
+
         struct PropertyRow
         {
             UiRect label;
@@ -205,6 +258,230 @@ namespace CNA::Studio
         }
     }
 
+    StudioDetailsResult studioSceneSettings(StudioFrame& frame, const UiRect& area,
+                                            StudioContext& context)
+    {
+        StudioDetailsResult result;
+        const StudioTheme& theme = frame.theme();
+
+        const float rowHeight = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                         metricOf(theme, StudioMetric::MinimumHitTarget));
+        const float spacing = metricOf(theme, StudioMetric::SpacingXSmall);
+
+        Project& project = context.getProject();
+        const SceneEnvironment environment = context.getScene().getEnvironment();
+        const std::vector<std::string> layers = project.getLayers();
+
+        // Project, Grid Snap, a gap, Scene Environment's heading plus ambient, fog, fog colour and
+        // its two distances, a gap, the Layers heading, one row per layer, and Add.
+        const std::size_t rows = 10 + layers.size();
+
+        StudioScrollOptions scroll;
+        scroll.contentHeight = static_cast<float>(rows) * (rowHeight + spacing);
+        scroll.wheelStep = (rowHeight + spacing) * 3.0f;
+
+        const StudioScrollResult view =
+            studioBeginScroll(frame, frame.ids().make("scenesettings"), area, scroll);
+
+        UiRect cursor = view.viewport;
+        cursor.y -= view.offsetY;
+        cursor.height += view.offsetY;
+
+        const auto nextRow = [&]() {
+            const UiRect row = cursor.splitTop(rowHeight);
+            cursor.splitTop(spacing);
+            ++result.rowsDrawn;
+            return row;
+        };
+
+        const auto heading = [&](const std::string& text) {
+            const UiRect row = nextRow();
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, row, text, StudioFontRole::Subheading,
+                               theme.color(StudioColorRole::TextPrimary));
+            }
+        };
+
+        const auto label = [&](const UiRect& box, const std::string& text) {
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, box,
+                               studioTruncateText(frame, theme.font(StudioFontRole::Body), text,
+                                                  box.width),
+                               StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
+            }
+        };
+
+        frame.ids().push("scene");
+
+        // --- The project ---------------------------------------------------------------------
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            label(parts.label, "Project");
+            // Read-only: the name is the project file's, and renaming a project is renaming a file
+            // on disk -- which is a command with a dialog, not a field somebody can edit by
+            // accident while looking for the grid snap.
+            label(parts.control, project.getName());
+        }
+
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            label(parts.label, "Grid Snap");
+
+            std::string text = formatFloat(project.getGridSnap());
+            StudioTextFieldOptions options;
+            options.font = StudioFontRole::Monospace;
+            options.selectAllOnFocus = true;
+            options.placeholder = "0 for none";
+            if (studioTextField(frame, frame.ids().make("gridsnap"), parts.control, text, options)
+                    .committed)
+            {
+                float step = 0.0f;
+                if (parseFloat(text, step) && step >= 0.0f)
+                {
+                    context.execute(std::make_unique<SetProjectGridSnapCommand>(project, step));
+                }
+            }
+        }
+
+        nextRow();
+        heading("Scene Environment");
+
+        const auto applyEnvironment = [&](const SceneEnvironment& edited, const char* what) {
+            context.execute(std::make_unique<SetSceneEnvironmentCommand>(context.getScene(), edited,
+                                                                        what));
+        };
+
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            label(parts.label, "Ambient");
+
+            StudioColor colour = environment.ambientColor;
+            if (colourField(frame, parts.control, "ambient", colour))
+            {
+                SceneEnvironment edited = environment;
+                edited.ambientColor = colour;
+                applyEnvironment(edited, "ambient light");
+            }
+        }
+
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            label(parts.label, "Fog");
+
+            bool enabled = environment.fogEnabled;
+            if (studioCheckbox(frame, frame.ids().make("fog"), parts.control, {}, enabled).changed)
+            {
+                SceneEnvironment edited = environment;
+                edited.fogEnabled = enabled;
+                applyEnvironment(edited, "fog");
+            }
+        }
+
+        // The fog's own settings only where they do something, on the same rule as the prototype's
+        // grid-plane menu item: a control that changes nothing visible is a bug report waiting to
+        // be filed.
+        if (environment.fogEnabled)
+        {
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                label(parts.label, "Fog Colour");
+
+                StudioColor colour = environment.fogColor;
+                if (colourField(frame, parts.control, "fogcolour", colour))
+                {
+                    SceneEnvironment edited = environment;
+                    edited.fogColor = colour;
+                    applyEnvironment(edited, "fog colour");
+                }
+            }
+
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                label(parts.label, "Fog Range");
+
+                static const char* const kEnds[] = {"start", "end"};
+                float ends[2] = {environment.fogStart, environment.fogEnd};
+                if (numericComponents(frame, parts.control, kEnds, ends, 2))
+                {
+                    SceneEnvironment edited = environment;
+                    edited.fogStart = ends[0];
+                    edited.fogEnd = ends[1];
+                    applyEnvironment(edited, "fog range");
+                }
+            }
+        }
+
+        nextRow();
+        heading("Layers  (" + std::to_string(layers.size()) + ")");
+
+        // --- The project's layers ------------------------------------------------------------
+        //
+        // The names, which is a different question from the Layers panel's "what is on each": one
+        // is the list and the other is its contents, and a user who wants to add a layer has
+        // nowhere else to go.
+        std::vector<std::string> edited = layers;
+        bool layersChanged = false;
+
+        for (std::size_t i = 0; i < layers.size(); ++i)
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            label(parts.label, "Layer " + std::to_string(i));
+
+            frame.ids().pushIndex(static_cast<std::int64_t>(i));
+
+            UiRect control = parts.control;
+            const UiRect remove = control.splitRight(
+                std::min(control.width, metricOf(theme, StudioMetric::ControlHeight)));
+            control.splitRight(std::min(spacing, control.width));
+
+            std::string name = layers[i];
+            if (studioTextField(frame, frame.ids().make("layer"), control, name).committed
+                && !name.empty())
+            {
+                edited[i] = name;
+                layersChanged = true;
+            }
+
+            StudioButtonOptions options;
+            options.kind = StudioButtonKind::Toolbar;
+            options.icon = StudioIcon::Delete;
+            // The first layer is every entity's default, so removing it would leave the scene
+            // pointing at a layer the project no longer declares.
+            options.enabled = i > 0;
+            options.tooltip = i > 0 ? "Remove this layer." : "The default layer cannot be removed.";
+            if (studioButton(frame, frame.ids().make("removelayer"), remove, {}, options).activated)
+            {
+                edited.erase(edited.begin() + static_cast<std::ptrdiff_t>(i));
+                layersChanged = true;
+            }
+
+            frame.ids().pop();
+        }
+
+        {
+            UiRect row = nextRow();
+            const UiRect button = row.splitLeft(
+                std::min(row.width, std::ceil(studioLabelWidth(frame, "Add Layer")) + spacing * 4.0f));
+            if (studioButton(frame, frame.ids().make("addlayer"), button, "Add Layer").activated)
+            {
+                edited.emplace_back("Layer " + std::to_string(layers.size()));
+                layersChanged = true;
+            }
+        }
+
+        if (layersChanged && frame.isInputPass())
+        {
+            context.execute(std::make_unique<SetProjectLayersCommand>(
+                project, context.getComponentRegistry(), std::move(edited)));
+        }
+
+        frame.ids().pop();
+        studioEndScroll(frame);
+        return result;
+    }
+
     StudioDetailsResult studioDetailsPanel(StudioFrame& frame, const UiRect& bounds,
                                            StudioContext& context)
     {
@@ -222,16 +499,21 @@ namespace CNA::Studio
         const std::vector<Uuid>& selection = context.getSelection();
         if (selection.empty())
         {
-            if (frame.isDrawPass())
+            if (!context.hasProject())
             {
-                // Which nothing it is. "Select something to see its details" is a next action;
-                // "nothing to show" is a dead end.
-                studioDrawText(frame, area,
-                               context.hasProject() ? "Select an entity to see its details."
-                                                    : "No project is open.",
-                               StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
+                if (frame.isDrawPass())
+                {
+                    studioDrawText(frame, area, "No project is open.", StudioFontRole::Body,
+                                   theme.color(StudioColorRole::TextSecondary));
+                }
+                return result;
             }
-            return result;
+
+            // Not a dead end. A setting that belongs to no entity has to live somewhere, and the
+            // inspector standing idle is where the prototype put it -- which the panel inventory
+            // could not see, because the inventory accounts for panels and this one is ported.
+            // `docs/VISUAL-ACCEPTANCE.md` found it by looking at the two editors side by side.
+            return studioSceneSettings(frame, area, context);
         }
 
         StudioEntity* entity = context.getScene().findEntity(selection.back());

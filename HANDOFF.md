@@ -227,7 +227,10 @@ and the prototype's four dock sides are checked against where the native layout 
 **The two UIs are captured side by side** in `docs/reference/` at 1280x720 and 1920x1080 through a
 real CNA renderer, reviewed in `docs/VISUAL-ACCEPTANCE.md` — which found three things no surface
 inventory could: the prototype's Inspector shows the Scene Environment, an editable Grid Snap and
-the project's layer list when nothing is selected, and the native Details panel shows a sentence.
+the project's layer list when nothing is selected, and the native Details panel showed a sentence.
+All three are answered now, in the Details panel standing idle and through the command history —
+and closing them found that `studioTextField` committed **twice** for any caller that normalises
+what it stores, which is every numeric field in Studio.
 
 **Phase 16 — Play in editor** (4 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a

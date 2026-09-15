@@ -12,6 +12,10 @@
 
 #include "TestHarness.hpp"
 
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioTextEdit.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
@@ -434,4 +438,90 @@ CNA_STUDIO_TEST(AFieldNobodyTouchedCommitsNothingWhenAnotherIsClicked)
 
     CNA_STUDIO_EXPECT(!committed);
     CNA_STUDIO_EXPECT_EQ(value, std::string{"untouched"});
+}
+
+CNA_STUDIO_TEST(EnterCommitsOnceAndTheFramesAfterItCommitNothing)
+{
+    // Enter commits and clears focus, so the frame after it takes the field through the "focus has
+    // gone" path -- which now commits. It must see that the value it holds is the value it just
+    // wrote, or every committed edit lands in the document twice: once as the change and once as a
+    // no-op that still occupies an undo slot, and Ctrl+Z then appears to do nothing.
+    StudioFrame frame{StudioTheme::dark()};
+    const UiRect bounds{100.0f, 100.0f, 200.0f, 28.0f};
+    std::string value = "old";
+
+    int commits = 0;
+    const auto run = [&](const UiInputState& input) {
+        runStudioFrame(frame, input, [&](StudioFrame& f) {
+            const StudioTextFieldResult pass =
+                studioTextField(f, f.ids().make("field"), bounds, value);
+            if (f.isInputPass() && pass.committed) { ++commits; }
+        });
+    };
+
+    clickAt([&](float x, float y, bool down) { run(at(x, y, down)); },
+            bounds.centerX(), bounds.centerY());
+
+    UiInputState typing = at(bounds.centerX(), bounds.centerY());
+    typing.characters = {u'!'};
+    run(typing);
+
+    UiInputState enter = at(bounds.centerX(), bounds.centerY());
+    enter.setKeyDown(UiKey::Enter, true);
+    run(enter);
+
+    CNA_STUDIO_EXPECT_EQ(commits, 1);
+    CNA_STUDIO_EXPECT_EQ(value, std::string{"old!"});
+
+    // And the frames after it, which is where a second commit would appear.
+    for (int i = 0; i < 5; ++i) { run(at(bounds.centerX(), bounds.centerY())); }
+    CNA_STUDIO_EXPECT_EQ(commits, 1);
+    CNA_STUDIO_EXPECT_EQ(value, std::string{"old!"});
+}
+
+CNA_STUDIO_TEST(ACallerThatNormalisesWhatItStoresStillCommitsOnce)
+{
+    // The case the plain round trip above cannot reach, and the one every numeric field in Studio
+    // is: the caller writes the value back in its own spelling, so "00.5" typed becomes "0.5"
+    // stored. The editing buffer still holds what was typed, and a session left open across that
+    // difference reads it as an uncommitted edit on the next frame and commits it again -- landing
+    // every edit twice, once as the change and once as a no-op that still takes an undo slot.
+    StudioFrame frame{StudioTheme::dark()};
+    const UiRect bounds{100.0f, 100.0f, 200.0f, 28.0f};
+
+    float stored = 0.0f;
+    int commits = 0;
+
+    const auto run = [&](const UiInputState& input) {
+        runStudioFrame(frame, input, [&](StudioFrame& f) {
+            // Rebuilt from the stored value every pass, the way a property row does.
+            char buffer[32] = {};
+            std::snprintf(buffer, sizeof(buffer), "%.9g", static_cast<double>(stored));
+            std::string text = buffer;
+
+            const StudioTextFieldResult pass =
+                studioTextField(f, f.ids().make("field"), bounds, text);
+            if (f.isInputPass() && pass.committed)
+            {
+                ++commits;
+                stored = std::strtof(text.c_str(), nullptr);
+            }
+        });
+    };
+
+    clickAt([&](float x, float y, bool down) { run(at(x, y, down)); },
+            bounds.centerX(), bounds.centerY());
+
+    UiInputState typing = at(bounds.centerX(), bounds.centerY());
+    typing.characters = {u'0', u'.', u'5'};
+    run(typing);
+
+    UiInputState enter = at(bounds.centerX(), bounds.centerY());
+    enter.setKeyDown(UiKey::Enter, true);
+    run(enter);
+
+    for (int i = 0; i < 5; ++i) { run(at(bounds.centerX(), bounds.centerY())); }
+
+    CNA_STUDIO_EXPECT_EQ(commits, 1);
+    CNA_STUDIO_EXPECT(std::abs(stored - 0.5f) < 0.001f);
 }

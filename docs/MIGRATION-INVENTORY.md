@@ -174,12 +174,14 @@ looking, which is the one thing the machine-checked lists cannot do.
 
 | Panel | What | Native | Status |
 |-------|------|--------|--------|
-| Inspector | Scene Environment: ambient colour and fog | — | ⬜ |
-| Inspector | Grid Snap, editable | — | ⬜ |
-| Inspector | The project's layer list, with add | — | ⬜ |
+| Inspector | Scene Environment: ambient colour and fog | `details` | ✅ |
+| Inspector | Grid Snap, editable | `details` | ✅ |
+| Inspector | The project's layer list, with add | `details` | ✅ |
 
 The native Layers panel is not an answer to the third: it lists what is *on* each layer, which is a
-different question from what the layers are called.
+different question from what the layers are called. All three are answered now, in the Details panel
+standing idle, which is where the prototype put them and where a setting belonging to no entity has
+to live. Each goes through the command history, so Ctrl+Z reaches them like every other edit.
 
 ---
 
