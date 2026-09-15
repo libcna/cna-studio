@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 5 of 16 complete `███░░░░░░░░░`
+**Progress:** 8 of 19 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -15,7 +15,10 @@
 | `STUDIO-33003` | Architecture documentation kept current | 🔄 | `STUDIO-02001` |
 | `STUDIO-33004` | Plugin SDK documentation | ⬜ | `STUDIO-28011` |
 | `STUDIO-33005` | Public API documentation coverage | ⬜ | — |
-| `STUDIO-33010` | Graphical CI with a real CNA build and a display | ⬜ | — |
+| `STUDIO-33010` | Graphical CI with a real CNA build and a display | 🔄 | `STUDIO-33023` |
+| `STUDIO-33022` | CI runs the sanitizer configuration | ✅ | — |
+| `STUDIO-33023` | CI runs the CNA-backed configuration on a GPU-free renderer | ✅ | `STUDIO-02060` |
+| `STUDIO-33024` | CI keeps the graphical captures as artifacts | ✅ | `STUDIO-33023` |
 | `STUDIO-33011` | Screenshot and golden-image test infrastructure | ✅ | `STUDIO-04013` |
 | `STUDIO-33012` | Canonical visual test scenes | ⬜ | `STUDIO-33011` |
 | `STUDIO-33013` | Visual tests at multiple resolutions | ✅ | `STUDIO-33012` |
@@ -99,3 +102,49 @@ make, and a test that pretended to make it would be worse than no test
 **Verification.** `EveryPhaseFileAgreesWithItsOwnProgressHeader`,
 `TheMasterPlanTableAgreesWithEveryPhaseFile`, `NoTaskIdIsUsedTwiceAcrossTheWholePlan`. Each was
 confirmed to fail on a deliberately introduced drift, not merely to pass
+
+### `STUDIO-33022` — CI runs the sanitizer configuration
+
+**Acceptance.** ASan and UBSan, Debug, on every push, with `halt_on_error` set — a run that reports
+undefined behaviour and then prints "all tests passed" is a run somebody will believe
+
+**Why it earns a job of its own.** Not belt and braces: a dangling reference to a subobject of a
+temporary passed Debug, passed Release with warnings as errors, and was caught only here
+(`STUDIO-33017`). Nothing else in the matrix would have found it
+
+### `STUDIO-33023` — CI runs the CNA-backed configuration on a GPU-free renderer
+
+**Acceptance.** A job that checks out CNA and sharp-runtime, builds SDL3 from CNA's vendored
+submodule, builds Studio against real CNA, and runs the whole CTest suite on `SOFTWARE` with SDL's
+dummy video driver — the window hosts, the native shell, and the standalone export test included.
+No renderer that needs a GPU, because this runner has none and a failure caused by that would look
+like a failure in Studio
+
+**On the slow case.** The standalone export builds CNA a second time and takes minutes. It stays in,
+because it is the concrete form of "CNA Studio produces CNA games, not CNA Studio games", and an
+invariant excluded from CI for being slow is an invariant that rots
+
+**On skipping honestly.** The sibling checkouts can be unavailable — a fork, or a token without
+access to them. The job then reports, as a workflow warning and in the run summary, that the CNA
+configuration went *unexercised*, rather than failing on every push for a reason unrelated to the
+change. A job that quietly passes by doing nothing would be worse than one that is not there
+
+**Verification.** Every command in the job was run locally, in the configuration it specifies,
+before it was written down — including the two CNA options a consumer must set that nothing in CNA
+mentions (CNA gap G-09) and the Draco default that wants a submodule this build has no use for
+
+### `STUDIO-33024` — CI keeps the graphical captures as artifacts
+
+**Acceptance.** Every PNG the CNA-backed job produces is uploaded, on failure as well as success.
+The graphical cases assert on counts, which says a frame was drawn and not what was in it; the
+captures are what a person looks at when a change to the shell needs reviewing
+
+### `STUDIO-33010` — Graphical CI with a real CNA build and a display
+
+**Acceptance.** The CNA-backed job extended to a renderer that needs a real graphics context, on a
+runner that has one — the cases already labelled `needs-display`
+
+**What holds today.** `STUDIO-33023` covers the CNA seam, the window hosts and the native shell on
+`SOFTWARE`, which needs no display at all. What it cannot cover is anything a GPU does differently:
+`STUDIO-29005`'s renderer matrix, and the `needs-display` cases that exist and are excluded. Those
+need a runner with a device or an Xvfb server, which is infrastructure rather than code

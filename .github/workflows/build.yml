@@ -1,16 +1,24 @@
 # SPDX-License-Identifier: MS-PL
 #
-# The standalone configuration only: no CNA checkout, no GPU, no window.
+# Three jobs, in ascending order of what they cost and of what only they can catch.
 #
-# That is not a limitation being worked around, it is the property the architecture exists to have
-# (ANALYSIS.md decision D-03). Everything except `cna-studio-viewport` is CNA-free, which is what
-# lets the document model, the undo stack, the asset database, the whole panel layer and the real
-# Dear ImGui UI be built and tested on a machine with none of CNA's dependencies installed.
+# `linux` is the standalone configuration: no CNA checkout, no GPU, no window. That is not a
+# limitation being worked around, it is the property the architecture exists to have
+# (`docs/ARCHITECTURE.md` and ANALYSIS.md decision D-03). Everything except `cna-studio-viewport`
+# is CNA-free, which is what lets the document model, the undo stack, the asset database, the whole
+# panel layer and both UIs be built and tested on a machine with none of CNA's dependencies. It is
+# fast enough to run on every push and catches nearly everything.
 #
-# A CNA-configuration job would need four sibling checkouts, CNA's SDL submodules and an X server,
-# and would take an order of magnitude longer. It is worth adding once Studio has a reason to
-# regress there; until then this job catches nearly everything and stays fast enough to be run on
-# every push.
+# `sanitizers` is the same configuration under ASan and UBSan. It exists because "nearly" is doing
+# real work in that sentence: a dangling reference to a subobject of a temporary passed Debug,
+# passed Release with warnings as errors, and was caught only here.
+#
+# `cna` is the expensive one. It builds SDL3, sharp-runtime, CNA and Studio from source and then
+# exports a project and builds *that*, which is minutes rather than seconds. It stays because it is
+# the only job that exercises the CNA seam, the window hosts, the native shell on a real device,
+# and the invariant the whole product rests on -- and an invariant left to a human to remember to
+# check is an invariant that rots. It runs on SOFTWARE, which needs no display; a renderer that
+# needs a GPU is `STUDIO-33010` and needs infrastructure rather than code.
 
 name: build
 
@@ -89,3 +97,152 @@ jobs:
             git diff -- examples/
             exit 1
           fi
+
+  sanitizers:
+    name: Linux ASan + UBSan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        # The same standalone configuration as above, under the two sanitizers that find what a
+        # warning cannot. This is not belt and braces: a dangling reference to a subobject of a
+        # temporary passed every other configuration in this file and was caught here.
+        run: >
+          cmake -S . -B build-asan
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      - name: Unit tests
+        env:
+          # halt_on_error, because a run that reports undefined behaviour and then carries on to
+          # print "all tests passed" is a run somebody will believe.
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./build-asan/tests/cna-studio-tests
+
+      - name: CTest
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build-asan --output-on-failure
+
+  cna:
+    name: Linux CNA-backed (SOFTWARE)
+    runs-on: ubuntu-latest
+    # Builds CNA, SDL3 and sharp-runtime from source, then Studio on top, then exports a project
+    # and builds *that*. Long, and worth it: this is the only job that exercises the CNA seam, the
+    # window host, the native shell on a real device, and the invariant the product rests on.
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out CNA Studio
+        uses: actions/checkout@v4
+        with:
+          path: cna-studio
+
+      # The sibling checkouts CNA needs. They may be unreachable from a fork or from a token
+      # without access to them, and a job that failed for that reason would be red on every push
+      # for a reason unrelated to the change. It therefore reports the skip rather than failing --
+      # and reports it loudly, as a step that says the CNA configuration went unexercised, because
+      # a job that quietly passes by doing nothing is worse than one that is not there.
+      - name: Check out CNA
+        id: cna_checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: libcna/cna
+          ref: next
+          path: cna
+
+      - name: Check out sharp-runtime
+        id: sharp_checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: libcna/sharp-runtime
+          ref: next
+          path: sharp-runtime
+
+      - name: Report an unexercised configuration
+        if: steps.cna_checkout.outcome != 'success' || steps.sharp_checkout.outcome != 'success'
+        run: |
+          echo "::warning::The CNA-backed configuration was NOT exercised: the libcna/cna or" \
+               "libcna/sharp-runtime checkout was unavailable to this run. Everything below was" \
+               "skipped, and this job's green tick means only that the standalone jobs passed."
+          echo "### CNA configuration not exercised" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The sibling checkouts were unavailable, so nothing in this job ran." \
+               >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SDL build dependencies
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        # CNA builds the vendored SDL3 itself into a persistent prebuilt root. SDL turns a backend
+        # off when its development headers are missing and finishes the configure successfully, so
+        # these are what decide whether the result can open a window at all.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxfixes-dev libxss-dev libgl1-mesa-dev libegl1-mesa-dev \
+            libasound2-dev libpulse-dev
+
+      - name: Initialise the SDL submodules
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        # Only these three. Draco and googletest are submodules too, and CNA is configured below
+        # with both features off, so fetching them would cost minutes to build nothing.
+        working-directory: cna
+        run: |
+          git submodule update --init --depth 1 \
+            third_party/SDL third_party/SDL_image third_party/SDL_mixer
+
+      - name: Configure
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        # SOFTWARE, because it needs no GPU and no display: this job has neither, and a renderer
+        # that did would fail for reasons having nothing to do with Studio. CNA's own tests and
+        # examples are off for the reasons recorded as CNA gap G-09 -- a consumer wants CNA, not
+        # CNA's test suite. Draco is off because it defaults ON and wants its own submodule, and
+        # Studio has no use for compressed glTF primitives; fetching and building it would be
+        # several minutes spent on a decoder nothing here calls.
+        run: >
+          cmake -S cna-studio -B build-cna -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCNA_STUDIO_WITH_CNA=ON
+          -DCNA_STUDIO_CNA_ROOT=${{ github.workspace }}/cna
+          -DCNA_GRAPHICS_RENDERER=SOFTWARE
+          -DCNA_PLATFORM=SDL3
+          -DCNA_BUILD_TESTS=OFF
+          -DCNA_BUILD_EXAMPLES=OFF
+          -DCNA_ENABLE_DRACO=OFF
+
+      - name: Build
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        run: cmake --build build-cna --parallel
+
+      - name: Unit tests
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        run: ./build-cna/tests/cna-studio-tests
+
+      - name: CTest
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        # Everything, the slow standalone-export case included. That case is the concrete form of
+        # "CNA Studio produces CNA games, not CNA Studio games", and an invariant excluded from CI
+        # for being slow is an invariant that rots.
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: ctest --test-dir build-cna --output-on-failure
+
+      - name: Keep the screenshots
+        # The graphical cases assert on counts, which says a frame was drawn but not what was in
+        # it. The captures are what a person looks at when a change to the shell needs reviewing.
+        if: always() && steps.cna_checkout.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cna-screenshots
+          path: build-cna/tests/*.png
+          if-no-files-found: ignore
