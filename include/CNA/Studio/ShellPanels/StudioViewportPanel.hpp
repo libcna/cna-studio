@@ -27,12 +27,15 @@
 #include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/Scene/Tilemap.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
+#include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
+#include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 #include "CNA/Studio/Viewport/StudioViewport.hpp"
 
 namespace CNA::Studio
@@ -225,6 +228,50 @@ namespace CNA::Studio
      */
     void studioViewportToolOverlay(StudioFrame& frame, const UiRect& bounds,
                                    StudioViewportState& state);
+
+    /** @brief One control on the viewport toolbar. */
+    struct StudioViewportToolbarItem
+    {
+        /**
+         * @brief The action it invokes, or empty for a group separator.
+         *
+         * An action id rather than a callback, so the button's enablement, its checked state, its
+         * keyboard shortcut and its tooltip all come from the one place they come from everywhere
+         * else in Studio. A viewport toolbar with its own copies of those would be the second
+         * place "is Rotate armed" is decided, and the two would disagree the first time one of
+         * them was changed.
+         */
+        std::string_view actionId;
+        /** @brief What to draw. */
+        StudioIcon icon = StudioIcon::None;
+    };
+
+    /** @brief The toolbar's contents, in order. Empty ids are separators. */
+    [[nodiscard]] const std::vector<StudioViewportToolbarItem>& studioViewportToolbarItems();
+
+    /**
+     * @brief Draws the viewport's own toolbar over the scene, and routes its clicks.
+     *
+     * `plan.md` STUDIO-35050. What every professional 3D viewport has and this one did not: the
+     * view, the transform mode, the transform space and snapping, where the user is already
+     * looking. Before it, every one of those lived only on a menu or a window-level toolbar, which
+     * means the answer to "what will a drag do" was somewhere other than the thing being dragged.
+     *
+     * **Over the image rather than above it.** A strip that took height from the viewport would
+     * make the scene smaller, and the scene is what the panel is for. It is inset from the corner
+     * and drawn on a raised surface so it reads as floating rather than as painted on.
+     *
+     * **Driven by the action registry**, which is what makes it free: a command that is disabled
+     * greys out here, a checkable one shows its state, and a command whose shortcut is rebound
+     * says so in its tooltip, with no code here for any of it.
+     *
+     * @param frame The frame.
+     * @param bounds The viewport's rectangle.
+     * @param actions The registry the buttons invoke.
+     * @return The rectangle the toolbar occupied, so a caller can keep other overlays clear of it.
+     */
+    UiRect studioViewportToolbar(StudioFrame& frame, const UiRect& bounds,
+                                 StudioActionRegistry& actions);
 
     struct StudioViewportResult
     {

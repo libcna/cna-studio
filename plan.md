@@ -48,18 +48,18 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**204 of 533 tasks complete** `██████████░░░░░░░░░░░░░░░`  38.3%
+**206 of 534 tasks complete** `██████████░░░░░░░░░░░░░░░`  38.6%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 204 |
+| ✅ Complete | 206 |
 | 🔄 In progress | 11 |
-| ⬜ Not started | 312 |
+| ⬜ Not started | 311 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 4 |
-| **Total** | **533** |
+| **Total** | **534** |
 
-> **On the task count.** 533 tasks are decomposed today. That is not the final number: the
+> **On the task count.** 534 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
 > Tasks are added when the work is understood well enough to state a completion condition — never
 > to reach a number. A phase whose detail is still coarse says so by having few rows, which is
@@ -104,7 +104,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 21 | 11 | `█████░░░░░` |
 | 34 | [Release engineering](plans/phase-34-release.md) | `STUDIO-34NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
-| 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | 🔄 | 33 | 6 | `██░░░░░░░░` |
+| 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | 🔄 | 34 | 8 | `██░░░░░░░░` |
 
 ## Phase purposes
 

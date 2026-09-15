@@ -319,14 +319,29 @@ namespace CNA::Studio
         const float nx = -dy / length * half;
         const float ny = dx / length * half;
 
-        ensureCommand(kUiTextureNone);
+        // The same default texture and the same reserved white texel every other primitive uses.
+        //
+        // This branch used `kUiTextureNone` and zeroed UVs, which looked harmless -- "with no atlas
+        // the UVs are simply unused" -- and was not: both UI render backends skip a command whose
+        // texture id they cannot resolve, because a command naming a texture that was never created
+        // would otherwise sample whatever happens to be bound. `kUiTextureNone` resolves to
+        // nothing, so **every diagonal line in Studio was dropped on a real device**. It survived
+        // because almost nothing drew one -- until an icon set made of them did, and the icons came
+        // out as their axis-aligned parts alone.
+        //
+        // The software rasterizer drew them correctly the whole time, which is why no headless
+        // capture showed it. That is the failure mode a preview harness has: it is a second
+        // implementation, and the two agreeing is the thing being tested rather than a given.
+        ensureCommand(defaultTexture_);
         UiDrawList& list = data_.lists.back();
         const auto base = static_cast<std::uint16_t>(list.vertices.size());
         const std::uint32_t packed = packUiColor(color);
-        list.vertices.push_back(UiVertex{x0 + nx, y0 + ny, 0.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x1 + nx, y1 + ny, 0.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x1 - nx, y1 - ny, 0.0f, 0.0f, packed});
-        list.vertices.push_back(UiVertex{x0 - nx, y0 - ny, 0.0f, 0.0f, packed});
+        const float u = defaultU_;
+        const float v = defaultV_;
+        list.vertices.push_back(UiVertex{x0 + nx, y0 + ny, u, v, packed});
+        list.vertices.push_back(UiVertex{x1 + nx, y1 + ny, u, v, packed});
+        list.vertices.push_back(UiVertex{x1 - nx, y1 - ny, u, v, packed});
+        list.vertices.push_back(UiVertex{x0 - nx, y0 - ny, u, v, packed});
         const std::uint16_t order[6] = {0, 1, 2, 0, 2, 3};
         for (const std::uint16_t offset : order)
         {

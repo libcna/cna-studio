@@ -24,6 +24,8 @@
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
+#include "CNA/Studio/UiCore/StudioDrawList.hpp"
+#include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
 
@@ -251,4 +253,68 @@ CNA_STUDIO_TEST(EveryIconHasAUniqueNameThatRoundTripsThroughText)
         CNA_STUDIO_EXPECT(parseStudioIcon(name, parsed));
         CNA_STUDIO_EXPECT(parsed == icon);
     }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Every primitive has to reach the GPU (STUDIO-35033)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(EveryPrimitiveTheDrawListEmitsNamesADrawableTexture)
+{
+    // The defect this closes: `drawLine`'s diagonal branch emitted its command against
+    // `kUiTextureNone`, and both UI render backends skip a command whose texture id they cannot
+    // resolve -- because a command naming a texture that was never created would otherwise sample
+    // whatever happens to be bound. So every diagonal line in Studio was dropped on a real device.
+    //
+    // It survived because almost nothing drew one. It surfaced the day an icon set made of
+    // diagonals arrived, as icons that came out as their axis-aligned parts alone: an isometric
+    // cube drew as three bars.
+    //
+    // And the software rasterizer drew them correctly the whole time, so no headless capture
+    // showed it. That is the failure mode a preview harness has -- it is a second implementation,
+    // and the two agreeing is the thing being tested rather than a given.
+    StudioFrame frame;
+    frame.setTheme(StudioTheme::dark());
+
+    UiInputState input;
+    input.displayWidth = 320.0f;
+    input.displayHeight = 240.0f;
+    frame.beginFrame(input);
+    frame.beginInput();
+    frame.beginDraw();
+
+    StudioDrawList& list = frame.drawList();
+    const StudioColor colour = frame.theme().color(StudioColorRole::TextPrimary);
+
+    // Standing in for the font atlas, which is what a real shell binds here: an id and the
+    // coordinates of the reserved opaque white texel every untextured primitive samples. Without
+    // one the default *is* kUiTextureNone -- which is correct for a draw list nobody will render,
+    // and is exactly the state in which this assertion would say nothing.
+    constexpr UiTextureId kAtlas = 7;
+    list.setDefaultTexture(kAtlas, 0.5f, 0.5f);
+
+    list.fillRect(UiRect{10.0f, 10.0f, 40.0f, 20.0f}, colour);
+    list.drawLine(10.0f, 40.0f, 60.0f, 40.0f, colour, 2.0f);   // horizontal
+    list.drawLine(10.0f, 50.0f, 10.0f, 90.0f, colour, 2.0f);   // vertical
+    list.drawLine(20.0f, 100.0f, 80.0f, 160.0f, colour, 2.0f); // diagonal
+    list.fillTriangle(100.0f, 10.0f, 140.0f, 10.0f, 120.0f, 50.0f, colour);
+    list.strokeRect(UiRect{150.0f, 10.0f, 40.0f, 40.0f}, colour, 1.0f);
+
+    frame.endFrame();
+
+    const UiDrawData& data = frame.drawData();
+    std::size_t commands = 0;
+    for (const UiDrawList& drawList : data.lists)
+    {
+        for (const UiDrawCommand& command : drawList.commands)
+        {
+            if (command.indexCount == 0) { continue; }
+            ++commands;
+            // The whole assertion. A backend resolves this id or drops the command, and dropping
+            // it is silent -- no warning, no missing-texture pink, just geometry that is not there.
+            CNA_STUDIO_EXPECT(command.texture != kUiTextureNone);
+            CNA_STUDIO_EXPECT_EQ(command.texture, kAtlas);
+        }
+    }
+    CNA_STUDIO_EXPECT(commands > 0);
 }

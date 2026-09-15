@@ -641,6 +641,8 @@ namespace CNA::Studio
                     frame, bounds, context_, *services_.camera3D, viewportState_,
                     services_.spriteSize);
 
+                studioViewportToolbar(frame, bounds, shell_->actions());
+
                 forwardToPlayer(view3D.pointerInside);
 
                 if (!view3D.selectionChanged) { return; }
@@ -661,7 +663,9 @@ namespace CNA::Studio
 
             // After the surface, so the overlay's field wins hover against the viewport underneath
             // it -- the surface is one widget covering the whole panel, and a field described
-            // before it would be a field the viewport swallows every click of.
+            // before it would be a field the viewport swallows every click of. The toolbar is
+            // described for the same reason and in the same place.
+            studioViewportToolbar(frame, bounds, shell_->actions());
             studioViewportToolOverlay(frame, bounds, viewportState_);
 
             forwardToPlayer(viewport.pointerInside);

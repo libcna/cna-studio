@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 6 of 33 complete `██░░░░░░░░░░`
+**Progress:** 8 of 34 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -58,12 +58,13 @@ truth rather than any one product's expression of it.
 | `STUDIO-35031` | List rows: alternating fill, hover, indent guides, selection order | ✅ | — |
 | `STUDIO-35032` | Vector fields with always-visible axis letters in the gizmo's own colours | ✅ | — |
 | `STUDIO-35033` | Property grid alignment: label column, value column, nesting, reset markers | ⬜ | `STUDIO-35032` |
+| `STUDIO-35036` | Every primitive the draw list emits names a texture a backend can resolve | ✅ | — |
 | `STUDIO-35034` | Entity and asset reference fields that show what they point at | ⬜ | `STUDIO-35033` |
 | `STUDIO-35035` | Multi-selection state in the Details panel | ⬜ | `STUDIO-35033` |
 | `STUDIO-35040` | Content Browser thumbnail grid, with a list/grid switch | ⬜ | `STUDIO-35030` |
 | `STUDIO-35041` | Real content thumbnails, cached and generated off the frame | ⬜ | `STUDIO-35040` |
 | `STUDIO-35042` | Content Browser breadcrumbs, search and type filters | ⬜ | `STUDIO-35040` |
-| `STUDIO-35050` | Viewport toolbar: view, shading, transform mode, snap, camera speed | ⬜ | `STUDIO-35021` |
+| `STUDIO-35050` | Viewport toolbar: view, transform mode, space and snap, over the scene | ✅ | `STUDIO-35021` |
 | `STUDIO-35051` | Viewport grid that reads as a ground plane, with origin axes | ⬜ | — |
 | `STUDIO-35052` | An orientation widget in the viewport corner | ⬜ | `STUDIO-35050` |
 | `STUDIO-35053` | Selection feedback in the viewport: outline, pivot, bounds | ⬜ | — |
@@ -196,3 +197,55 @@ prototype comparison is kept as history rather than as the standard.
 **Done** — the reasoning is at the top of this section. The prototype captures stay in
 `docs/reference/`: they are what the migration was checked against and deleting them would delete
 the evidence for `STUDIO-06015`.
+
+### `STUDIO-35050` — Viewport toolbar
+
+**Acceptance.** The view, the transform mode, the transform space and snapping are visible and
+operable where the user is already looking.
+
+**Over the image rather than above it.** A strip that took height from the viewport would make the
+scene smaller, and the scene is what the panel is for. Inset from the corner, rounded, on the popup
+surface rather than the panel's — this sits above an image whose colour is whatever the user's level
+happens to be.
+
+**Driven by the action registry**, which is what makes it nearly free: a disabled command greys out
+here, a checkable one shows its state, a rebound shortcut appears in its tooltip, and none of that
+is code in the toolbar. A viewport toolbar with its own copies of those would be the second place
+"is Rotate armed" is decided, and the two would disagree the first time one of them changed.
+
+**Deliberately short.** Every control on it is also on a menu; these are the ones whose *state* a
+user needs to see while dragging, which is the only reason to spend viewport on them. Ordered as the
+work is — which projection, then what a drag does, then what it does it in, then whether it snaps.
+
+**And it is measured before it is drawn.** A viewport too small for the strip gets none rather than
+a clipped one: the buttons a clipped toolbar did draw are still clickable, which is worse than no
+toolbar at all.
+
+### `STUDIO-35036` — Every primitive names a resolvable texture
+
+**Acceptance.** No draw command reaches a UI render backend naming a texture the backend cannot
+resolve, because both backends drop such a command silently and correctly.
+
+**A real defect, found by drawing something that had never been drawn.** `StudioDrawList::drawLine`
+has two paths: axis-aligned lines become quads through `addQuad`, which uses the font atlas's
+reserved white texel, and **diagonal lines emitted their command against `kUiTextureNone`** with
+zeroed UVs. The comment said "with no atlas the texture is `kUiTextureNone` and the UVs are simply
+unused", which was true of the *coordinates* and not of the *command*: both backends skip a command
+whose texture they cannot resolve — deliberately, because one naming a texture that was never
+created would otherwise sample whatever happens to be bound.
+
+**So every diagonal line in Studio was invisible on a real device**, and had been for as long as the
+draw list existed. Nothing noticed because almost nothing drew one: separators, borders, grid rules
+and panel chrome are all axis-aligned. It surfaced the day `STUDIO-35030`'s icon set arrived, as an
+isometric cube that drew as three bars.
+
+**The software rasterizer drew them correctly the whole time**, which is why no headless capture
+showed it, and that is worth stating as a property of the harness rather than as bad luck: the
+preview is a second implementation of the same geometry, and the two agreeing is the thing being
+tested rather than something to rely on. The A/B comparison of `STUDIO-04025` exists for exactly
+this shape of failure between the two *CNA* backends; this is the same failure one level up.
+
+**Verification.** `EveryPrimitiveTheDrawListEmitsNamesADrawableTexture` binds a stand-in atlas and
+asserts every emitted command names it. Without an atlas the default genuinely *is*
+`kUiTextureNone` — correct for a draw list nobody will render, and exactly the state in which the
+assertion would say nothing.

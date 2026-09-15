@@ -772,6 +772,136 @@ namespace CNA::Studio
         frame.ids().pop();
     }
 
+    const std::vector<StudioViewportToolbarItem>& studioViewportToolbarItems()
+    {
+        // Ordered as the work is: which projection, then what a drag does, then what it does it in,
+        // then whether it snaps. That is the order a user answers those questions in, and a toolbar
+        // grouped any other way is one whose next button is always somewhere else.
+        //
+        // Deliberately short. A viewport toolbar is chrome over the thing the viewport exists to
+        // show, and every control on it is a control that is also on a menu -- these four are the
+        // ones whose *state* a user needs to see while dragging, which is the only reason to spend
+        // viewport on them.
+        static const std::vector<StudioViewportToolbarItem> items = {
+            // Sprite and Entity for the two views: a picture frame is a flat thing and a cube is
+            // a solid one, which is the difference between the projections. Grid is *not* used
+            // here, deliberately -- it is the snap toggle at the other end of the same strip, and
+            // two identical pictures on one toolbar is worse than one unfamiliar picture.
+            {"studio.view.2d", StudioIcon::Sprite},
+            {"studio.view.3d", StudioIcon::Entity},
+            {{}, StudioIcon::None},
+            {"studio.view.translate", StudioIcon::Translate},
+            {"studio.view.rotate", StudioIcon::Rotate},
+            {"studio.view.scale", StudioIcon::Scale},
+            {{}, StudioIcon::None},
+            {"studio.view.toggleGizmoSpace", StudioIcon::Focus},
+            {"studio.view.toggleGrid", StudioIcon::Grid},
+        };
+        return items;
+    }
+
+    UiRect studioViewportToolbar(StudioFrame& frame, const UiRect& bounds,
+                                 StudioActionRegistry& actions)
+    {
+        if (bounds.isEmpty()) { return UiRect{}; }
+
+        const StudioTheme& theme = frame.theme();
+        const float pad = static_cast<float>(theme.metric(StudioMetric::SpacingSmall));
+        const float button = static_cast<float>(theme.metric(StudioMetric::ControlHeight));
+        const float gap = static_cast<float>(theme.metric(StudioMetric::SpacingXSmall));
+        const float separator = static_cast<float>(theme.metric(StudioMetric::SpacingMedium));
+
+        // Measured before anything is drawn, so a viewport too small for the strip gets none
+        // rather than a clipped one -- a half-drawn toolbar over a scene is worse than none,
+        // because the buttons it did draw are still clickable.
+        float width = pad;
+        std::size_t drawn = 0;
+        for (const StudioViewportToolbarItem& item : studioViewportToolbarItems())
+        {
+            if (item.actionId.empty()) { width += separator; continue; }
+            if (actions.find(item.actionId) == nullptr) { continue; }
+            width += button + gap;
+            ++drawn;
+        }
+        width += pad - gap;
+
+        if (drawn == 0) { return UiRect{}; }
+
+        const UiRect strip{bounds.x + pad, bounds.y + pad,
+                           std::min(width, bounds.width - pad * 2.0f), button + pad * 2.0f};
+        if (strip.width < button + pad * 2.0f || strip.height > bounds.height * 0.5f)
+        {
+            return UiRect{};
+        }
+
+        if (frame.isDrawPass())
+        {
+            // Rounded and raised, so it reads as floating over the scene rather than as painted
+            // onto it. The popup surface rather than the panel's: this is above the image, and the
+            // image is whatever colour the user's level happens to be.
+            frame.drawList().fillRoundedRect(strip, theme.color(StudioColorRole::PopupBackground),
+                                             static_cast<float>(theme.metric(StudioMetric::CornerRadius)));
+            frame.drawList().strokeRect(strip, theme.color(StudioColorRole::Border),
+                                        static_cast<float>(theme.metric(StudioMetric::BorderWidth)));
+        }
+
+        UiRect cursor = strip.inset(UiEdges{pad, pad});
+        frame.ids().push("viewport.toolbar");
+
+        for (const StudioViewportToolbarItem& item : studioViewportToolbarItems())
+        {
+            if (cursor.width <= 0.0f) { break; }
+
+            if (item.actionId.empty())
+            {
+                const UiRect space = cursor.splitLeft(std::min(separator, cursor.width));
+                if (frame.isDrawPass())
+                {
+                    frame.drawList().fillRect(
+                        UiRect{std::round(space.centerX()), space.top() + gap,
+                               static_cast<float>(theme.metric(StudioMetric::SeparatorThickness)),
+                               std::max(0.0f, space.height - gap * 2.0f)},
+                        theme.color(StudioColorRole::Border));
+                }
+                continue;
+            }
+
+            const StudioAction* action = actions.find(item.actionId);
+            if (action == nullptr) { continue; }
+
+            const UiRect box = cursor.splitLeft(std::min(button, cursor.width));
+            cursor.splitLeft(std::min(gap, cursor.width));
+
+            // The registry's own text, its shortcut and its sentence of help. Written here
+            // rather than taken from a field, because the toolbar at the top of the window builds
+            // it the same way and neither of them should own the format -- but a tooltip composed
+            // in this file from the action's own parts cannot go stale the way a second copy of
+            // every label would.
+            std::string tooltip{action->label};
+            {
+                const std::string chord = describeStudioShortcut(action->shortcut);
+                if (!chord.empty()) { tooltip += "  (" + chord + ")"; }
+                if (!action->description.empty()) { tooltip += "\n" + action->description; }
+            }
+
+            StudioButtonOptions options;
+            options.icon = item.icon;
+            options.iconOnly = true;
+            options.enabled = actions.isEnabled(item.actionId);
+            options.selected = actions.isChecked(item.actionId);
+            options.tooltip = tooltip;
+
+            if (studioButton(frame, frame.ids().make(item.actionId), box, action->label, options)
+                    .activated)
+            {
+                actions.invoke(item.actionId);
+            }
+        }
+
+        frame.ids().pop();
+        return strip;
+    }
+
     bool studioFrameSelection(const StudioContext& context, StudioCamera2D& camera,
                               const SpriteSizeProvider& sizeProvider)
     {
