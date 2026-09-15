@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 9 of 34 complete `██░░░░░░░░░░`
+**Progress:** 10 of 35 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -72,8 +72,9 @@ truth rather than any one product's expression of it.
 | `STUDIO-35061` | World Outliner: search, filter and prefab indicators | ⬜ | `STUDIO-35031` |
 | `STUDIO-35070` | Status bar density and legibility | 🔄 | `STUDIO-35021` |
 | `STUDIO-35071` | Toolbar ergonomics: grouping, hover, active and disabled states | 🔄 | `STUDIO-35021` |
-| `STUDIO-35080` | Visual regression suite 2.0: five resolutions, both themes, ten scenarios | ⬜ | `STUDIO-35021` |
+| `STUDIO-35080` | Visual regression suite 2.0: five resolutions, both themes, four scenarios | ✅ | `STUDIO-35021` |
 | `STUDIO-35081` | Replace the prototype comparison with the professional-environment criterion | ✅ | — |
+| `STUDIO-35082` | Tolerant golden comparison and region-occupancy probes | ⬜ | `STUDIO-35080` |
 
 ---
 
@@ -295,3 +296,39 @@ file name would make the cards different heights, and a grid whose rows do not l
 over `studioContentCards` and `studioContentBreadcrumb`, which take a database and a string and need
 no frame. Deciding what a folder holds and deciding where a card goes fail separately, and a
 screenshot cannot tell them apart.
+
+### `STUDIO-35080` — Visual regression suite 2.0
+
+**Acceptance.** The shell is captured at every resolution and theme this project claims to support,
+with the project open so the panels hold real content, and each capture asserts more than that a
+file appeared.
+
+**The defect it closed first.** `--shell-preview` — the only visual harness this project has without
+a GPU, and the source of every golden image — did not apply `--screenshot-min-colors`. It could
+rasterise a frame of nothing, write a perfectly valid PNG and exit zero. That is exactly the failure
+`STUDIO-04015` closed for the *windowed* capture, one harness down, and it is worse there: this is
+the harness that runs on every commit.
+
+The check runs **before the file is written**, for the reason the windowed one does — a blank
+capture must not leave a picture behind for somebody to look at and believe.
+
+**Fourteen cases.** Five resolutions in both themes, plus four scenarios at one size each. The
+matrix is `1280x720`, `1600x900`, `1920x1080`, `2560x1440` and `3840x2160`; the last two are in
+the list although no runner has such a display, because the preview needs none and **the size a
+layout breaks at is usually the one nobody photographed**.
+
+**256 distinct colours as the floor**, which is not a threshold any garbage frame passes and is not
+so high that a legitimately quiet frame fails. A shell frame at any of these sizes has well over a
+thousand — antialiased text alone spreads at every glyph edge — and a frame that rendered to nothing
+has one, or two where something was cleared.
+
+**The scenarios are about state rather than resolution**, so each is at whichever size it is
+meaningful at. The context menu is at 1280x720 and at one exact point, because a context menu needs
+the pointer over something that offers one: the Content Browser's tab, which is there at that size
+and somewhere else at any other. A scenario that silently photographed no popup would be the more
+expensive mistake, so the run fails rather than capturing the shell at rest.
+
+**What is not done.** Tolerant golden comparison against stored references, and region-occupancy
+probes — "the viewport occupies the middle 60% of the window" — are the next layer and are
+`STUDIO-35082`. The floor here separates *drew nothing* from *drew something*; it does not separate
+*drew the right thing*.

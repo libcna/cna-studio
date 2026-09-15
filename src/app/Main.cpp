@@ -165,6 +165,28 @@ namespace
             return 4;
         }
 
+        // `STUDIO-35080`. Before the file is written, not after: a blank capture must not leave a
+        // picture behind for somebody to look at and believe.
+        //
+        // The windowed capture has had this since `STUDIO-04015`; the *preview* -- the only visual
+        // harness this project has without a GPU, and the one every golden image comes from -- did
+        // not. It could rasterise a frame of nothing, write a perfectly valid PNG and exit zero,
+        // which is the same defect one harness down and is worse there, because it is the harness
+        // that runs on every commit.
+        if (options.screenshotMinColors > 0)
+        {
+            const std::size_t colors = CNA::Studio::countDistinctColors(
+                image, static_cast<std::size_t>(options.screenshotMinColors));
+            if (colors < static_cast<std::size_t>(options.screenshotMinColors))
+            {
+                std::cerr << "cna-studio: the shell preview holds only " << colors
+                          << " distinct colours, and " << options.screenshotMinColors
+                          << " were required -- the frame was described but nothing was drawn in "
+                             "it. No file was written.\n";
+                return 4;
+            }
+        }
+
         if (!CNA::Studio::writeImageAsPng(image, options.shellPreviewPath))
         {
             std::cerr << "cna-studio: could not write '" << options.shellPreviewPath << "'\n";

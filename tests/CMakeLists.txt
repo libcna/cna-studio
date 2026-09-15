@@ -208,6 +208,65 @@ set_tests_properties(CnaStudioShellPreviewLightTheme PROPERTIES TIMEOUT 60)
 # Every DPI scale Studio supports, through the real binary. 125% and 175% are included because they
 # are where a layout that happened to round cleanly at 150% and 200% falls apart, and they are the
 # scales a Windows laptop actually ships on.
+# STUDIO-35080 -- the visual regression matrix. Five resolutions in both themes, with the project
+# open so the panels hold real content, and a distinct-colour floor on every one.
+#
+# The floor is what makes these tests rather than captures. A shell frame at any of these sizes has
+# well over a thousand distinct colours, because antialiased text alone spreads at every glyph edge;
+# a frame that rendered to nothing has one. Before STUDIO-35080 the preview could write a perfectly
+# valid PNG of an empty frame and exit zero -- the same defect STUDIO-04015 closed for the windowed
+# capture, one harness down, and worse there because this is the harness that runs on every commit.
+#
+# 2560x1440 is in the list although no runner has such a display: the preview needs none, and the
+# size a layout breaks at is usually the one nobody photographed.
+foreach(_size "1280x720" "1600x900" "1920x1080" "2560x1440" "3840x2160")
+    foreach(_theme "dark" "light")
+        add_test(NAME CnaStudioVisualMatrix_${_size}_${_theme}
+            COMMAND cna-studio
+                --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/matrix-${_size}-${_theme}.png
+                --shell-size=${_size} --shell-theme=${_theme}
+                --screenshot-min-colors=256
+                --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+                --select=Player)
+        set_tests_properties(CnaStudioVisualMatrix_${_size}_${_theme} PROPERTIES TIMEOUT 120)
+    endforeach()
+endforeach()
+
+# The scenarios, at one size, because what each is about is the *state* rather than the resolution:
+# a menu open, a context menu, a modal, the Content Browser's grid, the Details panel's Transform
+# section, the Build panel. Each carries the same colour floor.
+add_test(NAME CnaStudioVisualScenarioContentGrid
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/scenario-content-grid.png
+                       --shell-size=1600x900 --panel=content --screenshot-min-colors=256
+                       --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioVisualScenarioContentGrid PROPERTIES TIMEOUT 120)
+
+add_test(NAME CnaStudioVisualScenarioDetailsTransform
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/scenario-details.png
+                       --shell-size=1600x900 --panel=details --select=Player
+                       --screenshot-min-colors=256
+                       --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioVisualScenarioDetailsTransform PROPERTIES TIMEOUT 120)
+
+add_test(NAME CnaStudioVisualScenarioContextMenu
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/scenario-context.png
+                       # 1280x720 and this exact point, because a context menu needs the pointer
+                       # over something that offers one: the Content Browser's tab, which is where
+                       # it is at this size and is somewhere else at any other. The scenario is
+                       # about the popup rather than the resolution, and a scenario that silently
+                       # photographed no popup would be the more expensive mistake.
+                       --shell-size=1280x720 --shell-pointer=133,533 --shell-right-click
+                       --screenshot-min-colors=256
+                       --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioVisualScenarioContextMenu PROPERTIES TIMEOUT 120)
+
+add_test(NAME CnaStudioVisualScenarioOpenMenu
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/scenario-menu.png
+                       --shell-size=1600x900 --shell-open-menu=File --shell-pointer=40,90
+                       --screenshot-min-colors=256
+                       --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioVisualScenarioOpenMenu PROPERTIES TIMEOUT 120)
+
 foreach(_scale "125" "150" "175" "200")
     add_test(NAME CnaStudioShellPreviewHiDpi${_scale}
         COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-${_scale}.png
