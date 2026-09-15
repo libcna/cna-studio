@@ -2,7 +2,7 @@
 
 State of the work in progress, for whoever continues it. Updated at the end of each long session.
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-15
 
 ---
 
@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **16** — `studio: model the game build target on its six real axes` |
+| HEAD | commit **28** — `docs: bring the handoff up to the state it describes` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits this session | 6 so far, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits this session | 13, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -42,9 +42,10 @@ cmake --build build -j4
 ctest --test-dir build --output-on-failure
 ```
 
-Also run the configurations CI does not yet cover, because they are where the latent defects fixed
-this session were found — an ignored `freopen` result, a dangling reference, and an ODR violation
-that no compiler diagnosed:
+CI runs all four configurations now. Run them locally anyway before a push: the CNA job takes the
+best part of an hour, and these are where the latent defects have actually been found — an ignored
+`freopen` result, a dangling reference to a subobject of a temporary, and an ODR violation that no
+compiler diagnosed:
 
 ```bash
 cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
@@ -59,7 +60,17 @@ cmake --build build-werror -j4
 ctest --test-dir build-werror
 ```
 
-See the native Studio UI, headless:
+Run the native Studio UI in a real window, on a real CNA device — needs the CNA-backed build:
+
+```bash
+./build-cna/cna-studio --ui=studio --project=examples/HelloSprites/HelloSprites.cnaproject
+```
+
+Add `--select=Player` to start with something in the Details panel, `--panel=output` to raise the
+Output Log, and `--workspace=none` to leave your saved layout alone. On a machine with no display,
+`SDL_VIDEODRIVER=dummy` plus `--frames=N --screenshot=PATH` captures it instead.
+
+Render the same shell headless, with no CNA, no GPU and no window:
 
 ```bash
 ./build/cna-studio --shell-preview=shell.png --shell-size=1280x720
@@ -72,6 +83,14 @@ tokens are actually exercised:
 ```bash
 ./build/cna-studio --shell-preview=menu.png --shell-open-menu=File --shell-pointer=40,90
 ./build/cna-studio --shell-preview=pressed.png --shell-pointer=40,40 --shell-mouse-down
+```
+
+Export a project as a standalone CNA game, and build it with Studio nowhere in sight:
+
+```bash
+./build/cna-studio --project=examples/HelloSprites/HelloSprites.cnaproject --export=/tmp/game
+cmake -S /tmp/game -B /tmp/game/build -DCNA_ROOT=/path/to/cna
+cmake --build /tmp/game/build && (cd /tmp/game/build && ./HelloSprites --frames=10)
 ```
 
 See what Studio requires of a host renderer, and — on a CNA build — whether this one meets it:
@@ -90,64 +109,79 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **692 test cases, 22 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **692 test cases, 22 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **692 test cases, 0 failures, no sanitizer reports** |
-| GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **22 CTest suites, 0 failures** — including the window smoke test, the 3D viewport smoke test, the scene-loader demo and the player window smoke test |
+| GCC 13.3 Debug, no CNA | **790 test cases, 26 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **790 test cases, 26 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **790 test cases, 26 CTest suites, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **791 test cases, 40 CTest suites, 0 failures** |
+
+The extra case in the CNA-backed run is `STUDIO-29007`, which reads CNA's own
+`RendererSelection.cmake` and can only run where there is a CNA checkout to read.
+
+The CNA-backed suite now includes the native shell on a real device in both themes and at 2x, the
+shell with a project open, the workspace surviving a real process exit, and
+`CnaStudioStandaloneExport` — which exports the example project, configures it with nothing but
+CMake and a CNA checkout, compiles it and runs it (about four minutes, most of it CNA).
+
+**All four configurations run in CI** as of `STUDIO-33022`/`STUDIO-33023`. They are still worth
+running locally before a push: the CNA job takes the best part of an hour.
 
 Baseline at import, for comparison: 442 test cases, 12 CTest suites.
-
-The CNA-backed configuration was **restored** this session: the prototype's viewport did not
-compile against current CNA, and its player binary was named `cna-player-` with an empty suffix so
-play-mode discovery found nothing. Both are fixed; see *Things found* below.
 
 ---
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. 100 of 457 tasks are complete.
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **124 of 476 tasks are complete.**
+Per-phase counts and the headline are checked by the test suite now (`STUDIO-33018`), so the
+numbers in this file and in `plan.md` cannot drift from the phase files again.
 
 **Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
-`3bce82dd74e9a201a21e31308d43d2ee7761d641` into the repository root, verified its baseline, and
-re-audited current CNA.
+`3bce82dd74e9a201a21e31308d43d2ee7761d641`, verified its baseline, re-audited current CNA.
 
-**Phase 1 — Product rename** (13 of 16). `cna-studio` executable, 12 `cna-studio-*` targets, the
-`CNA::Studio` namespace, `include/CNA/Studio/`, `CNA_STUDIO_*` options, user-visible text, README.
-94 files moved with `git mv` so per-file history survived.
+**Phase 1 — Product rename** (13 of 16). `cna-studio` executable, `cna-studio-*` targets, the
+`CNA::Studio` namespace, `CNA_STUDIO_*` options. 94 files moved with `git mv`.
 
-**Phase 2 — Architecture refresh** (17 of 25). `docs/ARCHITECTURE.md`, `docs/CNA-GAPS.md`,
-`docs/LEGACY-EDITOR-TASK-MAP.md`, the roadmap, ten architecture guard tests, the restored
-CNA-backed build, and the Studio host capability contract with its live evaluation and its refusal
-diagnostic.
+**Phase 2 — Architecture refresh** (22 of 27). The architecture record, the CNA gap register, the
+roadmap, ten architecture guard tests, the restored CNA-backed build, the Studio host capability
+contract, the six-axis build target model, and **the standalone export**: `--export=DIR` writes a
+project that builds and runs with Studio uninstalled, and `STUDIO-02051` proves it by doing so.
 
-**Phase 3 — Studio UI core** (18 of 28). Design tokens and two themes, widget identity with
-per-frame collision detection, retained widget state with reclamation, geometry primitives, the
-draw-list layer, input routing with capture and focus, the explicit five-phase frame lifecycle,
-cursor requests, the widget interaction helpers and the text-measurement seam.
+**Phase 3 — Studio UI core** (24 of 29). Design tokens and two themes, widget identity, retained
+state, the draw list, input routing with capture and focus, the five-phase frame lifecycle, cursor
+requests, widget helpers, text measurement, **High-DPI correctness including the seams**, scrolling
+with row virtualisation, a tree view, the text selection model, the clipboard seam, and an editable
+text field.
 
-**Phase 4 — CNAEXT UI renderer** (7 of 18). Vertex/index management, draw-call batching, nested
-scissor clipping, rounded rectangles, separators, triangles, clip culling, and **real text**: a
-glyph atlas, per-size rasterization, kerning and correct baselines.
+**Phase 4 — CNAEXT UI renderer** (7 of 18). Vertex management, batching, nested scissor clipping,
+rounded rectangles, clip culling, and real text: a glyph atlas with kerning and correct baselines.
 
-**Phase 5 — Docking** (8 of 14). The dock node tree, splits, draggable splitters with minimum
-sizes and cursor shapes, tab strips, opening and closing panels, layout serialization, restoring
-the default, dropping panels a build no longer has, and never failing to start on a corrupt layout.
+**Phase 5 — Docking** (10 of 14). The dock node tree, splits, draggable splitters with minimum
+sizes and cursor shapes, tab strips, opening and closing panels, serialization, restoring the
+default, dropping panels a build no longer has, never failing to start on a corrupt layout, and
+**the layout surviving between runs**.
 
-**Phase 6 — Studio shell** (7 of 19, 5 in progress). The action registry and the core action set;
-an interactive menu bar, toolbar, tab strips and status bar driven entirely by that registry;
-shortcut dispatch with scope precedence; and a preview entry point that can capture the shell's
-interaction states.
+**Phase 6 — Studio shell** (12 of 24). The action registry and core action set; an interactive menu
+bar, toolbar, tab strips and status bar driven entirely by it; shortcut dispatch with scope
+precedence; the preview entry point; **`--ui=studio`, the native shell in a real window on a real
+CNA device**; the shell opening a project on the editor's own `StudioContext`; and the core
+commands bound to it with live enablement.
+
+**Phase 7 — Panel migration** (5 of 25, 1 in progress). The strangler seam itself — one log model
+read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
+**three panels ported off Dear ImGui**: the Output Log, the World Outliner and the Details panel.
+
+**Phase 17 — Build profiles** (5 of 12). The target profile model, OS/platform/architecture and
+renderer selection, build configuration, and the migration of the game's configure command onto the
+variables current CNA actually defines.
 
 **Phase 29 — Renderer matrix** (5 of 7). The renderer and platform catalogue, capability-driven
 host eligibility, target renderer validation, and the guard that keeps Studio's transcription of
 CNA's configure rules from drifting.
 
-**Phase 17 — Build profiles** (5 of 11). The target profile model, OS/platform/architecture and
-renderer selection, build configuration, and the migration of the game's configure command onto
-the CMake variables current CNA actually defines.
-
-**Phase 33 — Docs and CI** (4 of 15). Golden-image test infrastructure, visual tests at every
-tested resolution and DPI scale, and the assertion-macro hardening that a sanitizer forced.
+**Phase 33 — Docs and CI** (8 of 19). Golden-image infrastructure, visual tests at every tested
+resolution and DPI scale, the assertion-macro hardening a sanitizer forced, the plan-arithmetic
+guards, and CI coverage for the sanitizer and CNA-backed configurations with the captures kept as
+artefacts.
 
 ---
 
@@ -171,6 +205,35 @@ rather than after graphical CI exists.
 `"editorApiVersion"` (plugin manifest) keep their spelling on disk because existing files and built
 plugins depend on them. Their C++ carriers were renamed. `.cnaproject`/`.cnascene`/`.cnaasset`/
 `.cnaprefab` are CNA ecosystem formats and are untouched.
+
+**The ported panels live above both the widgets and the document.** `cna-studio-ui-core` knows
+nothing about scenes and `cna-studio-scene` knows nothing about widgets, which is what lets each be
+tested without the other. A panel is the seam where the two are put together, so it gets its own
+module — `cna-studio-shell-panels`. The Output Log is the exception that proves it: its model lives
+in `cna-studio-ui`, which ui-core already depends on, so it could stay put.
+
+**One log model, read by both consoles.** Two logs would make the migration impossible to check:
+every difference between the legacy panel and the ported one would be a difference in what was
+logged rather than in how it was drawn, and nobody could tell a faithful port from a
+plausible-looking one.
+
+**A widget is a view over rows a caller flattens, not a walker over somebody's data structure.** The
+outliner shows a scene graph and the content browser will show a directory; a tree widget that knew
+about either would have to learn about both. It takes a flat list with a depth per row, which is
+what a tree looks like once it has been drawn.
+
+**An edit commits on Enter or on losing focus, never per keystroke.** A property bound to a field
+that wrote per character would put one undo entry per letter and would parse a number while it is
+half-typed. And losing focus *commits* rather than abandoning: throwing away somebody's typing
+because they clicked elsewhere is the behaviour every form gets wrong and nobody forgives.
+
+**Enablement is a predicate, not a flag.** Asked at the moment the answer is needed, so Undo greys
+out the instant the history empties. A stale enablement is worse than none: a control that looks
+available and refuses is indistinguishable from one that is broken.
+
+**The exported runtime is embedded from the sources Studio itself compiles.** A shipped Studio has
+no source tree beside it, so export has to work from the binary alone — and embedding from the same
+files is what stops the exported scene reader drifting from the writer that produced the scene.
 
 **A legacy renderer name migrates and says so.** Silently substituting a renderer would change what
 a user's game ships on; silently failing would make an old project look corrupt.
@@ -235,30 +298,75 @@ file appearing **is** the test. Split into `screenshotAttempted` (stop retrying)
 
 ---
 
+**CNA cannot be consumed as a subdirectory out of the box.** Its tests and examples default ON with
+no top-level-project guard, and neither can succeed from a subdirectory: the tests want an
+initialised googletest submodule, and the examples resolve a helper script through
+`CMAKE_SOURCE_DIR`, which from a subdirectory is the *consuming* project's root. Draco defaults ON
+too and wants its own submodule. Every consumer must therefore know to pass three options nothing in
+CNA mentions — which is CNA gap G-09, and is exactly what a game exported by Studio is. Found by
+building an exported project rather than reading it.
+
+**`CNA_ENABLE_VIDEO` is tri-state, and Studio's feature model was a boolean.** `OFF`, `AUTO` or
+`ON`, where `ON` *requires* FFmpeg and fails the configure without it. Passing `ON` for a project
+that merely wanted video made every exported game demand FFmpeg. Features now carry the spelling of
+their own "on"; the real tri-state is `STUDIO-17012`.
+
+**Rounding a content-derived width down produces a box its own text does not fit in.** Menu titles
+read "F..." for File while "Project" was fine, depending on nothing but where each measured width
+fell relative to half a pixel. Content-derived widths are ceiled now, not rounded.
+
+**The router grants focus the frame *after* a press.** It reports the focused widget as of the start
+of the frame and reassigns during `interact()`. A text field that waited for focus to start an edit
+session therefore began on a frame where nothing said the pointer was involved — and select-all-on-
+focus then wiped a name field somebody had merely clicked into. The press starts the session.
+
+**Following new output has to measure against last frame's extent.** Against the grown content the
+view is never already at the end — that is why it grew — so a console that compared with the new
+extent would never once auto-scroll.
+
+**The plan's own arithmetic had drifted.** Phase 5 had nine complete tasks and said eight, in both
+the phase file and `plan.md`. Now checked by the test suite (`STUDIO-33018`), which found it on the
+commit that introduced the check.
+
+---
+
 ## Known gaps and failures
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **Panels cannot yet be dragged between docks.** The tree supports it (`movePanel`) and the model
-  is tested, but there is no drag gesture and no drop-target preview (`STUDIO-05005`/`05006`).
-- **The layout is not written to disk yet.** It serializes and restores, but nothing saves it
-  between runs: that needs the preferences store of `STUDIO-06010` (`STUDIO-05014`).
-- **The entry point is still `--shell-preview` rather than `--ui=studio`**, because the shell hosts
-  no real panel content yet — every dock body is an empty surface awaiting Phase 7.
+- **The native shell is not the default UI.** `--ui=studio` runs it; `cna-studio` with no flag still
+  runs the ImGui editor. It stays that way until the shell hosts enough migrated panels that
+  defaulting to it is not a regression (`STUDIO-06015`), and until both presentations can coexist
+  in one process rather than being two entry points (`STUDIO-07001`).
+- **Six panels are still ImGui-only**: Content Browser, Build, Diagnostics, Validation, History and
+  Comparison. Each is `STUDIO-070NN` and each is now a day's work rather than a research project,
+  because the seam and the widgets they need exist.
+- **The Details panel cannot edit every kind.** Colours, rotations, rectangles, references, lists
+  and structures are *shown* with what they hold and labelled as not editable. `STUDIO-07018` wants
+  pickers rather than more text fields. The entity's enabled flag is applied directly rather than
+  through a command, because `SceneCommands` has no set-enabled yet (`STUDIO-07019`).
+- **Panels cannot be dragged between docks.** The tree supports it (`movePanel`) and the model is
+  tested, but there is no drag gesture and no drop-target preview (`STUDIO-05005`/`05006`), and no
+  tab reordering (`STUDIO-05004`).
 - **Submenus are not implemented.** The arrow is drawn for an item that declares one and nothing
-  opens (`STUDIO-06017`). No menu in the default set declares a submenu, so nothing is visibly
-  broken today.
-- **Icons are not drawn yet.** Toolbar buttons carry text labels. The decision recorded on
-  `STUDIO-04009` is to draw Studio's icons as vector paths in code rather than vendor an icon
-  font — no third-party asset, crisp at every DPI scale, and a visual language that is Studio's
-  own (`STUDIO-04008`).
+  opens (`STUDIO-06017`). No menu in the default set declares one, so nothing is visibly broken.
+- **Icons are not drawn yet.** Toolbar buttons carry text labels. The decision on `STUDIO-04009` is
+  to draw Studio's icons as vector paths in code rather than vendor an icon font — no third-party
+  asset, crisp at every scale, a visual language that is Studio's own (`STUDIO-04008`). The tree's
+  disclosure triangle is the first one, drawn exactly that way.
+- **The caret does not blink.** Deliberate until there is an animation model (`STUDIO-03030`): a
+  caret that blinks off is one a golden image catches half the time.
+- **Text moves by code point, not by grapheme cluster.** A flag emoji is one thing a reader sees and
+  several code points, so the caret steps inside some characters. `STUDIO-03026` needs a breaker
+  and a table this repository does not have.
 - **The glyph atlas re-uploads whole.** A dirty atlas sends all four megabytes rather than the
   changed region (`STUDIO-04017`), and a full one drops glyphs and counts them rather than growing
   (`STUDIO-04018`). Both are start-up costs — the atlas settles within a few frames.
-- **No graphical CI.** `STUDIO-00013`'s reference screenshots and the real-device smoke tests are
-  blocked on `STUDIO-33010`.
-- **Visual-test PNGs are large** (~8 MB at 1080p): the encoder uses stored deflate, which is
-  correct and reviewable but uncompressed. `STUDIO-33016`.
+- **No graphical CI on a GPU.** `STUDIO-33023` covers the CNA seam on `SOFTWARE`, which needs no
+  display. Anything a GPU does differently, and the cases labelled `needs-display`, wait on
+  `STUDIO-33010` — infrastructure rather than code.
+- **Visual-test PNGs are large** (~8 MB at 1080p): stored deflate, correct and reviewable but
+  uncompressed. `STUDIO-33016`.
 
 ### Building against a real CNA checkout
 
@@ -291,26 +399,25 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 ## Next recommended tasks
 
-In dependency order. The first block is what makes the shell a UI rather than a picture.
+In dependency order. The first block is what turns three ported panels into an editor somebody
+could actually use instead of the ImGui one.
 
 | Id | Task |
 |----|------|
-| `STUDIO-06004` | Menus that actually open, driven by the action registry |
-| `STUDIO-05001` | Dock node tree model |
-| `STUDIO-05003` | Resizable splitters with minimum sizes and cursor shapes |
-| `STUDIO-02020` | Define the Studio host capability contract as data |
-| `STUDIO-02021` | Evaluate the contract against the live device at start-up |
-| `STUDIO-02022` | Fail cleanly when the compiled renderer cannot host Studio |
-| `STUDIO-04005` | Font atlas construction and glyph rasterization |
-| `STUDIO-04006` | Text rendering with kerning and correct line metrics |
-| `STUDIO-04009` | Choose and document redistributable fonts and icons |
-| `STUDIO-02050` | Service decomposition of the application shell |
-| `STUDIO-02051` | Early guard: an exported project builds with Studio unavailable |
-| `STUDIO-01014` | Decide and document the compatibility-shim policy for the renamed API |
-| `STUDIO-01015` | Rename the state/configuration directory, with migration |
-| `STUDIO-00014` | Record the prototype panel/menu/shortcut inventory as the migration checklist |
+| `STUDIO-07008` | Port the Content Browser — the last of the four panels a person looks at first |
+| `STUDIO-07001` | Both UIs in one running Studio, so the migration can proceed panel by panel |
+| `STUDIO-06015` | Make the native shell the default, with the legacy UI behind a flag |
+| `STUDIO-05004` | Tab reordering |
+| `STUDIO-05005` | Drag a panel to another dock, with a drop-target preview |
+| `STUDIO-05006` | Undock to a floating panel |
+| `STUDIO-07018` | Editors for the property kinds the Details panel shows read-only |
+| `STUDIO-07019` | An undoable command for an entity's enabled flag |
+| `STUDIO-06017` | Nested submenus, opening on hover, with keyboard traversal |
+| `STUDIO-04008` | Icons, as vector paths in code |
+| `STUDIO-07009` | Port the viewport container — the panel that needs a device |
 | `STUDIO-33010` | Graphical CI with a real CNA build and a display |
-| `STUDIO-02010` | Re-measure CNA gap G-03 across the current renderer set |
+| `STUDIO-02050` | Service decomposition of the application shell |
+| `STUDIO-00014` | Record the prototype panel/menu/shortcut inventory as the migration checklist |
 
 `STUDIO-15001` (the C++ reflection mechanism) is 🔬 blocked on an architectural decision and should
 be decided before Phase 15 work begins, not during it.
