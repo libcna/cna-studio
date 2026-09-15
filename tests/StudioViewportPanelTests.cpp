@@ -605,3 +605,114 @@ CNA_STUDIO_TEST(TwoGroupDragsAreTwoUndoEntriesRatherThanOne)
 
     CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{2});
 }
+
+CNA_STUDIO_TEST(FocusSelectedMovesTheCameraOntoWhatIsSelected)
+{
+    Fixture fixture;
+    fixture.camera.setCenter(StudioVector2{5000.0f, 5000.0f});
+    fixture.context.select(fixture.right);
+
+    CNA_STUDIO_EXPECT(studioFrameSelection(fixture.context, fixture.camera, fixture.sizes()));
+
+    // On the sprite's own extent, not on its transform position: a sprite is anchored at its
+    // top-left corner by default, so a 64x64 one at (100, 0) occupies (100, 0)..(164, 64) and
+    // framing it centres on the middle of *that*. Asserting the transform position instead is how
+    // this test was wrong the first time.
+    const StudioVector2 centre = fixture.camera.getCenter();
+    CNA_STUDIO_EXPECT(centre.x >= 100.0f && centre.x <= 164.0f);
+    CNA_STUDIO_EXPECT(centre.y >= 0.0f && centre.y <= 64.0f);
+
+    // And the whole sprite is inside the visible bounds, which is what "framed" has to mean.
+    const WorldBounds2D visible = fixture.camera.getVisibleBounds();
+    CNA_STUDIO_EXPECT(visible.min.x <= 100.0f && visible.max.x >= 164.0f);
+    CNA_STUDIO_EXPECT(visible.min.y <= 0.0f && visible.max.y >= 64.0f);
+}
+
+CNA_STUDIO_TEST(FocusSelectedWithNothingSelectedSaysSoRatherThanJumping)
+{
+    Fixture fixture;
+    fixture.camera.setCenter(StudioVector2{7.0f, 9.0f});
+
+    CNA_STUDIO_EXPECT(!studioFrameSelection(fixture.context, fixture.camera, fixture.sizes()));
+    CNA_STUDIO_EXPECT_EQ(fixture.camera.getCenter().x, 7.0f);
+    CNA_STUDIO_EXPECT_EQ(fixture.camera.getCenter().y, 9.0f);
+}
+
+CNA_STUDIO_TEST(AnEntityWithNoGeometryIsStillFramedByItsPosition)
+{
+    // A camera or an empty grouping node has a position but nothing to draw, and a key that looks
+    // like it does nothing is worse than one that works modestly.
+    Fixture fixture;
+
+    StudioEntity marker{Uuid::generate(), "Spawn"};
+    StudioComponent transform{BuiltinComponentIds::kTransform};
+    transform.setProperty("position", PropertyValue{StudioVector3{-400.0f, 250.0f, 0.0f}});
+    marker.addComponent(std::move(transform));
+    const Uuid id = fixture.context.getScene().addEntity(std::move(marker));
+
+    fixture.context.select(id);
+    CNA_STUDIO_EXPECT(studioFrameSelection(fixture.context, fixture.camera, fixture.sizes()));
+
+    CNA_STUDIO_EXPECT(std::abs(fixture.camera.getCenter().x + 400.0f) < 1.0f);
+    CNA_STUDIO_EXPECT(std::abs(fixture.camera.getCenter().y - 250.0f) < 1.0f);
+}
+
+CNA_STUDIO_TEST(TheTransformShortcutsReachTheGizmoThroughTheRegistry)
+{
+    // W, E and R are declared on the actions and dispatched by the shell; binding the actions is
+    // what makes them arrive. Driven as keystrokes, because "the chord is declared" and "the chord
+    // works" are different claims.
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, {});
+
+    UiInputState input;
+    input.displayWidth = 1280.0f;
+    input.displayHeight = 720.0f;
+    shell.renderFrame(input);
+
+    const auto press = [&](UiKey key) {
+        UiInputState down = input;
+        down.setKeyDown(key, true);
+        shell.renderFrame(down);
+        shell.renderFrame(input);
+    };
+
+    press(UiKey::E);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.rotate"));
+
+    press(UiKey::R);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.scale"));
+
+    press(UiKey::W);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.translate"));
+}
+
+CNA_STUDIO_TEST(FIsRefusedUntilSomethingIsSelected)
+{
+    // Drawn greyed out rather than drawn available and doing nothing, which is the difference
+    // between a menu that explains itself and one that appears broken.
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, {});
+    shell.renderFrame(UiInputState{});
+
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.focusSelected"));
+
+    StudioEntity entity{Uuid::generate(), "Thing"};
+    entity.addComponent(StudioComponent{BuiltinComponentIds::kTransform});
+    const Uuid id = context.getScene().addEntity(std::move(entity));
+    context.select(id);
+
+    CNA_STUDIO_EXPECT(shell.actions().isEnabled("studio.view.focusSelected"));
+}

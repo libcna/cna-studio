@@ -135,4 +135,20 @@ namespace CNA::Studio
                                              StudioContext& context, StudioCamera2D& camera,
                                              StudioViewportState& state,
                                              const SpriteSizeProvider& sizeProvider = {});
+
+    /**
+     * @brief Moves @p camera to frame the current selection.
+     *
+     * An entity with no drawable geometry — a camera, an empty grouping node — still has a
+     * position, and framing it centres on that rather than doing nothing: a key that appears not
+     * to work is worse than one that works modestly.
+     *
+     * @param context The editor, for the scene and the selection.
+     * @param camera The camera to move.
+     * @param sizeProvider Resolves sprite sizes, so a sprite frames to its extent rather than to
+     *        a point.
+     * @return False when nothing is selected, or when nothing selected could be located.
+     */
+    bool studioFrameSelection(const StudioContext& context, StudioCamera2D& camera,
+                              const SpriteSizeProvider& sizeProvider = {});
 }

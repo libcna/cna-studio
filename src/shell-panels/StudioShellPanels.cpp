@@ -78,6 +78,22 @@ namespace CNA::Studio
             shell.actions().add(std::move(action));
         }
 
+        // Focus Selected, which the View menu and the F key have both been offering since the
+        // shell existed. Only bindable now that there is a camera to move.
+        if (const StudioAction* found = shell.actions().find("studio.view.focusSelected"))
+        {
+            StudioAction focus = *found;
+            focus.isEnabled = [this] { return !context_.getSelection().empty(); };
+            focus.run = [this] {
+                if (!studioFrameSelection(context_, *services_.camera, services_.spriteSize))
+                {
+                    log_.append(LogSeverity::Trace,
+                                "Nothing selected has a position to frame.");
+                }
+            };
+            shell.actions().add(std::move(focus));
+        }
+
         shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {
             const StudioViewportResult viewport = studioViewportPanel(
                 frame, bounds, context_, *services_.camera, viewportState_, services_.spriteSize);

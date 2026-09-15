@@ -10,6 +10,7 @@
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
@@ -355,5 +356,37 @@ namespace CNA::Studio
         }
 
         return result;
+    }
+
+    bool studioFrameSelection(const StudioContext& context, StudioCamera2D& camera,
+                              const SpriteSizeProvider& sizeProvider)
+    {
+        const std::vector<Uuid>& selection = context.getSelection();
+        if (selection.empty()) { return false; }
+
+        std::optional<WorldBounds2D> total;
+        for (const Uuid& entityId : selection)
+        {
+            std::optional<WorldBounds2D> bounds =
+                computeHierarchyBounds2D(context.getScene(), entityId, sizeProvider);
+
+            if (!bounds)
+            {
+                // An entity with no drawable geometry -- a camera, an empty grouping node -- still
+                // has a position, and framing it should centre on it rather than do nothing.
+                const std::optional<WorldTransform> world =
+                    computeWorldTransform(context.getScene(), entityId);
+                if (!world) { continue; }
+
+                const StudioVector2 point{world->position.x, world->position.y};
+                bounds = WorldBounds2D{point, point};
+            }
+
+            total = total ? WorldBounds2D::combine(*total, *bounds) : bounds;
+        }
+
+        if (!total) { return false; }
+        camera.frame(*total);
+        return true;
     }
 }

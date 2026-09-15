@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 14 of 23 complete `███████░░░░░`
+**Progress:** 15 of 23 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,7 +16,7 @@
 | `STUDIO-06003` | Application menu bar | ✅ | `STUDIO-06002` |
 | `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | ✅ | `STUDIO-06003` |
 | `STUDIO-06005` | Context menus | ✅ | `STUDIO-06003`, `STUDIO-06017` |
-| `STUDIO-06006` | Main toolbar | 🔄 | `STUDIO-06002` |
+| `STUDIO-06006` | Main toolbar | ✅ | `STUDIO-06002`, `STUDIO-07009` |
 | `STUDIO-06007` | Status bar | 🔄 | `STUDIO-06001` |
 | `STUDIO-06008` | Keyboard shortcut dispatch with scope precedence | ✅ | `STUDIO-06001` |
 | `STUDIO-06009` | Preferences model, separate from project settings | ⬜ | `STUDIO-06001` |
@@ -91,10 +91,19 @@ hints that widen the menu rather than being clipped. Submenus were the piece tha
 
 **Acceptance.** Save, undo/redo, transform mode, snapping, play controls, build target profile
 
-**In progress.** Save, undo/redo, the three transform modes, the grid toggle, play/stop and build
-are present, registry-driven, correctly enabled and disabled, and invoke the same actions the menus
-do. **Snapping and the build target profile are not**: snapping has no action yet and the target
-profile needs the model of `STUDIO-02040`
+**Done.** Save, undo/redo, the three transform modes, the grid toggle, play/stop and build are
+present, registry-driven, correctly enabled and disabled, and invoke the same actions the menus do —
+and the three transform buttons now *set the manipulator* rather than merely drawing, checkable so
+the toolbar shows which is on.
+
+**Snapping and the target profile are not toolbar buttons, and should not be.** Snapping is a
+modifier held during a drag (Ctrl), which is what the prototype did and what every editor does — a
+button for it would be a mode the user has to remember they are in. The build target belongs to the
+Build panel, where the whole six-axis profile is editable (`STUDIO-07010`), rather than to a
+drop-down in a toolbar that can show one axis of six.
+
+**Play and Stop invoke, and their handlers are Phase 16's**: the actions are registered, bound to
+the toolbar and correctly enabled, and the native shell has no play service yet to run them
 
 ### `STUDIO-06007` — Status bar
 
