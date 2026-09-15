@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 8 of 26 complete `████░░░░░░░░`
+**Progress:** 9 of 26 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,7 +21,7 @@
 | `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
 | `STUDIO-07010` | Port the Build panel | ✅ | `STUDIO-07001`, `STUDIO-02040`, `STUDIO-03036` |
 | `STUDIO-07011` | Port the Diagnostics panel | ⬜ | `STUDIO-07001` |
-| `STUDIO-07012` | Port the Validation panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07012` | Port the Validation panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07013` | Port the History panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07014` | Port the Comparison panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07015` | One log model, read by both consoles | ✅ | — |
@@ -248,3 +248,39 @@ the filtered renderer list, an axis edit reaching the *project* rather than the 
 matching the project's active profile, a subsystem reaching the CMake arguments, no phase violations
 across repeated frames, and the Build button refused on an unbuildable profile. Plus
 `CnaStudioShellPreviewBuildPanel`, which photographs it through the rasterizer
+
+### `STUDIO-07012` — Port the Validation panel
+
+**Acceptance.** Scene validation and broken asset references on the Studio UI, in one report, with
+a path from a finding to the thing at fault
+
+**Called Problems**, because that is the panel the shell already has and the word covers both
+reports. They stay in one list for the reason they were put there originally (legacy ED-310): a user
+whose model has the wrong material on it does not know in advance whether that is a structural
+problem or a broken reference, and asking them to look in two places to find out is asking them to
+know the answer first.
+
+**Its good state is emptiness, which is exactly what makes it easy to ship broken** — a panel that
+found nothing and a panel that never ran look identical. So both groups always show, each with a
+count that reads `none` rather than being absent, and the empty case is a test rather than the
+absence of one.
+
+**Severity is a colour, not a word.** The tree gained a per-row colour for its detail column, used
+here for `error` and `warning`. A list that says which in grey words is a list the eye has to read
+line by line, which defeats the point of a report.
+
+**Clearing a reference acts on the selection.** The ImGui panel puts a `Clear` button beside every
+broken asset: that reads fine with three and badly with thirty, and it has no keyboard path at all.
+Here the action sits above the list — the ordinary editor shape, reachable by Tab, and drawn
+disabled until a broken asset is selected rather than drawn enabled and then doing nothing.
+
+**What is not ported.** The legacy panel's *other* repair path is dragging the right asset from the
+browser onto the broken row. That waits on drag and drop (`STUDIO-03023`); the ImGui panel keeps
+working until `STUDIO-07030` deletes it, so nothing is lost meanwhile. Clearing — the destructive
+half — is here, and it goes through the command history like any other change to the scene.
+
+**Verification.** `tests/StudioProblemsPanelTests.cpp`: a clean scene saying so, a broken reference
+grouped with everything that refers to it, severity carried as a colour, clicking a finding asking
+for the entity at fault, the toolbar refused until a broken asset is selected and acting on it by id
+when one is, clicking a row selecting it, and no phase violations across repeated frames. Plus
+`CnaStudioShellPreviewProblemsPanel`

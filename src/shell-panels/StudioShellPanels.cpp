@@ -7,13 +7,16 @@
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -108,6 +111,31 @@ namespace CNA::Studio
                 build_.cancel();
                 log_.append(LogSeverity::Warning, "Build cancelled.");
             }
+        });
+
+        // The Problems panel (STUDIO-07012): scene validation and broken asset references, as one
+        // report, because a user whose model has the wrong material on it does not know in advance
+        // which of the two it is.
+        shell.setPanelContent("problems", [this](StudioFrame& frame, const UiRect& bounds) {
+            const StudioProblemsResult problems =
+                studioProblemsPanel(frame, bounds, context_, problemsState_);
+            if (frame.isDrawPass())
+            {
+                counts_.problemRowsDrawn = problems.rowsDrawn;
+                counts_.brokenReferences = problems.brokenReferences;
+                counts_.sceneErrors = problems.errors;
+                counts_.sceneWarnings = problems.warnings;
+            }
+            if (problems.selectEntity.isValid()) { context_.select(problems.selectEntity); }
+            if (!problems.clearAsset.isValid()) { return; }
+
+            auto command = std::make_unique<RelinkAssetCommand>(context_.getScene(),
+                                                                problems.clearAsset, Uuid{});
+            if (!command->isValid()) { return; }
+
+            const std::string summary = command->getDescription();
+            context_.execute(std::move(command));
+            log_.append(LogSeverity::Info, summary + ".  Undo with Ctrl+Z.");
         });
 
         // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI owns --

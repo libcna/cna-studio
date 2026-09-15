@@ -56,6 +56,16 @@ namespace CNA::Studio
         /** @brief Something to the right of the label, drawn dimmed: a type, a count, a size. */
         std::string detail;
 
+        /**
+         * @brief The colour @ref detail is drawn in.
+         *
+         * Secondary text by default, because a detail column is usually a type or a count and
+         * colouring those would be decoration. A report whose rows differ in *severity* is the
+         * case it exists for: "error" and "warning" have to be told apart at a glance, and a list
+         * that says which in grey words is a list the eye has to read line by line.
+         */
+        StudioColorRole detailRole = StudioColorRole::TextSecondary;
+
         /** @brief How far in the row is indented. Zero is a root. */
         int depth = 0;
 

@@ -36,6 +36,7 @@ add_executable(cna-studio-tests
     StudioContextMenuTests.cpp
     StudioDropdownTests.cpp
     StudioBuildPanelTests.cpp
+    StudioProblemsPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -214,6 +215,14 @@ add_test(NAME CnaStudioShellPreviewPortedPanels
                        --shell-size=1400x900
                        --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioShellPreviewPortedPanels PROPERTIES TIMEOUT 60)
+
+# The Problems panel, whose good state is emptiness -- so the capture is of a panel that says so
+# rather than of a blank rectangle.
+add_test(NAME CnaStudioShellPreviewProblemsPanel
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-problems.png
+                       --shell-size=1400x900 --panel=problems
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewProblemsPanel PROPERTIES TIMEOUT 60)
 
 # The Build panel, which shares a tab bar and is therefore only capturable by raising it.
 add_test(NAME CnaStudioShellPreviewBuildPanel

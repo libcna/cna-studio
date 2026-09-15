@@ -166,7 +166,8 @@ namespace CNA::Studio
                     {
                         const UiRect detailArea = labelArea.splitRight(detailWidth);
                         studioDrawText(frame, detailArea, row.detail, StudioFontRole::BodySmall,
-                                       theme.color(StudioColorRole::TextSecondary),
+                                       theme.color(row.enabled ? row.detailRole
+                                                               : StudioColorRole::TextDisabled),
                                        StudioTextAlign::Right);
                     }
                 }
