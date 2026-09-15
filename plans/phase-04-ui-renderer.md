@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 8 of 19 complete `█████░░░░░░░`
+**Progress:** 10 of 19 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -17,8 +17,8 @@
 | `STUDIO-04005` | Font atlas construction and glyph rasterization | ✅ | `STUDIO-04001` |
 | `STUDIO-04006` | Text rendering with kerning, and correct baseline and line metrics | ✅ | `STUDIO-04005` |
 | `STUDIO-04007` | Dynamic glyph upload without frame stalls or dropped glyphs | 🔄 | `STUDIO-04005` |
-| `STUDIO-04008` | Icon atlas with DPI-appropriate variants | ⬜ | `STUDIO-04005` |
-| `STUDIO-04009` | Select and document legally redistributable fonts and icons | 🔄 | — |
+| `STUDIO-04008` | Icons, drawn as vector paths rather than sampled | ✅ | — |
+| `STUDIO-04009` | Select and document legally redistributable fonts and icons | ✅ | — |
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss | ⬜ | `STUDIO-04002` |
 | `STUDIO-04011` | Window resize handling without artefacts | ⬜ | `STUDIO-04010` |
 | `STUDIO-04012` | Render-target composition for the viewport panel | ⬜ | `STUDIO-04004` |
@@ -125,8 +125,9 @@ chose them. Embedded into the binary rather than loaded from a data directory: a
 draw text until it finds a file shows a blank window when somebody moves the executable, and text
 is not optional content.
 
-**Icons: not done**, and the decision that shapes `STUDIO-04008` is recorded here so it is not
-re-litigated. The obvious route is to vendor an icon font, which costs another ~200 KB, another
+**Icons: done, and no third-party asset was needed.** The decision recorded below was taken, and
+`STUDIO-04008` implements it: twenty-three icons drawn as vector paths. There is nothing to licence
+because there is nothing vendored. The obvious route is to vendor an icon font, which costs another ~200 KB, another
 licence, and a set whose visual language was designed for somebody else's product. The alternative
 is to *draw* Studio's two dozen editor icons as vector paths in code, over the primitives the draw
 list already has: no third-party asset, no licence question, perfectly crisp at every DPI scale
@@ -167,3 +168,33 @@ configuration
 
 **Verification.** `EveryKeyStudioCanAskAboutIsOneTheHostCanReport`, confirmed to fail on the two
 missing bindings before they were added
+
+### `STUDIO-04008` — Icons, drawn as vector paths rather than sampled
+
+**Acceptance.** Every icon Studio draws, authored once and crisp at any size and DPI scale, with no
+vendored asset and no second atlas
+
+**How.** Each path is written on a 0..16 grid and mapped onto whatever rectangle it is asked for.
+Stroke widths scale with the icon and are floored at one *physical* pixel, because a hairline that
+rounds to zero is a hairline that disappears. That one definition is what serves a 14-pixel toolbar
+and a 32-pixel one at 200%
+
+**Arcs are ribbons, not thick polylines.** A polyline of thick segments gives each segment its own
+quad, so consecutive ones overlap on the inside of the curve and leave a notch on the outside. At a
+toolbar's size that reads as a lumpy, hand-drawn stroke, and it is the first thing that makes an icon
+set look amateur
+
+**Drawn for the size they are actually used at.** Two icons were redrawn after looking at them at
+1x: `Scale` lost the diagonal arrow joining its two squares, because at sixteen pixels the small
+square is three pixels and the arrow is a smudge; and `Build` stopped being a symmetrical mallet,
+because a bar with a stalk under its middle is a letter T
+
+**The toolbar shows icons alone.** The label still decides the button's identity and is still what a
+tooltip and a screen reader will read — dropping it from the model to save the space would leave the
+toolbar with nothing to say about itself
+
+**Verification.** `EveryIconDrawsSomethingAndNoTwoAreTheSamePicture` compares the geometry each icon
+emits: one that draws nothing is a blank button nothing else would notice, and two that draw the
+same shape are worse than that, because the user learns to trust a picture that lies about which
+command it runs. Plus the name round-trip, and a check that every toolbar command has an icon — one
+without would be an empty square once the labels came off

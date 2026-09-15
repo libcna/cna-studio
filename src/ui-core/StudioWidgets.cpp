@@ -320,8 +320,43 @@ namespace CNA::Studio
         }
 
         const float padding = metricOf(theme, StudioMetric::ControlPaddingHorizontal);
-        studioDrawText(frame, bounds.inset(UiEdges{padding, 0.0f}),
-                       WidgetIdStack::visibleLabel(label), options.font, textColor, options.align);
+        const std::string_view visible = WidgetIdStack::visibleLabel(label);
+        const bool showLabel = !options.iconOnly && !visible.empty();
+
+        if (options.icon != StudioIcon::None)
+        {
+            const float iconSize = metricOf(theme, StudioMetric::IconSize);
+
+            if (!showLabel)
+            {
+                // The whole button. Centring the icon in the control is what makes a row of
+                // icon-only buttons line up, however wide each one happens to be.
+                studioDrawIcon(frame, bounds, options.icon, textColor);
+            }
+            else
+            {
+                // Icon and label as one unit, centred together. Placing the icon at a fixed inset
+                // and centring the label separately makes every button look subtly off-balance,
+                // and differently off-balance depending on the length of its word.
+                const float gap = metricOf(theme, StudioMetric::SpacingSmall);
+                const float labelWidth = studioLabelWidth(frame, visible, options.font);
+                const float total = iconSize + gap + labelWidth;
+                const float left = options.align == StudioTextAlign::Left
+                    ? bounds.left() + padding
+                    : std::round(bounds.centerX() - total * 0.5f);
+
+                studioDrawIcon(frame, UiRect{left, bounds.top(), iconSize, bounds.height},
+                               options.icon, textColor);
+                studioDrawText(frame,
+                               UiRect{left + iconSize + gap, bounds.top(), labelWidth, bounds.height},
+                               visible, options.font, textColor, StudioTextAlign::Left);
+            }
+        }
+        else if (showLabel)
+        {
+            studioDrawText(frame, bounds.inset(UiEdges{padding, 0.0f}), visible, options.font,
+                           textColor, options.align);
+        }
 
         if (result.interaction.focused) { drawFocus(frame, bounds); }
         return result;

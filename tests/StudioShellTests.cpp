@@ -13,6 +13,7 @@
 #include "CNA/Studio/Core/ImageDiff.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
+#include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
@@ -688,4 +689,129 @@ CNA_STUDIO_TEST(RasterisationBlendsAlphaRatherThanReplacing)
     const ImageBuffer image = rasterizeUiDrawData(list.drawData(), StudioColor{0, 0, 0, 255});
     const std::uint8_t value = image.pixels[0];
     CNA_STUDIO_EXPECT(value > 100 && value < 160);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Icons (STUDIO-04008)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(EveryIconDrawsSomethingAndNoTwoAreTheSamePicture)
+{
+    // Drawn as vector paths rather than sampled from an atlas, so the failure mode is not a missing
+    // file but a `case` somebody forgot: a new icon that compiles, is referenced from a toolbar,
+    // and draws nothing at all. Nothing else would notice -- a blank button looks like a button.
+    //
+    // The second half is the one that matters more. Two icons that happen to draw the same shape
+    // are worse than one that draws nothing, because the user learns to trust a picture that is
+    // lying about which command it runs.
+    const StudioTheme theme = StudioTheme::dark();
+    const StudioColor ink = theme.color(StudioColorRole::TextPrimary);
+
+    std::map<std::string, std::string> shapes;
+    std::size_t empty = 0;
+    std::size_t duplicates = 0;
+
+    for (int value = static_cast<int>(StudioIcon::None) + 1;
+         value < static_cast<int>(StudioIcon::Count); ++value)
+    {
+        const auto icon = static_cast<StudioIcon>(value);
+
+        StudioFrame frame{theme};
+        UiInputState input;
+        input.displayWidth = 64.0f;
+        input.displayHeight = 64.0f;
+        input.mouseInWindow = false;
+
+        runStudioFrame(frame, input, [&](StudioFrame& f) {
+            studioDrawIcon(f, UiRect{0.0f, 0.0f, 64.0f, 64.0f}, icon, ink);
+        });
+
+        // The geometry itself, as a comparable string. Two icons with identical vertices are
+        // literally the same picture however differently they were written.
+        std::string signature;
+        for (const UiDrawList& list : frame.drawData().lists)
+        {
+            for (const UiVertex& vertex : list.vertices)
+            {
+                signature += std::to_string(static_cast<int>(std::lround(vertex.x * 4.0f)));
+                signature += ',';
+                signature += std::to_string(static_cast<int>(std::lround(vertex.y * 4.0f)));
+                signature += ';';
+            }
+        }
+
+        const std::string name{studioIconName(icon)};
+        if (signature.empty())
+        {
+            ++empty;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "the '" + name + "' icon drew nothing. A blank button looks like a button, so "
+                "nothing else will notice.");
+            continue;
+        }
+
+        const auto existing = shapes.find(signature);
+        if (existing != shapes.end())
+        {
+            ++duplicates;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "the '" + name + "' and '" + existing->second + "' icons draw the same shape.");
+        }
+        else
+        {
+            shapes[signature] = name;
+        }
+    }
+
+    CNA_STUDIO_EXPECT_EQ(empty, std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(duplicates, std::size_t{0});
+    CNA_STUDIO_EXPECT(shapes.size() >= std::size_t{20});
+}
+
+CNA_STUDIO_TEST(AnIconNamesRoundTripAndTheTableCoversTheEnumeration)
+{
+    // The names reach preferences and tests, so a table that had drifted from the enumeration
+    // would silently rename somebody's toolbar customisation.
+    std::size_t checked = 0;
+    for (int value = 0; value < static_cast<int>(StudioIcon::Count); ++value)
+    {
+        const auto icon = static_cast<StudioIcon>(value);
+        const std::string_view name = studioIconName(icon);
+        CNA_STUDIO_EXPECT(!name.empty());
+
+        StudioIcon parsed = StudioIcon::Count;
+        CNA_STUDIO_EXPECT(parseStudioIcon(name, parsed));
+        CNA_STUDIO_EXPECT(parsed == icon);
+        ++checked;
+    }
+    CNA_STUDIO_EXPECT_EQ(checked, static_cast<std::size_t>(StudioIcon::Count));
+
+    StudioIcon unknown = StudioIcon::Save;
+    CNA_STUDIO_EXPECT(!parseStudioIcon("no-such-icon", unknown));
+    CNA_STUDIO_EXPECT(unknown == StudioIcon::Save);
+}
+
+CNA_STUDIO_TEST(TheToolbarsCommandsHaveIconsAndTheMappingNamesRealActions)
+{
+    // A mapping naming an action nobody registered is an icon that never appears, and a toolbar
+    // command with no icon is a square of empty space once the labels are gone.
+    const StudioShell shell{StudioTheme::dark()};
+
+    std::size_t missing = 0;
+    for (const std::string& entry : shell.toolbar())
+    {
+        if (entry == kStudioMenuSeparatorId) { continue; }
+        if (studioIconForAction(entry) == StudioIcon::None)
+        {
+            ++missing;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "the toolbar shows '" + entry + "', which has no icon, so it draws as an empty "
+                "square once the labels come off.");
+        }
+    }
+    CNA_STUDIO_EXPECT_EQ(missing, std::size_t{0});
+
+    // And an unmapped id is reported as having none rather than silently taking the first entry.
+    CNA_STUDIO_EXPECT(studioIconForAction("studio.no.such.action") == StudioIcon::None);
+    CNA_STUDIO_EXPECT(studioIconForAction("") == StudioIcon::None);
 }

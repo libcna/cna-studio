@@ -38,6 +38,7 @@
  */
 
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
+#include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 #include "CNA/Studio/UiCore/WidgetId.hpp"
@@ -112,6 +113,23 @@ namespace CNA::Studio
         StudioTextAlign align = StudioTextAlign::Center;
         /** @brief Cursor requested while the pointer is over it. */
         StudioCursor cursor = StudioCursor::Arrow;
+
+        /**
+         * @brief An icon drawn before the label, or @ref StudioIcon::None.
+         *
+         * With a label, the two sit together and the pair is centred. Without one — which is what
+         * a toolbar wants once its icons are recognisable — the icon takes the whole button.
+         */
+        StudioIcon icon = StudioIcon::None;
+
+        /**
+         * @brief Draw the icon only, even when a label is given.
+         *
+         * The label is still what a screen reader and a tooltip use, and it is still what decides
+         * the button's identity. Dropping it from the struct instead would make an icon-only
+         * toolbar a toolbar with nothing to say about itself.
+         */
+        bool iconOnly = false;
     };
 
     /** @brief The adjustable parts of a tab. */

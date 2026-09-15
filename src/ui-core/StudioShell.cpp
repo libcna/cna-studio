@@ -489,10 +489,17 @@ namespace CNA::Studio
                 const StudioAction* action = actions_.find(entry);
                 const std::string_view label = action != nullptr ? std::string_view{action->label}
                                                                  : std::string_view{entry};
+                // An icon-only button is square; one showing a word is as wide as the word. Asking
+                // the same question the draw pass will ask, rather than sizing for a label the
+                // button turns out not to draw -- which would leave a toolbar of square icons in
+                // rectangles wide enough for "Translate".
+                //
                 // Ceil for the same reason as the menu titles: rounding a content-derived width
                 // down produces a control its own label does not fit in.
-                const float wanted = std::ceil(std::max(
-                    buttonHeight, studioLabelWidth(frame_, label, StudioFontRole::BodySmall)));
+                const float wanted = studioIconForAction(entry) != StudioIcon::None
+                    ? buttonHeight
+                    : std::ceil(std::max(
+                          buttonHeight, studioLabelWidth(frame_, label, StudioFontRole::BodySmall)));
                 geometry.bounds = toolbarCursor.splitLeft(std::min(wanted, toolbarCursor.width));
                 toolbarCursor.splitLeft(std::min(spacing, toolbarCursor.width));
             }
@@ -784,6 +791,13 @@ namespace CNA::Studio
             options.font = StudioFontRole::BodySmall;
             options.enabled = action != nullptr && actions_.isEnabled(entry.id);
             options.selected = action != nullptr && action->checkable && actions_.isChecked(entry.id);
+            options.icon = studioIconForAction(entry.id);
+
+            // Icon alone where there is one. The label still decides the button's identity and is
+            // still what a tooltip and a screen reader read; a toolbar that spelled every command
+            // out would be twice as wide and no clearer, and one that dropped the label from the
+            // model to save the space would have nothing left to say about itself.
+            options.iconOnly = options.icon != StudioIcon::None;
 
             const std::string_view label = action != nullptr ? std::string_view{action->label}
                                                              : std::string_view{entry.id};

@@ -156,6 +156,9 @@ namespace CNA::Studio
         /** @brief The menu bar definition. */
         [[nodiscard]] const std::vector<StudioMenuDefinition>& menus() const { return menus_; }
 
+        /** @brief The toolbar's action ids in order, with @ref kStudioMenuSeparatorId for a rule. */
+        [[nodiscard]] const std::vector<std::string>& toolbar() const { return toolbar_; }
+
         /**
          * @brief Replaces the toolbar contents.
          * @param entries Action ids in order, with @ref kStudioMenuSeparatorId for a group rule.
