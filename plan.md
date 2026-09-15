@@ -48,7 +48,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**168 of 488 tasks complete** `████████░░░░░░░░░░░░░░░░░`  34.4%
+**169 of 488 tasks complete** `████████░░░░░░░░░░░░░░░░░`  34.6%
 
 | Status | Count |
 |--------|------:|
@@ -102,7 +102,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 31 | [Reliability](plans/phase-31-reliability.md) | `STUDIO-31NNN` | 🔄 | 13 | 1 | `█░░░░░░░░░` |
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
-| 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 21 | 10 | `█████░░░░░` |
+| 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 21 | 11 | `█████░░░░░` |
 | 34 | [Release engineering](plans/phase-34-release.md) | `STUDIO-34NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | ⬜ | 10 | 0 | `░░░░░░░░░░` |
 

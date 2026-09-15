@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **168 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **169 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -242,10 +242,13 @@ CNA's configure rules from drifting.
 
 **Phase 31 — Reliability** (1 of 13).
 
-**Phase 33 — Docs and CI** (10 of 21). Golden-image infrastructure, visual tests at every tested
+**Phase 33 — Docs and CI** (11 of 21). Golden-image infrastructure, visual tests at every tested
 resolution and DPI scale, the assertion-macro hardening a sanitizer forced, the plan-arithmetic
 guards, and CI coverage for the sanitizer and CNA-backed configurations with the captures kept as
-artefacts.
+artefacts — which are now **eighty-nine times smaller**: adaptive scanline filtering and a real
+LZ77 deflate took a 1920x1080 shell capture from 8.3 MB to 93 KB, and the CNA-backed job's whole
+artifact set from about 85 MB to 2.2 MB, verified by an inflate written beside the tests and by an
+independent zlib.
 
 ---
 

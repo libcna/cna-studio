@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -360,6 +361,257 @@ namespace CNA::Studio
             return (b << 16) | a;
         }
 
+
+        // --- Deflate (RFC 1951), fixed-Huffman ------------------------------------------------
+        //
+        // Real compression rather than stored blocks. A 1920x1080 capture was eight megabytes of
+        // literal pixels, which is enough artifact traffic that CI would eventually be asked to
+        // stop keeping them -- and a visual test whose evidence is thrown away is a visual test
+        // nobody can review.
+        //
+        // Fixed Huffman rather than dynamic: the tables are in the specification instead of in the
+        // file, so there is no tree to build, serialise and get wrong, and for this input the gain
+        // is almost all in the LZ77 matching anyway. A screenshot filtered by `Up` is mostly zeros,
+        // and zeros become one length/distance pair per run whichever tree codes them.
+
+        /** @brief Packs bits LSB-first into bytes, which is deflate's convention. */
+        class BitWriter
+        {
+        public:
+            explicit BitWriter(std::vector<std::uint8_t>& out) : out_(out) {}
+
+            /** @brief Writes @p count low bits of @p value, least significant first. */
+            void bits(std::uint32_t value, int count)
+            {
+                for (int i = 0; i < count; ++i)
+                {
+                    bits_ |= static_cast<std::uint32_t>((value >> i) & 1u) << held_;
+                    if (++held_ == 8)
+                    {
+                        out_.push_back(static_cast<std::uint8_t>(bits_ & 0xFFu));
+                        bits_ = 0;
+                        held_ = 0;
+                    }
+                }
+            }
+
+            /**
+             * @brief Writes a Huffman code, most significant bit first.
+             *
+             * The one place deflate reverses itself: the bit *stream* is filled from the least
+             * significant end, and Huffman codes are packed starting from their most significant
+             * bit. Getting this backwards produces a file that decodes to nothing recognisable and
+             * looks, from the encoder's side, entirely correct.
+             */
+            void code(std::uint32_t value, int count)
+            {
+                for (int i = count - 1; i >= 0; --i) { bits((value >> i) & 1u, 1); }
+            }
+
+            /** @brief Pads to a byte boundary with zeros. */
+            void flush()
+            {
+                if (held_ != 0) { out_.push_back(static_cast<std::uint8_t>(bits_ & 0xFFu)); }
+                bits_ = 0;
+                held_ = 0;
+            }
+
+        private:
+            std::vector<std::uint8_t>& out_;
+            std::uint32_t bits_ = 0;
+            int held_ = 0;
+        };
+
+        /** @brief Writes a literal byte in the fixed literal/length tree. */
+        void putLiteral(BitWriter& out, std::uint8_t value)
+        {
+            if (value <= 143) { out.code(0x30u + value, 8); }
+            else { out.code(0x190u + value - 144u, 9); }
+        }
+
+        /** @brief Writes a symbol of the fixed literal/length tree by its index. */
+        void putSymbol(BitWriter& out, std::uint32_t symbol)
+        {
+            if (symbol <= 143) { out.code(0x30u + symbol, 8); }
+            else if (symbol <= 255) { out.code(0x190u + symbol - 144u, 9); }
+            else if (symbol <= 279) { out.code(symbol - 256u, 7); }
+            else { out.code(0xC0u + symbol - 280u, 8); }
+        }
+
+        struct RangeCode
+        {
+            std::uint32_t symbol;
+            int extraBits;
+            int base;
+        };
+
+        /** @brief The length code for @p length, 3..258. */
+        RangeCode lengthCode(int length)
+        {
+            static const RangeCode kLengths[] = {
+                {257, 0, 3},   {258, 0, 4},   {259, 0, 5},   {260, 0, 6},   {261, 0, 7},
+                {262, 0, 8},   {263, 0, 9},   {264, 0, 10},  {265, 1, 11},  {266, 1, 13},
+                {267, 1, 15},  {268, 1, 17},  {269, 2, 19},  {270, 2, 23},  {271, 2, 27},
+                {272, 2, 31},  {273, 3, 35},  {274, 3, 43},  {275, 3, 51},  {276, 3, 59},
+                {277, 4, 67},  {278, 4, 83},  {279, 4, 99},  {280, 4, 115}, {281, 5, 131},
+                {282, 5, 163}, {283, 5, 195}, {284, 5, 227}, {285, 0, 258}};
+
+            RangeCode chosen = kLengths[0];
+            for (const RangeCode& candidate : kLengths)
+            {
+                if (candidate.base <= length) { chosen = candidate; }
+            }
+            return chosen;
+        }
+
+        /** @brief The distance code for @p distance, 1..32768. */
+        RangeCode distanceCode(int distance)
+        {
+            static const RangeCode kDistances[] = {
+                {0, 0, 1},      {1, 0, 2},      {2, 0, 3},      {3, 0, 4},      {4, 1, 5},
+                {5, 1, 7},      {6, 2, 9},      {7, 2, 13},     {8, 3, 17},     {9, 3, 25},
+                {10, 4, 33},    {11, 4, 49},    {12, 5, 65},    {13, 5, 97},    {14, 6, 129},
+                {15, 6, 193},   {16, 7, 257},   {17, 7, 385},   {18, 8, 513},   {19, 8, 769},
+                {20, 9, 1025},  {21, 9, 1537},  {22, 10, 2049}, {23, 10, 3073}, {24, 11, 4097},
+                {25, 11, 6145}, {26, 12, 8193}, {27, 12, 12289}, {28, 13, 16385},
+                {29, 13, 24577}};
+
+            RangeCode chosen = kDistances[0];
+            for (const RangeCode& candidate : kDistances)
+            {
+                if (candidate.base <= distance) { chosen = candidate; }
+            }
+            return chosen;
+        }
+
+        /**
+         * @brief Compresses @p raw into one fixed-Huffman deflate block.
+         *
+         * Greedy LZ77 over a 32 KiB window with a hashed chain of recent positions. Greedy rather
+         * than lazy: the extra pass buys a few per cent on text and almost nothing on a filtered
+         * screenshot, which is what this encoder is for.
+         *
+         * @param raw Bytes to compress.
+         * @param out Receives the deflate stream, appended and byte-aligned.
+         */
+        void deflateFixed(const std::vector<std::uint8_t>& raw, std::vector<std::uint8_t>& out)
+        {
+            constexpr int kWindow = 32768;
+            constexpr int kMinMatch = 3;
+            constexpr int kMaxMatch = 258;
+            constexpr int kHashBits = 15;
+            constexpr int kHashSize = 1 << kHashBits;
+            constexpr int kMaxChain = 128;
+
+            BitWriter writer{out};
+            writer.bits(1, 1);   // final block
+            writer.bits(1, 2);   // fixed Huffman
+
+            const auto size = static_cast<int>(raw.size());
+            std::vector<int> head(static_cast<std::size_t>(kHashSize), -1);
+            std::vector<int> prev(raw.size(), -1);
+
+            const auto hashAt = [&](int at) {
+                const std::uint32_t a = raw[static_cast<std::size_t>(at)];
+                const std::uint32_t b = raw[static_cast<std::size_t>(at) + 1];
+                const std::uint32_t c = raw[static_cast<std::size_t>(at) + 2];
+                return static_cast<int>(((a << 10) ^ (b << 5) ^ c) & (kHashSize - 1));
+            };
+
+            int at = 0;
+            while (at < size)
+            {
+                int bestLength = 0;
+                int bestDistance = 0;
+
+                if (at + kMinMatch <= size)
+                {
+                    const int slot = hashAt(at);
+                    int candidate = head[static_cast<std::size_t>(slot)];
+                    int steps = 0;
+
+                    while (candidate >= 0 && steps < kMaxChain)
+                    {
+                        const int distance = at - candidate;
+                        if (distance <= 0 || distance > kWindow) { break; }
+
+                        int length = 0;
+                        const int limit = std::min(kMaxMatch, size - at);
+                        while (length < limit
+                               && raw[static_cast<std::size_t>(candidate + length)]
+                                      == raw[static_cast<std::size_t>(at + length)])
+                        {
+                            ++length;
+                        }
+
+                        if (length > bestLength)
+                        {
+                            bestLength = length;
+                            bestDistance = distance;
+                            if (length >= kMaxMatch) { break; }
+                        }
+
+                        candidate = prev[static_cast<std::size_t>(candidate)];
+                        ++steps;
+                    }
+
+                    prev[static_cast<std::size_t>(at)] = head[static_cast<std::size_t>(slot)];
+                    head[static_cast<std::size_t>(slot)] = at;
+                }
+
+                if (bestLength >= kMinMatch)
+                {
+                    const RangeCode length = lengthCode(bestLength);
+                    putSymbol(writer, length.symbol);
+                    if (length.extraBits > 0)
+                    {
+                        writer.bits(static_cast<std::uint32_t>(bestLength - length.base),
+                                    length.extraBits);
+                    }
+
+                    const RangeCode distance = distanceCode(bestDistance);
+                    writer.code(distance.symbol, 5);
+                    if (distance.extraBits > 0)
+                    {
+                        writer.bits(static_cast<std::uint32_t>(bestDistance - distance.base),
+                                    distance.extraBits);
+                    }
+
+                    // Every position inside the match is still a place a later match could start
+                    // from, so they all go into the chain -- skipping them is what makes a fast
+                    // encoder compress a long run of zeros badly.
+                    for (int i = 1; i < bestLength; ++i)
+                    {
+                        const int inside = at + i;
+                        if (inside + kMinMatch > size) { break; }
+                        const int slot = hashAt(inside);
+                        prev[static_cast<std::size_t>(inside)] = head[static_cast<std::size_t>(slot)];
+                        head[static_cast<std::size_t>(slot)] = inside;
+                    }
+                    at += bestLength;
+                }
+                else
+                {
+                    putLiteral(writer, raw[static_cast<std::size_t>(at)]);
+                    ++at;
+                }
+            }
+
+            putSymbol(writer, 256);   // end of block
+            writer.flush();
+        }
+
+        /** @brief PNG's Paeth predictor. */
+        int paeth(int a, int b, int c)
+        {
+            const int p = a + b - c;
+            const int pa = std::abs(p - a);
+            const int pb = std::abs(p - b);
+            const int pc = std::abs(p - c);
+            if (pa <= pb && pa <= pc) { return a; }
+            return pb <= pc ? b : c;
+        }
+
         void appendChunk(std::vector<std::uint8_t>& out, const char type[4],
                          const std::vector<std::uint8_t>& payload)
         {
@@ -375,37 +627,83 @@ namespace CNA::Studio
     {
         if (!image.isWellFormed()) { return {}; }
 
-        // Raw scanlines, each prefixed by filter type 0. No filtering: this file exists to be
-        // looked at when a test fails, and an encoder anyone can verify by reading is worth more
-        // here than a smaller file.
+        // Scanlines, each prefixed by the filter that predicted it best. Filtering is where most
+        // of the saving comes from on a screenshot: a row identical to the one above it becomes a
+        // row of zeros under `Up`, and a run of flat colour becomes zeros under `Sub`. The
+        // compressor then has almost nothing left to say about either.
+        constexpr int kBytesPerPixel = 4;
+        const auto stride = static_cast<std::size_t>(image.width) * kBytesPerPixel;
+
         std::vector<std::uint8_t> raw;
-        raw.reserve(static_cast<std::size_t>(image.height) * (1 + image.width * 4));
+        raw.reserve(static_cast<std::size_t>(image.height) * (1 + stride));
+
+        std::vector<std::uint8_t> candidate(stride);
+        std::vector<std::uint8_t> chosen(stride);
+
         for (int y = 0; y < image.height; ++y)
         {
-            raw.push_back(0);
-            const std::size_t rowStart = static_cast<std::size_t>(y) * image.width * 4;
-            raw.insert(raw.end(), image.pixels.begin() + static_cast<std::ptrdiff_t>(rowStart),
-                       image.pixels.begin() + static_cast<std::ptrdiff_t>(rowStart + image.width * 4));
+            const std::uint8_t* row = image.pixels.data() + static_cast<std::size_t>(y) * stride;
+            const std::uint8_t* above =
+                y > 0 ? image.pixels.data() + static_cast<std::size_t>(y - 1) * stride : nullptr;
+
+            std::uint8_t bestFilter = 0;
+            std::size_t bestScore = std::numeric_limits<std::size_t>::max();
+
+            for (int filter = 0; filter < 5; ++filter)
+            {
+                // Up, Average and Paeth all read the row above; on the first row there is none, and
+                // the specification says to treat it as zeros -- which makes Up identical to None
+                // and the other two worse. Skipped rather than computed and discarded.
+                if (above == nullptr && (filter == 2 || filter == 3 || filter == 4)) { continue; }
+
+                std::size_t score = 0;
+                for (std::size_t i = 0; i < stride; ++i)
+                {
+                    const int left = i >= static_cast<std::size_t>(kBytesPerPixel)
+                        ? row[i - kBytesPerPixel] : 0;
+                    const int up = above != nullptr ? above[i] : 0;
+                    const int upLeft = (above != nullptr && i >= static_cast<std::size_t>(kBytesPerPixel))
+                        ? above[i - kBytesPerPixel] : 0;
+
+                    int predicted = 0;
+                    switch (filter)
+                    {
+                        case 1: predicted = left; break;
+                        case 2: predicted = up; break;
+                        case 3: predicted = (left + up) / 2; break;
+                        case 4: predicted = paeth(left, up, upLeft); break;
+                        default: predicted = 0; break;
+                    }
+
+                    const auto value = static_cast<std::uint8_t>((row[i] - predicted) & 0xFF);
+                    candidate[i] = value;
+
+                    // The standard heuristic: sum the residuals as *signed* bytes, so a small
+                    // negative difference counts as small. Summing them unsigned would rate -1,
+                    // which is the commonest residual there is, as the worst possible value.
+                    score += static_cast<std::size_t>(value < 128 ? value : 256 - value);
+                }
+
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestFilter = static_cast<std::uint8_t>(filter);
+                    chosen.swap(candidate);
+                }
+            }
+
+            raw.push_back(bestFilter);
+            raw.insert(raw.end(), chosen.begin(), chosen.end());
         }
 
-        // zlib stream with stored (uncompressed) deflate blocks.
+        // zlib stream: the two-byte header, one deflate block, then Adler-32 of the *unfiltered*
+        // filtered bytes -- that is, of exactly what a decoder will have reconstructed.
         std::vector<std::uint8_t> z;
         z.push_back(0x78);
         z.push_back(0x01);
-        constexpr std::size_t kMaxBlock = 65535;
-        for (std::size_t offset = 0; offset < raw.size(); offset += kMaxBlock)
-        {
-            const std::size_t length = std::min(kMaxBlock, raw.size() - offset);
-            const bool last = (offset + length) >= raw.size();
-            z.push_back(last ? 1 : 0);
-            z.push_back(static_cast<std::uint8_t>(length & 0xFFu));
-            z.push_back(static_cast<std::uint8_t>((length >> 8) & 0xFFu));
-            const std::uint16_t inverse = static_cast<std::uint16_t>(~static_cast<std::uint16_t>(length));
-            z.push_back(static_cast<std::uint8_t>(inverse & 0xFFu));
-            z.push_back(static_cast<std::uint8_t>((inverse >> 8) & 0xFFu));
-            z.insert(z.end(), raw.begin() + static_cast<std::ptrdiff_t>(offset),
-                     raw.begin() + static_cast<std::ptrdiff_t>(offset + length));
-        }
+        // Appended into the same buffer rather than returned and copied: one allocation instead of
+        // two for what is the largest thing this function builds.
+        deflateFixed(raw, z);
         put32(z, adler32(raw.data(), raw.size()));
 
         std::vector<std::uint8_t> png{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};

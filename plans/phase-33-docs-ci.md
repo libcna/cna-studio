@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 10 of 21 complete `██████░░░░░░`
+**Progress:** 11 of 21 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -25,7 +25,7 @@
 | `STUDIO-33013` | Visual tests at multiple resolutions | ✅ | `STUDIO-33012` |
 | `STUDIO-33014` | Visual tests at multiple DPI scales | ✅ | `STUDIO-33013`, `STUDIO-03028` |
 | `STUDIO-33015` | Visual regressions surface as CI artifacts | ⬜ | `STUDIO-33011` |
-| `STUDIO-33016` | Compressing PNG encoder for visual-test artifacts | ⬜ | `STUDIO-33011` |
+| `STUDIO-33016` | Compressing PNG encoder for visual-test artifacts | ✅ | `STUDIO-33011` |
 | `STUDIO-33017` | The equality assertion copies its operands rather than binding references | ✅ | — |
 | `STUDIO-33018` | The roadmap's own arithmetic is checked by the test suite | ✅ | — |
 | `STUDIO-33019` | The handoff's own arithmetic is checked against the same phase files | ✅ | `STUDIO-33018` |
@@ -78,6 +78,28 @@ notice and removes the whole category
 **Acceptance.** The current encoder uses stored (uncompressed) deflate, which is correct, tiny and reviewable but produces roughly 8 MB for a 1920x1080 capture. Six captures per run is enough artifact traffic to be worth a real deflate once the visual suite grows
 
 **Verification.** Encoded output still decodes in a standard viewer, and is an order of magnitude smaller
+
+**Done, and by more than the promise.** A 1920x1080 shell capture went from 8.3 MB to 93 KB —
+eighty-nine to one, not ten. The CNA-backed job's whole artifact set, twenty-nine captures through
+the real renderer, went from about 85 MB to 2.2 MB. Two things got it there and the order matters: **adaptive scanline
+filtering** first, chosen per row by the standard residual heuristic, because a screenshot's rows
+are mostly identical to the row above and `Up` turns them into zeros; then **LZ77 with fixed
+Huffman**, which turns each run of zeros into one length/distance pair.
+
+**Fixed Huffman rather than dynamic.** The tables are in RFC 1951 instead of in the file, so there
+is no tree to build, serialise and get wrong, and for this input the gain is almost entirely in the
+matching anyway. The cost is that incompressible noise comes out slightly *larger* than it went in,
+which is correct behaviour and is pinned by a test — because the failure it could otherwise hide is
+a stream that quietly truncates once compression stops helping.
+
+**Verified by decoding it.** `tests/StudioPngTests.cpp` contains an inflate for exactly what the
+encoder emits, and the tests decode what was written and compare it to the pixels that went in.
+Writing a compressor without a decompressor to check it against is how a subtly wrong bitstream
+ships: an encoder cannot tell that it has packed a Huffman code the wrong way round, because every
+bit it wrote is a bit it meant to write. The chunk CRCs are recomputed the way a reader does — over
+the type and the payload, not the length — which is the detail an encoder gets wrong and its own
+reader then agrees with. A real capture was also round-tripped through an independent zlib, which
+is the check an in-house decoder cannot be.
 
 ### `STUDIO-33020` — Headless test seams maintained for every core subsystem
 
