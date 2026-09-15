@@ -81,6 +81,49 @@ namespace CNA::Studio
         Error,
         Info,
 
+        // --- Scene contents (STUDIO-35030) ---------------------------------------------------
+        //
+        // What a World Outliner row *is*, at a glance. A list of names in one weight is a list the
+        // eye has to read; a list with a camera, a light and three meshes in it is one it can scan.
+        // Drawn from the same 0..16 grid and the same primitives as the action icons, so the set
+        // stays one visual language rather than becoming two.
+        /** @brief A generic entity: something in the scene with a transform and nothing else. */
+        Entity,
+        /** @brief A camera. */
+        Camera,
+        /** @brief A light. */
+        Light,
+        /** @brief A mesh or model. */
+        Mesh,
+        /** @brief A 2D sprite. */
+        Sprite,
+        /** @brief An instance of a prefab. */
+        Prefab,
+
+        // --- Asset kinds ------------------------------------------------------------------------
+        /** @brief A texture or image asset. */
+        Texture,
+        /** @brief A material asset. */
+        Material,
+        /** @brief An audio asset. */
+        Audio,
+        /** @brief A scene asset. */
+        Scene,
+
+        // --- Row affordances --------------------------------------------------------------------
+        /** @brief Shown in the scene and in a build. */
+        Visible,
+        /** @brief Hidden. The same eye with a stroke through it, so the pair reads as one control. */
+        Hidden,
+        /** @brief Locked against selection and editing. */
+        Lock,
+        /** @brief Unlocked. */
+        Unlock,
+        /** @brief Add something. */
+        Add,
+        /** @brief The selection tool. */
+        Select,
+
         /** @brief Number of declared icons; not itself one. */
         Count
     };

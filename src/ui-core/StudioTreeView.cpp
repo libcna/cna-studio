@@ -118,6 +118,7 @@ namespace CNA::Studio
 
             const UiRect disclosure = cursor.splitLeft(std::min(indent, cursor.width));
             bool expanded = state.isExpanded(row.id);
+            bool disclosureHovered = false;
 
             if (row.hasChildren && !renaming)
             {
@@ -132,12 +133,12 @@ namespace CNA::Studio
                     state.setExpanded(row.id, expanded);
                     result.toggled = index;
                 }
-                if (frame.isDrawPass())
-                {
-                    drawDisclosure(frame, disclosure, expanded,
-                                   theme.color(toggle.hovered ? StudioColorRole::TextPrimary
-                                                              : StudioColorRole::TextSecondary));
-                }
+                // Remembered rather than drawn here. The row's background -- selection, hover,
+                // the alternating fill and the indent guides -- is decided further down, and
+                // drawing the triangle first put every one of those fills straight over it. The
+                // symptom was that expandable rows lost their triangle on alternate lines only,
+                // which reads as a data problem rather than as a painting order.
+                disclosureHovered = toggle.hovered;
             }
 
             if (frame.isInputPass() && interaction.clicked && !result.toggled.has_value())
@@ -241,8 +242,43 @@ namespace CNA::Studio
                 }
                 else if (interaction.hovered)
                 {
-                    frame.drawList().fillRect(rowBounds,
-                                              theme.color(StudioColorRole::ControlBackgroundHover));
+                    frame.drawList().fillRect(rowBounds, theme.color(StudioColorRole::RowHover));
+                }
+                else if (index % 2 == 1)
+                {
+                    // `STUDIO-35031`. Every other row, four values off the panel: enough to trace
+                    // a row across nine hundred pixels of outliner, not enough to read as a
+                    // stripe. Keyed on the row's index in the *model* rather than on its position
+                    // on screen, so scrolling does not make the whole list flicker between two
+                    // phases -- which is what keying on a visible counter does, and it is far
+                    // worse than no striping at all.
+                    frame.drawList().fillRect(rowBounds, theme.color(StudioColorRole::RowAlternate));
+                }
+
+                // Indent guides, one per level the row is nested under. Drawn under everything
+                // else so a selected row covers them: a hierarchy line crossing a selection fill
+                // reads as a scratch on the highlight.
+                //
+                // Only for rows that are actually nested, and never for the level the row itself
+                // sits at -- a guide beside a row's own disclosure triangle is a line through the
+                // triangle.
+                for (int level = 0; level < row.depth; ++level)
+                {
+                    const float x = std::round(rowBounds.left() + padding
+                                               + indent * (static_cast<float>(level) + 0.5f));
+                    frame.drawList().fillRect(
+                        UiRect{x, rowBounds.top(),
+                               metricOf(theme, StudioMetric::SeparatorThickness),
+                               rowBounds.height},
+                        theme.color(StudioColorRole::Separator));
+                }
+
+                // Over every fill above it, which is the whole reason it is drawn here.
+                if (row.hasChildren)
+                {
+                    drawDisclosure(frame, disclosure, expanded,
+                                   theme.color(disclosureHovered ? StudioColorRole::TextPrimary
+                                                                 : StudioColorRole::TextSecondary));
                 }
 
                 const StudioColorRole labelRole = (!row.enabled || row.muted)
@@ -250,6 +286,26 @@ namespace CNA::Studio
                     : StudioColorRole::TextPrimary;
 
                 UiRect labelArea = cursor;
+                if (row.icon != StudioIcon::None)
+                {
+                    // The full icon size rather than the small one. These are read at a glance and
+                    // never studied, and twelve pixels is where an isometric cube stops being a
+                    // cube -- the interior edges land on the same pixel as the silhouette and it
+                    // comes out a grey hexagon. Sixteen fits a 22-pixel row with three to spare.
+                    const float iconSize = metricOf(theme, StudioMetric::IconSize);
+                    const UiRect iconArea =
+                        labelArea.splitLeft(std::min(iconSize + metricOf(theme,
+                                                        StudioMetric::SpacingSmall),
+                                                     labelArea.width));
+                    studioDrawIcon(frame,
+                                   UiRect{iconArea.left(),
+                                          std::round(iconArea.centerY() - iconSize * 0.5f),
+                                          iconSize, iconSize},
+                                   row.icon,
+                                   theme.color((!row.enabled || row.muted)
+                                                   ? StudioColorRole::TextDisabled
+                                                   : row.iconRole));
+                }
                 if (!row.detail.empty())
                 {
                     const float detailWidth =

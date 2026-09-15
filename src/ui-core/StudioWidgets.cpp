@@ -473,6 +473,24 @@ namespace CNA::Studio
         {
             frame.drawList().fillRect(bounds, theme.controlBackground(state));
         }
+        else
+        {
+            // `STUDIO-35020`. An inactive tab was drawn as nothing at all -- the strip showed
+            // through -- so a strip of four panels read as four labels floating on a bar, and
+            // which of them were tabs was something the user learned by clicking. It is a surface
+            // now, one step above the strip and one below the active tab, which is the whole of
+            // what makes a tab strip legible at a glance.
+            frame.drawList().fillRect(bounds, theme.color(StudioColorRole::TabInactive));
+        }
+
+        // A hairline between tabs, at the right edge of every one. Two adjacent inactive tabs are
+        // otherwise a single wide surface with two labels in it.
+        {
+            UiRect seam = bounds;
+            seam.x = bounds.right() - metricOf(theme, StudioMetric::SeparatorThickness);
+            seam.width = metricOf(theme, StudioMetric::SeparatorThickness);
+            frame.drawList().fillRect(seam, theme.color(StudioColorRole::TabStripBackground));
+        }
 
         const float padding = metricOf(theme, StudioMetric::SpacingMedium);
         UiRect label_area = bounds.inset(UiEdges{padding, 0.0f});
@@ -488,7 +506,11 @@ namespace CNA::Studio
                 theme.color(StudioColorRole::TextSecondary), dot * 0.5f);
         }
 
-        studioDrawText(frame, label_area, WidgetIdStack::visibleLabel(label), StudioFontRole::Body,
+        // The active tab is the panel's title and the only thing that says what the surface below
+        // it is, so it carries weight rather than size: a larger active tab would change the
+        // strip's height when the selection moved, and every tab would jump.
+        studioDrawText(frame, label_area, WidgetIdStack::visibleLabel(label),
+                       options.active ? StudioFontRole::Subheading : StudioFontRole::Body,
                        options.enabled
                            ? theme.color(options.active ? StudioColorRole::TextPrimary
                                                         : StudioColorRole::TextSecondary)
@@ -559,9 +581,13 @@ namespace CNA::Studio
 
         if (!frame.isDrawPass()) { return result; }
 
-        StudioColorRole role = StudioColorRole::AppBackground;
+        // The gutter between two panels is the same token as a panel's outline, so a splitter at
+        // rest is indistinguishable from the seam it sits in -- which is what a splitter should be
+        // until somebody reaches for it. Drawn as the application background it read as a gap in
+        // the workspace, and a workspace with visible gaps in it looks unfinished.
+        StudioColorRole role = StudioColorRole::PanelOutline;
         if (result.interaction.held) { role = StudioColorRole::Accent; }
-        else if (result.interaction.hovered) { role = StudioColorRole::Border; }
+        else if (result.interaction.hovered) { role = StudioColorRole::BorderStrong; }
         frame.drawList().fillRect(bounds, theme.color(role));
 
         return result;
@@ -955,9 +981,24 @@ namespace CNA::Studio
         edit.moveTo(state.selectionAnchor, false);
         edit.moveTo(state.caret, true);
 
-        const UiRect textArea =
+        UiRect textArea =
             bounds.inset(UiEdges{metricOf(theme, StudioMetric::ControlPaddingHorizontal) * 0.5f,
                                  0.0f});
+
+        // Reserved before anything is laid out in the text area, so the caret, the selection
+        // highlight, the scroll offset and the click-to-caret arithmetic all agree about where the
+        // text starts. Computed here and drawn much further down, because drawing happens after
+        // the edit and the rectangle is needed by both.
+        UiRect prefixArea;
+        if (!options.prefix.empty())
+        {
+            // A tight gap. The prefix is inside a field that may be forty pixels wide in a narrow
+            // inspector, and every pixel it takes is a pixel the number does not have.
+            const float prefixWidth =
+                std::ceil(studioLabelWidth(frame, options.prefix, options.font)
+                          + metricOf(theme, StudioMetric::SpacingXSmall));
+            prefixArea = textArea.splitLeft(std::min(prefixWidth, textArea.width));
+        }
 
         if (editing && frame.isInputPass())
         {
@@ -1066,6 +1107,15 @@ namespace CNA::Studio
                                         theme.color(editing ? StudioColorRole::FocusRing
                                                             : StudioColorRole::Border),
                                         metricOf(theme, StudioMetric::BorderWidth));
+
+            if (!options.prefix.empty() && !prefixArea.isEmpty())
+            {
+                // At its own colour whether or not the field is enabled, because the axis it names
+                // is a fact about the property rather than about whether it can be edited -- and a
+                // greyed X beside a greyed Y is three identical boxes again.
+                studioDrawText(frame, prefixArea, options.prefix, options.font,
+                               theme.color(options.prefixRole));
+            }
 
             const std::string_view shown = edit.text();
             if (shown.empty() && !editing && !options.placeholder.empty())

@@ -101,10 +101,60 @@ namespace CNA::Studio
          * @param values In, and out for whichever boxes committed.
          * @param count How many components.
          * @param integral True to parse as whole numbers, which is what a rectangle holds.
+         * @param labelled False to leave the component letters off. For a colour, where the swatch
+         *        beside the row already says which channel is which far better than a letter can,
+         *        and where four letters cost exactly the width `255` needs.
          * @return True when any box committed a new value.
          */
+        /**
+         * @brief The axis colour for a component's letter.
+         *
+         * By the letter rather than by the index, because the same helper draws a Vector3's
+         * X/Y/Z, a rectangle's X/Y/W/H and a colour's R/G/B/A, and only the first of those is an
+         * axis. A rectangle's W is not the Z axis and colouring it blue would say it was.
+         */
+        StudioColorRole axisRoleFor(std::string_view name)
+        {
+            if (name == "x" || name == "pitch") { return StudioColorRole::AxisX; }
+            if (name == "y" || name == "yaw")   { return StudioColorRole::AxisY; }
+            if (name == "z" || name == "roll")  { return StudioColorRole::AxisZ; }
+            if (name == "w") { return StudioColorRole::AxisW; }
+            // r/g/b/a fall through deliberately. They are already beside a colour swatch that says
+            // which is which far better than a letter can, and three coloured letters next to a
+            // colour the user is choosing would be three more colours competing with it.
+            return StudioColorRole::TextSecondary;
+        }
+
+        /**
+         * @brief The component letter as a user should see it.
+         *
+         * Upper case, which is what every other tool shows and what reads at a glance in a field
+         * three characters wide -- while the names themselves stay lower case, because they are
+         * also the widget ids and the retained state behind every one of these fields is keyed on
+         * them. Renaming an id to change a letter's case is how a field forgets what was typed
+         * into it.
+         */
+        std::string_view axisLabelFor(std::string_view name)
+        {
+            // pitch/yaw/roll come out as X/Y/Z, which is the correct mapping -- the three are
+            // built from euler.x, euler.y and euler.z in that order -- and it is what makes the
+            // Transform block read as one grid. Position, Rotation and Scale with three different
+            // vocabularies down the same three columns is three rows the eye has to align by hand.
+            // The property's own label still says Rotation, so nothing is lost.
+            static constexpr std::string_view kUpper[] = {"X", "Y", "Z", "W", "H",
+                                                          "X", "Y", "Z"};
+            static constexpr std::string_view kLower[] = {"x", "y", "z", "w", "h",
+                                                          "pitch", "yaw", "roll"};
+            for (std::size_t i = 0; i < std::size(kLower); ++i)
+            {
+                if (name == kLower[i]) { return kUpper[i]; }
+            }
+            return name;
+        }
+
         bool numericComponents(StudioFrame& frame, const UiRect& bounds, const char* const* names,
-                               float* values, int count, bool integral = false)
+                               float* values, int count, bool integral = false,
+                               bool labelled = true)
         {
             const float spacing = metricOf(frame.theme(), StudioMetric::SpacingSmall);
             UiRect fields = bounds;
@@ -124,9 +174,15 @@ namespace CNA::Studio
                 StudioTextFieldOptions options;
                 options.font = StudioFontRole::Monospace;
                 options.selectAllOnFocus = true;
-                // The component's own letter, so a row of four boxes says which is which without
-                // a second row of labels above it.
-                options.placeholder = names[i];
+                // The component's own letter, inside the field, always. It was on `placeholder`,
+                // which shows only while a field is *empty* -- so every populated Position,
+                // Rotation and Scale in Studio was three unlabelled boxes, which is precisely the
+                // case the letters exist for.
+                if (labelled)
+                {
+                    options.prefix = axisLabelFor(names[i]);
+                    options.prefixRole = axisRoleFor(names[i]);
+                }
 
                 if (!studioTextField(frame, frame.ids().make(names[i]), box, text, options)
                          .committed)
@@ -228,7 +284,8 @@ namespace CNA::Studio
 
             frame.ids().push(key);
             const bool changed =
-                numericComponents(frame, control, kChannels, components, 4, /*integral=*/true);
+                numericComponents(frame, control, kChannels, components, 4, /*integral=*/true,
+                                  /*labelled=*/false);
             frame.ids().pop();
 
             if (!changed) { return false; }
@@ -863,7 +920,7 @@ namespace CNA::Studio
                         static_cast<float>(colour.b), static_cast<float>(colour.a)};
 
                     if (numericComponents(frame, control, kChannels, components, 4,
-                                          /*integral=*/true))
+                                          /*integral=*/true, /*labelled=*/false))
                     {
                         edited = PropertyValue{StudioColor{
                             toChannel(components[0]), toChannel(components[1]),

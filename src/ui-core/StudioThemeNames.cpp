@@ -22,6 +22,9 @@ namespace CNA::Studio
             case StudioColorRole::PanelBackground:          return "PanelBackground";
             case StudioColorRole::PanelHeader:              return "PanelHeader";
             case StudioColorRole::PanelHeaderActive:        return "PanelHeaderActive";
+            case StudioColorRole::TabStripBackground:       return "TabStripBackground";
+            case StudioColorRole::TabInactive:              return "TabInactive";
+            case StudioColorRole::WindowChrome:             return "WindowChrome";
             case StudioColorRole::PopupBackground:          return "PopupBackground";
             case StudioColorRole::TooltipBackground:        return "TooltipBackground";
             case StudioColorRole::ModalOverlay:             return "ModalOverlay";
@@ -42,6 +45,9 @@ namespace CNA::Studio
             case StudioColorRole::Border:                   return "Border";
             case StudioColorRole::BorderStrong:             return "BorderStrong";
             case StudioColorRole::Separator:                return "Separator";
+            case StudioColorRole::PanelOutline:             return "PanelOutline";
+            case StudioColorRole::RowAlternate:             return "RowAlternate";
+            case StudioColorRole::RowHover:                 return "RowHover";
             case StudioColorRole::FocusRing:                return "FocusRing";
             case StudioColorRole::Selection:                return "Selection";
             case StudioColorRole::SelectionInactive:        return "SelectionInactive";
@@ -56,6 +62,10 @@ namespace CNA::Studio
             case StudioColorRole::ViewportGrid:             return "ViewportGrid";
             case StudioColorRole::ViewportGridMajor:        return "ViewportGridMajor";
             case StudioColorRole::ViewportSelectionOutline: return "ViewportSelectionOutline";
+            case StudioColorRole::AxisX:                    return "AxisX";
+            case StudioColorRole::AxisY:                    return "AxisY";
+            case StudioColorRole::AxisZ:                    return "AxisZ";
+            case StudioColorRole::AxisW:                    return "AxisW";
             case StudioColorRole::Count:                    break;
         }
         return "";

@@ -6,6 +6,7 @@
 
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -18,6 +19,44 @@ namespace CNA::Studio
 {
     namespace
     {
+        /**
+         * @brief What an entity *is*, from what it carries.
+         *
+         * `STUDIO-35030`. The first thing anybody looks for in an outliner is which row is the
+         * camera, and reading that off a detail column of component names is reading rather than
+         * scanning. Decided from the components rather than from a field on the entity, because a
+         * scene has no such field and inventing one would put a *presentation* concern into the
+         * document format -- where it would then have to be migrated, validated and exported.
+         *
+         * Ordered by how much the answer tells a user, not by how common the component is. An
+         * entity with a camera and a light is a camera with a light attached, because the camera is
+         * the thing somebody is looking for.
+         */
+        StudioIcon iconFor(const StudioEntity& entity)
+        {
+            const auto has = [&entity](const char* typeId) {
+                for (const StudioComponent& component : entity.getComponents())
+                {
+                    if (component.getTypeId() == typeId) { return true; }
+                }
+                return false;
+            };
+
+            if (has(BuiltinComponentIds::kCamera)) { return StudioIcon::Camera; }
+            if (has(BuiltinComponentIds::kLight)) { return StudioIcon::Light; }
+            if (has(BuiltinComponentIds::kModelRenderer)) { return StudioIcon::Mesh; }
+            if (has(BuiltinComponentIds::kSpriteRenderer)
+                || has(BuiltinComponentIds::kSpriteAnimation)
+                || has(BuiltinComponentIds::kTilemap)) { return StudioIcon::Sprite; }
+            if (has(BuiltinComponentIds::kAudioSource)
+                || has(BuiltinComponentIds::kAudioListener)) { return StudioIcon::Audio; }
+
+            // A transform and nothing else is still an entity and still gets an icon: an empty
+            // used as a pivot or a group is a real thing in the scene, and a blank where every
+            // other row has a picture reads as a row that failed to load.
+            return StudioIcon::Entity;
+        }
+
         /**
          * @brief Appends @p id and, when it is open, its children.
          *
@@ -43,6 +82,7 @@ namespace CNA::Studio
             row.hasChildren = !children.empty();
             row.selected = std::find(selection.begin(), selection.end(), id) != selection.end();
             row.enabled = entity->isEnabled();
+            row.icon = iconFor(*entity);
 
             // The component list is what tells a camera from a sprite at a glance, and it is the
             // first thing anybody looks for in an outliner. One name reads; five is a wall.

@@ -1,6 +1,38 @@
-# Visual acceptance — the two UIs, same project, same size
+# Visual acceptance
 
-`plan.md` STUDIO-00013, STUDIO-07023.
+`plan.md` STUDIO-00013, STUDIO-07023, STUDIO-35081.
+
+> ## The standard is no longer "better than the prototype"
+>
+> **`STUDIO-35081`.** Everything below this box is the review that decided the native shell had
+> overtaken the Dear ImGui prototype. It had, on every row, and that comparison has stopped telling
+> us anything: the prototype is a debug-UI toolkit used as an editor, and clearing it is not
+> evidence of anything a user would care about. Kept as the record of how `STUDIO-06015` was
+> decided; not kept as the bar.
+>
+> **The bar now.** At 1920×1080, on first launch, CNA Studio must read as *a serious modern 3D
+> game-development environment* rather than as a custom developer tool that is tidier than ImGui.
+> The World Outliner, the viewport, the Details panel and the Content Browser have to form one
+> coherent professional workspace — not four rectangles of the same colour with different text in
+> them.
+>
+> **The question to ask of a capture:** would a developer opening this for the first time believe it
+> is an environment in which a real 3D game can be built for years?
+>
+> That is a judgement and it is meant to be. What is *not* left to judgement is the set of
+> properties underneath it — that a layered UI has distinguishable layers, that a colour coding
+> agrees with the gizmo it teaches, that an icon distinguishes the thing it names, that a stripe is
+> visible and is not a stripe. Those are `tests/StudioVisualQualityTests.cpp`, and they fail with a
+> sentence rather than with a diff.
+>
+> The work itself is the **CNA Studio Visual Quality 1.0** milestone in
+> [`plans/phase-35-polish.md`](../plans/phase-35-polish.md).
+
+---
+
+## The migration review (history)
+
+The rest of this document is the `STUDIO-07023` review, unchanged.
 
 `docs/reference/` holds four captures: the Dear ImGui prototype and the native Studio shell, each at
 1280x720 and 1920x1080, both showing `examples/HelloSprites` through a real CNA renderer. They are

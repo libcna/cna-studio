@@ -102,6 +102,35 @@ namespace CNA::Studio
 
         // One pass over the folders in sorted order interleaves parents with their contents
         // correctly, because "Assets" sorts before "Assets/Textures" and both before "Assets2".
+        /**
+         * @brief The picture for an asset kind.
+         *
+         * `STUDIO-35030`. A content browser whose rows differ only in a right-aligned grey word is
+         * a content browser a user reads rather than scans, and scanning is the whole reason a
+         * project has folders. The mapping is deliberately coarse: a sound effect and a song get
+         * the same speaker, because the question a user asks of an icon is "is this audio", and the
+         * detail column already answers which.
+         */
+        const auto iconFor = [](AssetType type) {
+            switch (type)
+            {
+                case AssetType::Texture2D:   return StudioIcon::Texture;
+                case AssetType::Model:       return StudioIcon::Mesh;
+                case AssetType::Material:    return StudioIcon::Material;
+                case AssetType::SoundEffect:
+                case AssetType::Song:        return StudioIcon::Audio;
+                case AssetType::Scene:       return StudioIcon::Scene;
+                case AssetType::Prefab:      return StudioIcon::Prefab;
+                case AssetType::Effect:      return StudioIcon::Material;
+                case AssetType::SpriteFont:  return StudioIcon::File;
+                case AssetType::RawData:
+                case AssetType::Unknown:     break;
+            }
+            // A tracked file no importer claims is still a file, and a blank where every other row
+            // has a picture reads as a row that failed to load rather than as one nobody imports.
+            return StudioIcon::File;
+        };
+
         const auto depthOf = [](const std::string& path) {
             return static_cast<int>(std::count(path.begin(), path.end(), '/'));
         };
@@ -116,6 +145,7 @@ namespace CNA::Studio
                 row.id = record->id.toString();
                 row.label = splitPath(record->sourcePath).second;
                 row.detail = toString(record->type);
+                row.icon = iconFor(record->type);
                 row.depth = depth;
                 row.selected = record->id == selected;
                 // Draggable onto anything that takes an asset: a property slot in the inspector,
@@ -134,6 +164,11 @@ namespace CNA::Studio
                     // it is how they find out what references the file that has gone.
                     row.muted = true;
                     row.detail = "missing";
+                    // Coloured, unlike every other icon in the list. A missing asset is the one row
+                    // whose *state* matters more than its kind, and the warning colour is what
+                    // makes it findable in a folder of two hundred without reading any of them.
+                    row.icon = StudioIcon::Warning;
+                    row.iconRole = StudioColorRole::Warning;
                 }
 
                 rows.push_back(std::move(row));
@@ -151,6 +186,7 @@ namespace CNA::Studio
             row.label = leafName(folder);
             row.depth = depthOf(folder);
             row.hasChildren = true;
+            row.icon = StudioIcon::Folder;
 
             const auto contents = byFolder.find(folder);
             const std::size_t count = contents == byFolder.end() ? 0 : contents->second.size();

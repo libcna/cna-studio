@@ -65,6 +65,24 @@ namespace CNA::Studio
         PanelHeader,
         /** @brief The active tab in a tab strip. */
         PanelHeaderActive,
+        /**
+         * @brief The strip a tab sits *in*, behind and between the tabs.
+         *
+         * `STUDIO-35020`. Darker than both the tabs and the panel body, so a tab reads as a tab.
+         * With one token for the strip and its tabs, the active tab's fill merged into the strip
+         * and the strip merged into the panel — three surfaces at one value, which is what makes a
+         * dark UI look like a wireframe of itself.
+         */
+        TabStripBackground,
+        /** @brief An inactive tab: raised out of the strip, sunk below the active one. */
+        TabInactive,
+        /**
+         * @brief The chrome the application owns: menu bar, toolbar, status bar.
+         *
+         * Distinct from a panel's header because they are not panels — they belong to the window,
+         * and a user should be able to see where the application ends and the workspace begins.
+         */
+        WindowChrome,
         /** @brief A menu, dropdown or popup surface: raised above a panel. */
         PopupBackground,
         /** @brief A tooltip surface. */
@@ -113,6 +131,24 @@ namespace CNA::Studio
         BorderStrong,
         /** @brief A rule between groups of content. */
         Separator,
+        /**
+         * @brief The outline that separates one docked panel from the next.
+         *
+         * `STUDIO-35021`. Not `Separator`, which is a rule *inside* content and is deliberately
+         * faint. This one has to survive being the only thing between two panels of nearly the
+         * same colour, which is the whole job of panel chrome.
+         */
+        PanelOutline,
+        /**
+         * @brief Every other row in a list, tree or table.
+         *
+         * Very close to the panel background on purpose: the eye needs the horizontal run to be
+         * traceable across a wide row, and it does not need to be told there are stripes. A visible
+         * stripe is a 1990s table.
+         */
+        RowAlternate,
+        /** @brief The row under the pointer. Distinct from selection, which outranks it. */
+        RowHover,
         /** @brief The keyboard focus indicator. Never the same token as selection. */
         FocusRing,
         /** @brief Selected rows in a list, tree or table, while that view has focus. */
@@ -147,6 +183,26 @@ namespace CNA::Studio
         ViewportGridMajor,
         /** @brief The outline drawn around a selected object. */
         ViewportSelectionOutline,
+
+        // --- Axes (STUDIO-35032) ----------------------------------------------------------------
+        //
+        // One set of three, used by the transform gizmo, the orientation widget and the X/Y/Z
+        // labels on every vector field. They have to be the same three colours in all three places
+        // or the inspector is teaching a mapping the viewport then contradicts -- which is worse
+        // than no colour coding, because the user learns it and is then wrong.
+        //
+        // Red, green, blue in axis order is the convention every 3D tool shares, and a tool that
+        // chose differently would be asking its users to unlearn something true everywhere else.
+        // Desaturated from the primaries: a saturated red field label beside a saturated green one
+        // vibrates, and a property grid is read for hours.
+        /** @brief The X axis. */
+        AxisX,
+        /** @brief The Y axis. */
+        AxisY,
+        /** @brief The Z axis. */
+        AxisZ,
+        /** @brief A fourth component, where one exists: W, or alpha. Deliberately neutral. */
+        AxisW,
 
         /** @brief Number of declared roles; not itself a role. */
         Count

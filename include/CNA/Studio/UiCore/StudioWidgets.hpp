@@ -474,6 +474,29 @@ namespace CNA::Studio
         /** @brief Shown, dimmed, when the field is empty and unfocused. */
         std::string_view placeholder;
 
+        /**
+         * @brief A short label drawn inside the field, at the left, always.
+         *
+         * `STUDIO-35032`. This is what makes a row of three numbers a *vector* rather than three
+         * numbers. The component letters were on @ref placeholder, which shows only while a field
+         * is empty — so every populated Position, Rotation and Scale in Studio was three unlabelled
+         * boxes, which is precisely the case the letters exist for.
+         *
+         * One or two characters. The text area is inset past it, so a long value scrolls rather
+         * than running underneath.
+         */
+        std::string_view prefix;
+
+        /**
+         * @brief The colour @ref prefix is drawn in.
+         *
+         * Defaulted to secondary text, and set to an axis colour by a vector field. Red, green,
+         * blue in axis order is the convention every 3D tool shares, and it has to match the
+         * gizmo's — an inspector teaching a mapping the viewport contradicts is worse than no
+         * colour coding, because the user learns it and is then wrong.
+         */
+        StudioColorRole prefixRole = StudioColorRole::TextSecondary;
+
         /** @brief Typographic role. Monospace suits a number or an identifier. */
         StudioFontRole font = StudioFontRole::Body;
 

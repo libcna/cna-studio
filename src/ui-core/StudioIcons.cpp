@@ -164,6 +164,9 @@ namespace CNA::Studio
             "delete", "duplicate", "translate", "rotate",  "scale",  "grid",
             "focus",  "play",     "pause",   "step",      "stop",    "build",     "package", "close",
             "chevronRight", "chevronDown", "search", "warning", "error", "info",
+            "entity", "camera", "light", "mesh", "sprite", "prefab",
+            "texture", "material", "audio", "scene",
+            "visible", "hidden", "lock", "unlock", "add", "select",
         };
     }
 
@@ -390,6 +393,158 @@ namespace CNA::Studio
                 arc(frame, space, 8.0f, 8.0f, 6.0f, 0.0f, 360.0f, color, 1.4f);
                 box(frame, space, 7.3f, 4.0f, 8.7f, 5.4f, color);
                 box(frame, space, 7.3f, 6.8f, 8.7f, 12.0f, color);
+                break;
+
+            // --- Scene contents (STUDIO-35030) --------------------------------------------
+
+            case StudioIcon::Entity:
+                // A box in isometric projection: the shape every 3D tool uses for "a thing in the
+                // world", and the only one that reads as volume at sixteen pixels. A cube drawn in
+                // elevation is a square, which is already the shape of half this set.
+                line(frame, space, 8.0f, 2.0f, 13.5f, 5.0f, color, 1.4f);
+                line(frame, space, 13.5f, 5.0f, 13.5f, 11.0f, color, 1.4f);
+                line(frame, space, 13.5f, 11.0f, 8.0f, 14.0f, color, 1.4f);
+                line(frame, space, 8.0f, 14.0f, 2.5f, 11.0f, color, 1.4f);
+                line(frame, space, 2.5f, 11.0f, 2.5f, 5.0f, color, 1.4f);
+                line(frame, space, 2.5f, 5.0f, 8.0f, 2.0f, color, 1.4f);
+                // The three interior edges, which are what turn a hexagon into a cube.
+                line(frame, space, 8.0f, 8.0f, 8.0f, 14.0f, color, 1.2f);
+                line(frame, space, 8.0f, 8.0f, 2.5f, 5.0f, color, 1.2f);
+                line(frame, space, 8.0f, 8.0f, 13.5f, 5.0f, color, 1.2f);
+                break;
+
+            case StudioIcon::Camera:
+                // A body and a lens cone, which is the movie-camera silhouette rather than the
+                // stills-camera one. At this size a stills camera is a rounded rectangle with a
+                // circle in it, and a circle in a rectangle is also the Material icon.
+                outline(frame, space, 2.0f, 5.0f, 10.0f, 12.0f, color, 1.4f);
+                triangle(frame, space, 10.0f, 7.0f, 14.0f, 5.0f, 14.0f, 9.0f, color);
+                triangle(frame, space, 10.0f, 7.0f, 14.0f, 9.0f, 10.0f, 10.0f, color);
+                break;
+
+            case StudioIcon::Light:
+                // A bulb and rays. The rays are what make it a light rather than a circle: three
+                // on the upper half only, because a full starburst at sixteen pixels is a blob.
+                arc(frame, space, 8.0f, 7.0f, 3.4f, 0.0f, 360.0f, color, 1.4f);
+                box(frame, space, 6.6f, 11.2f, 9.4f, 12.2f, color);
+                box(frame, space, 7.0f, 13.0f, 9.0f, 14.0f, color);
+                line(frame, space, 8.0f, 1.0f, 8.0f, 2.4f, color, 1.2f);
+                line(frame, space, 2.6f, 3.4f, 3.6f, 4.4f, color, 1.2f);
+                line(frame, space, 13.4f, 3.4f, 12.4f, 4.4f, color, 1.2f);
+                break;
+
+            case StudioIcon::Mesh:
+                // The same cube as Entity, with its faces divided: a mesh is geometry, and the
+                // wireframe subdivision is the one mark that says so without a second shape.
+                line(frame, space, 8.0f, 2.0f, 13.5f, 5.0f, color, 1.3f);
+                line(frame, space, 13.5f, 5.0f, 13.5f, 11.0f, color, 1.3f);
+                line(frame, space, 13.5f, 11.0f, 8.0f, 14.0f, color, 1.3f);
+                line(frame, space, 8.0f, 14.0f, 2.5f, 11.0f, color, 1.3f);
+                line(frame, space, 2.5f, 11.0f, 2.5f, 5.0f, color, 1.3f);
+                line(frame, space, 2.5f, 5.0f, 8.0f, 2.0f, color, 1.3f);
+                line(frame, space, 2.5f, 5.0f, 13.5f, 11.0f, color, 1.1f);
+                line(frame, space, 13.5f, 5.0f, 2.5f, 11.0f, color, 1.1f);
+                line(frame, space, 8.0f, 2.0f, 8.0f, 14.0f, color, 1.1f);
+                break;
+
+            case StudioIcon::Sprite:
+                // A frame with a horizon and a sun in it: the universal "this is a picture".
+                // Distinguished from Texture by being an outline rather than a stack.
+                outline(frame, space, 2.0f, 3.0f, 14.0f, 13.0f, color, 1.4f);
+                arc(frame, space, 5.5f, 6.5f, 1.2f, 0.0f, 360.0f, color, 1.2f);
+                triangle(frame, space, 3.5f, 12.0f, 7.0f, 7.5f, 10.5f, 12.0f, color);
+                triangle(frame, space, 8.0f, 12.0f, 11.0f, 9.0f, 13.5f, 12.0f, color);
+                break;
+
+            case StudioIcon::Prefab:
+                // The Entity cube with a filled corner: a prefab instance is an entity plus a
+                // provenance, and a badge on the shape it modifies says that better than a
+                // separate picture would.
+                line(frame, space, 8.0f, 2.0f, 13.5f, 5.0f, color, 1.3f);
+                line(frame, space, 13.5f, 5.0f, 13.5f, 11.0f, color, 1.3f);
+                line(frame, space, 13.5f, 11.0f, 8.0f, 14.0f, color, 1.3f);
+                line(frame, space, 8.0f, 14.0f, 2.5f, 11.0f, color, 1.3f);
+                line(frame, space, 2.5f, 11.0f, 2.5f, 5.0f, color, 1.3f);
+                line(frame, space, 2.5f, 5.0f, 8.0f, 2.0f, color, 1.3f);
+                triangle(frame, space, 8.0f, 8.0f, 13.5f, 5.0f, 13.5f, 11.0f, color);
+                break;
+
+            // --- Asset kinds ---------------------------------------------------------------
+
+            case StudioIcon::Texture:
+                // Two stacked frames: a texture is a resource rather than a picture in a scene,
+                // and the stack is what separates it from Sprite at a glance.
+                outline(frame, space, 4.0f, 2.0f, 14.0f, 10.0f, color, 1.3f);
+                box(frame, space, 2.0f, 6.0f, 11.0f, 7.3f, color);
+                outline(frame, space, 2.0f, 6.0f, 12.0f, 14.0f, color, 1.3f);
+                break;
+
+            case StudioIcon::Material:
+                // A sphere with a highlight: what every DCC tool puts on a material thumbnail,
+                // because a material is only visible on a surface.
+                arc(frame, space, 8.0f, 8.0f, 5.6f, 0.0f, 360.0f, color, 1.4f);
+                arc(frame, space, 5.8f, 5.8f, 1.5f, 0.0f, 360.0f, color, 1.1f);
+                break;
+
+            case StudioIcon::Audio:
+                // A speaker and one arc. Two arcs is the conventional drawing and the outer one is
+                // three pixels from the edge at this size, where it reads as a smudge.
+                triangle(frame, space, 3.0f, 6.0f, 7.5f, 2.5f, 7.5f, 13.5f, color);
+                box(frame, space, 3.0f, 6.0f, 5.5f, 10.0f, color);
+                arc(frame, space, 8.0f, 8.0f, 4.0f, -60.0f, 60.0f, color, 1.3f);
+                break;
+
+            case StudioIcon::Scene:
+                // A ground plane in perspective with something standing on it, which is what a
+                // scene file contains and what no other icon in this set says.
+                line(frame, space, 1.5f, 12.0f, 14.5f, 12.0f, color, 1.4f);
+                line(frame, space, 3.5f, 14.0f, 6.0f, 12.0f, color, 1.1f);
+                line(frame, space, 12.5f, 14.0f, 10.0f, 12.0f, color, 1.1f);
+                outline(frame, space, 6.0f, 5.0f, 10.0f, 12.0f, color, 1.3f);
+                break;
+
+            // --- Row affordances -----------------------------------------------------------
+
+            case StudioIcon::Visible:
+                // An eye: the almond as two arcs meeting at the corners, rather than an ellipse,
+                // because an ellipse with a dot in it is a fried egg.
+                arc(frame, space, 8.0f, 11.6f, 6.6f, 212.0f, 328.0f, color, 1.4f);
+                arc(frame, space, 8.0f, 4.4f, 6.6f, 32.0f, 148.0f, color, 1.4f);
+                arc(frame, space, 8.0f, 8.0f, 1.8f, 0.0f, 360.0f, color, 1.3f);
+                break;
+
+            case StudioIcon::Hidden:
+                // The same eye, struck through. The pair has to be one drawing with one difference
+                // or the control reads as two unrelated states rather than as on and off.
+                arc(frame, space, 8.0f, 11.6f, 6.6f, 212.0f, 328.0f, color, 1.3f);
+                arc(frame, space, 8.0f, 4.4f, 6.6f, 32.0f, 148.0f, color, 1.3f);
+                arc(frame, space, 8.0f, 8.0f, 1.8f, 0.0f, 360.0f, color, 1.2f);
+                line(frame, space, 3.0f, 13.0f, 13.0f, 3.0f, color, 1.6f);
+                break;
+
+            case StudioIcon::Lock:
+                box(frame, space, 3.5f, 7.5f, 12.5f, 13.5f, color);
+                arc(frame, space, 8.0f, 7.5f, 3.0f, 180.0f, 360.0f, color, 1.5f);
+                break;
+
+            case StudioIcon::Unlock:
+                // The same body with the shackle open and swung aside, so the two read as one
+                // control in two states.
+                box(frame, space, 3.5f, 7.5f, 12.5f, 13.5f, color);
+                arc(frame, space, 11.5f, 7.5f, 3.0f, 180.0f, 300.0f, color, 1.5f);
+                break;
+
+            case StudioIcon::Add:
+                line(frame, space, 8.0f, 3.0f, 8.0f, 13.0f, color, 1.8f);
+                line(frame, space, 3.0f, 8.0f, 13.0f, 8.0f, color, 1.8f);
+                break;
+
+            case StudioIcon::Select:
+                // A pointer, as a filled quadrilateral plus its tail. Two filled triangles rather
+                // than an outline: an outlined arrow at sixteen pixels has a two-pixel interior.
+                triangle(frame, space, 4.0f, 2.0f, 4.0f, 12.5f, 7.2f, 9.6f, color);
+                triangle(frame, space, 4.0f, 2.0f, 7.2f, 9.6f, 11.6f, 9.6f, color);
+                line(frame, space, 7.6f, 9.8f, 10.0f, 14.0f, color, 1.8f);
                 break;
 
             case StudioIcon::None:

@@ -227,6 +227,14 @@ namespace CNA::Studio
         t.setColor(StudioColorRole::PanelBackground,  rgb(32, 34, 38));
         t.setColor(StudioColorRole::PanelHeader,      rgb(38, 40, 45));
         t.setColor(StudioColorRole::PanelHeaderActive, rgb(46, 49, 55));
+        // Below the panel body rather than above it, which is the change that makes a tab strip
+        // read as one: a tab is a raised thing sitting in a recess, and three surfaces at nearly
+        // one value read as a wireframe of a UI rather than as a UI.
+        t.setColor(StudioColorRole::TabStripBackground, rgb(20, 21, 24));
+        t.setColor(StudioColorRole::TabInactive,      rgb(28, 30, 34));
+        // The window's own chrome, one step off the panels so a user can see where the application
+        // ends and the workspace begins.
+        t.setColor(StudioColorRole::WindowChrome,     rgb(28, 30, 34));
         t.setColor(StudioColorRole::PopupBackground,  rgb(42, 44, 50));
         t.setColor(StudioColorRole::TooltipBackground, rgb(52, 55, 62));
         t.setColor(StudioColorRole::ModalOverlay,     rgba(0, 0, 0, 128));
@@ -254,6 +262,14 @@ namespace CNA::Studio
         t.setColor(StudioColorRole::Border,            rgb(58, 61, 68));
         t.setColor(StudioColorRole::BorderStrong,      rgb(76, 80, 88));
         t.setColor(StudioColorRole::Separator,         rgb(45, 47, 53));
+        // Darker than either panel it divides rather than lighter. A light rule on a dark ground
+        // reads as a highlight -- as though something were raised there -- and a workspace of
+        // raised edges is busier than one of seams.
+        t.setColor(StudioColorRole::PanelOutline,      rgb(16, 17, 20));
+        // Four values above the panel. Enough to trace a row across 900 pixels, not enough to see
+        // as a stripe: a visible stripe is a 1990s table.
+        t.setColor(StudioColorRole::RowAlternate,      rgb(36, 38, 43));
+        t.setColor(StudioColorRole::RowHover,          rgb(44, 47, 53));
         // The focus ring is deliberately NOT the accent: focus and selection are different facts
         // and a user must be able to see both at once on the same row.
         t.setColor(StudioColorRole::FocusRing,         rgb(126, 186, 245));
@@ -276,6 +292,11 @@ namespace CNA::Studio
         t.setColor(StudioColorRole::ViewportGridMajor,        rgb(76, 80, 86));
         t.setColor(StudioColorRole::ViewportSelectionOutline, rgb(255, 156, 48));
 
+        t.setColor(StudioColorRole::AxisX, rgb(226, 104, 104));
+        t.setColor(StudioColorRole::AxisY, rgb(126, 194, 118));
+        t.setColor(StudioColorRole::AxisZ, rgb(104, 152, 226));
+        t.setColor(StudioColorRole::AxisW, rgb(160, 166, 176));
+
         return t;
     }
 
@@ -288,6 +309,9 @@ namespace CNA::Studio
         t.setColor(StudioColorRole::PanelBackground,   rgb(250, 250, 251));
         t.setColor(StudioColorRole::PanelHeader,       rgb(240, 241, 243));
         t.setColor(StudioColorRole::PanelHeaderActive, rgb(255, 255, 255));
+        t.setColor(StudioColorRole::TabStripBackground, rgb(224, 226, 229));
+        t.setColor(StudioColorRole::TabInactive,       rgb(235, 236, 239));
+        t.setColor(StudioColorRole::WindowChrome,      rgb(235, 236, 239));
         t.setColor(StudioColorRole::PopupBackground,   rgb(255, 255, 255));
         t.setColor(StudioColorRole::TooltipBackground, rgb(252, 252, 253));
         t.setColor(StudioColorRole::ModalOverlay,      rgba(0, 0, 0, 76));
@@ -312,6 +336,9 @@ namespace CNA::Studio
         t.setColor(StudioColorRole::Border,            rgb(210, 213, 218));
         t.setColor(StudioColorRole::BorderStrong,      rgb(180, 184, 190));
         t.setColor(StudioColorRole::Separator,         rgb(226, 228, 232));
+        t.setColor(StudioColorRole::PanelOutline,      rgb(196, 199, 205));
+        t.setColor(StudioColorRole::RowAlternate,      rgb(244, 245, 247));
+        t.setColor(StudioColorRole::RowHover,          rgb(234, 237, 241));
         t.setColor(StudioColorRole::FocusRing,         rgb(29, 110, 184));
         t.setColor(StudioColorRole::Selection,         rgb(210, 227, 246));
         t.setColor(StudioColorRole::SelectionInactive, rgb(232, 233, 236));
@@ -329,6 +356,13 @@ namespace CNA::Studio
         t.setColor(StudioColorRole::ViewportGrid,             rgb(206, 209, 214));
         t.setColor(StudioColorRole::ViewportGridMajor,        rgb(184, 188, 194));
         t.setColor(StudioColorRole::ViewportSelectionOutline, rgb(214, 116, 16));
+
+        // Darker than the dark theme's, for the same reason its text is: these are read against a
+        // near-white field, and the dark theme's values on white are pastel rather than legible.
+        t.setColor(StudioColorRole::AxisX, rgb(186, 56, 56));
+        t.setColor(StudioColorRole::AxisY, rgb(46, 132, 60));
+        t.setColor(StudioColorRole::AxisZ, rgb(42, 96, 178));
+        t.setColor(StudioColorRole::AxisW, rgb(104, 110, 120));
 
         return t;
     }

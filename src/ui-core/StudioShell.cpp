@@ -1507,7 +1507,7 @@ namespace CNA::Studio
 
         if (frame_.isDrawPass())
         {
-            frame_.drawList().fillRect(layout_.menuBar, theme.color(StudioColorRole::PanelHeader));
+            frame_.drawList().fillRect(layout_.menuBar, theme.color(StudioColorRole::WindowChrome));
             frame_.drawList().drawHorizontalSeparator(
                 UiRect{layout_.menuBar.left(), layout_.menuBar.bottom(), layout_.menuBar.width, 0.0f},
                 theme.color(StudioColorRole::Separator),
@@ -1766,10 +1766,13 @@ namespace CNA::Studio
         if (frame_.isDrawPass())
         {
             frame_.drawList().fillRect(layout_.toolbar,
-                                       theme.color(StudioColorRole::PanelBackground));
+                                       theme.color(StudioColorRole::WindowChrome));
+            // The application's edge, not a rule inside content. The toolbar used to be
+            // PanelBackground with a faint separator, which put it at the same value as the panel
+            // under it and left the two reading as one surface with a line drawn across it.
             frame_.drawList().drawHorizontalSeparator(
                 UiRect{layout_.toolbar.left(), layout_.toolbar.bottom(), layout_.toolbar.width, 0.0f},
-                theme.color(StudioColorRole::Separator),
+                theme.color(StudioColorRole::PanelOutline),
                 metricOf(theme, StudioMetric::SeparatorThickness));
         }
 
@@ -1785,7 +1788,7 @@ namespace CNA::Studio
                         UiRect{entry.bounds.centerX(), entry.bounds.top() + inset,
                                metricOf(theme, StudioMetric::SeparatorThickness),
                                std::max(0.0f, entry.bounds.height - inset * 2.0f)},
-                        theme.color(StudioColorRole::Separator));
+                        theme.color(StudioColorRole::Border));
                 }
                 continue;
             }
@@ -1862,7 +1865,20 @@ namespace CNA::Studio
             if (frame_.isDrawPass())
             {
                 frame_.drawList().fillRect(geometry.tabStrip,
-                                           theme.color(StudioColorRole::PanelHeader));
+                                           theme.color(StudioColorRole::TabStripBackground));
+
+                // `STUDIO-35021`. An outline per leaf, drawn after its surfaces so it survives
+                // them. Without it the outliner, the viewport and the details panel are three
+                // rectangles of nearly one value sharing edges, and the workspace reads as one
+                // large surface with content scattered over it rather than as panels.
+                //
+                // Adjacent leaves overlap their strokes along a shared edge. That is deliberate
+                // and costs nothing: the token is the same, so two strokes and one are the same
+                // pixels -- and the alternative is a dock tree that knows which of its edges are
+                // interior, which is a lot of arithmetic to save a redundant line.
+                frame_.drawList().strokeRect(node.bounds,
+                                             theme.color(StudioColorRole::PanelOutline),
+                                             metricOf(theme, StudioMetric::SeparatorThickness));
             }
 
             if (node.panels.empty())
@@ -2046,7 +2062,7 @@ namespace CNA::Studio
             if (frame_.isDrawPass())
             {
                 frame_.drawList().fillRect(geometry.tabStrip,
-                                           theme.color(StudioColorRole::PanelHeader));
+                                           theme.color(StudioColorRole::TabStripBackground));
             }
 
             // The close button first, so the strip the window is dragged by excludes it: a title
@@ -2676,11 +2692,14 @@ namespace CNA::Studio
         if (frame_.isDrawPass())
         {
             frame_.drawList().fillRect(layout_.statusBar,
-                                       theme.color(StudioColorRole::PanelHeader));
+                                       theme.color(StudioColorRole::WindowChrome));
+            // The outline rather than the separator: the status bar is the boundary between the
+            // workspace and the window, and a faint in-content rule there reads as a row of the
+            // panel above it rather than as the edge of the application.
             frame_.drawList().drawHorizontalSeparator(
                 UiRect{layout_.statusBar.left(), layout_.statusBar.top(),
                        layout_.statusBar.width, 0.0f},
-                theme.color(StudioColorRole::Separator),
+                theme.color(StudioColorRole::PanelOutline),
                 metricOf(theme, StudioMetric::SeparatorThickness));
         }
 

@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
@@ -65,6 +66,25 @@ namespace CNA::Studio
          * that says which in grey words is a list the eye has to read line by line.
          */
         StudioColorRole detailRole = StudioColorRole::TextSecondary;
+
+        /**
+         * @brief What this row *is*, drawn before the label.
+         *
+         * `STUDIO-35030`. A list of names in one weight is a list the eye has to read line by
+         * line; a list with a camera, a light and three meshes in it is one it can scan. `None`
+         * draws nothing and takes no space, so a tree with no meaningful types — a property tree,
+         * a diagnostics tree — is unchanged.
+         */
+        StudioIcon icon = StudioIcon::None;
+
+        /**
+         * @brief The colour @ref icon is drawn in.
+         *
+         * Secondary by default. An icon at the label's weight competes with the label, and the
+         * label is what a user is reading; the icon is there to be recognised at a glance rather
+         * than read. A row that wants a coloured icon — a warning, a broken reference — says so.
+         */
+        StudioColorRole iconRole = StudioColorRole::TextSecondary;
 
         /** @brief How far in the row is indented. Zero is a root. */
         int depth = 0;
