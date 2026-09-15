@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 3 of 23 complete `█░░░░░░░░░░░`
+**Progress:** 5 of 24 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -15,7 +15,7 @@
 | `STUDIO-07003` | Port the toolbar | ⬜ | `STUDIO-06006` |
 | `STUDIO-07004` | Port the status bar | ⬜ | `STUDIO-06007` |
 | `STUDIO-07005` | Port the Console / Output Log | ✅ | `STUDIO-07001` |
-| `STUDIO-07006` | Port the Hierarchy panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
 | `STUDIO-07007` | Port the Inspector panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07008` | Port the Content Browser | ⬜ | `STUDIO-07001` |
 | `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
@@ -26,6 +26,7 @@
 | `STUDIO-07014` | Port the Comparison panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07015` | One log model, read by both consoles | ✅ | — |
 | `STUDIO-07016` | Panel content seam: the shell hosts a ported panel's content | ✅ | `STUDIO-06018` |
+| `STUDIO-07017` | A module for the ported panels, above widgets and document alike | ✅ | `STUDIO-07016` |
 | `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ⬜ | `STUDIO-00014`, `STUDIO-07014` |
 | `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ⬜ | `STUDIO-07020` |
 | `STUDIO-07022` | Prove docking parity | ⬜ | `STUDIO-07020` |
@@ -109,3 +110,32 @@ of a leaf is called: a panel behind another is not drawn and not described, so i
 
 **Acceptance.** Fails the build if the dependency returns, whether through code or through CMake
 
+### `STUDIO-07006` — Port the Hierarchy panel (World Outliner)
+
+**Acceptance.** The scene's entities as a tree: parents before children, the document's own sibling
+order, a disclosure triangle only where there are children, the component summary that tells a
+camera from a sprite at a glance, and clicking a row selecting it
+
+**Selection goes through the context.** The viewport, the inspector and the gizmos all read
+`StudioContext`'s selection. A panel that kept its own would disagree with the rest of the editor
+the moment anything else changed it — and would do so silently, which is the worst way for two
+views of one document to diverge
+
+**The sibling order is the scene's, not the panel's.** Showing siblings differently from how the
+document holds them is how a user reorders something in one place and cannot find it in another
+
+**Verification.** `tests/StudioOutlinerPanelTests.cpp` splits the two failures a screenshot cannot
+tell apart: what the tree *is* (`studioOutlinerRows`, asserted without a frame) and what a user can
+*do* to it (driven through the real widget with synthesised input). Plus a two-thousand-deep chain,
+because a crash on opening somebody's scene is the worst outcome an outliner has
+
+### `STUDIO-07017` — A module for the ported panels, above widgets and document alike
+
+**Acceptance.** `cna-studio-shell-panels`, linking `cna-studio-ui-core` and `cna-studio-context`.
+Every panel ported in this phase lives here
+
+**Why it exists.** The Output Log could go in ui-core because its model is part of `cna-studio-ui`,
+which ui-core already depends on. The outliner reads a `SceneDocument` and writes a selection, and
+ui-core depends on neither — deliberately, because that is what keeps the widget layer reusable and
+testable without a document model. A panel is the seam where the two are put together, and a seam
+deserves somewhere to be

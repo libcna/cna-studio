@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 20 of 29 complete `████████░░░░`
+**Progress:** 21 of 30 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -39,6 +39,7 @@
 | `STUDIO-03031` | Widget interaction helpers over `interact()`: button, toggle, checkbox, tab, menu item | ✅ | `STUDIO-03015` |
 | `STUDIO-03032` | Text measurement seam: code-point-correct extents, baselines and truncation | ✅ | `STUDIO-03015` |
 | `STUDIO-03033` | Scrollable regions: wheel, draggable thumb, and row virtualisation | ✅ | `STUDIO-03031`, `STUDIO-03018` |
+| `STUDIO-03034` | Tree view: flattened rows, disclosure, indentation and selection | ✅ | `STUDIO-03033` |
 
 ## Acceptance and verification
 
@@ -235,3 +236,25 @@ the single most common complaint about log windows
 **Verification.** `tests/StudioLogPanelTests.cpp` — the bar appearing only on overflow, the wheel
 stopping at both ends, following engaging and then yielding to the reader, and `visibleRows` culling
 a hundred thousand rows to a screenful and coming back empty past the end
+
+### `STUDIO-03034` — Tree view: flattened rows, disclosure, indentation and selection
+
+**Acceptance.** A scrolling list of rows carrying a depth, a disclosure triangle where a row has
+children, hover and selection, and virtualisation. Clicking a triangle opens the row; clicking the
+row selects it; those are different intentions and the widget keeps them apart — a tree that
+conflated them would make it impossible to look inside a group without also selecting it
+
+**A view over rows, not a walker over a data structure.** The outliner shows a scene graph and the
+content browser will show a directory; a widget that knew about either would have to learn about
+both. It takes a flat list with a depth per row, which is what a tree looks like once it has been
+drawn, and the caller flattens
+
+**Expansion is the caller's.** Not ceremony: the caller has to consult it anyway to decide which
+rows to flatten, and a widget that owned it would mean asking the widget a question before it has
+been called. Held as the set of *collapsed* ids, so the default is open and an unknown id needs no
+entry — a tree that started collapsed would show one line and make the user work to discover that
+their scene has anything in it
+
+**Verification.** `tests/StudioOutlinerPanelTests.cpp` — hierarchy and depth, collapsing hiding only
+its own children, the open default, selection marking, a click reaching the selection, and a
+two-thousand-deep chain that neither exhausts the stack nor draws more than a screenful

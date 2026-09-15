@@ -449,6 +449,11 @@ int main(int argc, char** argv)
             {
                 std::cout << ", status '" << result.statusLeft << "'";
             }
+            if (result.outlinerRowsTotal > 0)
+            {
+                std::cout << ", outliner showing " << result.outlinerRowsDrawn << " of "
+                          << result.outlinerRowsTotal << " entities";
+            }
             if (result.logRowsMatching > 0 || result.logRowsDrawn > 0)
             {
                 std::cout << ", output log showing " << result.logRowsDrawn << " of "

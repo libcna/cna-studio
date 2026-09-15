@@ -25,6 +25,7 @@ add_executable(cna-studio-tests
     ProjectExportTests.cpp
     StudioWorkspaceStoreTests.cpp
     StudioLogPanelTests.cpp
+    StudioOutlinerPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -72,6 +73,7 @@ target_compile_definitions(cna-studio-tests PRIVATE
 target_include_directories(cna-studio-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cna-studio-tests PRIVATE
     cna-studio-ui-core
+    cna-studio-shell-panels
     cna-studio-context
     cna-studio-plugins
     cna-studio-runtime-bridge
@@ -310,8 +312,12 @@ if(CNA_STUDIO_WITH_CNA)
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-project.png)
+    # Three assertions in one line, each of which only the whole stack can satisfy: the context
+    # opened the project (the status bar), the World Outliner is reading the scene it opened (five
+    # entities, which is what Level01 holds), and the Output Log is reading the editor's own
+    # messages rather than a demonstration of them.
     set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
-        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level01'.*output log showing [1-9][0-9]* of [1-9][0-9]* messages")
+        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level01'.*outliner showing [1-9][0-9]* of 5 entities.*output log showing [1-9][0-9]* of [1-9][0-9]* messages")
 
     if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES

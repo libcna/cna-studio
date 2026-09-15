@@ -255,6 +255,7 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioShellLayout.cpp
     src/ui-core/StudioWorkspaceStore.cpp
     src/ui-core/StudioLogPanel.cpp
+    src/ui-core/StudioTreeView.cpp
     src/ui-core/StudioDockTree.cpp
     src/ui-core/StudioInputRouter.cpp
     src/ui-core/StudioFrame.cpp
@@ -397,7 +398,8 @@ if(CNA_STUDIO_WITH_CNA)
     # the UI, and the host is only the window it lives in.
     target_link_libraries(cna-studio-viewport
         PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-ui-core
-               cna-studio-context cna-studio-project cna-studio-player PRIVATE CNA)
+               cna-studio-shell-panels cna-studio-context cna-studio-project cna-studio-player
+        PRIVATE CNA)
     target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_CNA=1)
 
     if(CNA_STUDIO_WITH_IMGUI)
@@ -405,6 +407,16 @@ if(CNA_STUDIO_WITH_CNA)
         target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_HOST=1)
     endif()
 endif()
+
+# cna-studio-shell-panels -- the panels ported onto the Studio UI.
+#
+# Above both the widget layer and the document model, because that is what a panel is: the seam
+# where the two are put together. cna-studio-ui-core knows nothing about scenes and cna-studio-scene
+# knows nothing about widgets, and keeping it that way is what lets each be tested without the
+# other. Every panel ported in Phase 7 belongs here.
+add_library(cna-studio-shell-panels STATIC
+    src/shell-panels/StudioOutlinerPanel.cpp)
+target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context)
 
 # ---------------------------------------------------------------------------------------------
 # Application

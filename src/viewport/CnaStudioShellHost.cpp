@@ -22,6 +22,7 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
@@ -109,6 +110,34 @@ namespace CNA::Studio
                     }
                 }
 
+                // The World Outliner (STUDIO-07006), the second ported panel and the first that
+                // reads the document model rather than a log.
+                shell_->setPanelContent("outliner",
+                    [this](StudioFrame& frame, const UiRect& bounds) {
+                        const StudioOutlinerResult outliner =
+                            studioOutlinerPanel(frame, bounds, *context_, outlinerState_);
+                        if (frame.isDrawPass())
+                        {
+                            outlinerRowsDrawn_ = outliner.rowsDrawn;
+                            outlinerRowsTotal_ = outliner.rowsTotal;
+                        }
+                        if (outliner.selectionChanged)
+                        {
+                            const std::vector<Uuid>& selection = context_->getSelection();
+                            if (selection.empty())
+                            {
+                                log_.append(LogSeverity::Trace, "Selection cleared.");
+                            }
+                            else if (const StudioEntity* entity =
+                                         context_->getScene().findEntity(selection.back()))
+                            {
+                                log_.append(LogSeverity::Trace, "Selected '" + entity->getName()
+                                                                + "' (" + std::to_string(selection.size())
+                                                                + " selected).");
+                            }
+                        }
+                    });
+
                 // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI
                 // owns -- which is the whole shape of the strangler migration: the ImGui Console
                 // reads the same model and keeps working until it is deleted.
@@ -159,6 +188,8 @@ namespace CNA::Studio
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
             [[nodiscard]] const std::string& statusLeft() const { return shell_->statusLeft(); }
+            [[nodiscard]] std::size_t outlinerRowsDrawn() const { return outlinerRowsDrawn_; }
+            [[nodiscard]] std::size_t outlinerRowsTotal() const { return outlinerRowsTotal_; }
             [[nodiscard]] std::size_t logRowsDrawn() const { return logRowsDrawn_; }
             [[nodiscard]] std::size_t logRowsMatching() const { return logRowsMatching_; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
@@ -370,6 +401,9 @@ namespace CNA::Studio
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
             std::unique_ptr<StudioContext> context_;
+            StudioTreeState outlinerState_;
+            std::size_t outlinerRowsDrawn_ = 0;
+            std::size_t outlinerRowsTotal_ = 0;
             StudioLog log_;
             std::size_t logRowsDrawn_ = 0;
             std::size_t logRowsMatching_ = 0;
@@ -401,6 +435,8 @@ namespace CNA::Studio
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();
         result.statusLeft = game.statusLeft();
+        result.outlinerRowsDrawn = game.outlinerRowsDrawn();
+        result.outlinerRowsTotal = game.outlinerRowsTotal();
         result.logRowsDrawn = game.logRowsDrawn();
         result.logRowsMatching = game.logRowsMatching();
         result.layoutRestored = game.layoutRestored();
