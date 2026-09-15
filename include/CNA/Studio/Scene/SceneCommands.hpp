@@ -125,6 +125,36 @@ namespace CNA::Studio
     };
 
     /**
+     * @brief Turns an entity on or off.
+     *
+     * A command rather than a direct write for the reason every other edit is one: the flag decides
+     * whether an entity renders, ticks and answers queries, so flicking it is exactly the change
+     * somebody does by accident and reaches for Ctrl+Z over. The inspector applied it directly
+     * until this existed, which made it the one edit in the panel that undo could not reach.
+     */
+    class SetEntityEnabledCommand final : public StudioCommand
+    {
+    public:
+        SetEntityEnabledCommand(SceneDocument& document, Uuid entityId, bool enabled);
+
+        void execute() override;
+        void undo() override;
+        [[nodiscard]] std::string getDescription() const override;
+        [[nodiscard]] std::string getMergeKey() const override;
+        bool mergeWith(const StudioCommand& newer) override;
+
+        /** @brief False when the entity is not in the document, or already in the asked-for state. */
+        [[nodiscard]] bool isValid() const { return valid_; }
+
+    private:
+        SceneDocument* document_;
+        Uuid entityId_;
+        bool enabled_ = true;
+        bool wasEnabled_ = true;
+        bool valid_ = false;
+    };
+
+    /**
      * @brief Moves an entity under a new parent.
      *
      * Passing the nil Uuid as the new parent makes the entity a root. A move that would create a

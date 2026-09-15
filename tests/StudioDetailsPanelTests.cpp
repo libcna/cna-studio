@@ -14,11 +14,14 @@
 
 #include "TestHarness.hpp"
 
+#include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -249,4 +252,114 @@ CNA_STUDIO_TEST(AnEntityDeletedWhileSelectedIsSaidSoRatherThanCrashedOn)
     CNA_STUDIO_EXPECT_EQ(harness.last.componentCount, std::size_t{0});
     CNA_STUDIO_EXPECT_EQ(harness.last.rowsDrawn, std::size_t{0});
     CNA_STUDIO_EXPECT_EQ(harness.shell->frame().phaseViolations(), std::size_t{0});
+}
+
+// ---------------------------------------------------------------------------------------------
+// The kinds that used to be read-only (plan.md STUDIO-07018, STUDIO-07019)
+// ---------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TurningAnEntityOffGoesThroughTheHistorySoUndoReachesIt)
+{
+    // It was the one edit in the panel Ctrl+Z could not reach, and it is the one somebody does by
+    // accident: the flag decides whether an entity renders, ticks and answers queries at all.
+    Fixture fixture;
+    CNA_STUDIO_EXPECT(fixture.context.getScene().findEntity(fixture.entity)->isEnabled());
+
+    auto command = std::make_unique<SetEntityEnabledCommand>(fixture.context.getScene(),
+                                                             fixture.entity, false);
+    CNA_STUDIO_EXPECT(command->isValid());
+    fixture.context.execute(std::move(command));
+
+    CNA_STUDIO_EXPECT(!fixture.context.getScene().findEntity(fixture.entity)->isEnabled());
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{1});
+
+    fixture.context.getHistory().undo();
+    CNA_STUDIO_EXPECT(fixture.context.getScene().findEntity(fixture.entity)->isEnabled());
+}
+
+CNA_STUDIO_TEST(SettingTheEnabledFlagToWhatItAlreadyIsIsRefused)
+{
+    // An undo stack with no-ops in it makes Ctrl+Z appear to do nothing, which is worse than doing
+    // the wrong thing: the user cannot tell how many more to press.
+    Fixture fixture;
+    const SetEntityEnabledCommand command{fixture.context.getScene(), fixture.entity, true};
+    CNA_STUDIO_EXPECT(!command.isValid());
+
+    const SetEntityEnabledCommand missing{fixture.context.getScene(), Uuid::generate(), false};
+    CNA_STUDIO_EXPECT(!missing.isValid());
+}
+
+CNA_STUDIO_TEST(RepeatedEnabledFlipsMergeIntoOneUndoStep)
+{
+    Fixture fixture;
+    fixture.context.execute(
+        std::make_unique<SetEntityEnabledCommand>(fixture.context.getScene(), fixture.entity, false),
+        MergePolicy::MergeWithPrevious);
+    fixture.context.execute(
+        std::make_unique<SetEntityEnabledCommand>(fixture.context.getScene(), fixture.entity, true),
+        MergePolicy::MergeWithPrevious);
+
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{1});
+
+    // And undoing that one step returns to where it started, not to the intermediate state.
+    fixture.context.getHistory().undo();
+    CNA_STUDIO_EXPECT(fixture.context.getScene().findEntity(fixture.entity)->isEnabled());
+}
+
+CNA_STUDIO_TEST(AQuaternionIsEditedAsAnglesRatherThanAsFourRawNumbers)
+{
+    // Nobody knows what to type into w to turn something thirty degrees, and four independent
+    // numbers is how you produce a value that is not a rotation at all. The panel therefore shows
+    // Euler degrees, in the convention the runtime reads back.
+    Fixture fixture;
+
+    StudioEntity* entity = fixture.context.getScene().findEntity(fixture.entity);
+    StudioComponent* transform = entity->findComponent("CNA.Transform");
+    transform->setProperty("rotation",
+                           PropertyValue{quaternionFromEulerDegrees(StudioVector3{0.0f, 90.0f, 0.0f})});
+
+    Harness harness{fixture.context};
+    CNA_STUDIO_EXPECT(!harness.bounds.isEmpty());
+
+    const StudioVector3 shown = eulerDegreesOf(
+        fixture.context.getScene().findEntity(fixture.entity)
+            ->findComponent("CNA.Transform")->getProperty("rotation").get<StudioQuaternion>());
+    CNA_STUDIO_EXPECT(std::abs(shown.y - 90.0f) < 0.01f);
+}
+
+CNA_STUDIO_TEST(EveryPropertyKindTheSchemaDeclaresGetsAControlRatherThanASummary)
+{
+    // The failure this catches is a property kind silently falling through to "(not editable
+    // yet)": it looks deliberate, reads as a decision, and is how a kind stays unimplemented long
+    // after the widget it needed arrived.
+    Fixture fixture;
+
+    StudioEntity* entity = fixture.context.getScene().findEntity(fixture.entity);
+    StudioComponent extras{"Test.Kinds"};
+    extras.setProperty("colour", PropertyValue{StudioColor{10, 20, 30, 40}});
+    extras.setProperty("rect", PropertyValue{StudioRectangle{1, 2, 3, 4}});
+    extras.setProperty("four", PropertyValue{StudioVector4{1.0f, 2.0f, 3.0f, 4.0f}});
+    extras.setProperty("turn", PropertyValue{StudioQuaternion{}});
+    extras.setProperty("asset", PropertyValue{PropertyValue::AssetReference{Uuid{}}});
+    extras.setProperty("entity", PropertyValue{PropertyValue::EntityReference{Uuid{}}});
+    entity->addComponent(std::move(extras));
+
+    Harness harness{fixture.context};
+
+    // Six kinds, none of them falling through to a summary. Counting the fall-throughs is what
+    // makes this assertion mean something: a row count would be satisfied by six summaries.
+    CNA_STUDIO_EXPECT_EQ(harness.shell->frame().phaseViolations(), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(harness.last.componentCount, std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(harness.last.readOnlyProperties, std::size_t{0});
+
+    // And the two kinds that genuinely have no editor yet still say what they hold, rather than
+    // being left out of the panel entirely.
+    StudioComponent nested{"Test.Nested"};
+    PropertyValue::ListValue list;
+    list.items.push_back(PropertyValue{1});
+    nested.setProperty("items", PropertyValue{std::move(list)});
+    fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
+
+    Harness second{fixture.context};
+    CNA_STUDIO_EXPECT_EQ(second.last.readOnlyProperties, std::size_t{1});
 }

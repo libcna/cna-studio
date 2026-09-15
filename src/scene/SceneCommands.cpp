@@ -174,6 +174,54 @@ namespace CNA::Studio
         return true;
     }
 
+    SetEntityEnabledCommand::SetEntityEnabledCommand(SceneDocument& document, Uuid entityId,
+                                                     bool enabled)
+        : document_(&document), entityId_(entityId), enabled_(enabled)
+    {
+        const StudioEntity* entity = document_->findEntity(entityId_);
+        if (entity == nullptr) { return; }
+
+        wasEnabled_ = entity->isEnabled();
+        // A command that changes nothing is refused rather than executed: an undo stack with
+        // no-ops in it makes Ctrl+Z appear to do nothing, which is worse than it doing the wrong
+        // thing because the user cannot tell how many more to press.
+        valid_ = wasEnabled_ != enabled_;
+    }
+
+    void SetEntityEnabledCommand::execute()
+    {
+        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->setEnabled(enabled_); }
+    }
+
+    void SetEntityEnabledCommand::undo()
+    {
+        if (StudioEntity* entity = document_->findEntity(entityId_))
+        {
+            entity->setEnabled(wasEnabled_);
+        }
+    }
+
+    std::string SetEntityEnabledCommand::getDescription() const
+    {
+        const StudioEntity* entity = document_->findEntity(entityId_);
+        const std::string name = entity != nullptr ? entity->getName() : std::string{"entity"};
+        return (enabled_ ? "Enable '" : "Disable '") + name + "'";
+    }
+
+    std::string SetEntityEnabledCommand::getMergeKey() const
+    {
+        return "enabled:" + entityId_.toString();
+    }
+
+    bool SetEntityEnabledCommand::mergeWith(const StudioCommand& newer)
+    {
+        const auto* other = dynamic_cast<const SetEntityEnabledCommand*>(&newer);
+        if (other == nullptr || other->entityId_ != entityId_) { return false; }
+        // Keep this command's original state -- the undo target -- and adopt the newer one.
+        enabled_ = other->enabled_;
+        return true;
+    }
+
     ReparentEntityCommand::ReparentEntityCommand(SceneDocument& document, Uuid entityId, Uuid newParentId)
         : document_(&document), entityId_(entityId), newParentId_(newParentId)
     {

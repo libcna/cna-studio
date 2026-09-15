@@ -217,6 +217,19 @@ add_test(NAME CnaStudioShellPreviewPortedPanels
                        --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioShellPreviewPortedPanels PROPERTIES TIMEOUT 60)
 
+# The Details panel with something selected, which is where every property editor actually shows:
+# an asset picker, a colour swatch, an integer rectangle and an enumeration drop-down.
+add_test(NAME CnaStudioShellPreviewDetailsPanel
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-details.png
+                       --shell-size=1400x900 --select=Player
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewDetailsPanel PROPERTIES TIMEOUT 60)
+
+add_test(NAME CnaStudioRejectsSelectingAnEntityThatIsNotThere
+    COMMAND cna-studio --shell-preview=never.png --select=Nonexistent
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioRejectsSelectingAnEntityThatIsNotThere PROPERTIES WILL_FAIL TRUE)
+
 # The History panel, which is a third tab beside Details and therefore only capturable by raising
 # it -- and whose one row on a freshly opened project is itself the thing worth photographing.
 add_test(NAME CnaStudioShellPreviewHistoryPanel

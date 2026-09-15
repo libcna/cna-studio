@@ -20,6 +20,7 @@
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -178,6 +179,24 @@ namespace
             // panels failed to draw.
             log.append(CNA::Studio::LogSeverity::Info,
                        "Shell preview. Pass --project=PATH to fill the panels from a real project.");
+        }
+
+        // `--select=NAME` puts something in the Details panel. By name, because that is what a
+        // person types; the document looks entities up by id, so the walk is here.
+        if (!options.selectEntity.empty())
+        {
+            const CNA::Studio::StudioEntity* wanted = nullptr;
+            for (const CNA::Studio::StudioEntity& candidate : context.getScene().getEntities())
+            {
+                if (candidate.getName() == options.selectEntity) { wanted = &candidate; break; }
+            }
+            if (wanted == nullptr)
+            {
+                std::cerr << "cna-studio: no entity called '" << options.selectEntity
+                          << "' in this scene.\n";
+                return 2;
+            }
+            context.select(wanted->getId());
         }
 
         // `--panel=ID` raises a panel, so a capture can show one that shares a tab bar. The same

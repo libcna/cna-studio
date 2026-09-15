@@ -48,6 +48,16 @@ namespace CNA::Studio
         /** @brief How many components the selected entity has. */
         std::size_t componentCount = 0;
 
+        /**
+         * @brief How many properties were shown as a summary because no editor handles their kind.
+         *
+         * Reported rather than left to be noticed. A kind that falls through to "(not editable
+         * yet)" looks deliberate and reads as a decision, which is how one stays unimplemented
+         * long after the widget it needed arrived — so a test can assert on this number instead of
+         * on a screenshot nobody will look at twice.
+         */
+        std::size_t readOnlyProperties = 0;
+
         /** @brief A property was committed to the document this frame. Input pass only. */
         bool edited = false;
 

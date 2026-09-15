@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 10 of 26 complete `█████░░░░░░░`
+**Progress:** 12 of 26 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -27,8 +27,8 @@
 | `STUDIO-07015` | One log model, read by both consoles | ✅ | — |
 | `STUDIO-07016` | Panel content seam: the shell hosts a ported panel's content | ✅ | `STUDIO-06018` |
 | `STUDIO-07017` | A module for the ported panels, above widgets and document alike | ✅ | `STUDIO-07016` |
-| `STUDIO-07018` | Editors for the property kinds the Details panel shows read-only | ⬜ | `STUDIO-07007` |
-| `STUDIO-07019` | An undoable command for an entity's enabled flag | ⬜ | `STUDIO-07007` |
+| `STUDIO-07018` | Editors for the property kinds the Details panel shows read-only | ✅ | `STUDIO-07007`, `STUDIO-03036` |
+| `STUDIO-07019` | An undoable command for an entity's enabled flag | ✅ | `STUDIO-07007` |
 | `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ⬜ | `STUDIO-00014`, `STUDIO-07014` |
 | `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ⬜ | `STUDIO-07020` |
 | `STUDIO-07022` | Prove docking parity | ⬜ | `STUDIO-07020` |
@@ -317,3 +317,62 @@ it started from, one more row than commands, undone entries marked and muted, th
 marked, navigating backwards and forwards one command at a time with the document following,
 navigating to where you already are running nothing, a click reporting rather than moving, and a
 click on the current position asking for nothing. Plus `CnaStudioShellPreviewHistoryPanel`
+
+### `STUDIO-07018` — Editors for the property kinds the Details panel shows read-only
+
+**Acceptance.** Every kind the schema declares gets a control rather than a summary, and the
+controls suit what the value *is* rather than what it is stored as
+
+**An enumeration is chosen, not typed.** It is a closed set the descriptor already names, and a text
+field over one is a field where every typo produces a scene the loader will refuse to open. The
+drop-down (`STUDIO-03036`) is what this was waiting for. An enumeration whose descriptor declares no
+options still falls back to typing, because a drop-down over nothing is a control that cannot be
+used at all.
+
+**A quaternion is edited as Euler degrees.** Its components are not numbers a person can reason
+about: nobody knows what to type into `w` to turn something thirty degrees, and four independent
+numbers is how you produce a value that is not a rotation at all. The conversion is
+`SceneTransform`'s, in XNA's own convention — an editor that agreed with itself but not with the
+runtime would show angles the game does not produce.
+
+**A colour gets a swatch and four channels**, in the 0..255 the value is stored in rather than a
+normalised range the user would have to convert to. Not a colour *picker*: that is its own control
+and its own task. The swatch is what makes a row of four numbers legible as a colour at all.
+
+**A reference gets a picker over what exists.** Nobody types a UUID, and a reference to something
+that is not there is exactly the state the Problems panel exists to report. `(none)` comes first,
+because clearing a reference is an ordinary thing to want; an entity is never offered itself; and a
+reference to something that has gone still shows its id rather than reading as `(none)`, which would
+look like the value had been cleared.
+
+**One loop draws every row of numbers.** A vector, a quaternion, a rectangle and a colour are all "a
+row of boxes with different letters on them", and writing that once is what keeps the column widths,
+the font, the select-all behaviour and the parsing identical across them. Six copies is how a
+property grid ends up with one field that commits per keystroke and five that do not.
+
+**What is still a summary**: lists and structures, which need nested editing rather than another
+control. The panel now *counts* what it could not edit (`readOnlyProperties`), so a kind falling
+through is a number a test asserts on rather than a line of grey text somebody has to notice — which
+is how a kind stays unimplemented long after the widget it needed arrived.
+
+**Verification.** `tests/StudioDetailsPanelTests.cpp`: a quaternion shown as angles, every declared
+kind getting a control with the fall-through count at zero, and the two that legitimately remain
+summaries still saying what they hold. Plus `CnaStudioShellPreviewDetailsPanel`, which photographs
+the panel with a sprite selected — asset picker, colour swatch, integer rectangle and enumeration
+all in one frame
+
+### `STUDIO-07019` — An undoable command for an entity's enabled flag
+
+**Acceptance.** Turning an entity off goes through the command history like every other edit
+
+**It was the one edit in the inspector Ctrl+Z could not reach**, and it is the one somebody does by
+accident: the flag decides whether an entity renders, ticks and answers queries at all.
+
+**A command that changes nothing is refused rather than executed.** An undo stack with no-ops in it
+makes Ctrl+Z appear to do nothing, which is worse than doing the wrong thing, because the user
+cannot tell how many more to press. Repeated flips merge under `MergeWithPrevious`, so dragging a
+checkbox back and forth is one step rather than twenty.
+
+**Verification.** `tests/StudioDetailsPanelTests.cpp`: the flag reaching the document and undo
+returning it, a no-op refused, a missing entity refused, and repeated flips merging into one step
+that undoes to where it started rather than to the intermediate state

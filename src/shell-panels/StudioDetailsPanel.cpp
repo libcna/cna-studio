@@ -6,8 +6,10 @@
 
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneTransform.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
@@ -79,6 +81,79 @@ namespace CNA::Studio
                 return true;
             }
             catch (const std::exception&) { return false; }
+        }
+
+        /**
+         * @brief Draws @p count numeric boxes across @p bounds, one per named component.
+         *
+         * Every composite value the inspector edits — a vector, a quaternion, a rectangle, a
+         * colour — is a row of numbers with different labels on them, and writing that loop once
+         * is what keeps the column widths, the font, the select-all behaviour and the parsing the
+         * same across all of them. Six copies is how a property grid ends up with one field that
+         * commits per keystroke and five that do not.
+         *
+         * @param frame The frame.
+         * @param bounds Where the row of boxes goes.
+         * @param names One id per component, also used as the placeholder.
+         * @param values In, and out for whichever boxes committed.
+         * @param count How many components.
+         * @param integral True to parse as whole numbers, which is what a rectangle holds.
+         * @return True when any box committed a new value.
+         */
+        bool numericComponents(StudioFrame& frame, const UiRect& bounds, const char* const* names,
+                               float* values, int count, bool integral = false)
+        {
+            const float spacing = metricOf(frame.theme(), StudioMetric::SpacingSmall);
+            UiRect fields = bounds;
+            const float fieldWidth =
+                (fields.width - spacing * static_cast<float>(count - 1)) / static_cast<float>(count);
+
+            bool changed = false;
+            for (int i = 0; i < count; ++i)
+            {
+                const UiRect box = fields.splitLeft(std::min(fieldWidth, fields.width));
+                if (i + 1 < count) { fields.splitLeft(std::min(spacing, fields.width)); }
+
+                std::string text = integral
+                    ? std::to_string(static_cast<std::int64_t>(values[i]))
+                    : formatFloat(values[i]);
+
+                StudioTextFieldOptions options;
+                options.font = StudioFontRole::Monospace;
+                options.selectAllOnFocus = true;
+                // The component's own letter, so a row of four boxes says which is which without
+                // a second row of labels above it.
+                options.placeholder = names[i];
+
+                if (!studioTextField(frame, frame.ids().make(names[i]), box, text, options)
+                         .committed)
+                {
+                    continue;
+                }
+
+                if (integral)
+                {
+                    std::int64_t parsed = 0;
+                    if (parseInteger(text, parsed))
+                    {
+                        values[i] = static_cast<float>(parsed);
+                        changed = true;
+                    }
+                }
+                else
+                {
+                    float parsed = 0.0f;
+                    if (parseFloat(text, parsed)) { values[i] = parsed; changed = true; }
+                }
+            }
+            return changed;
+        }
+
+        /** @brief Clamps a float to the 0..255 a colour channel holds. */
+        std::uint8_t toChannel(float value)
+        {
+            const float clamped = std::min(255.0f, std::max(0.0f, value));
+            return static_cast<std::uint8_t>(clamped + 0.5f);
         }
 
         /** @brief A one-line summary of a value the panel cannot yet edit. */
@@ -244,12 +319,16 @@ namespace CNA::Studio
             if (studioCheckbox(frame, frame.ids().make("enabled"), parts.control, {}, enabled)
                     .changed)
             {
-                // No command yet: SceneCommands has no set-enabled, and inventing one here would
-                // put an undoable operation somewhere nothing else can find it. Applied directly
-                // and recorded as STUDIO-07019 rather than left looking undoable and not being.
-                entity->setEnabled(enabled);
-                result.edited = true;
-                result.editedProperty = "enabled";
+                // Through the history like every other edit. This was the one change in the panel
+                // that Ctrl+Z could not reach, and it is the one somebody does by accident.
+                auto command = std::make_unique<SetEntityEnabledCommand>(context.getScene(),
+                                                                         entityId, enabled);
+                if (command->isValid())
+                {
+                    context.execute(std::move(command));
+                    result.edited = true;
+                    result.editedProperty = "enabled";
+                }
             }
         }
 
@@ -328,26 +407,45 @@ namespace CNA::Studio
                         edited = PropertyValue{flag};
                     }
                 }
+                else if (value.getType() == PropertyType::Enum && !property.enumOptions.empty())
+                {
+                    // Chosen, not typed. An enumeration is a closed set the descriptor already
+                    // names, and a text field over one is a field where every typo is a scene the
+                    // loader will refuse to open.
+                    const std::string current = value.get<PropertyValue::EnumValue>().name;
+                    int selected = -1;
+                    for (std::size_t i = 0; i < property.enumOptions.size(); ++i)
+                    {
+                        if (property.enumOptions[i] == current) { selected = static_cast<int>(i); }
+                    }
+
+                    StudioDropdownOptions options;
+                    // A value the descriptor does not declare is shown rather than blanked: it is
+                    // a scene written by an older plugin, and hiding it would make the field look
+                    // empty when it is merely unrecognised.
+                    options.placeholder = current.empty() ? "(none)" : current;
+                    if (studioDropdown(frame, frame.ids().make("value"), parts.control,
+                                       property.enumOptions, selected, options)
+                            .changed
+                        && selected >= 0)
+                    {
+                        edited = PropertyValue{PropertyValue::EnumValue{
+                            property.enumOptions[static_cast<std::size_t>(selected)]}};
+                    }
+                }
                 else if (value.getType() == PropertyType::String
                          || value.getType() == PropertyType::Enum)
                 {
+                    // An enumeration whose descriptor declares no options falls back to typing:
+                    // a drop-down over nothing is a control that cannot be used at all.
                     const bool isEnum = value.getType() == PropertyType::Enum;
                     std::string text = isEnum ? value.get<PropertyValue::EnumValue>().name
                                               : value.get<std::string>();
                     if (studioTextField(frame, frame.ids().make("value"), parts.control, text)
                             .committed)
                     {
-                        // An enumeration typed rather than chosen, until there is a dropdown
-                        // (STUDIO-07018). Validated against the declared options, because an
-                        // unknown name written into the document is a scene the loader will refuse.
-                        if (!isEnum) { edited = PropertyValue{text}; }
-                        else if (property.enumOptions.empty()
-                                 || std::find(property.enumOptions.begin(),
-                                              property.enumOptions.end(), text)
-                                        != property.enumOptions.end())
-                        {
-                            edited = PropertyValue{PropertyValue::EnumValue{text}};
-                        }
+                        edited = isEnum ? PropertyValue{PropertyValue::EnumValue{text}}
+                                        : PropertyValue{text};
                     }
                 }
                 else if (value.getType() == PropertyType::Float)
@@ -379,61 +477,192 @@ namespace CNA::Studio
                     }
                 }
                 else if (value.getType() == PropertyType::Vector2
-                         || value.getType() == PropertyType::Vector3)
+                         || value.getType() == PropertyType::Vector3
+                         || value.getType() == PropertyType::Vector4)
                 {
-                    const bool three = value.getType() == PropertyType::Vector3;
-                    float components[3] = {};
-                    if (three)
-                    {
-                        const StudioVector3 vector = value.get<StudioVector3>();
-                        components[0] = vector.x; components[1] = vector.y; components[2] = vector.z;
-                    }
-                    else
+                    static const char* const kAxes[] = {"x", "y", "z", "w"};
+                    float components[4] = {};
+                    int count = 2;
+
+                    if (value.getType() == PropertyType::Vector2)
                     {
                         const StudioVector2 vector = value.get<StudioVector2>();
                         components[0] = vector.x; components[1] = vector.y;
                     }
-
-                    const int count = three ? 3 : 2;
-                    UiRect fields = parts.control;
-                    const float fieldWidth =
-                        (fields.width - spacing * static_cast<float>(count - 1))
-                        / static_cast<float>(count);
-
-                    bool changed = false;
-                    for (int i = 0; i < count; ++i)
+                    else if (value.getType() == PropertyType::Vector3)
                     {
-                        const UiRect box = fields.splitLeft(std::min(fieldWidth, fields.width));
-                        if (i + 1 < count) { fields.splitLeft(std::min(spacing, fields.width)); }
+                        const StudioVector3 vector = value.get<StudioVector3>();
+                        components[0] = vector.x; components[1] = vector.y; components[2] = vector.z;
+                        count = 3;
+                    }
+                    else
+                    {
+                        const StudioVector4 vector = value.get<StudioVector4>();
+                        components[0] = vector.x; components[1] = vector.y;
+                        components[2] = vector.z; components[3] = vector.w;
+                        count = 4;
+                    }
 
-                        std::string text = formatFloat(components[i]);
-                        StudioTextFieldOptions options;
-                        options.font = StudioFontRole::Monospace;
-                        options.selectAllOnFocus = true;
-
-                        const char* axis = i == 0 ? "x" : (i == 1 ? "y" : "z");
-                        if (studioTextField(frame, frame.ids().make(axis), box, text, options)
-                                .committed)
+                    if (numericComponents(frame, parts.control, kAxes, components, count))
+                    {
+                        if (count == 2)
                         {
-                            float parsed = 0.0f;
-                            if (parseFloat(text, parsed)) { components[i] = parsed; changed = true; }
+                            edited = PropertyValue{StudioVector2{components[0], components[1]}};
+                        }
+                        else if (count == 3)
+                        {
+                            edited = PropertyValue{
+                                StudioVector3{components[0], components[1], components[2]}};
+                        }
+                        else
+                        {
+                            edited = PropertyValue{StudioVector4{components[0], components[1],
+                                                                 components[2], components[3]}};
+                        }
+                    }
+                }
+                else if (value.getType() == PropertyType::Quaternion)
+                {
+                    // Edited as Euler angles in degrees, not as x/y/z/w. A quaternion's components
+                    // are not numbers a person can reason about: nobody knows what to type into w
+                    // to turn something thirty degrees, and typing four independent numbers is how
+                    // you produce a rotation that is not a rotation at all.
+                    static const char* const kAngles[] = {"pitch", "yaw", "roll"};
+                    const StudioVector3 euler = eulerDegreesOf(value.get<StudioQuaternion>());
+                    float components[3] = {euler.x, euler.y, euler.z};
+
+                    if (numericComponents(frame, parts.control, kAngles, components, 3))
+                    {
+                        edited = PropertyValue{quaternionFromEulerDegrees(
+                            StudioVector3{components[0], components[1], components[2]})};
+                    }
+                }
+                else if (value.getType() == PropertyType::Rectangle)
+                {
+                    static const char* const kEdges[] = {"x", "y", "w", "h"};
+                    const StudioRectangle rectangle = value.get<StudioRectangle>();
+                    float components[4] = {
+                        static_cast<float>(rectangle.x), static_cast<float>(rectangle.y),
+                        static_cast<float>(rectangle.width), static_cast<float>(rectangle.height)};
+
+                    if (numericComponents(frame, parts.control, kEdges, components, 4,
+                                          /*integral=*/true))
+                    {
+                        edited = PropertyValue{StudioRectangle{
+                            static_cast<int>(components[0]), static_cast<int>(components[1]),
+                            static_cast<int>(components[2]), static_cast<int>(components[3])}};
+                    }
+                }
+                else if (value.getType() == PropertyType::Color)
+                {
+                    // A swatch and four channels. Not a colour *picker* — that is its own control
+                    // and its own task — but a swatch is what makes a row of four numbers legible
+                    // as a colour at all, and 0..255 is the range the value is stored in rather
+                    // than a normalised one the user would have to convert to.
+                    const StudioColor colour = value.get<StudioColor>();
+                    UiRect control = parts.control;
+                    const UiRect swatch = control.splitLeft(
+                        std::min(metricOf(theme, StudioMetric::ControlHeight), control.width));
+                    control.splitLeft(std::min(spacing, control.width));
+
+                    if (frame.isDrawPass())
+                    {
+                        frame.drawList().fillRect(swatch.inset(UiEdges{0.0f, 2.0f}), colour);
+                        frame.drawList().strokeRect(swatch.inset(UiEdges{0.0f, 2.0f}),
+                                                    theme.color(StudioColorRole::Border),
+                                                    metricOf(theme, StudioMetric::BorderWidth));
+                    }
+
+                    static const char* const kChannels[] = {"r", "g", "b", "a"};
+                    float components[4] = {
+                        static_cast<float>(colour.r), static_cast<float>(colour.g),
+                        static_cast<float>(colour.b), static_cast<float>(colour.a)};
+
+                    if (numericComponents(frame, control, kChannels, components, 4,
+                                          /*integral=*/true))
+                    {
+                        edited = PropertyValue{StudioColor{
+                            toChannel(components[0]), toChannel(components[1]),
+                            toChannel(components[2]), toChannel(components[3])}};
+                    }
+                }
+                else if (value.getType() == PropertyType::AssetReference
+                         || value.getType() == PropertyType::EntityReference)
+                {
+                    // A picker over what exists, not a field for typing a UUID. Nobody types a
+                    // UUID, and a reference to something that is not there is exactly the state
+                    // the Problems panel exists to report.
+                    const bool isAsset = value.getType() == PropertyType::AssetReference;
+                    const Uuid current = isAsset
+                        ? value.get<PropertyValue::AssetReference>().id
+                        : value.get<PropertyValue::EntityReference>().id;
+
+                    std::vector<std::string> labels;
+                    std::vector<Uuid> ids;
+                    // "(none)" first, because clearing a reference is an ordinary thing to want
+                    // and a picker with no way to do it forces a user to edit the file by hand.
+                    labels.emplace_back("(none)");
+                    ids.emplace_back();
+
+                    if (isAsset)
+                    {
+                        for (const AssetRecord* record : context.getAssets().getAll())
+                        {
+                            if (record == nullptr) { continue; }
+                            labels.push_back(record->sourcePath);
+                            ids.push_back(record->id);
+                        }
+                    }
+                    else
+                    {
+                        for (const StudioEntity& candidate : context.getScene().getEntities())
+                        {
+                            // An entity cannot refer to itself: the only thing that can come of
+                            // offering it is a cycle nothing downstream expects.
+                            if (candidate.getId() == entityId) { continue; }
+                            labels.push_back(candidate.getName().empty()
+                                                 ? std::string{"(unnamed)"}
+                                                 : candidate.getName());
+                            ids.push_back(candidate.getId());
                         }
                     }
 
-                    if (changed)
+                    int selected = 0;
+                    for (std::size_t i = 0; i < ids.size(); ++i)
                     {
-                        edited = three
-                            ? PropertyValue{StudioVector3{components[0], components[1], components[2]}}
-                            : PropertyValue{StudioVector2{components[0], components[1]}};
+                        if (ids[i] == current) { selected = static_cast<int>(i); }
+                    }
+
+                    StudioDropdownOptions options;
+                    // A reference to something that has gone still shows its id rather than
+                    // silently reading as "(none)", which would look like the value was cleared.
+                    options.placeholder = current.isValid() ? summarise(value) : "(none)";
+                    if (studioDropdown(frame, frame.ids().make("value"), parts.control, labels,
+                                       selected, options)
+                            .changed
+                        && selected >= 0)
+                    {
+                        const Uuid chosen = ids[static_cast<std::size_t>(selected)];
+                        edited = isAsset
+                            ? PropertyValue{PropertyValue::AssetReference{chosen}}
+                            : PropertyValue{PropertyValue::EntityReference{chosen}};
                     }
                 }
-                else if (frame.isDrawPass())
+                else
                 {
-                    studioDrawText(frame, parts.control,
-                                   studioTruncateText(frame, theme.font(StudioFontRole::BodySmall),
-                                                      summarise(value), parts.control.width),
-                                   StudioFontRole::BodySmall,
-                                   theme.color(StudioColorRole::TextDisabled));
+                    // Counted in both passes, because it is a property of the value rather than of
+                    // drawing -- and a caller reading the result from the input pass is exactly
+                    // who wants to know that a kind fell through.
+                    ++result.readOnlyProperties;
+                    if (frame.isDrawPass())
+                    {
+                        studioDrawText(frame, parts.control,
+                                       studioTruncateText(frame,
+                                                          theme.font(StudioFontRole::BodySmall),
+                                                          summarise(value), parts.control.width),
+                                       StudioFontRole::BodySmall,
+                                       theme.color(StudioColorRole::TextDisabled));
+                    }
                 }
 
                 frame.ids().pop();
