@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 9 of 20 complete `█████░░░░░░░`
+**Progress:** 10 of 21 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -28,6 +28,7 @@
 | `STUDIO-33016` | Compressing PNG encoder for visual-test artifacts | ⬜ | `STUDIO-33011` |
 | `STUDIO-33017` | The equality assertion copies its operands rather than binding references | ✅ | — |
 | `STUDIO-33018` | The roadmap's own arithmetic is checked by the test suite | ✅ | — |
+| `STUDIO-33019` | The handoff's own arithmetic is checked against the same phase files | ✅ | `STUDIO-33018` |
 | `STUDIO-33020` | Headless test seams maintained for every core subsystem | ⬜ | — |
 | `STUDIO-33021` | CI matrix: Linux, Windows, macOS as infrastructure allows | ⬜ | — |
 
@@ -169,3 +170,21 @@ have disagreed never compared. Found by looking at a screenshot of something els
 must look the same on its second frame as its first — and it asserts the *shape* of the failure too:
 without the table strictly more of the image is covered, because a filled box covers more than the
 glyph inside it. Plus `ATextureTableKeepsWhatItIsGivenAndForgetsWhatIsDestroyed`
+
+### `STUDIO-33019` — The handoff's own arithmetic is checked against the same phase files
+
+**Acceptance.** `HANDOFF.md`'s headline task count and every per-phase count it claims are checked
+against the phase files, and the test fails naming the phase that disagrees.
+
+**Why it needed to exist.** The handoff is what somebody reads first, and a count in it that is one
+session stale is worse than no count at all: it is a number they will quote. `plan.md`'s arithmetic
+has been checked since `STUDIO-33018`; the handoff was not, and drifted by nineteen tasks and a
+hundred and fifty-eight test cases before anybody noticed — which is precisely the failure
+`STUDIO-33018` was written to prevent in the other file.
+
+**Only the numbers.** The prose is a judgement about what was built and no test can hold it to
+anything. "159 of 486" is a fact, and facts are checkable; it also refuses a handoff that mentions no
+phase at all, which would otherwise pass every check by saying nothing.
+
+**Verification.** `TheHandoffsOwnArithmeticMatchesThePhaseFiles`, checked by changing a count in the
+handoff and watching it name the phase

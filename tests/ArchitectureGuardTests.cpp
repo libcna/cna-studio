@@ -714,6 +714,82 @@ CNA_STUDIO_TEST(TheMasterPlanTableAgreesWithEveryPhaseFile)
     }
 }
 
+CNA_STUDIO_TEST(TheHandoffsOwnArithmeticMatchesThePhaseFiles)
+{
+    // The handoff is what somebody reads first, and a count in it that is one session stale is
+    // worse than no count: it is a number they will quote. plan.md's arithmetic is already checked
+    // against the phase files above; this checks the handoff against the same source, so the two
+    // cannot say different things about the same day's work.
+    //
+    // Deliberately only the *numbers*. The prose is a judgement about what was built and no test
+    // can hold it to anything -- but a headline saying "140 of 479" while the plan says 159 of 486
+    // is a fact, and facts are checkable.
+    std::size_t totalTasks = 0;
+    std::size_t totalComplete = 0;
+    std::map<int, std::pair<std::size_t, std::size_t>> perPhase;
+
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator{sourceRoot() / "plans"})
+    {
+        if (entry.path().extension() != ".md") { continue; }
+
+        const std::string name = entry.path().filename().string();
+        if (name.size() < 8 || name.rfind("phase-", 0) != 0) { continue; }
+        const int phase = std::stoi(name.substr(6, 2));
+
+        const std::vector<PlanTask> tasks = readPhaseTasks(entry.path());
+        const auto complete = static_cast<std::size_t>(
+            std::count_if(tasks.begin(), tasks.end(),
+                          [](const PlanTask& task) { return task.status == "✅"; }));
+
+        totalTasks += tasks.size();
+        totalComplete += complete;
+        perPhase[phase] = {tasks.size(), complete};
+    }
+
+    const std::string handoff = readFileOrEmpty(sourceRoot() / "HANDOFF.md");
+    CNA_STUDIO_EXPECT(!handoff.empty());
+
+    const std::string headline = "**" + std::to_string(totalComplete) + " of "
+                               + std::to_string(totalTasks) + " tasks are complete.**";
+    if (handoff.find(headline) == std::string::npos)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            "HANDOFF.md's headline does not read '" + headline
+            + "', which is what the phase files add up to.");
+    }
+
+    // Every "**Phase N — Name** (C of T)" it claims, against what that phase file holds. Only the
+    // phases it mentions: the handoff summarises what has been worked on rather than listing all
+    // thirty-six, and demanding a line for a phase nobody has started would be noise.
+    std::size_t phrasesChecked = 0;
+    for (const auto& [phase, counts] : perPhase)
+    {
+        const std::string marker = "**Phase " + std::to_string(phase) + " \u2014 ";
+        std::size_t at = handoff.find(marker);
+        if (at == std::string::npos) { continue; }
+
+        const std::size_t open = handoff.find('(', at);
+        const std::size_t close = handoff.find(')', open);
+        if (open == std::string::npos || close == std::string::npos) { continue; }
+
+        const std::string claim = handoff.substr(open + 1, close - open - 1);
+        const std::string expected = std::to_string(counts.second) + " of "
+                                   + std::to_string(counts.first);
+        ++phrasesChecked;
+
+        if (claim.rfind(expected, 0) != 0)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "HANDOFF.md says Phase " + std::to_string(phase) + " is '" + claim
+                + "', but its phase file holds " + expected + ".");
+        }
+    }
+
+    // A handoff that mentioned no phase at all would pass every check above by saying nothing.
+    CNA_STUDIO_EXPECT(phrasesChecked >= 8);
+}
+
 CNA_STUDIO_TEST(NoTaskIdIsUsedTwiceAcrossTheWholePlan)
 {
     // Ids are promised to be stable and never reused (plan.md, 'Id scheme'). A collision breaks

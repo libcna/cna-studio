@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 14 of 14 complete `████████████`
+**Progress:** 14 of 15 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,6 +24,7 @@
 | `STUDIO-05012` | A corrupt layout file never prevents Studio from starting | ✅ | `STUDIO-05011` |
 | `STUDIO-05013` | Tab strips that switch the active panel on click | ✅ | `STUDIO-03031` |
 | `STUDIO-05014` | Store the workspace layout in user preferences on disk | ✅ | `STUDIO-05008` |
+| `STUDIO-05015` | Investigate a floating panel in a real second OS window | 🔬 | `STUDIO-05006` |
 
 ## Acceptance and verification
 
@@ -252,3 +253,21 @@ removal taking only its own — then the menu half: every saved layout a command
 one rearranging the workspace, Save Layout As asking and saving through the seam, Cancel saving
 nothing, Delete asking first and a cancel keeping it, a shell with no file still working, and a
 refused write leaving the menu alone
+
+### `STUDIO-05015` — Investigate a floating panel in a real second OS window
+
+**Acceptance.** A recorded decision: either a second CNA window with its own surface is workable for
+a floating panel, or it is not and why — not a second attempt at guessing.
+
+**What is actually known.** CNA offers more than one window: `IPlatform::CreateWindow` creates them
+and refuses a second only where the platform reports no `MultipleWindows` capability, and
+`PresentationParameters` carries a `DeviceWindowHandle`. So the question is *not* whether the
+platform has windows, which the first draft of the handoff asserted without checking. It is whether
+Studio can drive a second `GraphicsDevice` — XNA's model is one device per `Game`, owned by
+`GraphicsDeviceManager`, and whether two can coexist or one can present to two surfaces is the thing
+nobody here has established.
+
+**Why it is worth answering rather than assuming.** A panel dragged onto a second monitor is the
+reason most people undock anything, and the in-window float delivered by `STUDIO-05006` is the part
+that can be built without an answer — so the answer decides whether that is the whole feature or the
+first half of it
