@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 14 of 19 complete `█████████░░░`
+**Progress:** 14 of 20 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -28,6 +28,7 @@
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
 | `STUDIO-04017` | Upload only the changed region of the atlas | ✅ | `STUDIO-04005` |
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
+| `STUDIO-04019` | Font fallback, so text outside the shipped faces is readable rather than boxes | ⬜ | `STUDIO-04005` |
 | `STUDIO-04020` | Guard test: every key Studio can ask about is one the host reports | ✅ | — |
 
 ## Acceptance and verification
@@ -219,6 +220,29 @@ CNA-free half — the texture reaching the draw data, and the placeholder return
 away. On a real device, `CnaStudioNativeShellCompositesTheScene` asserts on the words *compositing
 the scene* rather than on a screenshot, because a viewport drawing its grid and one drawing the
 scene produce the same draw-call count and the same perfectly valid picture
+
+### `STUDIO-04019` — Font fallback, so text outside the shipped faces is readable rather than boxes
+
+**Acceptance.** A scene, asset or entity named in Chinese, Japanese, Korean, Thai or Devanagari
+reads as itself in the outliner, the content browser and the inspector, rather than as a row of
+replacement boxes.
+
+**Found by finishing `STUDIO-03026`.** The caret model steps over CJK, Hangul and emoji correctly —
+that is what the cluster rules are for — and the shipped IBM Plex faces have no outlines for any of
+them, so what a user sees is a row of ◇. The model being right and the glyph being absent are
+different failures, and it was worth seeing both on screen to tell them apart.
+
+This is not a Unicode bug and not a CNA gap. It is the cost of embedding the faces rather than
+loading them, which `STUDIO-04009` chose deliberately: a tool that cannot draw text until it finds
+a file shows a blank window when somebody moves the executable. A full CJK face is several
+megabytes, which is a different trade from the ~400 KB of Latin, so this is its own decision rather
+than "add another font to the list".
+
+**What it needs.** A face list per typeface rather than one face, a per-code-point lookup that
+falls through it, and a source for the fallback faces — either the platform's own (which needs a
+seam, because a CNA-free build has no platform) or a vendored subset. The atlas already keys glyphs
+by face, so the packing and the growth need no change. The replacement box stays as the last
+resort, because a box is still better than a gap.
 
 ### `STUDIO-04020` — Guard test: every key Studio can ask about is one the host reports
 

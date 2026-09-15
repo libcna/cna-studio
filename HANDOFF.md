@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **176 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **177 of 489 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -163,16 +163,17 @@ roadmap, ten architecture guard tests, the restored CNA-backed build, the Studio
 contract, the six-axis build target model, and **the standalone export**: `--export=DIR` writes a
 project that builds and runs with Studio uninstalled, and `STUDIO-02051` proves it by doing so.
 
-**Phase 3 — Studio UI core** (29 of 33). Design tokens and two themes, widget identity, retained
+**Phase 3 — Studio UI core** (30 of 33). Design tokens and two themes, widget identity, retained
 state, the draw list, input routing with capture and focus, the five-phase frame lifecycle, cursor
 requests, **tooltips with a per-widget delay**, **popup layering and input blocking**, widget
 helpers, text measurement, High-DPI correctness including the seams, scrolling with row
-virtualisation, a tree view, the text selection model, the clipboard seam, an editable text field,
+virtualisation, a tree view, the text selection model **stepping by grapheme cluster, keyboard and mouse alike**, the
+clipboard seam, an editable text field,
 and **a drop-down over a deferred popup** — the facility that lets a popup escape the panel it was
 opened in, **typed drag and drop**, and **a modal dialog** — a window that owns the frame until it
 is answered, which is what About, Save Layout As and every confirmation are built on.
 
-**Phase 4 — CNAEXT UI renderer** (14 of 19). Vertex management, batching, nested scissor clipping,
+**Phase 4 — CNAEXT UI renderer** (14 of 20). Vertex management, batching, nested scissor clipping,
 rounded rectangles, clip culling, real text with kerning and correct baselines, **twenty-three
 icons drawn as vector paths** with no vendored asset, **a glyph atlas that doubles rather than
 losing text** and says so in Diagnostics, **uploads of the changed rectangle rather than four

@@ -170,20 +170,20 @@ namespace CNA::Studio
         const float ellipsisWidth = frame.measureText(style, kEllipsis).width;
         if (ellipsisWidth > maxWidth) { return std::string{kEllipsis}; }
 
-        // Walk code points, not bytes. Cutting a multi-byte character in half produces a sequence
-        // no decoder reads, and the glyph that replaces it is wider than the one it replaced --
-        // so a byte-wise truncation can overflow the very box it was called to fit.
+        // Walk grapheme clusters, not bytes and not code points. Cutting a multi-byte character
+        // in half produces a sequence no decoder reads, and the glyph that replaces it is wider
+        // than the one it replaced -- so a byte-wise truncation can overflow the very box it was
+        // called to fit. Cutting between a letter and its accent is subtler and worse: it is
+        // valid UTF-8, so nothing complains, and it renders as a stray mark on the ellipsis.
         std::size_t fit = 0;
-        for (std::size_t i = 1; i <= text.size(); ++i)
+        for (std::size_t i = studioGraphemeNext(text, 0); i <= text.size();
+             i = studioGraphemeNext(text, i))
         {
-            if (i < text.size() && (static_cast<unsigned char>(text[i]) & 0xC0U) == 0x80U)
-            {
-                continue;
-            }
             std::string candidate{text.substr(0, i)};
             candidate += kEllipsis;
             if (frame.measureText(style, candidate).width > maxWidth) { break; }
             fit = i;
+            if (i >= text.size()) { break; }
         }
 
         if (fit == 0) { return std::string{kEllipsis}; }
@@ -862,6 +862,11 @@ namespace CNA::Studio
          * must put the caret after it, which is where a person aiming between two letters expects
          * it. Measuring prefix by prefix is O(n) per click over a single-line field, which is
          * nothing; a field long enough for that to matter needs a different layout anyway.
+         *
+         * Cluster boundaries, not code-point ones, so that the mouse cannot reach a place the
+         * arrow keys refuse to stop at. A combining mark adds no width, so the candidate inside
+         * `e` + U+0301 sits at the same x as the one before it -- and picking it would put the
+         * caret inside one rendered glyph, invisibly, until the next Backspace took the accent.
          */
         std::size_t offsetNearest(const StudioFrame& frame, const StudioFontStyle& style,
                                   std::string_view text, float left, float x)
@@ -872,7 +877,7 @@ namespace CNA::Studio
             std::size_t offset = 0;
             while (offset < text.size())
             {
-                offset = studioUtf8Next(text, offset);
+                offset = studioGraphemeNext(text, offset);
                 const float edge =
                     left + frame.measureText(style, text.substr(0, offset)).width;
                 const float distance = std::abs(x - edge);

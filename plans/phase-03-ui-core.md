@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 29 of 33 complete `███████████░`
+**Progress:** 30 of 33 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,7 +31,7 @@
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ✅ | `STUDIO-03010` |
 | `STUDIO-03024` | Text selection model for text fields | ✅ | `STUDIO-03007` |
 | `STUDIO-03025` | Clipboard integration through the platform seam | ✅ | `STUDIO-03024` |
-| `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | 🔄 | `STUDIO-03024` |
+| `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | ✅ | `STUDIO-03024` |
 | `STUDIO-03027` | IME support where the platform provides it | ⬜ | `STUDIO-03026` |
 | `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | ✅ | `STUDIO-03004` |
 | `STUDIO-03029` | Keyboard shortcut matching and chords | ✅ | `STUDIO-03012` |
@@ -230,12 +230,52 @@ at a time, an untyped payload refused, and the label staying on screen at the fa
 
 **Verification.** Tests over combining marks, CJK and emoji
 
-**In progress.** The *rendering* half is done: a decoder that always advances — a decoder that can
+**Done, in both halves.** The *rendering* half: a decoder that always advances — a decoder that can
 stand still turns one corrupt byte into a hang — measurement and truncation on code-point
 boundaries, and a visible replacement glyph where a face has no outline, because a silent gap reads
-as a spacing bug while a box is something a user can report. Cursor movement and selection wait on
-the text fields of `STUDIO-03024`, and grapheme clustering — where a combining mark or an emoji
-sequence is one thing to a reader and several code points to a decoder — waits with them
+as a spacing bug while a box is something a user can report.
+
+**The caret moves by grapheme cluster**, which is what a reader calls a character. It is not a code
+point: `é` typed as `e` + U+0301 is two, a flag is two regional indicators, a family emoji is
+several joined by U+200D, and Devanagari `कि` is a consonant and a vowel sign. Stepping by code
+point puts the caret *inside* one rendered glyph, where there is nothing to draw a caret between,
+and Backspace then takes the accent off a letter instead of removing the letter — which does not
+read as a Unicode bug, it reads as Backspace having missed.
+
+**The mouse had the same bug and needed the same fix.** A combining mark adds no width, so the
+code-point boundary inside `e` + U+0301 sits at the same x as the one before it: clicking there put
+the caret inside the glyph *invisibly*, and the damage appeared at the next keystroke. The field's
+hit-test now snaps to cluster boundaries, so the mouse cannot reach a place the arrow keys refuse
+to stop at. The test sweeps a click across the whole field and asserts that one Backspace always
+removes exactly one whole cluster; with the old hit-test it reports `café` becoming `caf́`.
+
+**And truncation cuts between characters too.** An ellipsis placed at a code-point boundary can
+land between a letter and its accent — which, unlike cutting a multi-byte character in half, is
+valid UTF-8, so nothing complains: it renders as a stray mark sitting on the ellipsis, and the only
+person who finds out is the one whose name it happened to.
+
+**What is implemented, and what is not.** The rules of UAX #29 that need no property tables: CRLF,
+the Hangul jamo classes, combining marks, `ZWJ` sequences, variation selectors, emoji modifiers and
+regional-indicator pairs. Those cover Latin with diacritics, Greek, Cyrillic, Hebrew and Arabic
+marks, CJK, Hangul, the Indic matras and every emoji sequence in ordinary use. Not implemented:
+`GB9c` (Indic conjunct breaks) and the extended-pictographic property, which need Unicode data
+tables — a few hundred kilobytes of generated source and a version to keep current. The failure
+that leaves is a caret stepping inside a rare cluster in a field holding a Unicode-report test
+case; the failure it removes is a caret stepping inside `é`.
+
+**Regional indicators are counted from the start of their run**, which is why walking backwards
+re-walks forwards rather than reading leftwards from the caret. Pairing decided by looking only at
+the two code points either side of a boundary joins every indicator to the one before it, so two
+flags in a row become one cluster and the caret can never get between them.
+
+**"Covers CJK" means the caret, not the glyph.** The cluster rules step over Chinese, Hangul and
+emoji correctly, and the shipped IBM Plex faces have no outlines for any of them, so on screen they
+are still a row of replacement boxes. That is `STUDIO-04019`, raised by getting this far: the model
+being right and the glyph being absent are different failures, and it was worth putting both on
+screen to tell them apart.
+
+**IME composition is still `STUDIO-03027`**, and is a different problem: this is about text that
+has already arrived.
 
 ### `STUDIO-03027` — IME support where the platform provides it
 

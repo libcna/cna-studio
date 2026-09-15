@@ -62,6 +62,44 @@ namespace CNA::Studio
     [[nodiscard]] std::size_t studioUtf8Next(std::string_view utf8, std::size_t offset);
 
     /**
+     * @brief The byte offset one *grapheme cluster* before @p offset.
+     *
+     * A cluster is what a reader calls a character and what a caret must therefore step over in
+     * one press. It is not a code point: `é` typed as `e` + U+0301 is two, a flag is two regional
+     * indicators, a family emoji is several joined by U+200D, and Devanagari `कि` is a consonant
+     * and a vowel sign. Stepping by code point puts the caret *inside* one rendered glyph, where
+     * there is nothing to draw a caret between — and Backspace takes an accent off a letter
+     * instead of removing the letter.
+     *
+     * ### What this implements, and what it does not
+     *
+     * The rules of UAX #29 that need no property tables: CRLF, the Hangul jamo classes, combining
+     * marks, `ZWJ` sequences, variation selectors, emoji modifiers, and regional-indicator pairs.
+     * Those cover Latin with diacritics, Greek, Cyrillic, Hebrew and Arabic marks, CJK, Hangul,
+     * the Indic matras, and every emoji sequence in ordinary use.
+     *
+     * It is **not** full UAX #29: `GB9c` (Indic conjunct breaks) and the extended-pictographic
+     * property need Unicode data tables, which are a few hundred kilobytes of generated source
+     * and a version to keep current. The failure that leaves is a caret that steps in the middle
+     * of a rare cluster, in a field holding a Unicode-technical-report test case. The failure it
+     * removes is a caret that steps in the middle of `é`.
+     *
+     * @param utf8 The text.
+     * @param offset A byte offset into it.
+     * @return The previous cluster boundary, or 0.
+     */
+    [[nodiscard]] std::size_t studioGraphemePrevious(std::string_view utf8, std::size_t offset);
+
+    /**
+     * @brief The byte offset one grapheme cluster after @p offset.
+     * @param utf8 The text.
+     * @param offset A byte offset into it.
+     * @return The next cluster boundary, or the length of @p utf8.
+     * @see studioGraphemePrevious for what a cluster is and which rules are implemented.
+     */
+    [[nodiscard]] std::size_t studioGraphemeNext(std::string_view utf8, std::size_t offset);
+
+    /**
      * @brief A caret and selection over an editable string.
      *
      * The selection runs between an *anchor* -- where the gesture started -- and the caret. Which
