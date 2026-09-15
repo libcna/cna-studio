@@ -346,6 +346,61 @@ namespace
             shell.setOpenMenu(index);
         }
 
+        // `--shell-notify=LIST` raises toasts. A notification is what something *finishing in the
+        // background* looks like, which is the one state a still capture cannot reach by pressing
+        // anything, so the preview needs a way to say "pretend the build just failed".
+        for (std::size_t start = 0; start < options.shellPreviewNotify.size();)
+        {
+            const std::size_t comma = options.shellPreviewNotify.find(',', start);
+            std::string entry = options.shellPreviewNotify.substr(
+                start, comma == std::string::npos ? std::string::npos : comma - start);
+            start = comma == std::string::npos ? options.shellPreviewNotify.size() : comma + 1;
+            if (entry.empty()) { continue; }
+
+            // Bar-separated fields so a detail may contain the punctuation a sentence contains.
+            std::vector<std::string> fields;
+            for (std::size_t at = 0;;)
+            {
+                const std::size_t bar = entry.find('|', at);
+                if (bar == std::string::npos) { fields.push_back(entry.substr(at)); break; }
+                fields.push_back(entry.substr(at, bar - at));
+                at = bar + 1;
+            }
+
+            if (fields.size() < 2)
+            {
+                std::cerr << "cna-studio: --shell-notify wants "
+                             "SEVERITY|TITLE[|DETAIL[|ACTION]], got '" << entry << "'\n";
+                return 2;
+            }
+
+            CNA::Studio::StudioNotification notification;
+            notification.title = fields[1];
+            if (fields.size() > 2) { notification.detail = fields[2]; }
+            if (fields.size() > 3) { notification.actionId = fields[3]; }
+
+            if (fields[0] == "info") { notification.severity = CNA::Studio::StudioNotificationSeverity::Info; }
+            else if (fields[0] == "success") { notification.severity = CNA::Studio::StudioNotificationSeverity::Success; }
+            else if (fields[0] == "warning") { notification.severity = CNA::Studio::StudioNotificationSeverity::Warning; }
+            else if (fields[0] == "error") { notification.severity = CNA::Studio::StudioNotificationSeverity::Error; }
+            else
+            {
+                std::cerr << "cna-studio: --shell-notify severity must be info, success, warning "
+                             "or error, got '" << fields[0] << "'\n";
+                return 2;
+            }
+
+            if (!notification.actionId.empty()
+                && shell.actions().find(notification.actionId) == nullptr)
+            {
+                std::cerr << "cna-studio: --shell-notify names no command called '"
+                          << notification.actionId << "'.\n";
+                return 2;
+            }
+
+            shell.notifications().post(std::move(notification));
+        }
+
         // `--shell-invoke=ID` runs a command, so a capture can show what it put on the screen --
         // a modal dialog above all, which is reached by a menu item and answered by a keystroke.
         if (!options.shellPreviewInvoke.empty())

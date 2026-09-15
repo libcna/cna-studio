@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **164 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **165 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -185,7 +185,7 @@ preview, **undocking into a floating window** — moved, resized, given more tab
 with its geometry clamped back into view on a smaller screen — and **arrangements saved under a
 name**, in the same file, with Save Layout As and Dock All Windows in the Window menu.
 
-**Phase 6 — Studio shell** (22 of 24). The action registry and core action set; an interactive menu
+**Phase 6 — Studio shell** (23 of 24). The action registry and core action set; an interactive menu
 bar, toolbar and tab strips driven entirely by it; nested submenus with hover opening and keyboard
 traversal; context menus; shortcut dispatch with scope precedence; the preview entry point;
 `--ui=studio`, the native shell in a real window on a real CNA device; the shell opening a project on
@@ -196,7 +196,9 @@ supplies; **preferences** — a model separate from project settings, a versione
 workspace layout, and a panel that applies every change as it is made; and **shortcut rebinding**,
 where a row takes the next chord rather than typed text, a chord another command holds is refused
 with the holder named before the binding is accepted, and the result is stored as an override so it
-survives a restart.
+survives a restart; and **notifications** — a build, a package, a renderer comparison or a crashed
+player announcing itself over the corner of the workspace, with the panel that explains it offered
+as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
 **Phase 7 — Panel migration** (16 of 27, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and

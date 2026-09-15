@@ -38,15 +38,97 @@ namespace CNA::Studio
         : shell_(&shell), context_(context), log_(log), services_(std::move(services))
     {
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_);
+
+        // A toast is ephemeral by design, which makes it the wrong place to keep anything. Wired
+        // here because this is where the shell and the log meet: the shell is CNA-free and knows
+        // nothing about a log, and every caller remembering to do both is every caller eventually
+        // not doing both.
+        shell.notifications().setLog(&log_);
+
         bind(shell);
     }
 
     void StudioShellPanels::poll(double nowSeconds)
     {
         build_.poll();
+        pollBuild();
         pollPlayer();
+        const bool wasComparing = comparison_.getState() == ComparisonState::Launching
+                               || comparison_.getState() == ComparisonState::Capturing;
         comparison_.poll(nowSeconds);
+        reportComparison(wasComparing);
         publishStatus();
+    }
+
+    void StudioShellPanels::notify(StudioNotification notification)
+    {
+        if (shell_ != nullptr)
+        {
+            shell_->notifications().post(std::move(notification));
+            return;
+        }
+
+        // No shell to show it on -- a preview, or a test holding the panels alone. The message is
+        // still the point, so it goes to the log the centre would have written it to.
+        std::string line = notification.title;
+        if (!notification.detail.empty()) { line += " -- " + notification.detail; }
+        log_.append(studioNotificationLogSeverity(notification.severity), line);
+    }
+
+    void StudioShellPanels::pollBuild()
+    {
+        // The transition, not the state. A build that has failed stays failed until the next one
+        // starts, and a toast raised from the state would be re-raised every frame for ever.
+        const BuildState state = build_.getState();
+        if (state == buildWasState_) { return; }
+        buildWasState_ = state;
+
+        if (shell_ == nullptr) { return; }
+        if (state != BuildState::Succeeded && state != BuildState::Failed) { return; }
+
+        // The case notifications exist for. A build takes minutes and the user goes to read
+        // something else, so the result has to find them rather than waiting in a panel.
+        StudioNotification notification;
+        notification.id = "studio.build";
+        notification.severity = state == BuildState::Succeeded
+            ? StudioNotificationSeverity::Success
+            : StudioNotificationSeverity::Error;
+        notification.title = state == BuildState::Succeeded ? "Build succeeded" : "Build failed";
+        notification.detail = "Log: " + build_.getLogPath();
+        notification.actionId = StudioShell::showPanelActionId("build");
+        notify(std::move(notification));
+    }
+
+    void StudioShellPanels::reportComparison(bool wasRunning)
+    {
+        if (shell_ == nullptr || !wasRunning) { return; }
+
+        const ComparisonState now = comparison_.getState();
+        if (now == ComparisonState::Launching || now == ComparisonState::Capturing) { return; }
+
+        StudioNotification notification;
+        notification.id = "studio.comparison";
+        notification.actionId = StudioShell::showPanelActionId("comparison");
+
+        if (!comparison_.getError().empty())
+        {
+            notification.severity = StudioNotificationSeverity::Error;
+            notification.title = "Renderer comparison failed";
+            notification.detail = comparison_.getError();
+        }
+        else
+        {
+            // What the comparison is *for*: renderers that disagree. Saying "finished" and leaving
+            // the answer in a panel would be announcing the part the user already knew.
+            const bool agree = comparison_.allBackendsAgree();
+            notification.severity = agree ? StudioNotificationSeverity::Success
+                                          : StudioNotificationSeverity::Warning;
+            notification.title = agree ? "Every renderer drew the same frame"
+                                       : "Renderers disagree";
+            notification.detail = std::to_string(comparison_.getEntries().size())
+                                + " renderers compared";
+        }
+        notify(std::move(notification));
     }
 
     void StudioShellPanels::applyPreferences()
@@ -325,8 +407,21 @@ namespace CNA::Studio
         // Said either way. A game that exited because it finished and one that crashed look
         // identical from the editor unless the reason is reported.
         const PlayerExitReason reason = player_.getExitReason();
-        log_.append(reason == PlayerExitReason::Crashed ? LogSeverity::Error : LogSeverity::Info,
-                    std::string{"Player exited: "} + toString(reason) + ".");
+        if (reason != PlayerExitReason::Crashed)
+        {
+            // A game the user closed is a game the user was looking at. Announcing that would be
+            // telling them what they just did.
+            log_.append(LogSeverity::Info, std::string{"Player exited: "} + toString(reason) + ".");
+            return;
+        }
+
+        StudioNotification notification;
+        notification.id = "studio.play";
+        notification.severity = StudioNotificationSeverity::Error;
+        notification.title = "The game crashed";
+        notification.detail = std::string{"Player exited: "} + toString(reason) + ".";
+        notification.actionId = StudioShell::showPanelActionId("output");
+        notify(std::move(notification));
     }
 
 
@@ -356,20 +451,34 @@ namespace CNA::Studio
         request.overwrite = true;
 
         const StudioExportResult result = exportStandaloneProject(project, request);
+
+        StudioNotification notification;
+        notification.id = "studio.package";
         if (!result.succeeded())
         {
-            log_.append(LogSeverity::Error, "Could not package the project: " + result.errorMessage);
+            notification.severity = StudioNotificationSeverity::Error;
+            notification.title = "Could not package the project";
+            notification.detail = result.errorMessage;
+            notify(std::move(notification));
             return;
         }
 
+        // The warnings stay in the log rather than becoming toasts of their own. There may be many
+        // and they are about the package that was written; the one thing the user has to be told
+        // is that it was written, and where.
         for (const std::string& warning : result.warnings)
         {
             log_.append(LogSeverity::Warning, "Packaging: " + warning);
         }
-        log_.append(LogSeverity::Info,
-                    "Packaged " + std::to_string(result.writtenFiles.size()) + " files into "
-                        + request.outputDirectory
-                        + ".  It builds with CMake and a CNA checkout, and needs no Studio.");
+
+        notification.severity = result.warnings.empty() ? StudioNotificationSeverity::Success
+                                                        : StudioNotificationSeverity::Warning;
+        notification.title = "Packaged " + std::to_string(result.writtenFiles.size()) + " files";
+        notification.detail = result.warnings.empty()
+            ? request.outputDirectory + " -- builds with CMake and a CNA checkout, without Studio"
+            : request.outputDirectory + " -- with " + std::to_string(result.warnings.size())
+                  + " warning(s) in the Output Log";
+        notify(std::move(notification));
     }
 
     void StudioShellPanels::sayViewportIsEmpty(StudioFrame& frame, const UiRect& bounds,

@@ -121,6 +121,7 @@ CNA_STUDIO_TEST(EveryShellPreviewFlagIsInTheUsageText)
         {"--shell-preview", true},   {"--shell-pointer", true},  {"--shell-mouse-down", false},
         {"--shell-right-click", false}, {"--shell-open-menu", true}, {"--shell-float", true},
         {"--shell-invoke", true},    {"--shell-panel-only", true}, {"--shell-drag", true},
+        {"--shell-notify", true},
         {"--shell-tooltip", false},  {"--shell-size", true},     {"--shell-scale", true},
         {"--shell-theme", true}};
 

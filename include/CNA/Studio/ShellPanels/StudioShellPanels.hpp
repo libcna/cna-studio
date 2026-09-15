@@ -263,6 +263,23 @@ namespace CNA::Studio
         void pollPlayer();
 
         /**
+         * @brief Raises @p notification, or logs it when there is no shell to raise it on.
+         *
+         * The one way these panels announce anything, so a message cannot be lost by being posted
+         * somewhere that is not there -- which is what a preview and a headless test both are.
+         */
+        void notify(StudioNotification notification);
+
+        /** @brief Announces a build that has just finished, either way. */
+        void pollBuild();
+
+        /**
+         * @brief Announces a comparison that has just finished.
+         * @param wasRunning Whether it was still launching or capturing before this poll.
+         */
+        void reportComparison(bool wasRunning);
+
+        /**
          * @brief Tells the status bar what is open and what is running.
          *
          * Here rather than in the shell, because this is the object that owns the build, the
@@ -287,6 +304,9 @@ namespace CNA::Studio
         StudioTreeState comparisonState_;
         StudioPreferences preferences_;
         StudioShortcutEditorState shortcutEditor_;
+
+        /** @brief The build's state last poll, so a finish is noticed as a transition. */
+        BuildState buildWasState_ = BuildState::Idle;
         std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
 
         /** @brief Whether the open dialog is this object's Reset confirmation. */

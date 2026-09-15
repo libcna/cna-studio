@@ -164,6 +164,11 @@ namespace CNA::Studio
                     options.shellPreviewPanelOnly = value;
                     continue;
                 }
+                if (name == "--shell-notify")
+                {
+                    options.shellPreviewNotify = value;
+                    continue;
+                }
                 if (name == "--shell-invoke")
                 {
                     options.shellPreviewInvoke = value;
@@ -307,6 +312,9 @@ namespace CNA::Studio
             "  --shell-open-menu=T  Open the menu titled T, e.g. File or Window>Panels.\n"
             "  --shell-float=IDS    Undock these panels into floating windows, comma separated.\n"
             "  --shell-invoke=ID    Invoke this command before capturing, e.g. studio.help.about.\n"
+            "  --shell-notify=LIST  Post notifications before capturing, comma separated, each\n"
+            "                       SEVERITY|TITLE[|DETAIL[|ACTION]] where SEVERITY is info,\n"
+            "                       success, warning or error.\n"
             "  --shell-panel-only=ID  Capture just this panel, filling the window, so a page\n"
             "                       taller than its dock can be reviewed.\n"
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"

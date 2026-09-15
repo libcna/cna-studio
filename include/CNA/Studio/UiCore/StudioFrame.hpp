@@ -321,16 +321,23 @@ namespace CNA::Studio
          * |------:|-------------------------------------------------|-------------|
          * |     0 | the docked workspace                            | the default |
          * |     1 | floating windows                                | shell       |
-         * |     2 | a deferred popup — a drop-down's list            | here        |
-         * |     3 | an open menu, and the dock drop preview it draws | shell       |
-         * |     4 | a modal dialog                                  | here        |
-         * |     5 | a tooltip (drawn only; never a blocking layer)   | shell       |
+         * |     2 | the notification stack                          | shell       |
+         * |     3 | a deferred popup — a drop-down's list            | here        |
+         * |     4 | an open menu, and the dock drop preview it draws | shell       |
+         * |     5 | a modal dialog                                  | here        |
+         * |     6 | a tooltip (drawn only; never a blocking layer)   | shell       |
          *
          * A popup above a float is not decoration: a drop-down opened *inside* a floating window
          * shares that window's rectangle, and a list whose rows can be clicked through to the
          * panel under them is worse than one that never opened.
+         *
+         * A toast is drawn over the corner of the workspace *and over whatever has been floated
+         * there*, so it takes input above a float for the same reason: a button the user can see
+         * and cannot press is worse than one that is not drawn. It is below a popup and a menu
+         * because those are transient and were just opened deliberately, and below a modal
+         * because a modal owns the frame.
          */
-        static constexpr int kPopupLayer = 2;
+        static constexpr int kPopupLayer = 3;
 
         /**
          * @brief The input layer a modal dialog routes in.
@@ -338,7 +345,7 @@ namespace CNA::Studio
          * Above every popup and every menu, because a modal is the one thing that owns the frame
          * until it is answered — a dialog a user can click behind is not a dialog.
          */
-        static constexpr int kModalLayer = 4;
+        static constexpr int kModalLayer = 5;
 
         // --- Modals ----------------------------------------------------------------------------
         //

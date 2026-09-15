@@ -204,6 +204,15 @@ namespace CNA::Studio
         std::string shellPreviewPanelOnly;
 
         /**
+         * @brief Notifications to post before capturing, e.g. `error|Build failed|3 errors`.
+         *
+         * `SEVERITY|TITLE[|DETAIL[|ACTION]]`, comma separated. A toast is raised by something
+         * finishing in the background, which is the one state a still capture cannot reach by
+         * pressing anything.
+         */
+        std::string shellPreviewNotify;
+
+        /**
          * @brief Report the Studio host capability contract and exit.
          *
          * Prints what Studio requires of a host renderer, and -- on a build with a window host --

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 22 of 24 complete `███████████░`
+**Progress:** 23 of 24 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,7 @@
 | `STUDIO-06011` | Preferences UI | ✅ | `STUDIO-06009`, `STUDIO-03036` |
 | `STUDIO-06012` | Shortcut rebinding UI with conflict detection | ✅ | `STUDIO-06008`, `STUDIO-06010` |
 | `STUDIO-06013` | Empty states for every panel | ✅ | `STUDIO-06003` |
-| `STUDIO-06014` | Notification and toast system for background results | ⬜ | `STUDIO-06007` |
+| `STUDIO-06014` | Notification and toast system for background results | ✅ | `STUDIO-06007` |
 | `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
 | `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | 🔄 | `STUDIO-06003`, `STUDIO-05009` |
 | `STUDIO-06017` | Nested submenus, opening on hover, with keyboard traversal | ✅ | `STUDIO-06004` |
@@ -273,6 +273,50 @@ visual test this project has without a GPU — shows it.
 nothing open, and every panel survives being described at 0x0, 12x8 and 40x400 with no phase
 violation and valid draw data — a panel dragged very narrow is ordinary, and an empty state that
 broke there would break in the one arrangement nobody photographs
+
+### `STUDIO-06014` — Notification and toast system for background results
+
+**Acceptance.** A result the user is no longer watching for announces itself over the workspace,
+says what it was, offers the panel that explains it, and does not have to be dismissed to get on
+with the work. A failure stays until it is dismissed. Everything announced is also in the log.
+
+**Why the status bar was not enough.** Studio had two places to put a fact and both of them have to
+be *looked at*. The status bar is one line that the next poll overwrites — a build that failed is
+replaced by "No build running" the moment it stops — and the Output Log is a panel that may not even
+be open. A build takes minutes, which is exactly long enough for the user to go and read something
+else, and that is the case notifications exist for.
+
+**What is announced.** A build finishing, either way; a package written or refused; a renderer
+comparison finishing, saying whether they agreed rather than merely that it is over; and a player
+that crashed. A player the user *closed* is not announced: they were looking at it, and telling
+them what they just did is noise. Nor is a launch that was refused — they had just pressed Play, and
+the status bar's problem line already has it.
+
+**An error stays.** Four seconds is right for "Exported" and useless for "Build failed": the reason
+to raise a failure is that nobody was watching, and one that waited four seconds and left is a
+failure the user meets again later with less context. Warnings get longer than ordinary results and
+still go, because there are many of them and each one holding the corner of the editor until it is
+acknowledged would make every one an interruption.
+
+**The countdown stops while the pointer is over the stack.** A toast that vanished while it was
+being read, or while the pointer was travelling to its Show Build, is worse than one that never
+appeared — and the button is the reason a failure is announced rather than logged.
+
+**A toast is not the record.** The centre writes every notification into the `StudioLog` as it is
+posted, rather than each caller remembering to do both, because every caller remembering is every
+caller eventually not remembering. That is also what the "and N more in the Output Log" line points
+at when a burst is larger than the stack.
+
+**Two things this needed that are worth naming.** The input axis gained a layer: a toast is drawn
+over the corner of the workspace *and over whatever has been floated there*, so it has to take input
+above a float, below popups and menus, and below a modal. And `studio.window.showPanel.<id>` is a
+new command, separate from the Window menu's toggle, because "Show Build" on a toast pressed while
+Build is open must not be the thing that closes it.
+
+**What writing it found.** Encoding "sticky" as a negative countdown reads well and is wrong the
+first time a countdown overshoots its last tick: a four-second toast ticked by five becomes
+indistinguishable from one that was never meant to expire, and stays on the screen for ever. It is a
+flag now.
 
 ### `STUDIO-06016` — Shell preview entry point on the real executable
 

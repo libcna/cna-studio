@@ -187,6 +187,11 @@ namespace CNA::Studio
         return std::string{kStudioPanelActionPrefix} + std::string{panelId};
     }
 
+    std::string StudioShell::showPanelActionId(std::string_view panelId)
+    {
+        return std::string{kStudioShowPanelActionPrefix} + std::string{panelId};
+    }
+
     std::string StudioShell::closePanelActionId(std::string_view panelId)
     {
         return std::string{kStudioClosePanelActionPrefix} + std::string{panelId};
@@ -278,6 +283,20 @@ namespace CNA::Studio
         };
         close.run = [this, panelId] { closePanel(panelId); };
         actions_.add(std::move(close));
+
+        // Not on any menu: the Window menu has the toggle, and a second row meaning nearly the same
+        // thing would be a menu that has to be read twice. This one exists to be *invoked* -- by a
+        // notification saying where to look, and by whatever Go To command comes later.
+        StudioAction show;
+        show.id = showPanelActionId(panelId);
+        show.label = "Show " + descriptor->title;
+        show.description = "Show the " + descriptor->title + " panel and bring it to the front.";
+        show.category = StudioActionCategory::Window;
+        show.run = [this, panelId] {
+            if (!isPanelOpen(panelId)) { (void)openPanel(panelId); }
+            (void)activatePanel(panelId);
+        };
+        actions_.add(std::move(show));
 
         StudioAction undock;
         undock.id = floatPanelActionId(panelId);
@@ -498,6 +517,24 @@ namespace CNA::Studio
             if (node.panels[i] == id) { node.activePanel = i; return true; }
         }
         return false;
+    }
+
+    bool StudioShell::isPanelActive(std::string_view id) const
+    {
+        const StudioDockNodeId leaf = dock_.findPanel(id);
+        if (leaf != kInvalidDockNode)
+        {
+            const StudioDockNode& node = dock_.node(leaf);
+            return node.activePanel < node.panels.size() && node.panels[node.activePanel] == id;
+        }
+
+        // A floated panel is in front of its own window's tab strip, which is a different group.
+        const std::size_t window = dock_.findFloatingPanel(id);
+        if (window == kInvalidFloatingDock) { return false; }
+
+        const StudioFloatingDock& floating = dock_.floating()[window];
+        return floating.activePanel < floating.panels.size()
+            && floating.panels[floating.activePanel] == id;
     }
 
     bool StudioShell::setPanelContent(std::string_view id, StudioPanelContent content)
@@ -992,9 +1029,22 @@ namespace CNA::Studio
         if (!input.isMouseDown(UiMouseButton::Left)) { floatGesture_ = false; }
         else if (overFloat) { floatGesture_ = true; }
 
+        // The stack as it was laid out last frame, for the same reason the floats are: the choice
+        // is made before this frame has any geometry, and a toast that moved is one the pointer is
+        // already over.
+        const bool overToast = !toastBounds_.isEmpty() && input.mouseInWindow
+                            && toastBounds_.contains(input.mouseX, input.mouseY);
+
         const int blocking = isPopupOpen() ? kMenuLayer
+                           : overToast ? kToastLayer
                            : (overFloat || floatGesture_) ? kFloatingLayer
                                                            : 0;
+
+        // Zero while the pointer is over the stack. A toast that vanished while it was being read,
+        // or while the pointer was travelling to its button, is worse than one that never appeared
+        // -- and the button is the whole reason a failure is announced rather than logged.
+        notifications_.tick(overToast ? 0.0 : static_cast<double>(input.deltaSeconds));
+
         frame_.beginFrame(input, blocking);
         buildContent();
 
@@ -1296,6 +1346,10 @@ namespace CNA::Studio
         describeFloating();
 
         describeStatusBar();
+
+        // After the floats, so a toast draws over one parked in the corner and its Dismiss wins
+        // hover against the window underneath; before the menus, which cover everything.
+        describeToasts();
 
         // After the docks, because it needs the tab strips to have declared themselves, and before
         // the popup, because a menu open over a drag should still draw on top.
@@ -2373,6 +2427,188 @@ namespace CNA::Studio
             list.drawLine(body.left(), y, body.right(), y, (line % 4 == 0) ? major : minor, 1.0f);
         }
         frame_.popClip();
+    }
+
+    namespace
+    {
+        /** @brief The theme token a notification's stripe and its severity are drawn in. */
+        StudioColorRole severityColor(StudioNotificationSeverity severity)
+        {
+            switch (severity)
+            {
+                case StudioNotificationSeverity::Info: return StudioColorRole::Info;
+                case StudioNotificationSeverity::Success: return StudioColorRole::Success;
+                case StudioNotificationSeverity::Warning: return StudioColorRole::Warning;
+                case StudioNotificationSeverity::Error: return StudioColorRole::Error;
+            }
+            return StudioColorRole::Info;
+        }
+
+        /** @brief The smallest rectangle containing both. */
+        UiRect unite(const UiRect& a, const UiRect& b)
+        {
+            const float left = std::min(a.x, b.x);
+            const float top = std::min(a.y, b.y);
+            return UiRect{left, top, std::max(a.right(), b.right()) - left,
+                          std::max(a.bottom(), b.bottom()) - top};
+        }
+    }
+
+    void StudioShell::describeToasts()
+    {
+        const std::vector<StudioNotification> showing = notifications_.showing();
+        if (showing.empty())
+        {
+            toastBounds_ = UiRect{};
+            return;
+        }
+
+        const StudioTheme& theme = frame_.theme();
+        const float pad = metricOf(theme, StudioMetric::SpacingMedium);
+        const float gap = metricOf(theme, StudioMetric::SpacingSmall);
+        const float border = metricOf(theme, StudioMetric::SeparatorThickness);
+        const float lineHeight = metricOf(theme, StudioMetric::ControlHeight);
+        const float buttonHeight = std::max(0.0f, lineHeight - gap);
+
+        // Wide enough for a sentence and narrow enough to leave the editor visible behind it. A
+        // toast that took a third of the window would be a dialog that nobody agreed to open.
+        const float width = std::min(360.0f * theme.scale(),
+                                     std::max(0.0f, layout_.dockArea.width - pad * 2.0f));
+        if (width <= 0.0f)
+        {
+            toastBounds_ = UiRect{};
+            return;
+        }
+
+        // Bottom right, above the status bar. The corner furthest from what the user is working on
+        // in a left-to-right editor, and the one a docked panel is least likely to need.
+        float bottom = layout_.dockArea.bottom() - pad;
+        const float right = layout_.dockArea.right() - pad;
+
+        frame_.pushLayer(kToastLayer);
+        frame_.ids().push("toasts");
+
+        UiRect stack{};
+
+        // Newest nearest the corner, so the one that just arrived is where the eye already is and
+        // the older ones rise away from it.
+        for (std::size_t index = showing.size(); index-- > 0;)
+        {
+            const StudioNotification& notification = showing[index];
+
+            const bool hasDetail = !notification.detail.empty();
+            const bool hasAction = !notification.actionId.empty()
+                                && actions_.find(notification.actionId) != nullptr;
+
+            float height = pad * 2.0f + lineHeight + (hasDetail ? lineHeight : 0.0f);
+            if (hasAction) { height += buttonHeight + gap; }
+
+            if (bottom - height < layout_.dockArea.y) { break; }
+
+            const UiRect bounds{right - width, bottom - height, width, height};
+            bottom = bounds.y - gap;
+            stack = stack.isEmpty() ? bounds : unite(stack, bounds);
+
+            frame_.ids().pushIndex(static_cast<std::int64_t>(index));
+
+            const StudioColor accent = theme.color(severityColor(notification.severity));
+
+            if (frame_.isDrawPass())
+            {
+                frame_.drawList().fillRect(bounds, theme.color(StudioColorRole::PopupBackground));
+                frame_.drawList().strokeRect(bounds, theme.color(StudioColorRole::BorderStrong),
+                                             border);
+
+                // A stripe down the leading edge rather than a coloured surface. Severity has to
+                // be readable at a glance and the text has to stay legible, and a red panel makes
+                // one of those two impossible.
+                frame_.drawList().fillRect(
+                    UiRect{bounds.x, bounds.y, border * 3.0f, bounds.height}, accent);
+            }
+
+            UiRect body = bounds.inset(UiEdges{pad + border * 3.0f, pad, pad, pad});
+
+            // The dismiss sits in the title's line, at its end: a toast the user cannot get rid of
+            // is a toast that has taken a corner of the editor away from them.
+            UiRect titleRow = body.splitTop(lineHeight);
+            const UiRect dismiss = titleRow.splitRight(std::min(titleRow.width, lineHeight));
+
+            if (frame_.isDrawPass())
+            {
+                studioDrawText(frame_, titleRow,
+                               studioTruncateText(frame_, theme.font(StudioFontRole::Subheading),
+                                                  notification.title, titleRow.width),
+                               StudioFontRole::Subheading,
+                               theme.color(StudioColorRole::TextPrimary));
+            }
+
+            StudioButtonOptions dismissOptions;
+            dismissOptions.kind = StudioButtonKind::Toolbar;
+            dismissOptions.icon = StudioIcon::Close;
+            dismissOptions.tooltip = "Dismiss";
+            if (studioButton(frame_, frame_.ids().make("dismiss"), dismiss, {}, dismissOptions)
+                    .activated)
+            {
+                notifications_.dismissAt(index);
+            }
+
+            if (hasDetail && frame_.isDrawPass())
+            {
+                const UiRect detailRow = body.splitTop(lineHeight);
+                studioDrawText(frame_, detailRow,
+                               studioTruncateText(frame_, theme.font(StudioFontRole::Body),
+                                                  notification.detail, detailRow.width),
+                               StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
+            }
+            else if (hasDetail) { body.splitTop(lineHeight); }
+
+            if (hasAction)
+            {
+                body.splitTop(gap);
+
+                const StudioAction* action = actions_.find(notification.actionId);
+                const std::string label = !notification.actionLabel.empty()
+                    ? notification.actionLabel
+                    : (action != nullptr ? action->label : std::string{});
+
+                const UiRect button = body.splitTop(buttonHeight).splitRight(
+                    std::min(body.width, std::ceil(studioLabelWidth(frame_, label)) + pad * 2.0f));
+
+                StudioButtonOptions options;
+                options.kind = StudioButtonKind::Accent;
+                if (studioButton(frame_, frame_.ids().make("action"), button, label, options)
+                        .activated)
+                {
+                    // Dismissed by taking it. The user has answered, and a toast still offering an
+                    // answer that has been given reads as though nothing happened.
+                    invoke(notification.actionId);
+                    notifications_.dismissAt(index);
+                }
+            }
+
+            frame_.ids().pop();
+        }
+
+        // And what did not fit, said rather than silently dropped: a stack that quietly stopped
+        // growing would hide the newest failure behind the four before it.
+        const std::size_t hidden = notifications_.hiddenCount();
+        if (hidden > 0 && frame_.isDrawPass() && !stack.isEmpty())
+        {
+            const UiRect line{stack.x, stack.y - lineHeight, stack.width, lineHeight};
+            if (line.y >= layout_.dockArea.y)
+            {
+                studioDrawText(frame_, line,
+                               "and " + std::to_string(hidden) + " more in the Output Log",
+                               StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary),
+                               StudioTextAlign::Right);
+                stack = unite(stack, line);
+            }
+        }
+
+        frame_.ids().pop();
+        frame_.popLayer();
+
+        toastBounds_ = stack;
     }
 
     void StudioShell::describeStatusBar()

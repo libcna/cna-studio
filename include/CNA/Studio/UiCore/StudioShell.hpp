@@ -52,6 +52,7 @@
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
 #include "CNA/Studio/UiCore/StudioDialog.hpp"
 #include "CNA/Studio/UiCore/StudioDockTree.hpp"
+#include "CNA/Studio/UiCore/StudioNotifications.hpp"
 #include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
@@ -79,6 +80,16 @@ namespace CNA::Studio
 
     /** @brief The id prefix of the undock command the shell registers for each panel. */
     inline constexpr std::string_view kStudioFloatPanelActionPrefix = "studio.window.floatPanel.";
+
+    /**
+     * @brief The id prefix of the command that shows one panel and raises it.
+     *
+     * Separate from the toggle above, which is what the Window menu needs: a menu row with a
+     * checkmark has to be able to turn the panel off again. "Take me to the Build panel" must not,
+     * and a notification offering *Show Build* that hides an already-open Build is a button that
+     * does the opposite of what it says the one time it matters.
+     */
+    inline constexpr std::string_view kStudioShowPanelActionPrefix = "studio.window.showPanel.";
 
     /** @brief The id of the command that docks every floating window again. */
     inline constexpr std::string_view kStudioDockAllActionId = "studio.window.dockAll";
@@ -502,6 +513,18 @@ namespace CNA::Studio
         bool activatePanel(std::string_view id);
 
         /**
+         * @brief Whether @p id is the tab in front of its group, docked or floating.
+         *
+         * Open is not the same as visible. A panel sharing a tab strip with five others is behind
+         * them until something raises it, and a command that claims to have shown the user a result
+         * has to be able to be checked against what is actually in front.
+         *
+         * @param id Panel id.
+         * @return True when it is open and is the active tab of whatever holds it.
+         */
+        [[nodiscard]] bool isPanelActive(std::string_view id) const;
+
+        /**
          * @brief Removes a panel from the workspace.
          *
          * Refuses a panel whose descriptor says it is not closable: a workspace with no viewport
@@ -621,6 +644,21 @@ namespace CNA::Studio
 
         /** @brief What the status bar is saying. */
         [[nodiscard]] const StudioStatusModel& status() const { return status_; }
+
+        /**
+         * @brief Background results announced over the corner of the workspace.
+         *
+         * Posted through, rather than assembled and handed over: the centre writes every one into
+         * the log as it arrives, and a caller that could bypass that would be a caller whose
+         * messages exist for four seconds and then never existed.
+         */
+        [[nodiscard]] StudioNotificationCenter& notifications() { return notifications_; }
+
+        /** @brief Background results announced over the corner of the workspace. */
+        [[nodiscard]] const StudioNotificationCenter& notifications() const { return notifications_; }
+
+        /** @brief Where the notification stack was laid out, or empty when nothing is showing. */
+        [[nodiscard]] const UiRect& notificationBounds() const { return toastBounds_; }
 
         /**
          * @brief Sets what the About dialog says.
@@ -960,6 +998,9 @@ namespace CNA::Studio
          */
         [[nodiscard]] static std::string closePanelActionId(std::string_view panelId);
 
+        /** @brief The id of the command that shows @p panelId and raises it. */
+        [[nodiscard]] static std::string showPanelActionId(std::string_view panelId);
+
         /**
          * @brief The id of the command that undocks @p panelId into a floating window.
          * @param panelId The panel.
@@ -1005,7 +1046,7 @@ namespace CNA::Studio
         [[nodiscard]] static std::vector<std::string> defaultToolbar();
 
         /** @brief The input layer a menu popup routes in. Panels sit at layer zero. */
-        static constexpr int kMenuLayer = 3;
+        static constexpr int kMenuLayer = 4;
 
         /**
          * @brief The layer the dock drop preview draws in.
@@ -1014,7 +1055,7 @@ namespace CNA::Studio
          * drag is still the thing in front, and a preview drawn over it would obscure the only
          * control that could cancel the gesture.
          */
-        static constexpr int kDockPreviewLayer = 3;
+        static constexpr int kDockPreviewLayer = 4;
 
         /**
          * @brief The layer a tooltip draws in.
@@ -1022,7 +1063,7 @@ namespace CNA::Studio
          * Above everything, an open menu included: a tooltip describes whatever the pointer is
          * resting on, and the pointer may be resting on a menu row.
          */
-        static constexpr int kTooltipLayer = 5;
+        static constexpr int kTooltipLayer = 6;
 
         /**
          * @brief The layer floating windows draw and take input in.
@@ -1038,6 +1079,17 @@ namespace CNA::Studio
          * @ref StudioFrame::kPopupLayer.
          */
         static constexpr int kFloatingLayer = 1;
+
+        /**
+         * @brief The layer the notification stack draws and takes input in.
+         *
+         * Above floating windows, because a toast is drawn over the corner of the workspace and
+         * over whatever has been floated there: a Dismiss the user can see and cannot press is
+         * worse than one that is not drawn. Below popups, menus and modals, which are transient
+         * and were opened on purpose. Raised only while the pointer is over the stack, on the same
+         * rule as @ref kFloatingLayer.
+         */
+        static constexpr int kToastLayer = 2;
 
     private:
         /** @brief Where one menu title sits in the bar. */
@@ -1116,6 +1168,7 @@ namespace CNA::Studio
         void describeToolbar();
         void describeDocks();
         void describeFloating();
+        void describeToasts();
         void describeDialog();
 
         /**
@@ -1260,6 +1313,17 @@ namespace CNA::Studio
 
         StudioStatusModel status_;
         std::vector<std::string> aboutLines_;
+
+        StudioNotificationCenter notifications_;
+
+        /**
+         * @brief Where the toast stack was last laid out, for the next frame's blocking layer.
+         *
+         * The previous frame's geometry, like the floating windows': an immediate-mode frame has to
+         * choose its blocking layer before it has laid itself out, and a toast that moved this
+         * frame is one the pointer is already over.
+         */
+        UiRect toastBounds_;
 
         StudioShellLayout layout_;
         std::vector<MenuTitleGeometry> menuTitles_;
