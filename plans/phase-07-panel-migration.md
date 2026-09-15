@@ -18,7 +18,7 @@
 | `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
 | `STUDIO-07007` | Port the Inspector panel (Details) | ✅ | `STUDIO-07001`, `STUDIO-03035` |
 | `STUDIO-07008` | Port the Content Browser | ✅ | `STUDIO-07001`, `STUDIO-03034` |
-| `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
+| `STUDIO-07009` | Port the viewport container | 🔄 | `STUDIO-04012` |
 | `STUDIO-07010` | Port the Build panel | ✅ | `STUDIO-07001`, `STUDIO-02040`, `STUDIO-03036` |
 | `STUDIO-07011` | Port the Diagnostics panel | ✅ | `STUDIO-07001`, `STUDIO-02022` |
 | `STUDIO-07012` | Port the Validation panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
@@ -406,3 +406,37 @@ untestable: no device at all, a renderer that fails the contract, no player buil
 renderer listed with its host tier, the text report carrying the renderer's own reason, `Copy
 report` handing back that same text, and no phase violations across repeated frames. Plus
 `CnaStudioShellPreviewDiagnosticsPanel`
+
+### `STUDIO-07009` — Port the viewport container
+
+**Acceptance.** The scene on screen in the native shell, navigable, and a click in it selects what
+it hits
+
+**In progress.** What holds: the scene is composited (`STUDIO-04012`), the wheel zooms about the
+pointer, the middle *or* right button pans, a click picks the topmost sprite and Ctrl adds to the
+selection, and a click on nothing clears it. What does not: the gizmos, dragging an entity, the 3D
+view toggle, tilemap painting, and forwarding input to a running player. Each is its own task and
+each is a real piece of the prototype's viewport.
+
+**The panel draws nothing**, which is what makes this half testable at all. The scene arrives as a
+texture; this is the camera the pointer moves and what a click in it selects, and both are
+arithmetic over a camera and a document. So the tests drive it the way a user does — a pointer over
+a rectangle — with no graphics device anywhere.
+
+**Zoom is about the pointer and multiplicative.** About the centre makes a user chase the thing they
+were looking at across the screen; additive makes the first notch out of a close view do almost
+nothing and the first notch out of a far one leap.
+
+**Both pan buttons.** A trackpad has no middle button, and a viewport a laptop cannot pan is a
+viewport half the users cannot use. A pan that *started* outside the viewport does not move it: the
+pointer crosses the viewport during every drag of a splitter or a dock tab, and a camera that jumped
+whenever one passed over would be unusable.
+
+**A missed Ctrl-click does not clear the selection.** Clearing on a click that hits nothing is how a
+user deselects without a keyboard, and wiping a careful multi-selection because one additive click
+missed would be unforgivable.
+
+**Verification.** `tests/StudioViewportPanelTests.cpp`: the camera told its extent, zoom keeping the
+world point under the pointer, both pan buttons, a pan that began elsewhere ignored, picking,
+clearing, Ctrl adding, Ctrl-missing leaving the selection alone, the reported world position, and an
+empty rectangle doing nothing rather than dividing by it

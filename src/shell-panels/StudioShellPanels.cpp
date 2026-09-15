@@ -15,6 +15,7 @@
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 
@@ -26,13 +27,52 @@ namespace CNA::Studio
 {
     StudioShellPanels::StudioShellPanels(StudioShell& shell, StudioContext& context, StudioLog& log,
                                          StudioShellPanelServices services)
-        : context_(context), log_(log), services_(std::move(services))
+        : shell_(&shell), context_(context), log_(log), services_(std::move(services))
     {
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_);
         bind(shell);
     }
 
     void StudioShellPanels::poll() { build_.poll(); }
+
+    void StudioShellPanels::setViewportServices(StudioCamera2D& camera,
+                                                SpriteSizeProvider spriteSize)
+    {
+        services_.camera = &camera;
+        services_.spriteSize = std::move(spriteSize);
+        // Re-bound rather than checked per frame: the content callback captures `this` and reads
+        // the services through it, so the only thing that has to happen here is that the viewport
+        // gains content it did not have when there was no camera to drive.
+        bindViewport(*shell_);
+    }
+
+    void StudioShellPanels::bindViewport(StudioShell& shell)
+    {
+        // The viewport (STUDIO-07009) draws nothing: the scene is a texture the shell composites,
+        // and this is the camera the pointer moves and what a click in it selects. Bound only once
+        // there is a camera, because a viewport that swallowed clicks and moved nothing would be
+        // worse than one that plainly does not respond.
+        if (services_.camera == nullptr) { return; }
+
+        shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {
+            const StudioViewportResult viewport = studioViewportPanel(
+                frame, bounds, context_, *services_.camera, services_.spriteSize);
+
+            // No "camera changed" callback: the host renders the scene every frame anyway, and a
+            // hook nothing sets is scaffolding rather than a seam.
+            if (!viewport.selectionChanged) { return; }
+
+            ++counts_.viewportSelections;
+            if (const StudioEntity* entity = context_.getScene().findEntity(viewport.picked))
+            {
+                log_.append(LogSeverity::Trace, "Selected '" + entity->getName() + "'.");
+            }
+            else
+            {
+                log_.append(LogSeverity::Trace, "Selection cleared.");
+            }
+        });
+    }
 
     void StudioShellPanels::bind(StudioShell& shell)
     {
@@ -134,6 +174,8 @@ namespace CNA::Studio
                         "History: moved to position " + std::to_string(context_.getHistory().getCursor())
                             + " of " + std::to_string(context_.getHistory().getCount()) + ".");
         });
+
+        bindViewport(shell);
 
         // The Problems panel (STUDIO-07012): scene validation and broken asset references, as one
         // report, because a user whose model has the wrong material on it does not know in advance

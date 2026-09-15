@@ -122,13 +122,14 @@ namespace CNA::Studio
 
                 // Every ported panel, bound in one place that does not need CNA -- so the
                 // headless preview shows the same panels this window does (STUDIO-07001).
-                panels_ = std::make_unique<StudioShellPanels>(
-                    *shell_, *context_, log_,
-                    StudioShellPanelServices{[](const std::string& text) {
-                        if (!CnaUiPlatform::hasClipboard()) { return false; }
-                        CnaUiPlatform::setClipboardText(text);
-                        return true;
-                    }});
+                StudioShellPanelServices services;
+                services.setClipboardText = [](const std::string& text) {
+                    if (!CnaUiPlatform::hasClipboard()) { return false; }
+                    CnaUiPlatform::setClipboardText(text);
+                    return true;
+                };
+                panels_ = std::make_unique<StudioShellPanels>(*shell_, *context_, log_,
+                                                              std::move(services));
 
                 if (!options.selectEntity.empty())
                 {
@@ -268,6 +269,12 @@ namespace CNA::Studio
                                                          context_->getAssets(),
                                                          context_->getComponentRegistry(),
                                                          *renderer_);
+
+                // The camera the viewport panel drives, and the sprite sizes it picks against.
+                // Handed over now that the device exists: the panels were bound before it did,
+                // because binding needs no CNA and that is the whole point of the seam.
+                panels_->setViewportServices(sceneViewport_->getCamera(),
+                                             sceneViewport_->makeSizeProvider());
 
                 StudioDiagnosticsInfo& diagnostics = panels_->diagnostics();
                 diagnostics.uiBackend = "Studio native";

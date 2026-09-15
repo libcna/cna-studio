@@ -1421,13 +1421,17 @@ namespace CNA::Studio
             const std::string& active = node.panels[std::min(node.activePanel,
                                                              node.panels.size() - 1)];
             const StudioPanelDescriptor* descriptor = panel(active);
-            if (descriptor != nullptr && descriptor->isViewport)
+            // The viewport's surface is drawn by the shell rather than by its content, because
+            // the scene is a texture somebody else rendered and the placeholder is the shell's
+            // own. Its content still runs, underneath nothing and over that surface: navigating
+            // and picking are ordinary panel behaviour and belong with the other panels' content
+            // rather than in a second seam of their own.
+            const bool isViewport = descriptor != nullptr && descriptor->isViewport;
+            if (isViewport)
             {
                 if (frame_.isDrawPass()) { describeViewportBody(geometry.body); }
-                continue;
             }
-
-            if (frame_.isDrawPass())
+            else if (frame_.isDrawPass())
             {
                 frame_.drawList().fillRect(geometry.body,
                                            theme.color(StudioColorRole::PanelBackground));

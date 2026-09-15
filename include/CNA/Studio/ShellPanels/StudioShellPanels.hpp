@@ -32,6 +32,7 @@
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
@@ -48,6 +49,18 @@ namespace CNA::Studio
     /** @brief What a host can offer the panels that the panels cannot do themselves. */
     struct StudioShellPanelServices
     {
+        /**
+         * @brief The editor camera the viewport navigates, and the sprite sizes it picks against.
+         *
+         * Both live with whoever renders the scene, which is the one thing that has a device.
+         * Unset means there is no camera to drive — the viewport then shows its placeholder and
+         * does nothing, which is what a build with no device should do.
+         */
+        StudioCamera2D* camera = nullptr;
+
+        /** @brief Resolves a sprite's texel size for picking. Empty picks at the default size. */
+        SpriteSizeProvider spriteSize;
+
         /**
          * @brief Puts text on the system clipboard, returning whether it got there.
          *
@@ -72,6 +85,7 @@ namespace CNA::Studio
         std::size_t historyRowsDrawn = 0;
         std::size_t historyPositions = 0;
         std::size_t diagnosticRowsDrawn = 0;
+        std::size_t viewportSelections = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
         std::size_t sceneWarnings = 0;
@@ -111,6 +125,18 @@ namespace CNA::Studio
         /** @brief What the panels reported over the last frame. */
         [[nodiscard]] const StudioShellPanelCounts& counts() const { return counts_; }
 
+        /**
+         * @brief Hands the viewport its camera once a device exists to own one.
+         *
+         * Separate from the constructor because the panels are bound before the graphics device is
+         * created — that is what lets the headless preview bind the same panels — and the camera
+         * belongs to whoever renders the scene.
+         *
+         * @param camera The editor camera; must outlive this.
+         * @param spriteSize Resolves a sprite's texel size for picking.
+         */
+        void setViewportServices(StudioCamera2D& camera, SpriteSizeProvider spriteSize);
+
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_; }
 
@@ -124,6 +150,10 @@ namespace CNA::Studio
 
     private:
         void bind(StudioShell& shell);
+        void bindViewport(StudioShell& shell);
+
+        /** @brief Borrowed so the viewport can be re-bound when a camera arrives. */
+        StudioShell* shell_ = nullptr;
 
         StudioContext& context_;
         StudioLog& log_;
