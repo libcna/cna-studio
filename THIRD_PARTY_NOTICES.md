@@ -78,3 +78,18 @@ one family across the sans and the monospace keeps a log panel and the label abo
 one application, and Plex was drawn for interfaces — a large x-height, and a monospace with visibly
 distinct `0`/`O` and `1`/`l`/`I`, which an editor's log and identifier columns are read carefully
 enough to need.
+
+## Icons — none
+
+Studio vendors no icon set, and this section exists so that the absence is a recorded decision
+rather than an omission somebody later "fixes" by adding one.
+
+The obvious route is an icon font: another few hundred kilobytes, another licence to track, a second
+atlas to manage, and a visual language designed for somebody else's product. Studio instead *draws*
+its icons as vector paths in code (`src/ui-core/StudioIcons.cpp`), over the primitives the draw list
+already has. Each is authored on a 16-unit grid and mapped onto whatever rectangle it is asked for,
+so the same definition is crisp at a 14-pixel toolbar and at 32 pixels on a 200% display — rather
+than at whichever sizes somebody baked.
+
+There is therefore nothing here to attribute, nothing to redistribute, and no licence that could
+change under us. See `plan.md` `STUDIO-04008` and `STUDIO-04009` for the reasoning in full.
