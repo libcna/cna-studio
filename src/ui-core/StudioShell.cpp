@@ -581,6 +581,10 @@ namespace CNA::Studio
         describeSplitters();
         describeStatusBar();
 
+        // After the docks, because it needs the tab strips to have declared themselves, and before
+        // the popup, because a menu open over a drag should still draw on top.
+        describeDockDrag();
+
         // Last, so it draws over everything and so its widgets win hover against anything they
         // overlap. Being in a raised input layer is what stops the panels beneath from responding;
         // being described last is what stops the popup from being drawn underneath them.
@@ -851,6 +855,17 @@ namespace CNA::Studio
 
                 if (frame_.isInputPass()) { tabBounds_.emplace_back(panelId, tab); }
                 if (result.activated) { node.activePanel = i; }
+
+                // A tab held and dragged beyond a threshold starts a dock drag. The threshold is
+                // what keeps a click that wobbled by a pixel from becoming a rearrangement --
+                // without it, selecting a tab on a trackpad would move panels around.
+                if (frame_.isInputPass() && result.interaction.held && !drag_.active())
+                {
+                    const float dx = frame_.input().mouseX - tab.centerX();
+                    const float dy = frame_.input().mouseY - tab.centerY();
+                    const float threshold = metricOf(theme, StudioMetric::SpacingLarge);
+                    if (dx * dx + dy * dy > threshold * threshold) { drag_.panelId = panelId; }
+                }
             }
 
             frame_.popClip();
@@ -896,6 +911,140 @@ namespace CNA::Studio
             frame_.ids().pop();
         }
         frame_.ids().pop();
+    }
+
+    void StudioShell::describeDockDrag()
+    {
+        if (!drag_.active()) { return; }
+
+        const StudioTheme& theme = frame_.theme();
+
+        // Resolved in the input pass and replayed in the draw pass, like every interaction here:
+        // the preview a user sees must be the outcome a release would produce, and recomputing it
+        // from a pointer that has since moved is how the two come apart.
+        if (frame_.isInputPass())
+        {
+            resolveDropTarget();
+
+            if (!frame_.input().isMouseDown(UiMouseButton::Left))
+            {
+                applyDrop();
+                drag_ = StudioDockDrag{};
+                return;
+            }
+        }
+
+        if (!frame_.isDrawPass() || drag_.zone == StudioDropZone::None) { return; }
+
+        // Drawn in a raised layer so it is over the panels it describes. Translucent rather than
+        // an outline: an outline on a busy panel is hard to see, and the point of the preview is
+        // that the answer to "where will this land" is obvious without reading anything.
+        frame_.pushLayer(kDockPreviewLayer);
+        StudioColor fill = theme.color(StudioColorRole::Accent);
+        fill.a = 90;
+        frame_.drawList().fillRect(drag_.preview, fill);
+        frame_.drawList().strokeRect(drag_.preview, theme.color(StudioColorRole::Accent),
+                                     metricOf(theme, StudioMetric::FocusRingWidth));
+        frame_.popLayer();
+    }
+
+    void StudioShell::resolveDropTarget()
+    {
+        drag_.target = kInvalidDockNode;
+        drag_.zone = StudioDropZone::None;
+        drag_.tabIndex = 0;
+        drag_.preview = UiRect{};
+
+        const float x = frame_.input().mouseX;
+        const float y = frame_.input().mouseY;
+
+        const StudioDockNodeId leaf = dock_.leafAt(x, y);
+        if (leaf == kInvalidDockNode) { return; }
+
+        drag_.target = leaf;
+
+        const StudioDockLeafGeometry geometry = dock_.leafGeometry(leaf, tabStripHeight());
+
+        // Over the tab strip means "put it in this group, here" -- which is also what makes
+        // reordering within one group fall out of the same gesture rather than needing its own.
+        if (geometry.tabStrip.contains(x, y))
+        {
+            drag_.zone = StudioDropZone::Tabs;
+            drag_.preview = geometry.tabStrip;
+
+            const StudioDockNode& node = dock_.node(leaf);
+            drag_.tabIndex = node.panels.size();
+            for (std::size_t i = 0; i < node.panels.size(); ++i)
+            {
+                const UiRect tab = panelTabBounds(node.panels[i]);
+                if (tab.isEmpty()) { continue; }
+                if (x < tab.centerX()) { drag_.tabIndex = i; break; }
+            }
+            return;
+        }
+
+        const UiRect& body = geometry.body;
+        if (body.isEmpty()) { return; }
+
+        // A quarter of the body on each edge, the middle for tabs. Proportional rather than a
+        // fixed band, so the zones stay reachable in a narrow panel -- a fixed 64 pixels would
+        // leave a 100-pixel-wide dock with no middle at all.
+        const float edgeX = body.width * 0.25f;
+        const float edgeY = body.height * 0.25f;
+
+        if (x < body.left() + edgeX)
+        {
+            drag_.zone = StudioDropZone::Left;
+            drag_.preview = UiRect{body.left(), body.top(), body.width * 0.5f, body.height};
+        }
+        else if (x > body.right() - edgeX)
+        {
+            drag_.zone = StudioDropZone::Right;
+            drag_.preview = UiRect{body.centerX(), body.top(), body.width * 0.5f, body.height};
+        }
+        else if (y < body.top() + edgeY)
+        {
+            drag_.zone = StudioDropZone::Top;
+            drag_.preview = UiRect{body.left(), body.top(), body.width, body.height * 0.5f};
+        }
+        else if (y > body.bottom() - edgeY)
+        {
+            drag_.zone = StudioDropZone::Bottom;
+            drag_.preview = UiRect{body.left(), body.centerY(), body.width, body.height * 0.5f};
+        }
+        else
+        {
+            drag_.zone = StudioDropZone::Tabs;
+            drag_.tabIndex = dock_.node(leaf).panels.size();
+            drag_.preview = geometry.tabStrip;
+        }
+    }
+
+    void StudioShell::applyDrop()
+    {
+        if (drag_.zone == StudioDropZone::None || drag_.target == kInvalidDockNode) { return; }
+
+        if (drag_.zone == StudioDropZone::Tabs)
+        {
+            (void)dock_.movePanel(drag_.panelId, drag_.target, drag_.tabIndex);
+            (void)activatePanel(drag_.panelId);
+            return;
+        }
+
+        // Splitting the leaf the panel is being dropped on, then moving the panel into the half
+        // the user aimed at. split() reuses the split node's id, so the content that was there
+        // ends up at a new id -- sibling() is how the new half is found, and getting that backwards
+        // would drop the panel where the existing content went.
+        const StudioDockSide side = drag_.zone == StudioDropZone::Left  ? StudioDockSide::Left
+                                  : drag_.zone == StudioDropZone::Right ? StudioDockSide::Right
+                                  : drag_.zone == StudioDropZone::Top   ? StudioDockSide::Top
+                                                                        : StudioDockSide::Bottom;
+
+        const StudioDockNodeId created = dock_.split(drag_.target, side, 0.4f);
+        if (created == kInvalidDockNode) { return; }
+
+        (void)dock_.movePanel(drag_.panelId, created);
+        (void)activatePanel(drag_.panelId);
     }
 
     void StudioShell::describeSplitters()

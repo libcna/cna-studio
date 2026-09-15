@@ -215,6 +215,19 @@ namespace CNA::Studio
         [[nodiscard]] StudioDockNodeId sibling(StudioDockNodeId id) const;
 
         /**
+         * @brief The leaf whose resolved area contains (@p x, @p y).
+         *
+         * Leaves only: a split node's area is the union of its children's, so returning one would
+         * be an answer no caller can use. Needs @ref layout to have run — before that every node's
+         * area is empty and this correctly finds nothing.
+         *
+         * @param x Horizontal position in logical units.
+         * @param y Vertical position.
+         * @return The leaf, or @ref kInvalidDockNode.
+         */
+        [[nodiscard]] StudioDockNodeId leafAt(float x, float y) const;
+
+        /**
          * @brief Adds a panel to a leaf's tab group.
          * @param leaf Leaf to add to.
          * @param panelId Panel id. Adding one that is already somewhere in the tree moves it.

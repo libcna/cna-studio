@@ -49,20 +49,12 @@ namespace CNA::Studio
         }
 
         /**
-         * @brief A texture the rasterizer can sample, gathered from this frame's requests.
-         *
          * The rasterizer honours texture requests for the same reason the CNA renderer does: the
          * golden images are the only place the UI's *appearance* is asserted, and a rasterizer
          * that drew every glyph as a flat rectangle would let real text regress without a single
-         * test noticing.
+         * test noticing -- which is exactly what happened until `UiTextureTable` was given a life
+         * longer than one frame.
          */
-        struct SampledTexture
-        {
-            int width = 0;
-            int height = 0;
-            int pitch = 0;
-            const std::uint8_t* pixels = nullptr;
-        };
 
         /**
          * @brief Samples a texture with nearest-neighbour filtering.
@@ -73,7 +65,7 @@ namespace CNA::Studio
          * a golden image that disagreed with a real renderer by one least-significant bit per
          * pixel would be worse than useless.
          */
-        Rgba sampleTexture(const SampledTexture& texture, float u, float v)
+        Rgba sampleTexture(const UiTextureTable::Entry& texture, float u, float v)
         {
             if (texture.pixels == nullptr || texture.width <= 0 || texture.height <= 0)
             {
@@ -129,7 +121,7 @@ namespace CNA::Studio
          */
         void fillTriangle(ImageBuffer& image, const UiVertex& v0, const UiVertex& v1,
                           const UiVertex& v2, const UiClipRect& clip,
-                          const SampledTexture* texture)
+                          const UiTextureTable::Entry* texture)
         {
             float area = edgeFunction(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
             if (std::abs(area) < 1e-6f) { return; }
@@ -209,7 +201,43 @@ namespace CNA::Studio
         }
     } // namespace
 
+    void UiTextureTable::apply(const UiDrawData& drawData)
+    {
+        for (const UiTextureRequest& request : drawData.textureRequests)
+        {
+            if (request.action == UiTextureAction::Destroy)
+            {
+                entries_.erase(request.texture);
+                continue;
+            }
+            if (request.pixels == nullptr || request.width <= 0 || request.height <= 0) { continue; }
+
+            Entry entry;
+            entry.width = request.width;
+            entry.height = request.height;
+            entry.pitch = request.pitch > 0 ? request.pitch : request.width * 4;
+            entry.pixels = request.pixels;
+            entries_[request.texture] = entry;
+        }
+    }
+
+    const UiTextureTable::Entry* UiTextureTable::find(UiTextureId id) const
+    {
+        const auto found = entries_.find(id);
+        return found == entries_.end() ? nullptr : &found->second;
+    }
+
     ImageBuffer rasterizeUiDrawData(const UiDrawData& drawData, StudioColor clearColor)
+    {
+        // A table built from this frame alone, which for a single frame is the same thing. Callers
+        // that render more than one frame want the overload below: the atlas is requested once and
+        // a table rebuilt per frame would lose it, drawing every glyph as a solid rectangle.
+        UiTextureTable textures;
+        return rasterizeUiDrawData(drawData, clearColor, textures);
+    }
+
+    ImageBuffer rasterizeUiDrawData(const UiDrawData& drawData, StudioColor clearColor,
+                                    UiTextureTable& textures)
     {
         const int width = static_cast<int>(std::lround(drawData.displayWidth
                                                        * drawData.framebufferScaleX));
@@ -234,23 +262,7 @@ namespace CNA::Studio
 
         // Texture requests first, exactly as the CNA renderer applies them before drawing. The
         // pixels stay owned by whoever produced the request; this only records where they are.
-        std::map<UiTextureId, SampledTexture> textures;
-        for (const UiTextureRequest& request : drawData.textureRequests)
-        {
-            if (request.action == UiTextureAction::Destroy)
-            {
-                textures.erase(request.texture);
-                continue;
-            }
-            if (request.pixels == nullptr || request.width <= 0 || request.height <= 0) { continue; }
-
-            SampledTexture texture;
-            texture.width = request.width;
-            texture.height = request.height;
-            texture.pitch = request.pitch > 0 ? request.pitch : request.width * 4;
-            texture.pixels = request.pixels;
-            textures[request.texture] = texture;
-        }
+        textures.apply(drawData);
 
         for (const UiDrawList& list : drawData.lists)
         {
@@ -263,15 +275,14 @@ namespace CNA::Studio
                 clip = clip.clampTo(static_cast<float>(width), static_cast<float>(height));
                 if (clip.isEmpty()) { continue; }
 
-                const SampledTexture* texture = nullptr;
-                if (command.texture != kUiTextureNone)
-                {
-                    const auto found = textures.find(command.texture);
-                    // A command naming a texture the frame never uploaded draws untextured rather
-                    // than being skipped: dropping it would hide the mistake, and drawing it flat
-                    // makes the missing upload visible as a solid block where the glyphs belong.
-                    if (found != textures.end()) { texture = &found->second; }
-                }
+                // A command naming a texture that was never uploaded draws untextured rather than
+                // being skipped: dropping it would hide the mistake, and drawing it flat makes the
+                // missing upload visible as a solid block where the glyphs belong. Visible, but
+                // only to somebody looking -- which is why that case is now a test rather than a
+                // hope (`AMultiFrameCaptureStillHasItsFontAtlas`).
+                const UiTextureTable::Entry* texture = command.texture != kUiTextureNone
+                    ? textures.find(command.texture)
+                    : nullptr;
 
                 for (std::uint32_t i = 0; i + 2 < command.indexCount; i += 3)
                 {

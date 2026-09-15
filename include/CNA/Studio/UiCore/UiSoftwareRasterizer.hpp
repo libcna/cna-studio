@@ -33,8 +33,60 @@
 #include "CNA/Studio/Core/StudioMath.hpp"
 #include "CNA/Studio/Ui/UiDrawData.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <map>
+
 namespace CNA::Studio
 {
+    /**
+     * @brief Textures uploaded so far, kept across frames the way a real renderer keeps them.
+     *
+     * A `UiDrawData` carries a texture *request* only on the frame the texture changed. That is
+     * right for a renderer, which uploads once and keeps the result — and wrong for a rasterizer
+     * that rebuilt its table from each frame's requests, because the second frame of any session
+     * then has no font atlas and every glyph draws as a solid rectangle. That is not a subtle
+     * degradation: it renders text as a row of blocks, and it did, in every multi-frame capture,
+     * until a drop-preview screenshot made it obvious.
+     *
+     * One-frame callers need not bother with this: the overload without it builds a table from the
+     * frame it is given, which for a single frame is the same thing.
+     */
+    class UiTextureTable
+    {
+    public:
+        /**
+         * @brief Applies @p drawData's texture requests: uploads, updates and destroys.
+         *
+         * The pixel data is *referenced*, not copied — as `UiTextureRequest` documents. Whatever
+         * owns the pixels must outlive every rasterise that uses them.
+         *
+         * @param drawData A frame whose requests should be applied.
+         */
+        void apply(const UiDrawData& drawData);
+
+        /** @brief How many textures are currently held. */
+        [[nodiscard]] std::size_t size() const { return entries_.size(); }
+
+        /** @brief Whether @p id has been uploaded. */
+        [[nodiscard]] bool contains(UiTextureId id) const { return entries_.count(id) != 0; }
+
+        /** @brief One texture's referenced pixels and shape. */
+        struct Entry
+        {
+            int width = 0;
+            int height = 0;
+            int pitch = 0;
+            const std::uint8_t* pixels = nullptr;
+        };
+
+        /** @brief The texture for @p id, or nullptr. */
+        [[nodiscard]] const Entry* find(UiTextureId id) const;
+
+    private:
+        std::map<UiTextureId, Entry> entries_;
+    };
+
     /**
      * @brief Rasterises one frame of UI geometry into an RGBA image.
      *
@@ -45,6 +97,19 @@ namespace CNA::Studio
      */
     [[nodiscard]] ImageBuffer rasterizeUiDrawData(const UiDrawData& drawData,
                                                   StudioColor clearColor);
+
+    /**
+     * @brief Rasterises one frame against textures uploaded over several frames.
+     *
+     * @param drawData Geometry to rasterise.
+     * @param clearColor Colour the image starts as.
+     * @param textures Textures uploaded so far. @p drawData's own requests are applied to it first,
+     *        so a caller can simply pass the same table every frame.
+     * @return The rendered image.
+     */
+    [[nodiscard]] ImageBuffer rasterizeUiDrawData(const UiDrawData& drawData,
+                                                  StudioColor clearColor,
+                                                  UiTextureTable& textures);
 
     /**
      * @brief Encodes an image as a PNG.

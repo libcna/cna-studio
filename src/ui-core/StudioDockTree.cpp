@@ -163,6 +163,15 @@ namespace CNA::Studio
         return nodes_[parent].first == id ? nodes_[parent].second : nodes_[parent].first;
     }
 
+    StudioDockNodeId StudioDockTree::leafAt(float x, float y) const
+    {
+        for (const StudioDockNodeId leaf : leaves())
+        {
+            if (node(leaf).bounds.contains(x, y)) { return leaf; }
+        }
+        return kInvalidDockNode;
+    }
+
     bool StudioDockTree::addPanel(StudioDockNodeId leaf, std::string panelId)
     {
         if (!isLive(leaf) || !nodes_[leaf].isLeaf() || panelId.empty()) { return false; }

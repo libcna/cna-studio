@@ -442,6 +442,103 @@ CNA_STUDIO_TEST(TheShellRasterisesToAStableImage)
     CNA_STUDIO_EXPECT(image.pixels == second.pixels);
 }
 
+CNA_STUDIO_TEST(TheSecondFrameOfAStaticShellLooksExactlyLikeTheFirst)
+{
+    // The bug this pins was invisible to every test above, because every one of them renders a
+    // single frame -- and a `UiDrawData` carries a texture *request* only on the frame the texture
+    // changed. The font atlas is rasterised once, so from frame two onwards the draw data names an
+    // atlas it does not carry. A rasterizer that rebuilt its texture table per frame therefore had
+    // no font, and every glyph drew as a solid rectangle: text as a row of blocks, in every
+    // multi-frame capture, for as long as `--shell-preview` has existed.
+    //
+    // Nothing caught it because the golden images render one frame and the real CNA renderer keeps
+    // its uploads. This is the assertion that would have: a shell nobody touched must look the
+    // same on its second frame as on its first.
+    auto shell = std::make_shared<StudioShell>(StudioTheme::dark());
+
+    UiInputState input;
+    input.displayWidth = 640.0f;
+    input.displayHeight = 360.0f;
+    input.mouseInWindow = false;
+
+    UiTextureTable textures;
+
+    shell->renderFrame(input);
+    const ImageBuffer first = rasterizeUiDrawData(shell->drawData(), StudioColor{0, 0, 0, 255},
+                                                  textures);
+
+    shell->renderFrame(input);
+    const ImageBuffer second = rasterizeUiDrawData(shell->drawData(), StudioColor{0, 0, 0, 255},
+                                                   textures);
+
+    CNA_STUDIO_EXPECT(first.isWellFormed());
+    CNA_STUDIO_EXPECT(first.pixels == second.pixels);
+
+    // And the table is what makes it so. Rasterising the second frame from its own requests alone
+    // -- which is what the single-argument overload does -- produces a different image, because
+    // the atlas is not in it. If this ever stops differing, the request has started being re-sent
+    // every frame and something is uploading four megabytes per frame.
+    const ImageBuffer withoutTheAtlas =
+        rasterizeUiDrawData(shell->drawData(), StudioColor{0, 0, 0, 255});
+    CNA_STUDIO_EXPECT(withoutTheAtlas.pixels != second.pixels);
+
+    // Concretely: without the atlas every glyph is a filled box, so strictly more of the image is
+    // covered. That is the shape of the failure, not merely that it differs.
+    const auto litPixels = [](const ImageBuffer& image) {
+        std::size_t lit = 0;
+        for (std::size_t i = 0; i + 3 < image.pixels.size(); i += 4)
+        {
+            if (image.pixels[i] > 128 && image.pixels[i + 1] > 128 && image.pixels[i + 2] > 128)
+            {
+                ++lit;
+            }
+        }
+        return lit;
+    };
+    CNA_STUDIO_EXPECT(litPixels(withoutTheAtlas) > litPixels(second));
+}
+
+CNA_STUDIO_TEST(ATextureTableKeepsWhatItIsGivenAndForgetsWhatIsDestroyed)
+{
+    // The table is the rasterizer's standing in for what a renderer keeps between frames, so the
+    // two halves of that -- remembering an upload and honouring a destroy -- are worth pinning
+    // without a shell in the way.
+    UiTextureTable table;
+    CNA_STUDIO_EXPECT_EQ(table.size(), std::size_t{0});
+
+    std::vector<std::uint8_t> pixels(4 * 4 * 4, 255);
+
+    UiDrawData upload;
+    UiTextureRequest create;
+    create.action = UiTextureAction::Create;
+    create.texture = 7;
+    create.width = 4;
+    create.height = 4;
+    create.pitch = 16;
+    create.pixels = pixels.data();
+    upload.textureRequests.push_back(create);
+
+    table.apply(upload);
+    CNA_STUDIO_EXPECT(table.contains(7));
+    CNA_STUDIO_EXPECT(table.find(7) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(table.find(7)->width, 4);
+
+    // A frame carrying no requests changes nothing -- which is the whole point.
+    const UiDrawData quiet;
+    table.apply(quiet);
+    CNA_STUDIO_EXPECT(table.contains(7));
+
+    UiDrawData destroy;
+    UiTextureRequest remove;
+    remove.action = UiTextureAction::Destroy;
+    remove.texture = 7;
+    destroy.textureRequests.push_back(remove);
+
+    table.apply(destroy);
+    CNA_STUDIO_EXPECT(!table.contains(7));
+    CNA_STUDIO_EXPECT(table.find(7) == nullptr);
+}
+
 CNA_STUDIO_TEST(TheShellActuallyDrawsSomethingRatherThanClearing)
 {
     // The failure a clean exit cannot distinguish: a window that opened and drew nothing. The

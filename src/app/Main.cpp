@@ -182,12 +182,71 @@ namespace
         // Two frames, not one. The first establishes the input snapshot the second diffs against,
         // and hover resolved on a frame with no predecessor is hover nobody has moved onto yet --
         // so a one-frame preview would capture every control at rest however the pointer is placed.
+        // The atlas is requested on the frame it is rasterised and never again, so a table built
+        // from the last frame alone would have no font and every glyph would draw as a solid
+        // rectangle. Kept across the frames instead, the way a real renderer keeps an upload.
+        CNA::Studio::UiTextureTable textures;
+
         shell.renderFrame(input);
+        textures.apply(shell.drawData());
         shell.renderFrame(input);
+
+        if (!options.shellPreviewDragPanel.empty())
+        {
+            // A drag is the one interaction state a single input snapshot cannot express: it needs
+            // a press in one place and a pointer in another. Synthesised here as the gesture a
+            // person makes -- press the tab, then move -- rather than by reaching into the shell
+            // and setting a drag field, because a capture of a state no gesture can produce is a
+            // capture of something that does not happen.
+            // A drag needs somewhere to drag *to*. Without a pointer in the window the gesture
+            // starts and resolves to no drop target, so the capture is a picture of a drag with
+            // nothing to show -- which would pass for a picture of the shell at rest.
+            if (!input.mouseInWindow)
+            {
+                std::cerr << "cna-studio: --shell-drag needs --shell-pointer=X,Y inside the "
+                             "window: that is where the panel is being dragged to.\n";
+                return 2;
+            }
+
+            const CNA::Studio::UiRect tab = shell.panelTabBounds(options.shellPreviewDragPanel);
+            if (tab.isEmpty())
+            {
+                std::cerr << "cna-studio: no open panel called '" << options.shellPreviewDragPanel
+                          << "' to drag.\n";
+                return 2;
+            }
+
+            CNA::Studio::UiInputState press = input;
+            press.mouseX = tab.centerX();
+            press.mouseY = tab.centerY();
+            press.mouseInWindow = true;
+            press.setMouseDown(CNA::Studio::UiMouseButton::Left, false);
+            shell.renderFrame(press);
+
+            press.setMouseDown(CNA::Studio::UiMouseButton::Left, true);
+            shell.renderFrame(press);
+
+            textures.apply(shell.drawData());
+
+            CNA::Studio::UiInputState moved = press;
+            moved.mouseX = input.mouseX;
+            moved.mouseY = input.mouseY;
+            shell.renderFrame(moved);
+            textures.apply(shell.drawData());
+
+            if (!shell.dockDrag().active())
+            {
+                std::cerr << "cna-studio: dragging '" << options.shellPreviewDragPanel
+                          << "' started no drag. --shell-drag needs --shell-pointer somewhere "
+                             "further than the drag threshold from the tab.\n";
+                return 2;
+            }
+        }
 
         const CNA::Studio::ImageBuffer image =
             CNA::Studio::rasterizeUiDrawData(shell.drawData(),
-                                             theme.color(CNA::Studio::StudioColorRole::AppBackground));
+                                             theme.color(CNA::Studio::StudioColorRole::AppBackground),
+                                             textures);
         if (!image.isWellFormed())
         {
             std::cerr << "cna-studio: the shell produced no image at "

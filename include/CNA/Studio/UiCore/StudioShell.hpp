@@ -244,6 +244,50 @@ namespace CNA::Studio
         bool openPanel(std::string_view id);
 
         /**
+         * @brief Where a dragged panel would land if it were dropped now.
+         *
+         * Five outcomes rather than one, because "put this panel somewhere" and "put this panel
+         * *beside* that one" are different intentions and a docking model that only offered the
+         * first would make every rearrangement a two-step operation.
+         */
+        enum class StudioDropZone : std::uint8_t
+        {
+            /** @brief Nothing under the pointer, or nothing being dragged. */
+            None,
+            /** @brief Into the target's tab group. */
+            Tabs,
+            Left,
+            Right,
+            Top,
+            Bottom
+        };
+
+        /** @brief A drag in progress, and where it would land. */
+        struct StudioDockDrag
+        {
+            /** @brief The panel being dragged. Empty when nothing is. */
+            std::string panelId;
+
+            /** @brief The leaf under the pointer, or @ref kInvalidDockNode. */
+            StudioDockNodeId target = kInvalidDockNode;
+
+            /** @brief What would happen on release. */
+            StudioDropZone zone = StudioDropZone::None;
+
+            /** @brief Where in the target's tab order, for @ref StudioDropZone::Tabs. */
+            std::size_t tabIndex = 0;
+
+            /** @brief The region the preview highlights. */
+            UiRect preview;
+
+            /** @brief Whether a drag is in progress. */
+            [[nodiscard]] bool active() const { return !panelId.empty(); }
+        };
+
+        /** @brief The drag in progress, if any. */
+        [[nodiscard]] const StudioDockDrag& dockDrag() const { return drag_; }
+
+        /**
          * @brief Brings an open panel to the front of its tab group.
          *
          * Distinct from @ref openPanel, which docks a panel that is not open at all. A panel
@@ -470,6 +514,15 @@ namespace CNA::Studio
         /** @brief The input layer a menu popup routes in. Panels sit at layer zero. */
         static constexpr int kMenuLayer = 1;
 
+        /**
+         * @brief The layer the dock drop preview draws in.
+         *
+         * Above the panels it describes and below an open menu: a menu the user opened during a
+         * drag is still the thing in front, and a preview drawn over it would obscure the only
+         * control that could cancel the gesture.
+         */
+        static constexpr int kDockPreviewLayer = 1;
+
     private:
         /** @brief Where one menu title sits in the bar. */
         struct MenuTitleGeometry
@@ -505,6 +558,9 @@ namespace CNA::Studio
         void describeToolbar();
         void describeDocks();
         void describeSplitters();
+        void describeDockDrag();
+        void resolveDropTarget();
+        void applyDrop();
         void describeStatusBar();
         void describeViewportBody(const UiRect& body);
 
@@ -528,6 +584,7 @@ namespace CNA::Studio
         StudioFontAtlas fonts_;
         StudioActionRegistry actions_;
         StudioDockTree dock_;
+        StudioDockDrag drag_;
         std::vector<std::pair<std::string, StudioPanelContent>> panelContent_;
         std::vector<StudioPanelDescriptor> panels_;
 

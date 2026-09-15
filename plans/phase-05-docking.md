@@ -6,15 +6,15 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 10 of 14 complete `████████░░░░`
+**Progress:** 12 of 14 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-05001` | Dock node tree model | ✅ | `STUDIO-03015` |
 | `STUDIO-05002` | Split nodes horizontally and vertically | ✅ | `STUDIO-05001` |
 | `STUDIO-05003` | Resizable splitters with minimum sizes and correct cursor shapes | ✅ | `STUDIO-05002` |
-| `STUDIO-05004` | Tab stacks with reordering | ⬜ | `STUDIO-05001` |
-| `STUDIO-05005` | Dock a panel to an edge or into a tab group by drag, with drop-target preview | ⬜ | `STUDIO-05004` |
+| `STUDIO-05004` | Tab stacks with reordering | ✅ | `STUDIO-05005` |
+| `STUDIO-05005` | Dock a panel to an edge or into a tab group by drag, with drop-target preview | ✅ | `STUDIO-05002`, `STUDIO-05013` |
 | `STUDIO-05006` | Undock to a floating panel | ⬜ | `STUDIO-05005` |
 | `STUDIO-05007` | Hide, show and close panels | ✅ | `STUDIO-05001` |
 | `STUDIO-05008` | Serialize the workspace layout | ✅ | `STUDIO-05001` |
@@ -130,3 +130,40 @@ or a second save, forgetting twice, a store with nowhere to write failing with a
 configuration kept apart from state. Plus `CnaStudioWorkspacePersistence`, which runs the real
 binary four times against one file: the failure it catches — a shell that saves nothing and silently
 starts fresh every time — is invisible to any test that never exits
+
+### `STUDIO-05005` — Dock a panel to an edge or into a tab group by drag
+
+**Acceptance.** Press a tab, drag past a threshold, and the shell shows where the panel would land:
+into a tab group, or splitting the panel under the pointer to its left, right, top or bottom.
+Releasing does what the preview showed; releasing over nothing does nothing
+
+**Five outcomes rather than one.** "Put this panel somewhere" and "put it *beside* that one" are
+different intentions, and a model offering only the first would make every rearrangement a two-step
+operation
+
+**The threshold is not a detail.** Without it, selecting a tab on a trackpad rearranges the
+workspace, because a click that wobbled by a pixel is a drag
+
+**The zones are proportional, not a fixed band.** A fixed 64-pixel edge would leave a 100-pixel-wide
+dock with no middle at all
+
+**The half that is easy to get backwards.** `split()` reuses the split node's id, so the content that
+was already there ends up at a *new* id. Putting the dragged panel at the old one drops it exactly
+where the existing content went, which looks almost right and is not
+
+**Verification.** `tests/StudioDockDragTests.cpp` — a click not starting a drag, a drag starting, all
+five zones resolving from a pointer position, an edge drop splitting and placing the panel in the
+half the user aimed at, a tab-strip drop joining that group and becoming visible, a drop over
+nothing changing nothing, and the preview drawing. Plus `CnaStudioShellPreviewDockDrag`, which
+captures it, and two rejections that stop a capture of a drag that never began passing for one that
+did
+
+### `STUDIO-05004` — Tab stacks with reordering
+
+**Acceptance.** A panel dropped back on its own tab strip moves to where it was dropped
+
+**It falls out of `STUDIO-05005`.** The tab strip is a drop zone, and the index comes from the
+pointer's position along it — so reordering needed no gesture of its own, which is why this task
+now depends on the one that used to depend on it
+
+**Verification.** `DroppingAPanelBackOnItsOwnTabStripReordersIt`

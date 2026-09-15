@@ -75,6 +75,7 @@ namespace CNA::Studio
                 if (name == "--export") { options.exportPath = value; continue; }
                 if (name == "--workspace") { options.workspacePath = value; continue; }
                 if (name == "--select") { options.selectEntity = value; continue; }
+                if (name == "--shell-drag") { options.shellPreviewDragPanel = value; continue; }
                 if (name == "--scene") { options.scenePath = value; continue; }
                 if (name == "--ui") { options.uiBackend = value; continue; }
                 if (name == "--screenshot") { options.screenshotPath = value; continue; }
@@ -286,6 +287,8 @@ namespace CNA::Studio
             "  --shell-pointer=X,Y  Place the pointer, so hover states are capturable.\n"
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
+            "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
+            "                       preview. Needs --shell-pointer.\n"
             "  --ui=studio        Run the native Studio UI in a window (needs a CNA build).\n"
             "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"
             "  --select=NAME      Select this entity at start-up, for --ui=studio.\n"

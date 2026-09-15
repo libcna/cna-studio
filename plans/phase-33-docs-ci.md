@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 8 of 19 complete `█████░░░░░░░`
+**Progress:** 9 of 20 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -20,6 +20,7 @@
 | `STUDIO-33023` | CI runs the CNA-backed configuration on a GPU-free renderer | ✅ | `STUDIO-02060` |
 | `STUDIO-33024` | CI keeps the graphical captures as artifacts | ✅ | `STUDIO-33023` |
 | `STUDIO-33011` | Screenshot and golden-image test infrastructure | ✅ | `STUDIO-04013` |
+| `STUDIO-33025` | The software rasterizer keeps its textures between frames | ✅ | `STUDIO-33011` |
 | `STUDIO-33012` | Canonical visual test scenes | ⬜ | `STUDIO-33011` |
 | `STUDIO-33013` | Visual tests at multiple resolutions | ✅ | `STUDIO-33012` |
 | `STUDIO-33014` | Visual tests at multiple DPI scales | ✅ | `STUDIO-33013`, `STUDIO-03028` |
@@ -148,3 +149,23 @@ runner that has one — the cases already labelled `needs-display`
 `SOFTWARE`, which needs no display at all. What it cannot cover is anything a GPU does differently:
 `STUDIO-29005`'s renderer matrix, and the `needs-display` cases that exist and are excluded. Those
 need a runner with a device or an Xvfb server, which is infrastructure rather than code
+
+### `STUDIO-33025` — The software rasterizer keeps its textures between frames
+
+**Acceptance.** `UiTextureTable` holds what has been uploaded, and `rasterizeUiDrawData` takes one,
+the way a real renderer keeps an upload rather than re-reading a request every frame
+
+**What it fixes.** A `UiDrawData` carries a texture *request* only on the frame the texture changed.
+The font atlas is rasterised once, so from frame two onwards the draw data names an atlas it does
+not carry — and a rasterizer that rebuilt its table per frame had no font. Every glyph drew as a
+solid rectangle. Text came out as a row of blocks in every multi-frame capture, which is every
+`--shell-preview` since the flag existed
+
+**Why nothing caught it.** The golden images render a single frame, where the request is present;
+the real CNA renderer keeps its uploads, so the window was always right. The two paths that could
+have disagreed never compared. Found by looking at a screenshot of something else
+
+**Verification.** `TheSecondFrameOfAStaticShellLooksExactlyLikeTheFirst` — a shell nobody touched
+must look the same on its second frame as its first — and it asserts the *shape* of the failure too:
+without the table strictly more of the image is covered, because a filled box covers more than the
+glyph inside it. Plus `ATextureTableKeepsWhatItIsGivenAndForgetsWhatIsDestroyed`

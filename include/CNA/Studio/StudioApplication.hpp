@@ -193,6 +193,15 @@ namespace CNA::Studio
         std::string selectEntity;
 
         /**
+         * @brief Drag this panel's tab to the preview pointer, so the drop preview is capturable.
+         *
+         * The one interaction state the other preview flags cannot reach: a drag needs a press on
+         * one place and a pointer somewhere else, which no single input snapshot expresses. Empty
+         * drags nothing.
+         */
+        std::string shellPreviewDragPanel;
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a

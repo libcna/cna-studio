@@ -30,6 +30,7 @@ add_executable(cna-studio-tests
     StudioDetailsPanelTests.cpp
     StudioShellActionTests.cpp
     StudioContentBrowserTests.cpp
+    StudioDockDragTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -185,6 +186,28 @@ set_tests_properties(CnaStudioShellPreviewPressedToolbar PROPERTIES TIMEOUT 60)
 
 # A menu title that does not exist is an error naming the ones that do, rather than a picture of a
 # closed menu that looks exactly like a working run.
+# The drop preview, which is the one interaction state a single input snapshot cannot express: a
+# drag needs a press in one place and a pointer in another.
+add_test(NAME CnaStudioShellPreviewDockDrag
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-preview-drag.png
+                       --shell-size=1280x720 --shell-drag=layers
+                       --shell-pointer=1000,400 --shell-mouse-down)
+set_tests_properties(CnaStudioShellPreviewDockDrag PROPERTIES TIMEOUT 60)
+
+# Dragging to a point too close to the tab starts nothing, and a capture of a drag that never
+# began would be a picture of the shell at rest passing for a picture of a drag.
+add_test(NAME CnaStudioRejectsADragThatStartsNothing
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/never-dragged.png
+                       --shell-size=1280x720 --shell-drag=layers --shell-mouse-down)
+set_tests_properties(CnaStudioRejectsADragThatStartsNothing PROPERTIES WILL_FAIL TRUE TIMEOUT 60)
+
+add_test(NAME CnaStudioRejectsDraggingAPanelThatIsNotOpen
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/never-dragged2.png
+                       --shell-size=1280x720 --shell-drag=nosuchpanel
+                       --shell-pointer=1000,400 --shell-mouse-down)
+set_tests_properties(CnaStudioRejectsDraggingAPanelThatIsNotOpen PROPERTIES
+    WILL_FAIL TRUE TIMEOUT 60)
+
 add_test(NAME CnaStudioRejectsUnknownShellMenu
     COMMAND cna-studio --shell-preview=never.png --shell-open-menu=Nonexistent)
 set_tests_properties(CnaStudioRejectsUnknownShellMenu PROPERTIES WILL_FAIL TRUE)
