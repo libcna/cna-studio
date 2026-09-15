@@ -31,6 +31,7 @@
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -86,6 +87,7 @@ namespace CNA::Studio
         std::size_t historyPositions = 0;
         std::size_t diagnosticRowsDrawn = 0;
         std::size_t viewportSelections = 0;
+        std::size_t layerRowsDrawn = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
         std::size_t sceneWarnings = 0;
@@ -172,6 +174,7 @@ namespace CNA::Studio
         StudioTreeState contentState_;
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;
+        StudioTreeState layersState_;
         StudioTreeState diagnosticsState_;
         StudioViewportState viewportState_;
         Uuid selectedAsset_;

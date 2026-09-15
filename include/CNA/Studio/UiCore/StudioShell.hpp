@@ -279,6 +279,18 @@ namespace CNA::Studio
          */
         bool setPanelContent(std::string_view id, StudioPanelContent content);
 
+        /**
+         * @brief Whether a panel has content bound.
+         *
+         * Exposed so a test can ask "does every panel draw something", which is the question a
+         * grey rectangle with a tab on it cannot be distinguished from a panel whose content
+         * failed by any other means.
+         *
+         * @param id Panel id.
+         * @return True when something was bound and is callable.
+         */
+        [[nodiscard]] bool hasPanelContent(std::string_view id) const;
+
         /** @brief Arranges the registered panels into Studio's default workspace. */
         void resetLayout();
 

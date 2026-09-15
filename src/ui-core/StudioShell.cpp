@@ -386,6 +386,13 @@ namespace CNA::Studio
         return true;
     }
 
+    bool StudioShell::hasPanelContent(std::string_view id) const
+    {
+        const auto found = std::find_if(panelContent_.begin(), panelContent_.end(),
+            [&](const auto& entry) { return entry.first == id; });
+        return found != panelContent_.end() && static_cast<bool>(found->second);
+    }
+
     UiRect StudioShell::panelBounds(std::string_view id) const
     {
         const StudioDockNodeId leaf = dock_.findPanel(id);

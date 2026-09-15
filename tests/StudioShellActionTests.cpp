@@ -257,3 +257,47 @@ CNA_STUDIO_TEST(EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered)
         CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled(id));
     }
 }
+
+CNA_STUDIO_TEST(EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle)
+{
+    // A panel with no content is a grey rectangle with a tab on it, and that is indistinguishable
+    // from a panel whose content failed to draw. The same discipline as the unimplemented
+    // commands: the list is here, with a reason, and it fails in both directions.
+    const std::vector<std::pair<std::string, std::string>> pending = {
+        {"material", "a material editor over .cnamaterial assets (Phase 19)"},
+    };
+
+    Fixture fixture;
+    StudioCamera2D camera;
+    StudioShellPanels panels{*fixture.shell, fixture.context, fixture.log};
+    panels.setViewportServices(camera, {});
+
+    std::vector<std::string> empty;
+    for (const StudioPanelDescriptor& descriptor : fixture.shell->registeredPanels())
+    {
+        if (!fixture.shell->hasPanelContent(descriptor.id)) { empty.push_back(descriptor.id); }
+    }
+
+    for (const std::string& id : empty)
+    {
+        const bool named = std::any_of(pending.begin(), pending.end(),
+                                       [&](const auto& entry) { return entry.first == id; });
+        if (!named)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "the '" + id + "' panel draws nothing and is not on the pending list. Either give "
+                "it content, or add it with the reason it has none yet.");
+        }
+    }
+
+    for (const auto& [id, reason] : pending)
+    {
+        const bool still = std::find(empty.begin(), empty.end(), id) != empty.end();
+        if (!still)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "the '" + id + "' panel has content now, so remove it from the pending list (it "
+                "was waiting on " + reason + ").");
+        }
+    }
+}

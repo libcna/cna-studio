@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 13 of 26 complete `██████░░░░░░`
+**Progress:** 14 of 27 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -33,6 +33,7 @@
 | `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ⬜ | `STUDIO-07020` |
 | `STUDIO-07022` | Prove docking parity | ⬜ | `STUDIO-07020` |
 | `STUDIO-07023` | Visual acceptance review against the Phase 0 reference screenshots | ⬜ | `STUDIO-00013`, `STUDIO-07020` |
+| `STUDIO-07024` | Layers panel: the project's render layers and what is on each | ✅ | `STUDIO-03034` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07021`, `STUDIO-07022`, `STUDIO-07023` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
 | `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | ⬜ | `STUDIO-07031` |
@@ -480,3 +481,31 @@ an arm dragging rather than selecting, an axis-constrained move, one undo entry 
 that undoes to where it started, a release outside the viewport ending it, `GizmoMode::None`
 picking as before, the rotate and scale manipulators writing their own property, a drag that does
 not also pan, and the toolbar choosing the manipulator through the real shell
+
+### `STUDIO-07024` — Layers panel: the project's render layers and what is on each
+
+**Acceptance.** Every layer the project declares, in draw order, with what is on it — and clicking
+one selects everything there
+
+**New rather than ported**, which is why it has an id of its own. The native shell registered a
+`Layers` tab from the start and it has been an empty rectangle ever since; the prototype has no such
+panel at all, so there was nothing to port.
+
+**The order is the meaning.** A project's layers are a list rather than a set because index 0 draws
+first. Sorting them by name would read tidier and say nothing.
+
+**It answers the one question the outliner cannot.** The outliner is ordered by the hierarchy and a
+layer cuts across it, so "what is on the background" has no answer there. Clicking a layer selects
+everything on it, which is how a user turns "the background is wrong" into something they can edit.
+
+**An entity with no Layer component is on the first layer**, which is what the runtime does with
+one. Reporting it as belonging to nothing would hide every entity in a project that has never
+touched layers. And an empty layer is shown dimmed rather than hidden: hiding it would make a user
+wonder where the layer they just added went.
+
+**Verification.** `tests/StudioLayersPanelTests.cpp`: draw order preserved, the implicit first
+layer, an empty layer dimmed rather than hidden, entities listed under their layer, clicking a layer
+selecting all of it, clicking one entity selecting just that, and no project saying so. Plus
+`EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle`, which is the same discipline as
+the unimplemented-command guard: a panel that draws nothing is on a list with a reason, or the
+build fails

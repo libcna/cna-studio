@@ -15,6 +15,7 @@
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
@@ -280,6 +281,24 @@ namespace CNA::Studio
             package.run = [this] { packageProject(); };
             shell.actions().add(std::move(package));
         }
+
+        // The Layers panel (STUDIO-07024), which answers the one question the outliner cannot:
+        // what is on this layer. The outliner is ordered by the hierarchy and a layer cuts across
+        // it.
+        shell.setPanelContent("layers", [this](StudioFrame& frame, const UiRect& bounds) {
+            const StudioLayersResult layers =
+                studioLayersPanel(frame, bounds, context_, layersState_);
+            if (frame.isDrawPass()) { counts_.layerRowsDrawn = layers.rowsDrawn; }
+            if (layers.selectEntities.empty()) { return; }
+
+            context_.setSelection(layers.selectEntities);
+            if (!layers.clickedLayer.empty())
+            {
+                log_.append(LogSeverity::Trace,
+                            "Selected " + std::to_string(layers.selectEntities.size())
+                                + " on layer '" + layers.clickedLayer + "'.");
+            }
+        });
 
         // The Problems panel (STUDIO-07012): scene validation and broken asset references, as one
         // report, because a user whose model has the wrong material on it does not know in advance

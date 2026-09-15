@@ -39,6 +39,7 @@ add_executable(cna-studio-tests
     StudioBuildPanelTests.cpp
     StudioProblemsPanelTests.cpp
     StudioHistoryPanelTests.cpp
+    StudioLayersPanelTests.cpp
     StudioDiagnosticsPanelTests.cpp
     StudioViewportPanelTests.cpp
     ArchitectureGuardTests.cpp
@@ -232,6 +233,13 @@ add_test(NAME CnaStudioRejectsSelectingAnEntityThatIsNotThere
     COMMAND cna-studio --shell-preview=never.png --select=Nonexistent
                        --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioRejectsSelectingAnEntityThatIsNotThere PROPERTIES WILL_FAIL TRUE)
+
+# The Layers panel, which is the one view of a scene ordered by draw order rather than by hierarchy.
+add_test(NAME CnaStudioShellPreviewLayersPanel
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-layers.png
+                       --shell-size=1400x900 --panel=layers
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewLayersPanel PROPERTIES TIMEOUT 60)
 
 # The Diagnostics panel, whose whole value is what it says -- and which on a CNA-free build has to
 # say "unknown" rather than leaving cells blank.
