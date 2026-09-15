@@ -139,7 +139,7 @@ namespace CNA::Studio
                       "studio.file.recoverScene", "studio.file.discardRecovered", sep,
                       "studio.file.quit"}},
             {"Edit", {"studio.edit.undo", "studio.edit.redo", sep,
-                      "studio.edit.duplicate", "studio.edit.delete"}},
+                      "studio.edit.rename", "studio.edit.duplicate", "studio.edit.delete"}},
             {"View", {"studio.view.focusSelected", "studio.view.toggleGrid", sep,
                       "studio.view.translate", "studio.view.rotate", "studio.view.scale",
                       "studio.view.toggleGizmoSpace"}},

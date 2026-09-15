@@ -48,6 +48,9 @@ namespace CNA::Studio
         // Appended rather than inserted, like every other addition to a list something else counts
         // through: O is Open, and taking Ctrl+D for it would have repurposed Duplicate.
         O,
+        // B is Build, which had to move off F2 when Rename took it back -- F2 is Rename in the
+        // prototype, and in every file manager, and that is what users' hands already know.
+        B,
         F1, F2, F5,
 
         // Digits, named rather than spelt, because an enumerator cannot begin with one. Appended

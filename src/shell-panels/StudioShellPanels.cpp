@@ -811,6 +811,24 @@ namespace CNA::Studio
             shell.actions().add(std::move(stop));
         }
 
+        if (const StudioAction* found = shell.actions().find("studio.edit.rename"))
+        {
+            StudioAction rename = *found;
+            rename.isEnabled = [this] { return context_.getPrimarySelection().isValid(); };
+            rename.run = [this] {
+                if (shell_ == nullptr) { return; }
+
+                // The panel first, then the rename. Pressing F2 with the outliner behind another
+                // tab would otherwise start an edit on a field nobody can see, and swallow the
+                // typing that followed.
+                (void)shell_->openPanel("outliner");
+                (void)shell_->activatePanel("outliner");
+                (void)studioBeginOutlinerRename(context_.getScene(),
+                                                context_.getPrimarySelection(), outlinerState_);
+            };
+            shell.actions().add(std::move(rename));
+        }
+
         if (const StudioAction* found = shell.actions().find("studio.build.package"))
         {
             StudioAction package = *found;

@@ -51,7 +51,25 @@ namespace CNA::Studio
 
         /** @brief Whether the selection changed this frame. Input pass only. */
         bool selectionChanged = false;
+
+        /** @brief Whether an entity was renamed in place this frame. Input pass only. */
+        bool renamed = false;
     };
+
+    /**
+     * @brief Starts renaming @p entityId in the outliner, if it is in the scene.
+     *
+     * Here rather than on `StudioTreeState` because the state knows nothing about entities: it
+     * takes the row id and the label it starts with, and turning an entity into those two is the
+     * outliner's job.
+     *
+     * @param scene The scene holding the entity.
+     * @param entityId Entity to rename.
+     * @param state Tree state to put into renaming mode.
+     * @return True when the entity exists and the rename has begun.
+     */
+    bool studioBeginOutlinerRename(const SceneDocument& scene, const Uuid& entityId,
+                                   StudioTreeState& state);
 
     /**
      * @brief Flattens a scene into tree rows, honouring @p state and the current selection.

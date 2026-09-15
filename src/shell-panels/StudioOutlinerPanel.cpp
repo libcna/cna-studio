@@ -7,7 +7,10 @@
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 
 #include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+
+#include <memory>
 
 #include <algorithm>
 
@@ -75,6 +78,16 @@ namespace CNA::Studio
         return rows;
     }
 
+    bool studioBeginOutlinerRename(const SceneDocument& scene, const Uuid& entityId,
+                                   StudioTreeState& state)
+    {
+        const StudioEntity* entity = scene.findEntity(entityId);
+        if (entity == nullptr) { return false; }
+
+        state.beginRename(entityId.toString(), entity->getName());
+        return true;
+    }
+
     StudioOutlinerResult studioOutlinerPanel(StudioFrame& frame, const UiRect& bounds,
                                              StudioContext& context, StudioTreeState& state)
     {
@@ -93,6 +106,19 @@ namespace CNA::Studio
 
         const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state, empty);
         result.rowsDrawn = tree.rowsDrawn;
+
+        if (tree.renamed.has_value())
+        {
+            const Uuid id = Uuid::parse(rows[*tree.renamed].id);
+            if (id.isValid())
+            {
+                // Through the history, like every other edit. A rename that could not be undone
+                // would be the one change in the editor that is not a change.
+                context.execute(std::make_unique<RenameEntityCommand>(context.getScene(), id,
+                                                                      tree.renamedTo));
+                result.renamed = true;
+            }
+        }
 
         if (tree.clicked.has_value())
         {

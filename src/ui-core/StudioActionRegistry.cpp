@@ -56,6 +56,7 @@ namespace CNA::Studio
                 case UiKey::Y: return "Y";  case UiKey::Z: return "Z";
                 case UiKey::D: return "D";  case UiKey::F: return "F";
                 case UiKey::N: return "N";  case UiKey::O: return "O";
+                case UiKey::B: return "B";
                 case UiKey::Q: return "Q";
                 case UiKey::S: return "S";  case UiKey::W: return "W";
                 case UiKey::E: return "E";  case UiKey::R: return "R";
@@ -315,6 +316,9 @@ namespace CNA::Studio
                 "Undo the last change.", C::Edit, chord(UiKey::Z, mods(true)));
         command("studio.edit.redo", "Redo",
                 "Redo the last undone change.", C::Edit, chord(UiKey::Y, mods(true)));
+        // F2, as in the prototype and in every file manager and editor that renames in place.
+        command("studio.edit.rename", "Rename",
+                "Rename the selection in the World Outliner.", C::Edit, chord(UiKey::F2));
         command("studio.edit.duplicate", "Duplicate",
                 "Duplicate the selection.", C::Edit, chord(UiKey::D, mods(true)));
         command("studio.edit.delete", "Delete",
@@ -339,7 +343,10 @@ namespace CNA::Studio
                 "Stop the running player.", C::Play, chord(UiKey::F5, mods(false, true)));
 
         command("studio.build.build", "Build",
-                "Build the project with its own CMake.", C::Build, chord(UiKey::F2));
+                // Ctrl+B, not F2: F2 is Rename in the prototype (docs/MIGRATION-INVENTORY.md) and
+                // in every file manager, and a shortcut that moved is one every existing user has
+                // to relearn -- silently, because it still does something.
+                "Build the project with its own CMake.", C::Build, chord(UiKey::B, mods(true)));
         command("studio.build.cancel", "Cancel Build",
                 "Stop the build that is running.", C::Build, {});
 

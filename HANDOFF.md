@@ -213,7 +213,9 @@ toolbars — never inventoried at all, and the only home of Pause, Step, the bac
 tilemap tools — were found. **Crash recovery is the first unanswered row to close**: everything
 about it already worked and was shared, but nobody was running it on the native host, so
 `--ui=studio` had none. It is one `StudioRecoverySession` now, driven by whichever host is running,
-and the offer arrives as a sticky notification rather than a log line at start-up.
+and the offer arrives as a sticky notification rather than a log line at start-up. **Rename in place**
+was the second: an editable tree row, `F2` taken back from Build (which is `Ctrl+B` now, because the
+prototype's `F2` is Rename), and the rename through the history like every other edit.
 
 **Phase 16 — Play in editor** (3 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a

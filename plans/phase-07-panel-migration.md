@@ -143,6 +143,11 @@ Nobody was running it. The Dear ImGui host wrote snapshots and offered what it f
 host runs a different loop and did neither, so a user on `--ui=studio` had no crash recovery at all
 and nothing said so. It is one `StudioRecoverySession` now, driven by whichever host is running.
 
+Rename in place was the second, and it found a fourth disagreeing chord: `F2` is Rename in the
+prototype and in every file manager, and natively it was Build. Build is `Ctrl+B` now. Writing the
+editable row also found that `studioTextField`'s commit-on-focus-loss had never been able to run —
+every field in Studio silently threw away an edit the user clicked away from.
+
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 
 **Acceptance.** Removed deliberately, with `THIRD_PARTY_NOTICES.md` updated to match what is actually shipped

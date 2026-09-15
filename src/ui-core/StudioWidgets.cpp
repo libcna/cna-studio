@@ -913,6 +913,20 @@ namespace CNA::Studio
 
         if (!editing)
         {
+            // Focus lost with an uncommitted edit commits it. Abandoning somebody's typing because
+            // they clicked elsewhere is the behaviour every form gets wrong and nobody forgives.
+            //
+            // Here rather than after the edit below, which is where it used to be and where it
+            // could never run: this branch clears `active` and overwrites `text` with `value`, so
+            // by the time anything downstream asked whether there was an uncommitted edit there
+            // was no longer any record that there had been one. Every field in Studio silently
+            // threw away an edit the user clicked away from.
+            if (frame.isInputPass() && state.active && state.text != value)
+            {
+                value = state.text;
+                result.committed = true;
+            }
+
             state.text = value;
             state.caret = value.size();
             state.selectionAnchor = value.size();
@@ -1019,14 +1033,6 @@ namespace CNA::Studio
             state.text = edit.text();
             state.caret = edit.caret();
             state.selectionAnchor = edit.anchor();
-        }
-
-        // Focus lost with an uncommitted edit commits it. Abandoning somebody's typing because
-        // they clicked elsewhere is the behaviour every form gets wrong and nobody forgives.
-        if (frame.isInputPass() && !editing && state.active)
-        {
-            state.active = false;
-            if (state.text != value) { value = state.text; result.committed = true; }
         }
 
         result.editing = editing && edit.text() != value;

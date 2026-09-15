@@ -360,3 +360,78 @@ CNA_STUDIO_TEST(ClickingPlacesTheCaretWhereTheUserAimed)
     press(bounds.right() - 1.0f);
     CNA_STUDIO_EXPECT_EQ(frame.state().get(id).caret, value.size());
 }
+
+CNA_STUDIO_TEST(ATextFieldCommitsWhenFocusLeavesRatherThanThrowingTheEditAway)
+{
+    // This was broken for as long as text fields have existed, in the way that is hardest to see:
+    // the code that committed on focus loss was written, was correct, and could never run. The
+    // branch above it had already cleared the "there is an uncommitted edit" flag and overwritten
+    // the buffer with the old value, so by the time anything asked, there was nothing to ask about.
+    //
+    // Every field in Studio silently threw away an edit the user clicked away from -- a name typed
+    // into the Details panel, a path typed into Preferences -- and it looks, from the outside,
+    // exactly like a field that did not take the typing at all.
+    StudioFrame frame{StudioTheme::dark()};
+    const UiRect field{100.0f, 100.0f, 200.0f, 28.0f};
+    const UiRect elsewhere{100.0f, 200.0f, 200.0f, 28.0f};
+    std::string value = "old";
+    std::string other = "other";
+
+    const auto run = [&](const UiInputState& input) {
+        StudioTextFieldResult result;
+        runStudioFrame(frame, input, [&](StudioFrame& f) {
+            const StudioTextFieldResult pass =
+                studioTextField(f, f.ids().make("field"), field, value);
+            (void)studioTextField(f, f.ids().make("other"), elsewhere, other);
+            if (f.isInputPass()) { result = pass; }
+        });
+        return result;
+    };
+
+    clickAt([&](float x, float y, bool down) { (void)run(at(x, y, down)); },
+            field.centerX(), field.centerY());
+
+    UiInputState typing = at(field.centerX(), field.centerY());
+    typing.characters = {u'!'};
+    (void)run(typing);
+    CNA_STUDIO_EXPECT_EQ(value, std::string{"old"});
+
+    // Clicking the other field takes focus away, which is what a person does when they have
+    // finished typing and moved on.
+    StudioTextFieldResult afterLeaving;
+    clickAt([&](float x, float y, bool down) { afterLeaving = run(at(x, y, down)); },
+            elsewhere.centerX(), elsewhere.centerY());
+
+    CNA_STUDIO_EXPECT_EQ(value, std::string{"old!"});
+    CNA_STUDIO_EXPECT(afterLeaving.committed);
+}
+
+CNA_STUDIO_TEST(AFieldNobodyTouchedCommitsNothingWhenAnotherIsClicked)
+{
+    // The other half: committing on focus loss must not mean *every* field writes its value back
+    // every time focus moves. A field that committed without an edit would put an undo entry on
+    // the stack for looking at a property grid.
+    StudioFrame frame{StudioTheme::dark()};
+    const UiRect field{100.0f, 100.0f, 200.0f, 28.0f};
+    const UiRect elsewhere{100.0f, 200.0f, 200.0f, 28.0f};
+    std::string value = "untouched";
+    std::string other = "other";
+
+    bool committed = false;
+    const auto run = [&](const UiInputState& input) {
+        runStudioFrame(frame, input, [&](StudioFrame& f) {
+            const StudioTextFieldResult pass =
+                studioTextField(f, f.ids().make("field"), field, value);
+            (void)studioTextField(f, f.ids().make("other"), elsewhere, other);
+            if (f.isInputPass() && pass.committed) { committed = true; }
+        });
+    };
+
+    clickAt([&](float x, float y, bool down) { run(at(x, y, down)); },
+            field.centerX(), field.centerY());
+    clickAt([&](float x, float y, bool down) { run(at(x, y, down)); },
+            elsewhere.centerX(), elsewhere.centerY());
+
+    CNA_STUDIO_EXPECT(!committed);
+    CNA_STUDIO_EXPECT_EQ(value, std::string{"untouched"});
+}

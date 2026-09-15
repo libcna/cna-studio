@@ -161,7 +161,7 @@ Taken from `StudioApplication::handleShortcuts`. Each must resolve to a native a
 | `Ctrl+S` | Save scene | `studio.file.save` | ✅ |
 | `Ctrl+D` | Duplicate selection | `studio.edit.duplicate` | ✅ |
 | `Delete` | Delete selection | `studio.edit.delete` | ✅ |
-| `F2` | Rename selection | — | ⬜ |
+| `F2` | Rename selection | `studio.edit.rename` | ✅ |
 | `F` | Frame selection | `studio.view.focusSelected` | ✅ |
 | `2` | 2D view | — | ⬜ |
 | `3` | 3D view | — | ⬜ |
@@ -170,12 +170,13 @@ Taken from `StudioApplication::handleShortcuts`. Each must resolve to a native a
 | `R` | Scale gizmo | `studio.view.scale` | ✅ |
 | `X` | Toggle gizmo space | `studio.view.toggleGizmoSpace` | ✅ |
 
-`F2` is ⬜ because renaming in place is an outliner behaviour the native tree view does not have
-yet; the Details panel's name field edits the same thing.
+`F2` is ✅ as of the tree view's editable row. It had to take `F2` back from Build, which had it
+natively: two commands on one chord means one of them has quietly stopped working, and the user who
+finds out is whichever one presses it expecting the other. Build is `Ctrl+B` now.
 
 ### What writing this list down found
 
-Three chords disagreed with the prototype's, which is exactly the class of thing an inventory exists
+Four chords disagreed with the prototype's, which is exactly the class of thing an inventory exists
 to catch and nothing else would have:
 
 - **`Ctrl+N` meant a different thing.** New *Scene* in the prototype, New *Project* natively. The
@@ -186,6 +187,9 @@ to catch and nothing else would have:
   conventional `Ctrl+O`, which needed a key the vocabulary did not have.
 - **`X` had no native command.** The gizmo space could be changed from nothing but code. It is a
   toggle now, as it is in the prototype, and checkable so a toolbar can show which space is on.
+- **`F2` was Build.** It is Rename in the prototype, in every file manager and in most editors, and
+  there was no native rename at all. Rename took it back and Build moved to `Ctrl+B`. This one was
+  found later than the other three, because closing it needed a widget rather than a binding.
 
 Each would have shipped as "the shortcut I have used for a year does something else now", which is
 the worst kind of regression: it works, so nothing reports it.
@@ -203,4 +207,3 @@ project; each is a panel or a mode with a known shape.
 | Tilemap painting | `ViewportPanel`, `StudioTool` | Paint, erase, pick and fill as viewport tools with a brush (Phase 25 adjacent) |
 | Material editing | — | There is no `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19) |
 | Plugin menus | `MainMenuBar::drawPluginMenus` | Plugins registering actions and menu definitions rather than drawing rows (Phase 28) |
-| Rename in place | `HierarchyPanel` | An editable tree row |

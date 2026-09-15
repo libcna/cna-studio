@@ -149,9 +149,51 @@ namespace CNA::Studio
         /** @brief How many rows are closed. */
         [[nodiscard]] std::size_t collapsedCount() const { return collapsed_.size(); }
 
+        /**
+         * @brief Starts editing @p id's label in place.
+         *
+         * Renaming where the name *is* — rather than in a dialog, or by going to another panel —
+         * because the thing being renamed is the thing on the screen, and a dialog makes the user
+         * check afterwards that they edited the row they meant.
+         *
+         * @param id Row to rename.
+         * @param currentLabel What the field starts with, so an edit is a correction rather than
+         *        retyping the name from nothing.
+         */
+        void beginRename(std::string_view id, std::string_view currentLabel)
+        {
+            renaming_ = std::string{id};
+            renameText_ = std::string{currentLabel};
+            renameStarting_ = true;
+        }
+
+        /** @brief Stops editing, keeping whatever the label was. */
+        void cancelRename()
+        {
+            renaming_.clear();
+            renameText_.clear();
+            renameStarting_ = false;
+        }
+
+        /** @brief The row being renamed, or empty. */
+        [[nodiscard]] const std::string& renaming() const { return renaming_; }
+
+        /** @brief The text in the rename field. Written by the widget while editing. */
+        [[nodiscard]] std::string& renameText() { return renameText_; }
+
+        /** @brief Whether the field still needs focusing. Cleared by the widget once it has it. */
+        [[nodiscard]] bool renameStarting() const { return renameStarting_; }
+
+        /** @brief Records that the rename field now has focus. */
+        void clearRenameStarting() { renameStarting_ = false; }
+
     private:
         // Collapsed rather than expanded, so the default is open and an unknown id needs no entry.
         std::set<std::string> collapsed_;
+
+        std::string renaming_;
+        std::string renameText_;
+        bool renameStarting_ = false;
     };
 
     /** @brief What the user did to a tree this frame. */
@@ -177,6 +219,14 @@ namespace CNA::Studio
 
         /** @brief Index of the row a drag started from, on the frame it started. Input pass only. */
         std::optional<std::size_t> dragStarted;
+
+        /**
+         * @brief Index of the row whose rename was committed, on the frame it was. Input pass only.
+         */
+        std::optional<std::size_t> renamed;
+
+        /** @brief The new name, on the frame the rename committed. */
+        std::string renamedTo;
     };
 
     /**

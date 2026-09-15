@@ -101,10 +101,17 @@ namespace CNA::Studio
 
             frame.ids().push(row.id);
 
+            const bool renaming = !state.renaming().empty() && state.renaming() == row.id;
+
             // The whole row is the target, not just the text. A tree where a click lands only on
             // the label is a tree with a different hit area on every line.
-            const StudioInteraction interaction =
-                frame.interact(frame.ids().make("row"), rowBounds, row.enabled);
+            //
+            // Except while it is being renamed. A row that is a text field must not also be a
+            // selectable, draggable row: clicking to place the caret would reselect, and dragging
+            // to select a word would pick the entity up.
+            const StudioInteraction interaction = renaming
+                ? StudioInteraction{}
+                : frame.interact(frame.ids().make("row"), rowBounds, row.enabled);
 
             UiRect cursor = rowBounds.inset(UiEdges{padding, 0.0f, padding, 0.0f});
             cursor.splitLeft(std::min(indent * static_cast<float>(row.depth), cursor.width));
@@ -112,7 +119,7 @@ namespace CNA::Studio
             const UiRect disclosure = cursor.splitLeft(std::min(indent, cursor.width));
             bool expanded = state.isExpanded(row.id);
 
-            if (row.hasChildren)
+            if (row.hasChildren && !renaming)
             {
                 // Its own widget, so clicking the triangle opens the row rather than selecting it.
                 // Those are different intentions and a tree that conflated them would make it
@@ -142,7 +149,7 @@ namespace CNA::Studio
 
             // A row that says what it carries can be dragged off. Declared on the row rather than
             // wired up by the caller, so there is no second list to keep in step with these.
-            if (!row.dragType.empty() && row.enabled)
+            if (!row.dragType.empty() && row.enabled && !renaming)
             {
                 StudioFrame::StudioDragPayload payload;
                 payload.type = row.dragType;
@@ -158,7 +165,7 @@ namespace CNA::Studio
             // And a row that says what it accepts is a target. Its own id, because a row is
             // already a control and two interactions sharing one id would be one entry.
             bool dropHovered = false;
-            if (!row.dropType.empty())
+            if (!row.dropType.empty() && !renaming)
             {
                 const StudioFrame::StudioDropResult drop =
                     frame.acceptDrop(frame.ids().make("drop"), rowBounds, row.dropType);
@@ -168,6 +175,54 @@ namespace CNA::Studio
                     result.dropped = index;
                     result.droppedValue = drop.value;
                 }
+            }
+
+            if (renaming)
+            {
+                // Over the whole row, indent and all: the field is *where the name is*, so it has
+                // to start where the name started or the text jumps sideways as editing begins.
+                const UiRect field = cursor;
+
+                const WidgetId id = frame.ids().make("rename");
+                if (state.renameStarting())
+                {
+                    // Focused by the widget rather than by whoever asked for the rename, because a
+                    // field the user has to click before typing is a rename that begins by making
+                    // them find the thing they just asked to rename.
+                    frame.router().setFocus(id);
+                    state.clearRenameStarting();
+                }
+
+                if (frame.isDrawPass())
+                {
+                    frame.drawList().fillRect(rowBounds, theme.color(StudioColorRole::Selection));
+                }
+
+                StudioTextFieldOptions options;
+                options.selectAllOnFocus = true;
+
+                const StudioTextFieldResult edit =
+                    studioTextField(frame, id, field, state.renameText(), options);
+
+                if (frame.isInputPass())
+                {
+                    if (edit.cancelled) { state.cancelRename(); }
+                    else if (edit.committed || !edit.interaction.focused)
+                    {
+                        // Focus leaving commits, the way every other field in Studio does: a user
+                        // who typed a name and clicked away meant the name.
+                        std::string name = state.renameText();
+                        state.cancelRename();
+                        if (!name.empty() && name != row.label)
+                        {
+                            result.renamed = index;
+                            result.renamedTo = std::move(name);
+                        }
+                    }
+                }
+
+                frame.ids().pop();
+                continue;
             }
 
             if (frame.isDrawPass())
