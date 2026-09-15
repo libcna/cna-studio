@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
@@ -646,6 +648,27 @@ namespace CNA::Studio
                         edited = isAsset
                             ? PropertyValue{PropertyValue::AssetReference{chosen}}
                             : PropertyValue{PropertyValue::EntityReference{chosen}};
+                    }
+
+                    // And the slot takes a drop, which is how a user with the Content Browser open
+                    // expects to fill it -- picking from a list of every asset in the project is
+                    // the fallback, not the gesture.
+                    if (isAsset)
+                    {
+                        const StudioFrame::StudioDropResult drop = frame.acceptDrop(
+                            frame.ids().make("drop"), parts.control,
+                            std::string{kStudioAssetDragType});
+                        if (drop.hovered && frame.isDrawPass())
+                        {
+                            frame.drawList().strokeRect(
+                                parts.control, theme.color(StudioColorRole::Accent),
+                                metricOf(theme, StudioMetric::FocusRingWidth));
+                        }
+                        if (drop.dropped)
+                        {
+                            edited = PropertyValue{
+                                PropertyValue::AssetReference{Uuid::parse(drop.value)}};
+                        }
                     }
                 }
                 else

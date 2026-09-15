@@ -172,6 +172,11 @@ namespace CNA::Studio
         return !visible.isEmpty() && visible.contains(current_.mouseX, current_.mouseY);
     }
 
+    bool StudioInputRouter::pointerOver(const UiRect& bounds) const
+    {
+        return layerAcceptsInput() && pointerInside(bounds);
+    }
+
     StudioInteraction StudioInputRouter::interact(WidgetId id, const UiRect& bounds, bool enabled)
     {
         StudioInteraction result;
@@ -235,6 +240,11 @@ namespace CNA::Studio
             active_ = id;
             pressedIn_ = id;
             focused_ = id;
+            // Where the gesture started, which is what a drag threshold has to measure from. The
+            // widget's own centre is the obvious substitute and is wrong: pressing near an edge
+            // would start a drag without the pointer having moved at all.
+            pressX_ = current_.mouseX;
+            pressY_ = current_.mouseY;
             result.pressed = true;
             result.held = true;
         }

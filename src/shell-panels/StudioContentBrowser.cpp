@@ -118,6 +118,11 @@ namespace CNA::Studio
                 row.detail = toString(record->type);
                 row.depth = depth;
                 row.selected = record->id == selected;
+                // Draggable onto anything that takes an asset: a property slot in the inspector,
+                // or a broken reference in the Problems panel. Folders are not — there is nothing
+                // a folder means as a property value.
+                row.dragType = std::string{kStudioAssetDragType};
+                row.dragValue = row.id;
 
                 // A tracked asset whose file has gone is still tracked: a scene references it by
                 // id, and dropping the record would turn a fixable problem into a broken scene.

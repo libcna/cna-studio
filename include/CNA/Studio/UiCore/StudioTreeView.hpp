@@ -92,6 +92,21 @@ namespace CNA::Studio
          * nothing can reach.
          */
         bool muted = false;
+
+        /**
+         * @brief Payload type this row can be dragged as, e.g. `"asset"`. Empty means it cannot.
+         *
+         * Declared on the row rather than wired up by the caller, for the same reason the label is:
+         * a tree widget that had to be told separately which rows are draggable would be one more
+         * list to keep in step with the rows themselves.
+         */
+        std::string dragType;
+
+        /** @brief What a drag of this row carries. Defaults to @ref id when empty. */
+        std::string dragValue;
+
+        /** @brief Payload type this row accepts a drop of. Empty means it accepts none. */
+        std::string dropType;
     };
 
     /**
@@ -153,6 +168,15 @@ namespace CNA::Studio
 
         /** @brief How many rows were actually drawn. */
         std::size_t rowsDrawn = 0;
+
+        /** @brief Index of the row a payload was dropped on. Input pass only. */
+        std::optional<std::size_t> dropped;
+
+        /** @brief What was dropped, on the frame it was. */
+        std::string droppedValue;
+
+        /** @brief Index of the row a drag started from, on the frame it started. Input pass only. */
+        std::optional<std::size_t> dragStarted;
     };
 
     /**

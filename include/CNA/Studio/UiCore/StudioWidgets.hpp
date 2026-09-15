@@ -529,6 +529,37 @@ namespace CNA::Studio
                                           const StudioTextFieldOptions& options = {});
 
     // ---------------------------------------------------------------------------------------
+    // Drag and drop
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * @brief Draws the label of whatever is being carried, beside the pointer.
+     *
+     * Call it once at the end of the draw pass, after everything else. It routes nothing and
+     * raises no layer: a preview that swallowed input would stop the target underneath it from
+     * ever seeing the drop.
+     *
+     * @param frame The frame. Does nothing when no drag is in flight.
+     */
+    void studioDrawDragPreview(StudioFrame& frame);
+
+    /**
+     * @brief Starts a drag from a widget the pointer is holding, once it has moved far enough.
+     *
+     * The threshold is what keeps a click that wobbled by a pixel from becoming a drag — without
+     * it, selecting a row on a trackpad would start carrying it.
+     *
+     * @param frame The frame.
+     * @param source The widget being held.
+     * @param interaction Its interaction this frame.
+     * @param payload What it would carry.
+     * @return True on the frame the drag starts.
+     */
+    bool studioDragSource(StudioFrame& frame, WidgetId source,
+                          const StudioInteraction& interaction,
+                          StudioFrame::StudioDragPayload payload);
+
+    // ---------------------------------------------------------------------------------------
     // Drop-down
     // ---------------------------------------------------------------------------------------
 

@@ -77,8 +77,17 @@ namespace CNA::Studio
         /** @brief The entity the user asked to look at, if any. Input pass only. */
         Uuid selectEntity;
 
-        /** @brief The asset whose references the user asked to clear. Input pass only. */
+        /** @brief The asset whose references the user asked to repoint or clear. Input pass only. */
         Uuid clearAsset;
+
+        /**
+         * @brief What @ref clearAsset's references should point at instead.
+         *
+         * Invalid means "clear them", which is what the toolbar button asks for. A valid id is a
+         * *relink*, which is what dropping an asset onto the broken row asks for — the same
+         * command either way, because clearing is relinking to nothing.
+         */
+        Uuid relinkTo;
     };
 
     /**

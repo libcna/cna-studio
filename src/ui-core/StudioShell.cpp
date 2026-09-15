@@ -900,9 +900,17 @@ namespace CNA::Studio
         // being described last is what stops the popup from being drawn underneath them.
         describeMenuPopup();
 
+        // Deferred popups -- a drop-down's list opened inside a panel -- come after the panels
+        // that queued them and before the tooltip, for the same reason menus do.
+        frame_.flushPopups();
+
         // After even that: a tooltip is the only thing that may cover an open menu, because it
         // describes whatever the pointer is resting on and the pointer may be resting on the menu.
         describeTooltip();
+
+        // And last of all, the thing the pointer is carrying. It follows the pointer across every
+        // panel and must be readable over all of them, including an open menu.
+        studioDrawDragPreview(frame_);
     }
 
     void StudioShell::describeTooltip()

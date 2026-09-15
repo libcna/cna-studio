@@ -235,6 +235,26 @@ namespace CNA::Studio
         [[nodiscard]] WidgetId activeId() const { return active_; }
 
         /**
+         * @brief Whether the pointer is over @p bounds, ignoring which widget holds the mouse.
+         *
+         * Clip- and layer-aware like @ref interact, but *without* its capture rule. That rule --
+         * while a widget holds the mouse nothing else is hovered -- is what stops a splitter drag
+         * being stolen by the panel it passes over, and it is exactly wrong for a drop target: a
+         * drag is a gesture whose whole purpose is to end somewhere else, and the source holds the
+         * mouse for all of it.
+         *
+         * @param bounds Rectangle to test.
+         * @return True when the pointer is inside it and nothing above blocks the layer.
+         */
+        [[nodiscard]] bool pointerOver(const UiRect& bounds) const;
+
+        /** @brief Where the current press began, in logical units. Meaningless with none in flight. */
+        [[nodiscard]] float pressX() const { return pressX_; }
+
+        /** @brief Where the current press began, in logical units. */
+        [[nodiscard]] float pressY() const { return pressY_; }
+
+        /**
          * @brief Gives a widget the mouse explicitly.
          *
          * For gestures that do not begin with a press inside a rectangle — a splitter drag started
@@ -296,6 +316,8 @@ namespace CNA::Studio
         WidgetId hovered_;
         WidgetId active_;
         WidgetId pressedIn_;
+        float pressX_ = 0.0f;
+        float pressY_ = 0.0f;
         WidgetId focused_;
 
         std::vector<WidgetId> focusables_;

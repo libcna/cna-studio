@@ -1094,6 +1094,55 @@ namespace CNA::Studio
     }
 
     // ---------------------------------------------------------------------------------------
+    // Drag and drop
+    // ---------------------------------------------------------------------------------------
+
+    void studioDrawDragPreview(StudioFrame& frame)
+    {
+        if (!frame.isDragging() || !frame.isDrawPass()) { return; }
+
+        const std::string& label = frame.dragPayload().label;
+        if (label.empty()) { return; }
+
+        const StudioTheme& theme = frame.theme();
+        const float padding = metricOf(theme, StudioMetric::SpacingSmall);
+        const StudioTextMetrics extent = frame.measureText(StudioFontRole::BodySmall, label);
+        const UiRect box = frame.dragPreviewBounds(std::ceil(extent.width + padding * 2.0f),
+                                                   std::ceil(extent.height() + padding));
+
+        // Clipped to the window rather than to whatever was in force: the preview follows the
+        // pointer across panels, and the clip of the panel it started in would cut it in half.
+        frame.pushClip(UiRect{0.0f, 0.0f, frame.input().displayWidth,
+                              frame.input().displayHeight});
+        frame.drawList().fillRect(box, theme.color(StudioColorRole::PopupBackground));
+        frame.drawList().strokeRect(box, theme.color(StudioColorRole::Accent),
+                                    metricOf(theme, StudioMetric::BorderWidth));
+        studioDrawText(frame, box.inset(UiEdges{padding, 0.0f}), label, StudioFontRole::BodySmall,
+                       theme.color(StudioColorRole::TextPrimary));
+        frame.popClip();
+    }
+
+    bool studioDragSource(StudioFrame& frame, WidgetId source,
+                          const StudioInteraction& interaction,
+                          StudioFrame::StudioDragPayload payload)
+    {
+        if (!frame.isInputPass() || !interaction.held || frame.isDragging()) { return false; }
+
+        // The button has to be down *now*, not merely have been held. On the frame it comes up a
+        // widget still reports `held` -- that is what lets a click resolve -- and starting a drag
+        // there would begin a gesture on the frame it ended, which is how an abandoned drag
+        // resurrects itself and delivers the payload it was told not to.
+        if (!frame.input().isMouseDown(UiMouseButton::Left)) { return false; }
+
+        const float threshold = metricOf(frame.theme(), StudioMetric::SpacingLarge);
+        const float dx = frame.input().mouseX - frame.router().pressX();
+        const float dy = frame.input().mouseY - frame.router().pressY();
+        if (dx * dx + dy * dy <= threshold * threshold) { return false; }
+
+        return frame.beginDrag(source, std::move(payload));
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Drop-down
     // ---------------------------------------------------------------------------------------
 

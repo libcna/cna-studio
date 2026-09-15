@@ -12,6 +12,7 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
@@ -276,4 +277,45 @@ CNA_STUDIO_TEST(TheReportSurvivesRepeatedFramesWithoutPhaseViolations)
         CNA_STUDIO_EXPECT_EQ(fixture.frame.phaseViolations(), std::size_t{0});
     }
     CNA_STUDIO_EXPECT(fixture.last.rowsDrawn > 0);
+}
+
+CNA_STUDIO_TEST(DroppingAnAssetOnABrokenRowAsksToRelinkItRatherThanClearIt)
+{
+    // The repair path the ImGui panel had, and the reason drag and drop was worth building: it is
+    // the shortest route from "this is broken" to "this is fixed".
+    Fixture fixture;
+    const Uuid missing = Uuid::generate();
+    fixture.addBrokenReference("Player", missing);
+    fixture.settle();
+
+    const std::string assetRow = std::string{kStudioBrokenAssetRowPrefix} + missing.toString();
+    CNA_STUDIO_EXPECT(fixture.rowIndex(assetRow) >= 0);
+
+    // The row declares itself a target for assets, which is what the Content Browser drags.
+    const std::vector<StudioTreeRow> rows = fixture.rows();
+    const StudioTreeRow& row = rows[static_cast<std::size_t>(fixture.rowIndex(assetRow))];
+    CNA_STUDIO_EXPECT_EQ(row.dropType, std::string{kStudioAssetDragType});
+
+    // Driven through the frame's own drag, because "does a drop reach the panel" is the thing
+    // under test rather than "does the Content Browser start a drag", which has its own case.
+    const Uuid replacement = Uuid::generate();
+    StudioFrame::StudioDragPayload payload;
+    payload.type = std::string{kStudioAssetDragType};
+    payload.value = replacement.toString();
+    payload.label = "replacement.png";
+
+    const float rowHeight = static_cast<float>(fixture.frame.theme().metric(StudioMetric::RowHeight));
+    const float toolbar = static_cast<float>(fixture.frame.theme().metric(StudioMetric::ControlHeight))
+                        + static_cast<float>(fixture.frame.theme().metric(StudioMetric::SpacingSmall)) * 2.0f;
+    const float y = toolbar
+                  + (static_cast<float>(fixture.rowIndex(assetRow)) + 0.5f) * rowHeight;
+
+    fixture.run(at(200.0f, y, /*leftDown=*/true));
+    CNA_STUDIO_EXPECT(fixture.frame.beginDrag(fixture.frame.ids().make("source"), payload));
+
+    fixture.run(at(200.0f, y, /*leftDown=*/true));
+    fixture.run(at(200.0f, y));
+
+    CNA_STUDIO_EXPECT(fixture.last.clearAsset == missing);
+    CNA_STUDIO_EXPECT(fixture.last.relinkTo == replacement);
 }

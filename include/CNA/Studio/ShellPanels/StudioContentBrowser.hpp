@@ -43,6 +43,15 @@ namespace CNA::Studio
     class StudioContext;
 
     /** @brief What the Content Browser did this frame. */
+    /**
+     * @brief The payload type an asset is carried as.
+     *
+     * One constant rather than a string literal at each end: a source and a target that disagree
+     * about the spelling produce a drag that silently does nothing, which is the hardest kind of
+     * failure to see.
+     */
+    inline constexpr std::string_view kStudioAssetDragType = "asset";
+
     struct StudioContentBrowserResult
     {
         /** @brief How many rows were drawn. */

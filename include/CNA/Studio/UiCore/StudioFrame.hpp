@@ -305,6 +305,90 @@ namespace CNA::Studio
         /** @brief The input layer a deferred popup routes in. */
         static constexpr int kPopupLayer = 1;
 
+        // --- Drag and drop ---------------------------------------------------------------------
+        //
+        // A *typed payload* moved from one widget to another. Deliberately not the dock drag,
+        // which moves a panel and belongs to the shell: this is the general "carry a thing to a
+        // place that accepts things like it" gesture, and the type is what lets a target refuse
+        // visibly rather than swallowing whatever arrives.
+
+        /** @brief What is being carried. */
+        struct StudioDragPayload
+        {
+            /** @brief What kind of thing it is, e.g. `"asset"`. A target names the type it takes. */
+            std::string type;
+            /** @brief The thing itself, as the source and the target both understand it. */
+            std::string value;
+            /** @brief What to draw beside the pointer while it is carried. */
+            std::string label;
+        };
+
+        /**
+         * @brief Starts carrying a payload from @p source.
+         *
+         * Ignored while another drag is in flight: two payloads at once is a state with no correct
+         * drop, so it is made unreachable rather than handled.
+         *
+         * @param source The widget the payload came from.
+         * @param payload What is being carried.
+         * @return True when the drag started.
+         */
+        bool beginDrag(WidgetId source, StudioDragPayload payload);
+
+        /** @brief Whether something is being carried. */
+        [[nodiscard]] bool isDragging() const { return dragSource_.isValid(); }
+
+        /** @brief What is being carried. Empty when nothing is. */
+        [[nodiscard]] const StudioDragPayload& dragPayload() const { return drag_; }
+
+        /** @brief The widget the payload came from. */
+        [[nodiscard]] WidgetId dragSource() const { return dragSource_; }
+
+        /** @brief Abandons the drag without dropping. Escape, or a source that has gone. */
+        void cancelDrag();
+
+        /** @brief What a drop target saw this frame. */
+        struct StudioDropResult
+        {
+            /** @brief A payload of the right type is over this target. Draw the highlight. */
+            bool hovered = false;
+
+            /** @brief A payload of the *wrong* type is over it. Draw the refusal. */
+            bool refused = false;
+
+            /** @brief The drop completed here this frame. Input pass only. */
+            bool dropped = false;
+
+            /** @brief What was dropped, on the frame it was. */
+            std::string value;
+        };
+
+        /**
+         * @brief Offers @p bounds as a target for payloads of @p type.
+         *
+         * Called every frame by anything that can receive a drop, in both passes: the draw pass
+         * needs the same answer to draw the highlight that the input pass used to decide it.
+         *
+         * @param target Identity of the target.
+         * @param bounds Where it is.
+         * @param type The payload type it accepts.
+         * @return What it saw.
+         */
+        StudioDropResult acceptDrop(WidgetId target, const UiRect& bounds, std::string_view type);
+
+        /**
+         * @brief Where the drag label goes, given its size.
+         *
+         * The frame decides the placement — it is the only thing that knows where the pointer is
+         * and how big the window is — and the widget layer draws it, because drawing text needs
+         * the glyph loop that lives there rather than here.
+         *
+         * @param width Label width including padding.
+         * @param height Label height including padding.
+         * @return The rectangle, kept on screen.
+         */
+        [[nodiscard]] UiRect dragPreviewBounds(float width, float height) const;
+
         /** @brief The scope stack widget ids are derived from. */
         [[nodiscard]] WidgetIdStack& ids() { return ids_; }
 
@@ -520,6 +604,17 @@ namespace CNA::Studio
         StudioFontAtlas* atlas_ = nullptr;
 
         StudioCursor cursor_ = StudioCursor::Arrow;
+        WidgetId dragSource_;
+        StudioDragPayload drag_;
+        /** @brief Set on the frame a drop completes, so both passes agree it happened. */
+        WidgetId dropTarget_;
+        /** @brief The topmost matching target under the pointer, decided in the input pass. */
+        WidgetId dropHover_;
+        /** @brief The topmost target of any type under the pointer, for the refusal. */
+        WidgetId dropUnder_;
+        /** @brief A gesture abandoned while held; no drag starts again until the button is up. */
+        bool dragSuppressed_ = false;
+
         WidgetId openPopup_;
         std::vector<StudioPopupBody> popups_;
         bool inPopup_ = false;

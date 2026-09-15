@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 27 of 32 complete `██████████░░`
+**Progress:** 28 of 32 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -28,7 +28,7 @@
 | `STUDIO-03020` | Cursor shape requests from widgets | ✅ | `STUDIO-03009` |
 | `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ✅ | `STUDIO-03009` |
 | `STUDIO-03022` | Popup and modal layering with correct input blocking | ✅ | `STUDIO-03009` |
-| `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
+| `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ✅ | `STUDIO-03010` |
 | `STUDIO-03024` | Text selection model for text fields | ✅ | `STUDIO-03007` |
 | `STUDIO-03025` | Clipboard integration through the platform seam | ✅ | `STUDIO-03024` |
 | `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | 🔄 | `STUDIO-03024` |
@@ -180,6 +180,44 @@ proved that the same click works while it is closed)
 ### `STUDIO-03023` — Drag and drop: sources, targets, payload typing, visual feedback
 
 **Acceptance.** A typed payload; a target that rejects a wrong type visibly; a cancelled drag that restores state
+
+**The type is the whole point.** A target that swallowed anything would let a user drop a texture
+onto a material slot and see nothing happen, which is indistinguishable from a drag that never
+worked. A mismatched payload is *refused visibly* rather than ignored.
+
+**A drop target cannot go through `interact()`.** Its capture rule — while a widget holds the mouse,
+nothing else is hovered — is what stops a splitter drag being stolen by the panel it passes over,
+and it is exactly wrong here: the source holds the mouse for the whole of a drag, and a drag is a
+gesture whose purpose is to end somewhere else. Every target was invisible until this was separated
+into `pointerOver`, which keeps the clip and layer rules and drops the capture one. Which of two
+overlapping targets wins is still settled in the input pass and replayed in the draw pass, because
+otherwise both would light up and the one that drew first would be the one that did not receive the
+drop.
+
+**The release frame is the drop frame, so the drag cannot be cleared before it.** Cancelling on the
+button-up frame's `beginFrame` threw the payload away before the target under the pointer ever saw
+the release, and every drop read as a cancellation. It ends at `endFrame` instead.
+
+**And a gesture abandoned while the button is down stays abandoned.** Escape cancelled the drag and
+the next frame started it again from the same press — a cancel the user could not make stick. Two
+rules fixed it: no new drag while a cancelled press is still held, and no drag *starting* on the
+frame the button comes up, because a widget still reports `held` there (that is what lets a click
+resolve) and beginning a gesture on the frame it ended is how an abandoned drag resurrects itself.
+
+**The threshold measures from where the press began**, not from the widget's centre. Pressing near
+an edge would otherwise start a drag with the pointer having moved nothing at all. The router
+records the press point for it, which the shell's dock drag wanted too.
+
+**Rows declare what they carry and what they take.** `StudioTreeRow` gained `dragType`, `dragValue`
+and `dropType`, so a tree is a source and a target without the caller keeping a second list in step
+with its rows — which is how the Content Browser became draggable and the Problems panel became
+droppable in a few lines each.
+
+**Verification.** `tests/StudioDragDropTests.cpp`: the threshold and where it is measured from, a
+matching target lighting up before the drop, a wrong type refused rather than ignored, delivery on
+release, release over nothing cancelling, Escape abandoning it and *staying* abandoned, one payload
+at a time, an untyped payload refused, and the label staying on screen at the far corner. Plus
+`DroppingAnAssetOnABrokenRowAsksToRelinkItRatherThanClearIt` in the Problems panel's own tests
 
 ### `STUDIO-03025` — Clipboard integration through the platform seam
 

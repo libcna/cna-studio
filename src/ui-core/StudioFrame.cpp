@@ -84,6 +84,10 @@ namespace CNA::Studio
         interactions_.clear();
         cursor_ = StudioCursor::Arrow;
         popups_.clear();
+        dropTarget_ = WidgetId{};
+        dropHover_ = WidgetId{};
+        dropUnder_ = WidgetId{};
+        if (!input.isMouseDown(UiMouseButton::Left)) { dragSuppressed_ = false; }
 
         tooltip_ = StudioTooltipRequest{};
     }
@@ -101,29 +105,120 @@ namespace CNA::Studio
         if (body) { popups_.push_back(std::move(body)); }
     }
 
+    bool StudioFrame::beginDrag(WidgetId source, StudioDragPayload payload)
+    {
+        // Two payloads at once is a state with no correct drop, so it is unreachable rather than
+        // handled. A gesture abandoned while the button is still down stays abandoned until it is
+        // released: without that, Escape cancels the drag and the very next frame starts it again
+        // from the same press, which is a cancel the user cannot make stick.
+        if (!source.isValid() || isDragging() || dragSuppressed_ || payload.type.empty())
+        {
+            return false;
+        }
+
+        dragSource_ = source;
+        drag_ = std::move(payload);
+        return true;
+    }
+
+    void StudioFrame::cancelDrag()
+    {
+        dragSource_ = WidgetId{};
+        drag_ = StudioDragPayload{};
+        // Only while the button is still down. A drag that ended with the release is over anyway,
+        // and suppressing there would refuse the *next* drag as well.
+        dragSuppressed_ = pendingInput_.isMouseDown(UiMouseButton::Left);
+    }
+
+    StudioFrame::StudioDropResult StudioFrame::acceptDrop(WidgetId target, const UiRect& bounds,
+                                                          std::string_view type)
+    {
+        StudioDropResult result;
+        if (!target.isValid()) { return result; }
+
+        // The drop is decided in the input pass and *remembered*, so the draw pass gives the same
+        // answer. Recomputing it there would let a target draw itself as having received something
+        // the input pass gave to a different one.
+        if (!isDragging())
+        {
+            result.dropped = dropTarget_ == target && isInputPass();
+            return result;
+        }
+
+        // Clip- and layer-aware, but *not* through interact(): its capture rule says nothing else
+        // is hovered while a widget holds the mouse, which is right for a splitter and exactly
+        // wrong here -- the source holds the mouse for the whole of a drag, and a drag is a
+        // gesture whose purpose is to end somewhere else.
+        if (!router_.pointerOver(bounds)) { return result; }
+
+        // Which target wins is settled in the input pass and replayed in the draw pass, for the
+        // same reason interaction is: two overlapping targets would otherwise both light up, and
+        // the one that drew first would be the one that did not receive the drop.
+        if (isInputPass())
+        {
+            dropUnder_ = target;
+            if (drag_.type == type) { dropHover_ = target; }
+        }
+
+        // The type is the whole point: a target that swallowed anything would let a user drop a
+        // texture onto a material slot and see nothing happen, which is indistinguishable from a
+        // drag that never worked.
+        if (drag_.type != type)
+        {
+            result.refused = dropUnder_ == target;
+            return result;
+        }
+
+        result.hovered = dropHover_ == target;
+        if (!isInputPass() || !result.hovered) { return result; }
+        if (!router_.mouseReleased(UiMouseButton::Left)) { return result; }
+
+        result.dropped = true;
+        result.value = drag_.value;
+        dropTarget_ = target;
+        cancelDrag();
+        return result;
+    }
+
     void StudioFrame::flushPopups()
     {
-        if (popups_.empty()) { return; }
+        if (!popups_.empty())
+        {
+            // Against the window's own clip, not whatever clip happened to be in force when the
+            // popup was queued: a drop-down list longer than the panel it sits in is the ordinary
+            // case, and clipping it to that panel would cut it off halfway down.
+            std::vector<StudioPopupBody> running;
+            running.swap(popups_);
 
-        // Against the window's own clip, not whatever clip happened to be in force when the popup
-        // was queued: a drop-down list longer than the panel it sits in is the ordinary case, and
-        // clipping it to that panel would cut it off halfway down.
-        std::vector<StudioPopupBody> running;
-        running.swap(popups_);
+            inPopup_ = true;
+            pushLayer(kPopupLayer);
+            pushClip(UiRect{0.0f, 0.0f, pendingInput_.displayWidth, pendingInput_.displayHeight});
+            ids_.push("popup");
+            for (const StudioPopupBody& body : running) { body(*this); }
+            ids_.pop();
+            popClip();
+            popLayer();
+            inPopup_ = false;
 
-        inPopup_ = true;
-        pushLayer(kPopupLayer);
-        pushClip(UiRect{0.0f, 0.0f, pendingInput_.displayWidth, pendingInput_.displayHeight});
-        ids_.push("popup");
-        for (const StudioPopupBody& body : running) { body(*this); }
-        ids_.pop();
-        popClip();
-        popLayer();
-        inPopup_ = false;
+            // Anything a popup queued itself is dropped rather than run: a popup that opened a
+            // popup every frame would grow this list without bound, and nothing in the UI needs it.
+            popups_.clear();
+        }
 
-        // Anything a popup queued itself is dropped rather than run: a popup that opened a popup
-        // every frame would grow this list without bound, and nothing in the UI needs it.
-        popups_.clear();
+    }
+
+    UiRect StudioFrame::dragPreviewBounds(float width, float height) const
+    {
+        const float padding = static_cast<float>(theme_.metric(StudioMetric::SpacingSmall));
+
+        // Below and right of the pointer, and flipped when there is no room, so the label never
+        // covers the target the user is aiming at.
+        float x = pendingInput_.mouseX + padding * 2.0f;
+        float y = pendingInput_.mouseY + padding * 2.0f;
+        if (x + width > pendingInput_.displayWidth) { x = pendingInput_.mouseX - width - padding; }
+        if (y + height > pendingInput_.displayHeight) { y = pendingInput_.mouseY - height - padding; }
+
+        return UiRect{std::round(x), std::round(y), width, height};
     }
 
     void StudioFrame::beginLayout() { enter(StudioFramePhase::Layout, StudioFramePhase::Build); }
@@ -208,6 +303,17 @@ namespace CNA::Studio
             tooltipHoverSeconds_ = 0.0f;
         }
         tooltipHovered_ = hovered;
+
+        // A drag ends when the button does, wherever the pointer was -- but *after* the frame has
+        // been described, not before it. Cancelling on the button-up frame's beginFrame would
+        // throw the payload away before the target under the pointer ever got to see the release,
+        // so every drop would read as a cancellation.
+        if (isDragging()
+            && (!pendingInput_.isMouseDown(UiMouseButton::Left)
+                || pendingInput_.isKeyDown(UiKey::Escape)))
+        {
+            cancelDrag();
+        }
 
         ++frameIndex_;
         phase_ = StudioFramePhase::Idle;

@@ -140,9 +140,47 @@ namespace CNA::Studio
                                || frame.input().modifiers.shift;
             }
 
+            // A row that says what it carries can be dragged off. Declared on the row rather than
+            // wired up by the caller, so there is no second list to keep in step with these.
+            if (!row.dragType.empty() && row.enabled)
+            {
+                StudioFrame::StudioDragPayload payload;
+                payload.type = row.dragType;
+                payload.value = row.dragValue.empty() ? row.id : row.dragValue;
+                payload.label = row.label;
+                if (studioDragSource(frame, frame.ids().make("row"), interaction,
+                                     std::move(payload)))
+                {
+                    result.dragStarted = index;
+                }
+            }
+
+            // And a row that says what it accepts is a target. Its own id, because a row is
+            // already a control and two interactions sharing one id would be one entry.
+            bool dropHovered = false;
+            if (!row.dropType.empty())
+            {
+                const StudioFrame::StudioDropResult drop =
+                    frame.acceptDrop(frame.ids().make("drop"), rowBounds, row.dropType);
+                dropHovered = drop.hovered;
+                if (drop.dropped)
+                {
+                    result.dropped = index;
+                    result.droppedValue = drop.value;
+                }
+            }
+
             if (frame.isDrawPass())
             {
-                if (row.selected)
+                if (dropHovered)
+                {
+                    // The target says so before the drop, not after: a drag with no feedback is a
+                    // drag the user has to complete to discover whether it would have worked.
+                    frame.drawList().fillRect(rowBounds, theme.color(StudioColorRole::Selection));
+                    frame.drawList().strokeRect(rowBounds, theme.color(StudioColorRole::Accent),
+                                                metricOf(theme, StudioMetric::BorderWidth));
+                }
+                else if (row.selected)
                 {
                     frame.drawList().fillRect(rowBounds, theme.color(StudioColorRole::Selection));
                 }

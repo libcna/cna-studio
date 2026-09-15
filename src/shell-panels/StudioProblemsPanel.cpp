@@ -8,6 +8,7 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/MissingReferences.hpp"
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneValidation.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -88,6 +89,9 @@ namespace CNA::Studio
                 // Dimmed but reachable: this is the row a user most needs to click, because
                 // clicking it is how they find out what refers to it.
                 asset.muted = true;
+                // Dropping the right asset onto the broken row is the shortest path from "this is
+                // broken" to "this is fixed", and it is the gesture the ImGui panel had.
+                asset.dropType = std::string{kStudioAssetDragType};
                 rows.push_back(asset);
 
                 if (!state.tree.isExpanded(asset.id)) { continue; }
@@ -224,6 +228,17 @@ namespace CNA::Studio
             frame, body, rows, state.tree,
             "Nothing to report. The scene validates and every asset reference resolves.");
         result.rowsDrawn = tree.rowsDrawn;
+
+        if (tree.dropped.has_value() && *tree.dropped < rows.size())
+        {
+            const StudioTreeRow& row = rows[*tree.dropped];
+            if (row.id.rfind(std::string{kStudioBrokenAssetRowPrefix}, 0) == 0)
+            {
+                result.clearAsset = Uuid::parse(
+                    row.id.substr(kStudioBrokenAssetRowPrefix.size()));
+                result.relinkTo = Uuid::parse(tree.droppedValue);
+            }
+        }
 
         if (tree.clicked.has_value() && *tree.clicked < rows.size())
         {

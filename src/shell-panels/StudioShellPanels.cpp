@@ -150,8 +150,8 @@ namespace CNA::Studio
             if (problems.selectEntity.isValid()) { context_.select(problems.selectEntity); }
             if (!problems.clearAsset.isValid()) { return; }
 
-            auto command = std::make_unique<RelinkAssetCommand>(context_.getScene(),
-                                                                problems.clearAsset, Uuid{});
+            auto command = std::make_unique<RelinkAssetCommand>(
+                context_.getScene(), problems.clearAsset, problems.relinkTo);
             if (!command->isValid()) { return; }
 
             const std::string summary = command->getDescription();
