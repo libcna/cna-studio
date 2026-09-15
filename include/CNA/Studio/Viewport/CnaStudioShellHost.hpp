@@ -65,6 +65,24 @@ namespace CNA::Studio
         std::size_t screenshotMinColors = 0;
 
         /**
+         * @brief Print the host capability contract once the device exists.
+         *
+         * Evaluated on every run either way — "which of Studio's requirements does this build's
+         * renderer meet" is the first question of every graphics bug report — but printed only
+         * when asked, or when the answer is no.
+         */
+        bool reportCapabilities = false;
+
+        /**
+         * @brief Report the contract and exit without opening the editor.
+         *
+         * A query about the build rather than a session, and it belongs on this host as well as on
+         * the legacy one: `--host-capabilities` was answered only by the Dear ImGui path, which
+         * made it a flag that would break the day `STUDIO-07030` deleted that path.
+         */
+        bool checkCapabilitiesOnly = false;
+
+        /**
          * @brief Where to remember the workspace arrangement between runs. Empty disables it.
          *
          * A path rather than a flag, so the tests can point it at a temporary file and a developer

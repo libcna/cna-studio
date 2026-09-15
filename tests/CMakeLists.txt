@@ -621,6 +621,35 @@ if(CNA_STUDIO_WITH_CNA)
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
     endif()
 
+    # The default, with no --ui at all: `STUDIO-06015` made that the native shell, and a switch
+    # nothing asserts is a switch a later change can undo without anybody noticing. The status line
+    # is what tells the two apart -- the native shell reports what it is drawing on and how many
+    # panels it filled, and the legacy editor reports neither.
+    add_test(NAME CnaStudioDefaultsToTheNativeShell
+        COMMAND cna-studio --workspace=none
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/default-shell.png
+            --screenshot-min-colors=16)
+    set_tests_properties(CnaStudioDefaultsToTheNativeShell PROPERTIES
+        PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames"
+        TIMEOUT 180)
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioDefaultsToTheNativeShell PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    else()
+        set_property(TEST CnaStudioDefaultsToTheNativeShell APPEND PROPERTY LABELS "needs-display")
+        set_tests_properties(CnaStudioDefaultsToTheNativeShell PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
+    endif()
+
+    # And the fallback still reachable by name, which is the other half of "default" meaning
+    # anything: a flag that no longer worked would make this a removal rather than a switch.
+    add_test(NAME CnaStudioFallsBackToImGuiWhenAsked
+        COMMAND cna-studio --ui=imgui --headless
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+    set_tests_properties(CnaStudioFallsBackToImGuiWhenAsked PROPERTIES TIMEOUT 60)
+
     # The native shell has no headless mode: without a frame limit it runs until the window is
     # closed. A screenshot asked for on those terms can never be taken, so the run has to be
     # rejected before the window opens -- if it were not, this test would hang instead of failing.
@@ -640,13 +669,18 @@ if(NOT CNA_STUDIO_WITH_CNA)
 endif()
 
 if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
+    # The legacy editor, named explicitly. It was the default when these cases were written and is
+    # not one since `STUDIO-06015`; asking for it by name is what keeps the migration fallback
+    # covered rather than quietly retired, and is also what keeps these cases about the editor they
+    # were written for rather than silently becoming a second set of native-shell tests.
+    #
     # The real thing: open a window, draw the editor through CNA's public API, and write a PNG of
     # the result. A run that merely exits cleanly cannot tell a working editor from one that opened
     # a blank window, so the screenshot is the assertion -- if the editor drew nothing, the file
     # never appears and the test fails.
     #
     add_test(NAME CnaStudioWindowSmoke
-        COMMAND cna-studio
+        COMMAND cna-studio --ui=imgui
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke.png
@@ -676,7 +710,7 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
     # every line is a rotated quad rather than a sprite -- so a backend that cannot do that would
     # pass the smoke test above and fail here.
     add_test(NAME CnaStudioWindowSmoke3D
-        COMMAND cna-studio --view=3d
+        COMMAND cna-studio --ui=imgui --view=3d
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke-3d.png

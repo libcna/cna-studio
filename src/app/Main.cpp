@@ -762,12 +762,29 @@ int main(int argc, char** argv)
         return renderShellPreview(options);
     }
 
+    // Which UI opens when the user asked for none (`STUDIO-06015`). The native shell, now that it
+    // answers every row of `docs/MIGRATION-INVENTORY.md` that the prototype does -- every panel,
+    // every menu, every shortcut, the toolbar, the 2D and 3D views, and input to a running game.
+    //
+    // Resolved here rather than defaulted in the option struct, because the answer depends on the
+    // build. A Studio without CNA has no window to open either UI in, and `--headless` wants
+    // neither; both of those are the legacy path, where "no window" already means the console UI.
+    const std::string uiBackend = [&] {
+        if (!options.uiBackend.empty()) { return options.uiBackend; }
+#if defined(CNA_STUDIO_HAS_CNA)
+        // `--headless` already means the console UI, and resolving to the native shell there would
+        // open a window for a run that asked for none.
+        if (!options.headless) { return std::string{"studio"}; }
+#endif
+        return std::string{"imgui"};
+    }();
+
 #if defined(CNA_STUDIO_HAS_CNA)
     // The native Studio UI in a real window, through a real CNA renderer. Kept a separate entry
     // point from the ImGui host rather than a branch inside it: the two draw entirely different
     // things, and the migration ends by deleting one of them -- which is far easier when there is
     // one to delete rather than a branch to unpick.
-    if (options.uiBackend == "studio")
+    if (uiBackend == "studio")
     {
         // Checked before the window opens, not after the loop ends. The native shell has no
         // headless mode to fall back on: without a frame limit it runs until the user closes the
@@ -780,6 +797,8 @@ int main(int argc, char** argv)
         }
 
         CNA::Studio::CnaStudioShellHostOptions hostOptions;
+        hostOptions.reportCapabilities = options.hostCapabilities;
+        hostOptions.checkCapabilitiesOnly = options.hostCapabilities;
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.screenshotPath = options.screenshotPath;
         hostOptions.screenshotMinColors = options.screenshotMinColors;
@@ -877,7 +896,7 @@ int main(int argc, char** argv)
         return result.exitCode;
     }
 #else
-    if (options.uiBackend == "studio")
+    if (uiBackend == "studio")
     {
         std::cerr << "cna-studio: the native Studio UI needs a window and a CNA graphics device.\n"
                      "Rebuild with -DCNA_STUDIO_WITH_CNA=ON, or use --shell-preview=PATH to render "
@@ -889,20 +908,20 @@ int main(int argc, char** argv)
     // This is the one place that decides which concrete StudioUi and StudioViewport the
     // application gets. Everything else -- panels, commands, plugins -- is written against the
     // abstractions and does not change when this does (ANALYSIS.md decision D-02).
-    const bool useImGui = !options.headless && options.uiBackend != "null";
+    const bool useImGui = !options.headless && uiBackend != "null";
 
 #if !defined(CNA_STUDIO_HAS_IMGUI)
     if (useImGui)
     {
         std::cerr << "cna-studio: this binary was built with -DCNA_STUDIO_WITH_IMGUI=OFF, so the "
-                     "'" << options.uiBackend << "' UI is unavailable.\n"
+                     "'" << uiBackend << "' UI is unavailable.\n"
                      "Run with --headless to use the console UI.\n";
         return 3;
     }
 #else
-    if (useImGui && options.uiBackend != "imgui")
+    if (useImGui && uiBackend != "imgui")
     {
-        std::cerr << "cna-studio: unknown UI backend '" << options.uiBackend
+        std::cerr << "cna-studio: unknown UI backend '" << uiBackend
                   << "'. This binary provides 'studio', 'imgui' and 'null'.\n";
         return 3;
     }

@@ -52,14 +52,19 @@ namespace CNA::Studio
         std::string scenePath;
 
         /**
-         * @brief Requested UI toolkit, e.g. "imgui" or "null".
+         * @brief Requested UI toolkit: "studio", "imgui" or "null". Empty means "not asked".
+         *
+         * Empty by default rather than naming one, because the answer depends on the build: a
+         * Studio with a CNA device opens the native shell, and one without has no window to open
+         * either UI in. `main` resolves it before anything reads it, so nothing downstream has to
+         * know the difference between "not asked" and "asked for this".
          *
          * Note that this selects the *UI toolkit*, not the CNA graphics backend. CNA's backend is
          * fixed at compile time (ANALYSIS.md finding F-01), so `--graphics=` on the editor would
          * be a lie -- it appears instead on cna-player, where it chooses which player binary to
          * launch.
          */
-        std::string uiBackend = "imgui";
+        std::string uiBackend;
 
         /** @brief Run with no window, on NullStudioUi. */
         bool headless = false;

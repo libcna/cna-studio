@@ -151,7 +151,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **183 of 490 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **184 of 490 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -193,7 +193,7 @@ preview, **undocking into a floating window** — moved, resized, given more tab
 with its geometry clamped back into view on a smaller screen — and **arrangements saved under a
 name**, in the same file, with Save Layout As and Dock All Windows in the Window menu.
 
-**Phase 6 — Studio shell** (23 of 24). The action registry and core action set; an interactive menu
+**Phase 6 — Studio shell** (24 of 24). The action registry and core action set; an interactive menu
 bar, toolbar and tab strips driven entirely by it; nested submenus with hover opening and keyboard
 traversal; context menus; shortcut dispatch with scope precedence; the preview entry point;
 `--ui=studio`, the native shell in a real window on a real CNA device; the shell opening a project on
@@ -611,11 +611,12 @@ shell does not.** Every panel is ported and the Viewport is ✅ rather than 🔄
 scene, navigates, picks, manipulates, paints tiles, shows the 3D view, and forwards the pointer and
 the keys to a running game.
 
-So the next task is the product decision the rest of the phase waits on, not another feature.
+`cna-studio` with no `--ui` now opens the native shell (`STUDIO-06015`), and `--ui=imgui` still
+runs the legacy editor — a switch rather than a removal. What is left of the migration is deleting
+the prototype, deliberately, which is the rest of Phase 7.
 
 | Id | Task |
 |----|------|
-| `STUDIO-06015` | Make the native shell the default, with the legacy UI behind a flag |
 | `STUDIO-07001` | Both UIs in one running Studio, so the switch can be made without a rebuild |
 | `STUDIO-07030` | Remove the Dear ImGui panels |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source |

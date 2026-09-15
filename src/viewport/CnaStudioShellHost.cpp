@@ -310,11 +310,23 @@ namespace CNA::Studio
                     getGraphicsDeviceProperty(), getHostPlatformName(),
                     /*modernApiAvailable=*/true));
 
+                if (options_.reportCapabilities || !capabilities_.canHostStudio)
+                {
+                    std::cout << capabilities_.report();
+                }
+
                 if (!capabilities_.canHostStudio)
                 {
                     // STUDIO-02022, on the native shell too: refuse with the reason rather than
                     // open a window that cannot draw.
                     std::cerr << capabilities_.diagnostic();
+                    Exit();
+                    return;
+                }
+
+                if (options_.checkCapabilitiesOnly)
+                {
+                    // Asked what this build can do, not asked for an editor.
                     Exit();
                     return;
                 }

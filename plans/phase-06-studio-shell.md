@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 23 of 24 complete `███████████░`
+**Progress:** 24 of 24 complete `████████████`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -26,7 +26,7 @@
 | `STUDIO-06013` | Empty states for every panel | ✅ | `STUDIO-06003` |
 | `STUDIO-06014` | Notification and toast system for background results | ✅ | `STUDIO-06007` |
 | `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
-| `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | 🔄 | `STUDIO-06003`, `STUDIO-05009` |
+| `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | ✅ | `STUDIO-06003`, `STUDIO-05009` |
 | `STUDIO-06017` | Nested submenus, opening on hover, with keyboard traversal | ✅ | `STUDIO-06004` |
 | `STUDIO-06018` | `StudioShell`: the application frame as an interactive object driving the frame lifecycle | ✅ | `STUDIO-03015`, `STUDIO-03031` |
 | `STUDIO-06019` | Capture the shell's interaction states from the preview entry point | ✅ | `STUDIO-06016`, `STUDIO-06018` |
@@ -328,15 +328,36 @@ flag now.
 
 **Acceptance.** The new shell becomes the default as soon as it is good enough for daily development, with the legacy UI still reachable behind a flag
 
-**Status.** `--ui=studio` exists and runs the real thing (`STUDIO-06020`), so the remaining work is
-the word *default*, not the word *reachable*.
+**Done.** `cna-studio` with no `--ui` opens the native shell on any build with a CNA device.
+`--ui=imgui` still runs the legacy editor, which is what keeps this a switch rather than a removal:
+the prototype stays a migration fallback until `STUDIO-07030` deletes it deliberately.
 
-This used to say it waited on the shell hosting a migrated panel. It no longer does: every panel the
-prototype has is ported except the material editor, which the prototype does not have either
-(`docs/MIGRATION-INVENTORY.md`). What it waits on now is the **3D view**. The prototype's viewport
-draws one and the native viewport does not, so making the native shell the default today would ship
-a Studio that lost a feature — which is a regression whatever else improved. That is Phase 11, and
-it is the last row in the inventory's *Not yet answered* table that a user would notice.
+**The condition this waited on was evidence, and the evidence is in.**
+`docs/MIGRATION-INVENTORY.md` now answers every row the prototype fills — every panel, every menu,
+every shortcut, every toolbar control, both views — and its *Not yet answered* table holds one entry,
+material editing, which is a panel the prototype does not have either. The parity proofs
+(`STUDIO-07020`…`07023`) are all done, and the visual review records the native shell as ahead on
+everything a user sees first. Two earlier readings of this task's own status were stale in turn: it
+waited on "the shell hosting a migrated panel" long after every panel was ported, and then on the 3D
+view until `STUDIO-11001` answered that too.
+
+**Resolved in `main`, not defaulted in the option struct**, because the answer depends on the build.
+A Studio without CNA has no window to open either UI in, and `--headless` already means the console
+UI — resolving to the native shell there would open a window for a run that asked for none. Both of
+those fall back to the legacy path, where "no window" already had an answer.
+
+**It caught one flag that was only ever answered by the prototype.** `--host-capabilities` prints
+the contract and exits, and that lived on the Dear ImGui host alone — so with the default switched,
+the query opened a window and ran until it timed out. The native host evaluates the same contract
+already, for the same `STUDIO-02021` reason; it prints and exits on it now. Left as it was, that
+flag would have broken the day `STUDIO-07030` deleted the path that answered it, and the failure
+would have looked like the deletion rather than like this switch.
+
+**What tests it.** A CTest case runs `cna-studio` with no `--ui` at all and asserts on the status
+line only the native shell prints; another asks for `--ui=imgui` by name and expects it to work. The
+legacy window cases now name `--ui=imgui` explicitly rather than relying on the default, which is
+what keeps them about the editor they were written for instead of quietly becoming a second set of
+native-shell tests — and what keeps the fallback covered rather than retired by accident.
 
 ### `STUDIO-06020` — `--ui=studio`: the native shell in a real window, on a real CNA device
 
