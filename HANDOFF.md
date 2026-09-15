@@ -151,7 +151,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **182 of 490 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **183 of 490 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -208,7 +208,7 @@ survives a restart; and **notifications** — a build, a package, a renderer com
 player announcing itself over the corner of the workspace, with the panel that explains it offered
 as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
-**Phase 7 — Panel migration** (21 of 27, 3 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (22 of 27, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
@@ -606,15 +606,15 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 ## Next recommended tasks
 
-In dependency order. The 3D view — which the previous handoff named as the single gate on making the
-native shell the default — is answered: `2` and `3` switch views, a drag orbits, Shift pans, the
-wheel dollies, W/A/S/D/Q/E fly, and a click picks along a ray. The migration inventory now names
-**nothing the prototype does that the native shell does not**, apart from forwarding input to a
-running player.
+In dependency order. **The migration inventory now names nothing the prototype does that the native
+shell does not.** Every panel is ported and the Viewport is ✅ rather than 🔄: it composites the 2D
+scene, navigates, picks, manipulates, paints tiles, shows the 3D view, and forwards the pointer and
+the keys to a running game.
+
+So the next task is the product decision the rest of the phase waits on, not another feature.
 
 | Id | Task |
 |----|------|
-| `STUDIO-07009` | Forward input to a running player — the viewport's last unported piece |
 | `STUDIO-06015` | Make the native shell the default, with the legacy UI behind a flag |
 | `STUDIO-07001` | Both UIs in one running Studio, so the switch can be made without a rebuild |
 | `STUDIO-07030` | Remove the Dear ImGui panels |

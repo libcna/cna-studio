@@ -148,6 +148,30 @@ namespace CNA::Studio
      * Construct one beside the shell and it stays bound for the shell's life. It borrows the
      * shell, the context and the log, so all three must outlive it.
      */
+    /**
+     * @brief The pointer and the keys a running game is told about.
+     *
+     * **Only the keys a game plays with.** Forwarding every key the editor can name would send
+     * Ctrl+S to the game as an S — which is exactly the sort of thing that gets blamed on the game
+     * rather than on the editor that invented the keystroke.
+     *
+     * **The pointer only while it is over the viewport.** A cursor resting on the inspector is not
+     * hovering the game, and reporting its last position there would leave the game acting on a
+     * pointer that has not been near it for minutes. The snapshot then carries keys alone, which
+     * is what a zero surface means on the wire.
+     *
+     * Free rather than a member, because it is the part with the rules in it and a function is
+     * what a test can ask about without starting a process.
+     *
+     * @param frame The frame whose input is being read.
+     * @param bounds The viewport panel's body, which the pointer is measured against.
+     * @param pointerInside Whether the pointer is over that body at all.
+     * @return The snapshot to send.
+     */
+    [[nodiscard]] PlayerInputSnapshot studioPlayerInputFrom(const StudioFrame& frame,
+                                                            const UiRect& bounds,
+                                                            bool pointerInside);
+
     class StudioShellPanels
     {
     public:
@@ -192,6 +216,23 @@ namespace CNA::Studio
          */
         void setViewportServices(StudioCamera2D& camera, StudioCamera3D& camera3D,
                                  SpriteSizeProvider spriteSize);
+
+        /**
+         * @brief Hands a running game the pointer and the keys.
+         *
+         * Sent only when something changed, because the player answers every snapshot: sixty
+         * identical ones a second would be sixty round trips that told it nothing, doubled.
+         *
+         * @param snapshot What the pointer and the forwarded keys are doing.
+         * @return True when a message went on the wire.
+         */
+        bool forwardInputToPlayer(const PlayerInputSnapshot& snapshot);
+
+        /** @brief The last snapshot actually sent, for tests and for the deduplication above. */
+        [[nodiscard]] const PlayerInputSnapshot& lastForwardedInput() const
+        {
+            return lastForwardedInput_;
+        }
 
         /** @brief Which projection the viewport is showing, so the host renders the same one. */
         [[nodiscard]] StudioViewportView viewportView() const { return viewportState_.view; }
@@ -410,6 +451,9 @@ namespace CNA::Studio
          * straight down an axis, and framing every time would throw away an angle the user set up.
          */
         bool framedIn3D_ = false;
+
+        /** @brief The last snapshot sent to the player, so identical ones are not re-sent. */
+        PlayerInputSnapshot lastForwardedInput_;
 
         StudioTreeState outlinerState_;
         StudioTreeState contentState_;

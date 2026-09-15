@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 21 of 27 complete `█████████░░░`
+**Progress:** 22 of 27 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -18,7 +18,7 @@
 | `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
 | `STUDIO-07007` | Port the Inspector panel (Details) | ✅ | `STUDIO-07001`, `STUDIO-03035` |
 | `STUDIO-07008` | Port the Content Browser | ✅ | `STUDIO-07001`, `STUDIO-03034` |
-| `STUDIO-07009` | Port the viewport container | 🔄 | `STUDIO-04012` |
+| `STUDIO-07009` | Port the viewport container | ✅ | `STUDIO-04012` |
 | `STUDIO-07010` | Port the Build panel | ✅ | `STUDIO-07001`, `STUDIO-02040`, `STUDIO-03036` |
 | `STUDIO-07011` | Port the Diagnostics panel | ✅ | `STUDIO-07001`, `STUDIO-02022` |
 | `STUDIO-07012` | Port the Validation panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
@@ -595,14 +595,32 @@ report` handing back that same text, and no phase violations across repeated fra
 **Acceptance.** The scene on screen in the native shell, navigable, and a click in it selects what
 it hits
 
-**In progress.** What holds: the scene is composited (`STUDIO-04012`), the wheel zooms about the
+**Done.** What holds: the scene is composited (`STUDIO-04012`), the wheel zooms about the
 pointer, the middle *or* right button pans, a click picks the topmost sprite and Ctrl adds to the
 selection, a click on nothing clears it, **all three manipulators drag** — translate axis-constrained,
 rotate about the ring, scale as a screen-space ratio — with Ctrl snapping to the project's step or
 the visible grid, **on one entity or on a whole selection**, **tiles paint** (below), and **the 3D
 view works** — `2` and `3` switch, a drag orbits, and a click picks along a ray (`STUDIO-11001`,
-`STUDIO-11002`, `STUDIO-11006`). What does not: forwarding input to a running player. That is the
-last piece of the prototype's viewport this one does not answer, and it is its own task.
+`STUDIO-11002`, `STUDIO-11006`), and **a running game gets the pointer and the keys** (below).
+
+**Input reaches the game after the editor's own handling, not instead of it.** Play mode leaves the
+scene editable, and a drag that moves an entity is also a drag the game may want to know about.
+
+**Only the keys a game plays with**, and the pointer only while it is over the viewport. Forwarding
+every key the editor can name would send Ctrl+S to the game as an S, and a cursor resting on the
+inspector is not hovering the game — reporting its last position there would leave the game acting
+on a pointer that has not been near it for minutes. Both read as bugs in the game rather than in the
+editor that caused them.
+
+**A snapshot equal to the last is not re-sent, unless it carries a wheel notch.** The player answers
+every one, so sixty identical snapshots a second would be sixty round trips that told it nothing,
+doubled by the replies. The wheel is the exception because it is an event rather than a state: two
+notches running compare equal, and a rule of "equal" alone would swallow the second.
+
+The snapshot is filled in by the shell panels rather than by the viewport panel, because that is
+where the player lives: the viewport panel is arithmetic over a camera and a document, and giving it
+a process to talk to would give it a reason to need one. The part with the rules in it is a free
+function, which is what lets a test ask about it without starting a process.
 
 **A tool is not a mode, and a press under one does not select.** Painting resolves before the gizmo
 and before the selection, and returns. The tilemap being painted into has to *stay* selected for the

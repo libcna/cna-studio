@@ -49,11 +49,11 @@ of what was replaced.
 | History | `src/panels/HistoryPanel.cpp` | `history` | ✅ |
 | Diagnostics | `src/panels/DiagnosticsPanel.cpp` | `diagnostics` | ✅ |
 | Backends | `src/panels/ComparisonPanel.cpp` | `comparison` | ✅ |
-| Viewport | `src/panels/ViewportPanel.cpp` | `viewport` | 🔄 |
+| Viewport | `src/panels/ViewportPanel.cpp` | `viewport` | ✅ |
 
-The Viewport is 🔄 rather than ✅ because the native one composites the 2D scene, navigates, picks,
-manipulates, paints tiles and now shows the 3D view, and the prototype's also forwards input to a
-running player. That last is `STUDIO-07009`'s remaining piece rather than a panel of its own.
+The Viewport is ✅ as of `STUDIO-07009`: the native one composites the 2D scene, navigates, picks,
+manipulates, paints tiles, shows the 3D view, and forwards input to a running game. It was the last
+🔄 in this table.
 
 Panels the native shell adds, which the prototype has no equivalent for: `layers`, `preferences`,
 `material` (registered, no content yet — Phase 19).

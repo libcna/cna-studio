@@ -481,6 +481,19 @@ namespace CNA::Studio
         return true;
     }
 
+    bool StudioShellPanels::forwardInputToPlayer(const PlayerInputSnapshot& snapshot)
+    {
+        if (!player_.isRunning() || playState_ == StudioPlayState::Stopped) { return false; }
+
+        // Only on a change, and a wheel notch always counts as one. Sixty identical snapshots a
+        // second would be sixty round trips that told the player nothing -- and the player answers
+        // every one of them, so the waste would be doubled.
+        if (snapshot == lastForwardedInput_ && snapshot.wheel == 0.0f) { return false; }
+
+        lastForwardedInput_ = snapshot;
+        return player_.send(StudioMessage::makeInput(snapshot));
+    }
+
     bool StudioShellPanels::stepPlayFrame()
     {
         if (playState_ != StudioPlayState::Paused) { return false; }
@@ -703,6 +716,36 @@ namespace CNA::Studio
                        theme.color(StudioColorRole::TextSecondary), StudioTextAlign::Center);
     }
 
+    PlayerInputSnapshot studioPlayerInputFrom(const StudioFrame& frame, const UiRect& bounds,
+                                              bool pointerInside)
+    {
+        static constexpr std::array<std::pair<UiKey, const char*>, 12> kForwarded{{
+            {UiKey::W, "W"}, {UiKey::A, "A"}, {UiKey::S, "S"}, {UiKey::D, "D"},
+            {UiKey::Q, "Q"}, {UiKey::E, "E"}, {UiKey::R, "R"}, {UiKey::F, "F"},
+            {UiKey::Space, "Space"}, {UiKey::Enter, "Enter"}, {UiKey::Escape, "Escape"},
+            {UiKey::Tab, "Tab"}}};
+
+        const UiInputState& input = frame.input();
+
+        PlayerInputSnapshot snapshot;
+        for (const auto& [key, name] : kForwarded)
+        {
+            if (input.isKeyDown(key)) { snapshot.keys.emplace_back(name); }
+        }
+
+        if (!pointerInside) { return snapshot; }
+
+        snapshot.mouseX = input.mouseX - bounds.left();
+        snapshot.mouseY = input.mouseY - bounds.top();
+        snapshot.surfaceWidth = bounds.width;
+        snapshot.surfaceHeight = bounds.height;
+        snapshot.leftButton = input.isMouseDown(UiMouseButton::Left);
+        snapshot.middleButton = input.isMouseDown(UiMouseButton::Middle);
+        snapshot.rightButton = input.isMouseDown(UiMouseButton::Right);
+        snapshot.wheel = input.wheelY;
+        return snapshot;
+    }
+
     void StudioShellPanels::bindViewport(StudioShell& shell)
     {
         // The viewport (STUDIO-07009) draws nothing: the scene is a texture the shell composites,
@@ -868,6 +911,17 @@ namespace CNA::Studio
                 return;
             }
 
+            // The running game gets the pointer and the keys, after the editor's own handling and
+            // not instead of it: play mode leaves the scene editable, and a drag that moves an
+            // entity is also a drag the game may want to know about. Described here rather than in
+            // the viewport panel because this is where the player lives -- the panel is arithmetic
+            // over a camera and a document, and giving it a process to talk to would give it a
+            // reason to need one.
+            const auto forwardToPlayer = [&](bool pointerInside) {
+                if (!frame.isInputPass() || playState_ == StudioPlayState::Stopped) { return; }
+                forwardInputToPlayer(studioPlayerInputFrom(frame, bounds, pointerInside));
+            };
+
             // Read every frame rather than applied when the Preferences panel changes them, for
             // the reason the autosave interval is re-read every poll: preferences also arrive by
             // being *assigned*, when the host loads them from disk, and a setting that only takes
@@ -885,6 +939,8 @@ namespace CNA::Studio
                 const StudioViewportResult view3D = studioViewportPanel3D(
                     frame, bounds, context_, *services_.camera3D, viewportState_,
                     services_.spriteSize);
+
+                forwardToPlayer(view3D.pointerInside);
 
                 if (!view3D.selectionChanged) { return; }
                 ++counts_.viewportSelections;
@@ -906,6 +962,8 @@ namespace CNA::Studio
             // it -- the surface is one widget covering the whole panel, and a field described
             // before it would be a field the viewport swallows every click of.
             studioViewportToolOverlay(frame, bounds, viewportState_);
+
+            forwardToPlayer(viewport.pointerInside);
 
             // No "camera changed" callback: the host renders the scene every frame anyway, and a
             // hook nothing sets is scaffolding rather than a seam.

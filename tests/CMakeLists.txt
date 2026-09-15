@@ -35,6 +35,7 @@ add_executable(cna-studio-tests
     StudioEmptyStateTests.cpp
     StudioMigrationInventoryTests.cpp
     StudioNotificationTests.cpp
+    StudioPlayerInputTests.cpp
     StudioPluginMenuTests.cpp
     StudioPngTests.cpp
     StudioPreferencesTests.cpp
