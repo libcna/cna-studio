@@ -345,6 +345,17 @@ namespace CNA::Studio
          */
         void pollRecovery(double nowSeconds);
 
+        /**
+         * @brief Starts quitting: asks about unsaved changes, or closes.
+         *
+         * Here rather than in `bindStudioShellActions` because the answer arrives a frame later,
+         * and this is the object with a poll to read it in.
+         */
+        void requestQuit();
+
+        /** @brief Asks the shell's host to close, and says so when nothing can. */
+        void closeStudio();
+
         /** @brief Announces a build that has just finished, either way. */
         void pollBuild();
 
@@ -405,8 +416,6 @@ namespace CNA::Studio
         std::string recoveryProject_;
         std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
 
-        /** @brief Whether the open dialog is this object's Reset confirmation. */
-        bool resettingPreferences_ = false;
         StudioViewportState viewportState_;
         Uuid selectedAsset_;
 

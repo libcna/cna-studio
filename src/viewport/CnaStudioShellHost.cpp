@@ -164,6 +164,12 @@ namespace CNA::Studio
 
                 // The preferences the theme already came from, and the seam that writes them back.
                 panels_->preferences() = storedPreferences.preferences;
+                // The seam rather than watching the invoked actions for an id. A host matching on
+                // a command's name is a host reimplementing its behaviour outside the registry --
+                // which is how this one came to close the window without asking about unsaved
+                // changes, because the command it named never actually ran.
+                shell_->setQuitHandler([this] { Exit(); });
+
                 panels_->setPreferencesSink([](const StudioPreferences& preferences,
                                                std::string* problem) {
                     return StudioPreferencesStore{StudioPreferencesStore::defaultPath()}
@@ -392,7 +398,6 @@ namespace CNA::Studio
                 for (const std::string& action : shell_->invokedActions())
                 {
                     invoked_.push_back(action);
-                    if (action == "studio.file.quit") { Exit(); }
                 }
 
                 // Uploaded in Update, not Draw: under a fixed-timestep loop several Update frames

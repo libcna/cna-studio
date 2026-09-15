@@ -218,6 +218,9 @@ was the second: an editable tree row, `F2` taken back from Build (which is `Ctrl
 prototype's `F2` is Rename), and the rename through the history like every other edit. The last
 toolbar row closed with a **"Play on" strip** in the Backends panel, overriding for the session the
 renderer the project names — not persisted, because the project's renderer is what the game ships on.
+**File > Exit** became a real command over a `setQuitHandler` seam, asking about unsaved changes
+first, and the dialog gained an answer handler because polling `dialogResult()` a frame later only
+worked while nothing rendered in between.
 
 **Phase 16 — Play in editor** (4 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a

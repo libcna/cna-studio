@@ -316,3 +316,92 @@ CNA_STUDIO_TEST(AboutIsARealDialogRatherThanACommandThatDoesNothing)
     shell->renderFrame(at(-1.0f, -1.0f));
     CNA_STUDIO_EXPECT_EQ(shell->dialog().lines.back(), std::string{"Renderer: teapot"});
 }
+
+CNA_STUDIO_TEST(AnAnswerReachesWhoeverAskedEvenAFrameLater)
+{
+    // The defect this overload exists for. `dialogResult()` is cleared at the start of every frame,
+    // so a caller polling for it saw the answer only while nothing rendered in between -- and a
+    // host that drew twice before its next poll, or a user who released the mouse on a frame of its
+    // own, got a default-constructed result instead. For a confirmation that is indistinguishable
+    // from Cancel; for the quit dialog it was the opposite of Cancel, and quit without asking.
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+
+    int answers = 0;
+    StudioDialogResult seen;
+    shell->openDialog(confirm(), [&](const StudioDialogResult& answer) {
+        ++answers;
+        seen = answer;
+    });
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    press(*shell, UiKey::Escape);
+
+    // Several more frames, which is what clears `dialogResult()`.
+    for (int i = 0; i < 5; ++i) { shell->renderFrame(at(-1.0f, -1.0f)); }
+
+    CNA_STUDIO_EXPECT_EQ(answers, 1);
+    CNA_STUDIO_EXPECT(seen.dismissed);
+    CNA_STUDIO_EXPECT_EQ(seen.chosen, 0);
+    CNA_STUDIO_EXPECT(shell->dialogResult().chosen != 0 || !shell->dialogResult().dismissed);
+}
+
+CNA_STUDIO_TEST(AHandlerHearsAboutADismissalAsWellAsAChoice)
+{
+    // A handler that only heard the affirmative answer could not tell "they cancelled" from "the
+    // dialog is still open", which is the difference between staying put and waiting for ever.
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+
+    int answers = 0;
+    shell->openDialog(confirm(), [&](const StudioDialogResult&) { ++answers; });
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    const UiRect cancel = shell->dialogButtonBounds(0);
+    CNA_STUDIO_EXPECT(!cancel.isEmpty());
+    click(*shell, cancel.centerX(), cancel.centerY());
+
+    CNA_STUDIO_EXPECT_EQ(answers, 1);
+    CNA_STUDIO_EXPECT(!shell->isDialogOpen());
+}
+
+CNA_STUDIO_TEST(AHandlerRunsOnceRatherThanEveryFrameAfterwards)
+{
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+
+    int answers = 0;
+    shell->openDialog(confirm(), [&](const StudioDialogResult&) { ++answers; });
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    const UiRect discard = shell->dialogButtonBounds(1);
+    click(*shell, discard.centerX(), discard.centerY());
+    for (int i = 0; i < 10; ++i) { shell->renderFrame(at(-1.0f, -1.0f)); }
+
+    CNA_STUDIO_EXPECT_EQ(answers, 1);
+}
+
+CNA_STUDIO_TEST(ButtonBoundsNameTheButtonsInTheOrderTheRequestLists)
+{
+    // Left to right as written, whatever the layout does to fit them: a caller pointing at index 1
+    // is pointing at the second thing it asked for, not at the second box from the right.
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+
+    StudioDialogRequest request;
+    request.title = "Quit";
+    request.buttons = {"Cancel", "Discard", "Save and Quit"};
+    request.cancelButton = 0;
+    shell->openDialog(request);
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    const UiRect first = shell->dialogButtonBounds(0);
+    const UiRect second = shell->dialogButtonBounds(1);
+    const UiRect third = shell->dialogButtonBounds(2);
+
+    CNA_STUDIO_EXPECT(!first.isEmpty() && !second.isEmpty() && !third.isEmpty());
+    CNA_STUDIO_EXPECT(first.right() <= second.left());
+    CNA_STUDIO_EXPECT(second.right() <= third.left());
+    CNA_STUDIO_EXPECT(third.right() <= shell->dialogBounds().right());
+    CNA_STUDIO_EXPECT(shell->dialogButtonBounds(3).isEmpty());
+
+    // And they are where the buttons actually are: pressing index 1 answers 1.
+    click(*shell, second.centerX(), second.centerY());
+    CNA_STUDIO_EXPECT_EQ(shell->dialogResult().chosen, 1);
+}

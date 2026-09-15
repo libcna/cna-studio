@@ -69,7 +69,7 @@ Panels the native shell adds, which the prototype has no equivalent for: `layers
 | File | Save Scene | `Ctrl+S` | `studio.file.save` | ✅ |
 | File | Recover Unsaved Scene | — | `studio.file.recoverScene` | ✅ |
 | File | Discard Recovered Scene | — | `studio.file.discardRecovered` | ✅ |
-| File | Exit | `Alt+F4` | `studio.file.quit` | 🔄 |
+| File | Exit | `Alt+F4` | `studio.file.quit` | ✅ |
 | Edit | Undo | `Ctrl+Z` | `studio.edit.undo` | ✅ |
 | Edit | Redo | `Ctrl+Y` | `studio.edit.redo` | ✅ |
 | Edit | Duplicate | `Ctrl+D` | `studio.edit.duplicate` | ✅ |
@@ -89,8 +89,11 @@ answers. Both UIs drive the same object, so the native shell writes snapshots, o
 session left — as a sticky notification as well as a log line — and greys both rows out when there is
 nothing to answer for.
 
-**Exit** is 🔄 because the command exists and is refused: the shell has no way to ask its host to
-close, which is what `STUDIO-06015` needs anyway.
+**Exit** is ✅ as of `StudioShell::setQuitHandler`. It had been the odd one out: the command existed,
+the CNA host closed the window, and the two had nothing to do with each other — the host watched
+`invokedActions()` for the id and called `Exit()`, so the command's own handler never ran and there
+was nowhere for "the scene has unsaved changes" to be asked. It is a seam now, like the clipboard
+and the workspace, and quitting with unsaved work asks first.
 
 **Plugin menus** are ⬜ and are the one item here that is genuinely architectural. The prototype
 lets a plugin add a top-level menu and commands under it; the native shell's menus are built from

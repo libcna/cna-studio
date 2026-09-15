@@ -152,6 +152,23 @@ namespace CNA::Studio
      * @param state Its retained focus and field contents.
      * @return What the user did. Meaningful only in the input pass.
      */
+    /**
+     * @brief Where the dialog's buttons sit, left to right, for the same @p window and @p request.
+     *
+     * Derived from the same layout the dialog draws with rather than read back out of it, so a
+     * caller that points at a button is pointing at where one actually is -- and so a test that
+     * presses "Discard" presses Discard rather than a rectangle near the right-hand edge that
+     * happened to be Discard when it was written.
+     *
+     * @param frame Frame supplying measurement and metrics.
+     * @param window The area the dialog is centred in.
+     * @param request The dialog.
+     * @return One rectangle per button, in the order @p request lists them.
+     */
+    [[nodiscard]] std::vector<UiRect> studioDialogButtonBounds(const StudioFrame& frame,
+                                                               const UiRect& window,
+                                                               const StudioDialogRequest& request);
+
     StudioDialogResult studioDialog(StudioFrame& frame, const UiRect& window,
                                     const StudioDialogRequest& request, StudioDialogState& state);
 }

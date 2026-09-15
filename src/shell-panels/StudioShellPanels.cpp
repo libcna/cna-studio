@@ -76,6 +76,59 @@ namespace CNA::Studio
         log_.append(studioNotificationLogSeverity(notification.severity), line);
     }
 
+    void StudioShellPanels::requestQuit()
+    {
+        if (shell_ == nullptr) { return; }
+
+        // Asked before anything closes. Losing an afternoon's work to a menu item is the one
+        // mistake an editor must not let a user make in a single click, and the question has to be
+        // asked by whoever knows the document rather than by the window manager.
+        if (context_.getHistory().isDirty())
+        {
+            StudioDialogRequest request;
+            request.title = "Quit CNA Studio";
+            request.lines = {"The scene has unsaved changes."};
+            // Save last, and the default: it is the answer that loses nothing, and a dialog whose
+            // Enter throws work away is a dialog people learn to read slowly and still get wrong.
+            request.buttons = {"Cancel", "Discard", "Save and Quit"};
+            request.cancelButton = 0;
+            request.defaultButton = 2;
+            shell_->openDialog(std::move(request), [this](const StudioDialogResult& answer) {
+                // Dismissed without answering is Cancel: a dialog escaped is a question withdrawn,
+                // and the one answer that must never be inferred is the one that discards work.
+                if (answer.dismissed || answer.chosen == 0) { return; }
+
+                if (answer.chosen == 2)
+                {
+                    if (context_.getScenePath().empty() || !context_.saveScene())
+                    {
+                        // Refused rather than quitting anyway. The user asked to save *and* quit,
+                        // and doing the second half after failing the first is the worst reading.
+                        log_.append(LogSeverity::Error,
+                                    "Could not save the scene, so CNA Studio is still open.");
+                        return;
+                    }
+                    recovery_.discardForCurrentScene();
+                }
+
+                closeStudio();
+            });
+            return;
+        }
+
+        closeStudio();
+    }
+
+    void StudioShellPanels::closeStudio()
+    {
+        if (shell_ != nullptr && shell_->requestQuit()) { return; }
+
+        // Said rather than nothing happening. A preview and a test both reach here, and so does a
+        // host that forgot the seam -- and a Quit that silently does nothing reads as a broken menu.
+        log_.append(LogSeverity::Warning,
+                    "Nothing here can close CNA Studio: this build has no window to close.");
+    }
+
     void StudioShellPanels::pollRecovery(double nowSeconds)
     {
         // A delta from the clock the host already passes, rather than a second one. `poll` is the
@@ -200,22 +253,6 @@ namespace CNA::Studio
     void StudioShellPanels::publishStatus()
     {
         if (shell_ == nullptr) { return; }
-
-        // The Reset confirmation's answer, read here because poll() is the one place this object
-        // runs every frame -- and the shell closes the dialog itself, so waiting for the answer is
-        // waiting for a frame rather than for a callback.
-        if (resettingPreferences_ && !shell_->isDialogOpen())
-        {
-            const bool confirmed = shell_->dialogResult().chosen == 1;
-            resettingPreferences_ = false;
-            if (confirmed)
-            {
-                preferences_ = StudioPreferences{};
-                ++counts_.preferenceChanges;
-                applyPreferences();
-                log_.append(LogSeverity::Info, "Preferences reset to the defaults.");
-            }
-        }
 
         StudioStatusModel& status = shell_->status();
 
@@ -930,6 +967,15 @@ namespace CNA::Studio
             shell.actions().add(std::move(rename));
         }
 
+        if (const StudioAction* found = shell.actions().find("studio.file.quit"))
+        {
+            StudioAction quit = *found;
+            // Enabled even where nothing can close: refusing it in a preview would grey out a row
+            // that is perfectly real in the editor, and the refusal is reported rather than silent.
+            quit.run = [this] { requestQuit(); };
+            shell.actions().add(std::move(quit));
+        }
+
         if (const StudioAction* found = shell.actions().find("studio.play.pause"))
         {
             StudioAction pause = *found;
@@ -1125,8 +1171,18 @@ namespace CNA::Studio
                                  "This cannot be undone."};
                 request.buttons = {"Cancel", "Reset"};
                 request.cancelButton = 0;
-                shell.openDialog(std::move(request));
-                resettingPreferences_ = true;
+                // Delivered to the asker rather than polled for. Reading `dialogResult()` a frame
+                // later works only while nothing renders in between, and a host that drew twice
+                // before its next poll saw a default-constructed answer -- which is indistinguishable
+                // from Cancel for this dialog and was the opposite of Cancel for the quit one.
+                shell.openDialog(std::move(request), [this](const StudioDialogResult& answer) {
+                    if (answer.dismissed || answer.chosen != 1) { return; }
+
+                    preferences_ = StudioPreferences{};
+                    ++counts_.preferenceChanges;
+                    applyPreferences();
+                    log_.append(LogSeverity::Info, "Preferences reset to the defaults.");
+                });
                 return;
             }
 

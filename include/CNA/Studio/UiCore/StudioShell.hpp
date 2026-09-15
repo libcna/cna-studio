@@ -795,6 +795,24 @@ namespace CNA::Studio
          */
         void openDialog(StudioDialogRequest request);
 
+        /**
+         * @brief Opens a modal dialog and delivers its answer to @p answered.
+         *
+         * The overload to prefer. Reading `dialogResult()` on a later frame works only while
+         * nothing renders in between: the result is cleared at the start of every frame, so a host
+         * that drew twice before its next poll — or a test that let go of the mouse on a frame of
+         * its own — lost the answer, and the caller then saw a default-constructed one. That is a
+         * difference between "they pressed Cancel" and "nobody answered" that nothing can recover.
+         *
+         * The handler runs once, after the frame the dialog was answered on, so it may open
+         * another dialog or ask the host to close.
+         *
+         * @param request What the dialog says and offers.
+         * @param answered Called once with the answer, dismissals included.
+         */
+        void openDialog(StudioDialogRequest request,
+                        std::function<void(const StudioDialogResult&)> answered);
+
         /** @brief Closes the dialog without answering it. */
         void closeDialog();
 
@@ -817,6 +835,18 @@ namespace CNA::Studio
          * @brief Where the open dialog is, for a test or a capture. Empty when none is.
          */
         [[nodiscard]] UiRect dialogBounds() const;
+
+        /**
+         * @brief Where the open dialog's @p index'th button is, or an empty rectangle.
+         *
+         * The same reason `panelTabBounds` exists: a caller that wants to point at a control --
+         * a test pressing "Discard", a script capturing a hover -- has to be able to ask where it
+         * is rather than guess from the dialog's edges and be wrong the day a label changes.
+         *
+         * @param index Button index, in the order the request lists them.
+         * @return Its rectangle, or empty when no dialog is open or the index is past the end.
+         */
+        [[nodiscard]] UiRect dialogButtonBounds(std::size_t index) const;
 
         // --- Saved layouts (STUDIO-05010) ------------------------------------------------------
 
@@ -842,6 +872,33 @@ namespace CNA::Studio
         {
             workspace_ = std::move(services);
         }
+
+        /**
+         * @brief Sets what happens when Studio asks to close.
+         *
+         * A seam for the same reason the clipboard and the workspace are: the shell is CNA-free and
+         * has no window to close. A host that instead watched `invokedActions()` for the quit id —
+         * which is what the CNA host did — is a host reimplementing a command's behaviour outside
+         * the registry, which is the drift the registry exists to prevent, and it skipped the
+         * unsaved-changes question because the command never ran.
+         *
+         * @param quit Closes the application. Unset means quitting is refused.
+         */
+        void setQuitHandler(std::function<void()> quit) { quit_ = std::move(quit); }
+
+        /**
+         * @brief Asks the host to close.
+         * @return False when no host has said how, which a preview and a test both are.
+         */
+        bool requestQuit()
+        {
+            if (!quit_) { return false; }
+            quit_();
+            return true;
+        }
+
+        /** @brief Whether a host has said how to close. */
+        [[nodiscard]] bool canQuit() const { return static_cast<bool>(quit_); }
 
         /**
          * @brief Applies the layout saved under @p name.
@@ -1304,11 +1361,17 @@ namespace CNA::Studio
 
         std::vector<StudioNamedLayout> savedLayouts_;
         StudioWorkspaceServices workspace_;
+        std::function<void()> quit_;
 
         /** @brief The one open dialog, its retained field and what the user last did to it. */
         StudioDialogRequest dialog_;
         StudioDialogState dialogState_;
         StudioDialogResult dialogResult_;
+
+        /** @brief Who asked, and the answer waiting to be handed to them after the frame. */
+        std::function<void(const StudioDialogResult&)> dialogAnswered_;
+        std::function<void(const StudioDialogResult&)> dialogPending_;
+        StudioDialogResult dialogPendingResult_;
         bool dialogOpen_ = false;
 
         StudioStatusModel status_;

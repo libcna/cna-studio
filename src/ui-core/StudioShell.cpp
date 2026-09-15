@@ -827,6 +827,16 @@ namespace CNA::Studio
 
     void StudioShell::handleDialogAnswer()
     {
+        // Whoever asked, first and unconditionally -- dismissals included. A handler that only
+        // heard about the affirmative answer could not tell "they cancelled" from "the dialog is
+        // still open", which is the difference between staying put and waiting for ever.
+        if (dialogPending_)
+        {
+            const auto handler = std::move(dialogPending_);
+            dialogPending_ = nullptr;
+            handler(dialogPendingResult_);
+        }
+
         if (pending_ == PendingDialog::None || !dialogResult_.answered()) { return; }
 
         const PendingDialog which = pending_;
@@ -864,6 +874,14 @@ namespace CNA::Studio
         // own was pending would otherwise answer the wrong command.
         pending_ = PendingDialog::None;
         pendingArgument_.clear();
+        dialogAnswered_ = nullptr;
+    }
+
+    void StudioShell::openDialog(StudioDialogRequest request,
+                                 std::function<void(const StudioDialogResult&)> answered)
+    {
+        openDialog(std::move(request));
+        dialogAnswered_ = std::move(answered);
     }
 
     void StudioShell::closeDialog()
@@ -879,6 +897,15 @@ namespace CNA::Studio
         return studioDialogBounds(frame_, layout_.window, dialog_);
     }
 
+    UiRect StudioShell::dialogButtonBounds(std::size_t index) const
+    {
+        if (!dialogOpen_) { return UiRect{}; }
+
+        const std::vector<UiRect> boxes =
+            studioDialogButtonBounds(frame_, layout_.window, dialog_);
+        return index < boxes.size() ? boxes[index] : UiRect{};
+    }
+
     void StudioShell::describeDialog()
     {
         if (!dialogOpen_) { return; }
@@ -892,7 +919,14 @@ namespace CNA::Studio
             // Closed here rather than left to the caller, because the caller reads the answer
             // *after* the frame: a dialog that stayed open until somebody remembered to close it
             // would take a second click to dismiss and would answer twice in between.
-            if (answered.answered()) { closeDialog(); }
+            if (!answered.answered()) { return; }
+
+            // Held rather than called here. The handler may ask the host to close or open another
+            // dialog, and doing either from inside a modal's own describe callback would mutate
+            // the list being walked.
+            dialogPending_ = std::move(dialogAnswered_);
+            dialogPendingResult_ = answered;
+            closeDialog();
         });
     }
 

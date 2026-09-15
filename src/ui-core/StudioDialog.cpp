@@ -93,6 +93,38 @@ namespace CNA::Studio
                       std::round(width), std::round(height)};
     }
 
+    std::vector<UiRect> studioDialogButtonBounds(const StudioFrame& frame, const UiRect& window,
+                                                 const StudioDialogRequest& request)
+    {
+        const StudioTheme& theme = frame.theme();
+        const std::vector<std::string> buttons = buttonsOf(request);
+
+        const UiRect bounds = studioDialogBounds(frame, window, request);
+        const float pad = metricOf(theme, StudioMetric::SpacingLarge);
+        const float rowHeight = metricOf(theme, StudioMetric::ControlHeight);
+        const float titleHeight = metricOf(theme, StudioMetric::PanelHeaderHeight);
+        const float gap = metricOf(theme, StudioMetric::SpacingSmall);
+
+        UiRect remaining = bounds;
+        remaining.splitTop(std::min(titleHeight, remaining.height));
+
+        UiRect buttonRow = remaining.inset(UiEdges{pad, pad});
+        buttonRow.splitTop(std::max(0.0f, buttonRow.height - rowHeight));
+
+        // Right to left, so the affirmative button ends up nearest the corner the pointer travels
+        // to and a row that grew from the left would not move every button whenever one of them
+        // was reworded.
+        std::vector<UiRect> boxes(buttons.size());
+        UiRect cursor = buttonRow;
+        for (std::size_t i = buttons.size(); i-- > 0;)
+        {
+            const float width = std::ceil(studioLabelWidth(frame, buttons[i])) + pad * 2.0f;
+            boxes[i] = cursor.splitRight(std::min(width, std::max(0.0f, cursor.width)));
+            cursor.splitRight(gap);
+        }
+        return boxes;
+    }
+
     StudioDialogResult studioDialog(StudioFrame& frame, const UiRect& window,
                                     const StudioDialogRequest& request, StudioDialogState& state)
     {
@@ -169,20 +201,10 @@ namespace CNA::Studio
             if (frame.isInputPass()) { result.text = state.text; }
         }
 
-        // The buttons sit on the last row, right-aligned: the affirmative one ends up nearest the
-        // corner the pointer travels to, and a row that grew from the left would move every button
-        // whenever one of them was reworded.
-        UiRect buttonRow = body;
-        buttonRow.splitTop(std::max(0.0f, buttonRow.height - rowHeight));
-        UiRect cursor = buttonRow;
-
-        std::vector<UiRect> boxes(buttons.size());
-        for (std::size_t i = buttons.size(); i-- > 0;)
-        {
-            const float width = std::ceil(studioLabelWidth(frame, buttons[i])) + pad * 2.0f;
-            boxes[i] = cursor.splitRight(std::min(width, std::max(0.0f, cursor.width)));
-            cursor.splitRight(gap);
-        }
+        // The same layout the accessor above derives, so a caller that points at a button and the
+        // dialog that draws one cannot disagree. The text field, when there is one, sits above the
+        // row and does not move it: the row is measured from the bottom of the dialog.
+        const std::vector<UiRect> boxes = studioDialogButtonBounds(frame, window, request);
 
         const bool textReady = !request.requireText || !state.text.empty();
         for (std::size_t i = 0; i < buttons.size(); ++i)

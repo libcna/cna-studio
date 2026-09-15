@@ -143,7 +143,15 @@ Nobody was running it. The Dear ImGui host wrote snapshots and offered what it f
 host runs a different loop and did neither, so a user on `--ui=studio` had no crash recovery at all
 and nothing said so. It is one `StudioRecoverySession` now, driven by whichever host is running.
 
-Rename in place was the second, and it found a fourth disagreeing chord: `F2` is Rename in the
+File > Exit was the second, and it was the odd one out: the command existed and the CNA host closed
+the window, but the host watched `invokedActions()` for the id rather than the command having a
+handler — so the command never ran, nothing asked about unsaved changes, and no other host could
+close at all. It is `StudioShell::setQuitHandler` now, a seam like the clipboard and the workspace.
+That work also found that a caller polling `dialogResult()` on a later frame sees the answer only
+while nothing renders in between; dialogs deliver their answer to whoever asked now, which is what
+made "Escape means Cancel" true rather than nearly true.
+
+Rename in place was the third, and it found a fourth disagreeing chord: `F2` is Rename in the
 prototype and in every file manager, and natively it was Build. Build is `Ctrl+B` now. Writing the
 editable row also found that `studioTextField`'s commit-on-focus-loss had never been able to run —
 every field in Studio silently threw away an edit the user clicked away from.
