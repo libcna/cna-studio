@@ -300,7 +300,11 @@ ever shrinks is one nobody can tell the difference between "done" and "quietly d
 
 | What | Prototype home | What it needs |
 |------|----------------|---------------|
-| Material editing | — | There is no `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19) |
+| Prefab overrides | `InspectorPanel::drawPrefabSection` | Report, revert and apply, in the native Details panel (`STUDIO-07042`) |
+| Sprite animation preview | `InspectorPanel::drawAnimationPreview` | A preview that does not put the frame it is showing into the document (`STUDIO-07043`) |
+| Audio preview | `InspectorPanel::drawAudioPreview` | The audio seam the native Details panel does not reach yet (`STUDIO-07044`) |
+| Asset inspector | `InspectorPanel::drawAssetInspector` | A selected asset's own properties, rather than the selected entity's (`STUDIO-07045`) |
+| Material asset editor | `InspectorPanel::drawMaterialAsset` | The editor the prototype already has, ported (`STUDIO-07046`) |
 
 Three rows have left this table since it was written. **The 3D view** is answered by
 `studioViewportPanel3D` and the host's `renderSceneIn3D`, described under *Toolbar controls* above.
@@ -310,5 +314,41 @@ like any others, rather than a menu bar calling back into a plugin to draw its o
 **Tilemap painting** is answered by `StudioViewportTool` and `studioViewportToolOverlay`, described
 under *Toolbar controls* above.
 
-What is left is material editing, which is a panel the prototype never had either — so the
-inventory no longer names anything the prototype does that the native shell does not.
+---
+
+## What this inventory could not see, and the correction
+
+**This document was wrong**, and the way it was wrong is worth more than the list above.
+
+It accounted for **panels, menu items, toolbar controls and shortcuts** — every level at which a
+*surface* can go missing — and concluded that "the inventory no longer names anything the prototype
+does that the native shell does not". Every row was honest. The conclusion was not, because there is
+a level below a panel: **the controls inside it.**
+
+The prototype's Inspector draws eight sections. Until `STUDIO-07040` the native Details panel had
+three. One of the five missing was **Add Component** — so an entity created in the native shell
+could never be given anything to do, and nothing in this document or its tests said so. It was found
+by asking, before deleting the prototype, what the prototype's Inspector actually draws.
+
+**The material row was wrong in a second way.** It read "there is no `.cnamaterial` editor to port;
+the `material` panel is registered and empty (Phase 19)". There is one:
+`InspectorPanel::drawMaterialAsset`. It is not a `.cnamaterial` *panel*, which is what this document
+was looking for — it is a section of the Inspector that appears when a material asset is selected,
+and it is a working editor. Looking for a panel and concluding there was nothing to port is exactly
+the shape of the larger mistake.
+
+**What changed so that it cannot happen again.** `STUDIO-07041` adds the missing level as a
+checklist in `tests/StudioMigrationInventoryTests.cpp`: every section the prototype's Inspector
+draws is either recorded as answered — with the native file and the symbol that answers it, checked
+against the file — or recorded as a gap with the task that closes it, checked against the plan. It
+counts the gaps and asserts the number, so closing the last one is a deliberate edit rather than
+something nobody notices.
+
+**Dear ImGui cannot be deleted while that number is above zero.** `STUDIO-07030` now depends on all
+five, which is the dependency that should have been there from the start.
+
+**And the level below that one is behaviour**, which no inventory reaches: `STUDIO-07021`–`07023`
+are for that, and `tests/ApplicationTests.cpp` holds twenty-eight cases that exercise the
+prototype's panels and have no native counterpart yet. They are not a gap in the *product* — they
+test document behaviour through whichever panel was available — but they are coverage that would be
+deleted with the prototype, and the deletion should say so rather than discover it.

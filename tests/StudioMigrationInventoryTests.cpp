@@ -561,3 +561,117 @@ CNA_STUDIO_TEST(EveryShortcutTheProtoypeDispatchesIsInTheInventory)
 
     CNA_STUDIO_EXPECT(seen >= 13);
 }
+
+// ------------------------------------------------------------------------------------------------
+// The level the inventory did not reach (STUDIO-07041)
+//
+// The inventory accounts for panels, menu items, toolbar controls and shortcuts. It does not
+// account for **controls inside a panel**, and that is not a small omission: the prototype's
+// Inspector draws eight sections, and until STUDIO-07040 the native Details panel had three of
+// them. One of the missing five was Add Component -- so an entity created in the native shell
+// could never be given anything to do, and the inventory said the migration was complete.
+//
+// This is that level, as a checklist. It is a list of section names rather than a walk over the
+// prototype's code, because the prototype is being deleted and a test that reads it would be
+// deleted with it -- and the point of this one is to outlive the thing it was written about.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief One section the prototype's Inspector draws, and where the native answer is. */
+    struct InspectorSection
+    {
+        /** @brief The prototype's member that draws it. */
+        const char* prototype;
+        /** @brief Where the native answer lives, or null when there is none yet. */
+        const char* nativeFile;
+        /** @brief A string that must appear in that file. Empty when there is no answer. */
+        const char* nativeMarker;
+        /** @brief The task that closes it, for a section with no answer. */
+        const char* task;
+    };
+
+    /**
+     * @brief Every section the prototype's Inspector has, and the native shell's answer.
+     *
+     * Ordered as the prototype draws them. A section with a null file is an admitted gap with a
+     * task against it -- which is the honest shape for this table, because the alternative was a
+     * document that said the migration was complete while Add Component did not exist.
+     */
+    const std::vector<InspectorSection>& inspectorSections()
+    {
+        static const std::vector<InspectorSection> sections = {
+            {"component property grid", "src/shell-panels/StudioDetailsPanel.cpp",
+             "SetPropertyCommand", nullptr},
+            {"drawAddComponentControl", "src/shell-panels/StudioDetailsPanel.cpp",
+             "AddComponentCommand", nullptr},
+            {"component removal", "src/shell-panels/StudioDetailsPanel.cpp",
+             "RemoveComponentCommand", nullptr},
+            {"drawSceneEnvironment", "src/shell-panels/StudioDetailsPanel.cpp",
+             "Scene Environment", nullptr},
+            {"drawProjectInspector", "src/shell-panels/StudioDetailsPanel.cpp",
+             "Layers", nullptr},
+            {"drawPrefabSection", nullptr, nullptr, "STUDIO-07042"},
+            {"drawAnimationPreview", nullptr, nullptr, "STUDIO-07043"},
+            {"drawAudioPreview", nullptr, nullptr, "STUDIO-07044"},
+            {"drawAssetInspector", nullptr, nullptr, "STUDIO-07045"},
+            {"drawMaterialAsset", nullptr, nullptr, "STUDIO-07046"},
+        };
+        return sections;
+    }
+}
+
+CNA_STUDIO_TEST(EveryInspectorSectionWithANativeAnswerActuallyHasOne)
+{
+    // The half that can go stale silently: a section recorded as answered whose answer was removed
+    // or renamed. Checked against the file rather than against a document, because a document
+    // saying it is answered is exactly what was wrong before.
+    for (const InspectorSection& section : inspectorSections())
+    {
+        if (section.nativeFile == nullptr) { continue; }
+
+        const std::string text = readSource(section.nativeFile);
+        if (text.empty())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"the inspector section '"} + section.prototype
+                + "' is recorded as answered in " + section.nativeFile + ", which does not exist.");
+            continue;
+        }
+        if (text.find(section.nativeMarker) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"the inspector section '"} + section.prototype
+                + "' is recorded as answered by '" + section.nativeMarker + "' in "
+                + section.nativeFile + ", which no longer contains it.");
+        }
+    }
+}
+
+CNA_STUDIO_TEST(EveryUnansweredInspectorSectionNamesTheTaskThatClosesIt)
+{
+    // And the half that would otherwise become a quiet permanent gap. A row with no answer has to
+    // carry a task id, and that id has to be a real row in the plan -- a gap recorded against a
+    // task nobody created is a gap nobody will close.
+    const std::string phase = readSource("plans/phase-07-panel-migration.md");
+    CNA_STUDIO_EXPECT(!phase.empty());
+
+    std::size_t unanswered = 0;
+    for (const InspectorSection& section : inspectorSections())
+    {
+        if (section.nativeFile != nullptr) { continue; }
+        ++unanswered;
+
+        CNA_STUDIO_EXPECT(section.task != nullptr);
+        if (section.task != nullptr && phase.find(section.task) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"the inspector section '"} + section.prototype + "' names "
+                + section.task + ", which is not a task in Phase 7.");
+        }
+    }
+
+    // Stated so that closing the last one is a deliberate edit to this number rather than
+    // something nobody notices. Dear ImGui cannot be deleted while this is above zero.
+    CNA_STUDIO_EXPECT_EQ(unanswered, std::size_t{5});
+}

@@ -117,10 +117,18 @@ The native shell is ahead of the prototype on everything a user sees first, and 
 screen's worth of scene-level settings — which this review found and which are now answered.
 
 What `STUDIO-07030` — deleting the Dear ImGui panels — is still waiting for is the inventory's *Not
-yet answered* table, repeated here so the two can be compared by a test rather than by eye. The 3D
-view left that table when the native viewport gained one, which is why the list is now one row:
+yet answered* table, repeated here so the two can be compared by a test rather than by eye.
 
-- Material editing
+**The list grew.** It was one row — material editing — and `STUDIO-07041` found five, because this
+review and that inventory were both looking at the level of *panels* and the gap was a level below:
+the controls inside one. The prototype's Inspector draws eight sections and the native Details panel
+had three. `docs/MIGRATION-INVENTORY.md` has the correction and what changed so it cannot recur.
+
+- Prefab overrides
+- Sprite animation preview
+- Audio preview
+- Asset inspector
+- Material asset editor
 
 **This review is a judgement and says so.** No test can assert that one editor looks better than
 another. What the suite does check is that the four captures exist, that they are the sizes this

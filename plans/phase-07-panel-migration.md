@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 22 of 27 complete `██████████░░`
+**Progress:** 24 of 34 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -34,7 +34,14 @@
 | `STUDIO-07022` | Prove docking parity | ✅ | `STUDIO-07020` |
 | `STUDIO-07023` | Visual acceptance review against the Phase 0 reference screenshots | ✅ | `STUDIO-00013`, `STUDIO-07020` |
 | `STUDIO-07024` | Layers panel: the project's render layers and what is on each | ✅ | `STUDIO-03034` |
-| `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07021`, `STUDIO-07022`, `STUDIO-07023` |
+| `STUDIO-07040` | Add and remove a component from the native Details panel | ✅ | `STUDIO-07008` |
+| `STUDIO-07041` | Inventory the prototype's *controls*, not only its panels and menus | ✅ | `STUDIO-07020` |
+| `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | ⬜ | `STUDIO-07041` |
+| `STUDIO-07043` | Sprite animation preview in the native Details panel | ⬜ | `STUDIO-07041` |
+| `STUDIO-07044` | Audio preview in the native Details panel | ⬜ | `STUDIO-07041` |
+| `STUDIO-07045` | The asset inspector: a selected asset's own properties | ⬜ | `STUDIO-07041` |
+| `STUDIO-07046` | The material asset editor the prototype already has | ⬜ | `STUDIO-07041` |
+| `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
 | `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | ⬜ | `STUDIO-07031` |
 
@@ -768,3 +775,74 @@ bounding box present only where something differs, a collapsed renderer keeping 
 missing capture reading differently during and after a run, a size mismatch not reported as a
 disagreement, a launch failure carrying its reason, the verdict withheld until the run finishes, and
 the tolerance clamped — checked by removing the clamp and watching it fail
+
+### `STUDIO-07040` — Add and remove a component from the native Details panel
+
+**Acceptance.** An entity created in the native shell can be given a component, and a component can
+be taken off again, both through the history.
+
+**The gap that stopped Dear ImGui being deleted.** The prototype's Inspector has had an Add
+Component control since it existed. The native Details panel had **no way to add a component at
+all** — so an entity created in the native shell could never be given anything to do, and the
+migration inventory said the migration was complete.
+
+**How it was found**, and this is the part worth keeping: by asking, before deleting the prototype,
+what the prototype's Inspector actually draws. It draws eight sections; the native panel had three.
+The inventory could not have caught it, because the inventory accounts for panels, menus, toolbar
+controls and shortcuts, and `Add Component` is a button *inside* a panel. `STUDIO-07041` is that
+level.
+
+**The type is remembered as a type id and resolved to an index every frame**, not kept as an index:
+the list shortens the moment a unique component is added, and a remembered index would then silently
+point at a different type. That is the prototype's reasoning and it is right.
+
+**Remove is on the component's own header** rather than in a context menu, because a component that
+can be added and not removed is a mistake a user cannot correct except through the history — and
+reaching for Undo to fix a click is not the same thing as a Remove. Whether a component *may* be
+removed is asked of `RemoveComponentCommand` rather than decided in the panel: a descriptor may mark
+one required, a transform is, and two places deciding that is one place that will eventually say
+something the other refuses.
+
+**Both are collected and applied after the loop**, because removing a component rebuilds the vector
+the loop is walking — the same reason the property edit below it breaks out of its own loop, and the
+same failure if it did not.
+
+**Verification.** `AComponentCanBeAddedToTheSelectedEntityAndUndone` and
+`AComponentIsRemovedFromItsOwnHeaderAndUndone`, both sweeping for the control rather than computing
+a pixel, like every other test in that file: a test that computes a coordinate becomes, the first
+time a metric changes, a test that clicks nothing and passes. The second asserts *which* component
+went — the sweep starts at the Transform's header, so a Remove that ignored `required` would have
+taken the Transform first, and asserting only the count would pass either way.
+
+### `STUDIO-07041` — Inventory the prototype's controls, not only its panels and menus
+
+**Acceptance.** Every section the prototype's Inspector draws is either recorded as answered, with
+the native file and the symbol that answers it, or recorded as a gap with the task that closes it —
+and a test checks both halves.
+
+**Why a level below the existing inventory.** `docs/MIGRATION-INVENTORY.md` and its tests check
+panels, menu items, toolbar controls and shortcuts, which is the level at which a *surface* can go
+missing. It is not the level at which a *capability* can: the Details panel was ✅ on every row of
+that inventory while missing five of the prototype Inspector's eight sections.
+
+**A list of names rather than a walk over the prototype's code**, deliberately. The prototype is
+being deleted and a test that read it would be deleted with it — and the point of this one is to
+outlive the thing it was written about. It checks the *native* side: a section recorded as answered
+must resolve to a file that still contains the symbol named, so an answer that is later removed or
+renamed fails the build.
+
+**It counts the gaps and asserts the number.** Closing the last one is then a deliberate edit to
+that number rather than something nobody notices, and Dear ImGui cannot be deleted while it is above
+zero — which is exactly the guarantee that was missing.
+
+### `STUDIO-07042` … `STUDIO-07046` — The five sections with no native answer
+
+Each is a section the prototype's Inspector draws that the native Details panel does not, found by
+`STUDIO-07041`. Prefab overrides and the material asset editor are the substantial ones; the two
+previews and the asset inspector are contained.
+
+**The material one corrects the inventory.** `docs/MIGRATION-INVENTORY.md` said "there is no
+`.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19)". There is
+one: `InspectorPanel::drawMaterialAsset`. It is not a `.cnamaterial` *panel*, which is what the
+inventory was looking for — it is a section of the Inspector that appears when a material asset is
+selected, and it is a working editor.

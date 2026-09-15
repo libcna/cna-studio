@@ -602,7 +602,8 @@ namespace CNA::Studio
             return rows;
         }();
 
-        const std::size_t totalRows = componentRows + 3;  // name, enabled, a gap
+        // name, enabled, a gap, and the Add Component row at the bottom.
+        const std::size_t totalRows = componentRows + 4;
 
         StudioScrollOptions scroll;
         scroll.contentHeight = static_cast<float>(totalRows) * (rowHeight + spacing);
@@ -676,16 +677,61 @@ namespace CNA::Studio
         nextRow();
 
         // --- Components ---------------------------------------------------------------------
+        //
+        // Collected rather than applied in the loop, because removing a component rebuilds the
+        // vector this loop is walking. The same reason the property edit below breaks out of its
+        // own loop, and the same failure if it did not.
+        std::optional<std::size_t> removing;
+        std::size_t nextComponentIndex = 0;
+
         for (const StudioComponent& component : entity->getComponents())
         {
+            const std::size_t componentIndex = nextComponentIndex++;
             const ComponentDescriptor* descriptor =
                 context.getComponentRegistry().find(component.getTypeId());
 
             {
-                const UiRect header = nextRow();
+                UiRect header = nextRow();
                 if (frame.isDrawPass())
                 {
                     frame.drawList().fillRect(header, theme.color(StudioColorRole::PanelHeader));
+                }
+
+                // `STUDIO-07040`. On the header rather than in a context menu, because a component
+                // that can be added and not removed is a mistake a user cannot undo except through
+                // the history -- and reaching for Undo to correct a click is not the same thing as
+                // a Remove.
+                frame.ids().push(component.getTypeId());
+                frame.ids().pushIndex(static_cast<std::int64_t>(componentIndex));
+                {
+                    const UiRect box = header.splitRight(std::min(header.width, rowHeight));
+
+                    // Asked of the command rather than decided here. A descriptor may mark a
+                    // component required -- a transform is -- and two places deciding that is one
+                    // place that will eventually say a thing the other refuses.
+                    RemoveComponentCommand probe{context.getScene(),
+                                                 context.getComponentRegistry(), entityId,
+                                                 componentIndex};
+
+                    StudioButtonOptions options;
+                    options.icon = StudioIcon::Delete;
+                    options.iconOnly = true;
+                    options.enabled = probe.isValid();
+                    options.tooltip = probe.isValid()
+                        ? "Remove this component"
+                        : "This component cannot be removed from this entity";
+
+                    if (studioButton(frame, frame.ids().make("remove"), box, "Remove", options)
+                            .activated)
+                    {
+                        removing = componentIndex;
+                    }
+                }
+                frame.ids().pop();
+                frame.ids().pop();
+
+                if (frame.isDrawPass())
+                {
                     studioDrawText(frame,
                                    header.inset(UiEdges{metricOf(theme, StudioMetric::SpacingSmall),
                                                         0.0f,
@@ -1044,6 +1090,114 @@ namespace CNA::Studio
                     // The component list may have been rebuilt underneath this loop.
                     break;
                 }
+            }
+        }
+
+        // --- Add Component ---------------------------------------------------------------------
+        //
+        // `STUDIO-07040`, and the gap that stopped Dear ImGui being deleted. The prototype's
+        // Inspector has had this since it existed; the native Details panel had no way to add a
+        // component *at all*, so an entity created in the native shell could never be given
+        // anything to do. The migration inventory did not catch it because it accounts for panels,
+        // menus, toolbars and shortcuts -- and this is a button inside a panel.
+        nextRow();
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            frame.ids().push("addcomponent");
+
+            std::vector<std::string> labels;
+            std::vector<std::string> typeIds;
+            for (const std::string& typeId : context.getComponentRegistry().getTypeIds())
+            {
+                const ComponentDescriptor* candidate = context.getComponentRegistry().find(typeId);
+                if (candidate == nullptr) { continue; }
+
+                // A unique component the entity already has cannot be added again, so listing it
+                // would be listing an entry that does nothing -- AddComponentCommand refuses it
+                // anyway, and a control that refuses is indistinguishable from one that is broken.
+                if (candidate->unique && entity->findComponent(typeId) != nullptr) { continue; }
+
+                labels.push_back(candidate->category.empty()
+                                     ? candidate->displayName
+                                     : candidate->category + " / " + candidate->displayName);
+                typeIds.push_back(typeId);
+            }
+
+            if (labels.empty())
+            {
+                if (frame.isDrawPass())
+                {
+                    studioDrawText(frame, parts.label, "Add Component", StudioFontRole::Body,
+                                   theme.color(StudioColorRole::TextDisabled));
+                    studioDrawText(frame, parts.control, "Every type is already on this entity.",
+                                   StudioFontRole::BodySmall,
+                                   theme.color(StudioColorRole::TextSecondary));
+                }
+            }
+            else
+            {
+                // The choice is remembered as a *type id* and resolved to an index every frame,
+                // not kept as an index: the list shortens the moment a unique component is added,
+                // and a remembered index would then silently point at a different type.
+                WidgetState& state = frame.state().get(frame.ids().make("choice"));
+                int chosen = 0;
+                for (std::size_t index = 0; index < typeIds.size(); ++index)
+                {
+                    if (typeIds[index] == state.text) { chosen = static_cast<int>(index); break; }
+                }
+                state.text = typeIds[static_cast<std::size_t>(chosen)];
+
+                UiRect control = parts.control;
+                const UiRect addButton =
+                    control.splitRight(std::min(control.width, rowHeight * 3.0f));
+                control.splitRight(std::min(spacing, control.width));
+
+                if (frame.isDrawPass())
+                {
+                    studioDrawText(frame, parts.label, "Add Component", StudioFontRole::Body,
+                                   theme.color(StudioColorRole::TextSecondary));
+                }
+
+                if (studioDropdown(frame, frame.ids().make("type"), control, labels, chosen).changed
+                    && chosen >= 0 && static_cast<std::size_t>(chosen) < typeIds.size())
+                {
+                    state.text = typeIds[static_cast<std::size_t>(chosen)];
+                }
+
+                StudioButtonOptions options;
+                options.icon = StudioIcon::Add;
+                options.tooltip = "Add this component to the selected entity";
+                if (studioButton(frame, frame.ids().make("add"), addButton, "Add", options)
+                        .activated)
+                {
+                    auto command = std::make_unique<AddComponentCommand>(
+                        context.getScene(), context.getComponentRegistry(), entityId, state.text);
+                    // Asked before it is pushed, so the undo stack never gains an entry that does
+                    // nothing. The list above already excludes the refusals this can name, which
+                    // makes this the belt to that braces rather than the only check.
+                    if (command->isValid())
+                    {
+                        context.execute(std::move(command));
+                        result.edited = true;
+                        result.editedProperty = state.text;
+                    }
+                }
+            }
+
+            frame.ids().pop();
+        }
+
+        // After the loop and after the Add row, for the reason it was collected: removing a
+        // component rebuilds the vector both were walking.
+        if (removing.has_value())
+        {
+            auto command = std::make_unique<RemoveComponentCommand>(
+                context.getScene(), context.getComponentRegistry(), entityId, *removing);
+            if (command->isValid())
+            {
+                result.edited = true;
+                result.editedProperty = command->getDescription();
+                context.execute(std::move(command));
             }
         }
 

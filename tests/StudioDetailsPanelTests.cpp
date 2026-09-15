@@ -363,3 +363,97 @@ CNA_STUDIO_TEST(EveryPropertyKindTheSchemaDeclaresGetsAControlRatherThanASummary
     Harness second{fixture.context};
     CNA_STUDIO_EXPECT_EQ(second.last.readOnlyProperties, std::size_t{1});
 }
+
+// ------------------------------------------------------------------------------------------------
+// Adding and removing components (STUDIO-07040)
+//
+// The gap that stopped Dear ImGui being deleted. The prototype's Inspector has had an Add Component
+// control since it existed and the native Details panel had none -- so an entity created in the
+// native shell could never be given anything to do. The migration inventory did not catch it
+// because it accounts for panels, menus, toolbars and shortcuts, and this is a button inside a
+// panel. These tests are at the level the inventory did not reach.
+//
+// Both sweep for the control rather than computing a pixel, like every other test in this file: a
+// test that computes a coordinate becomes, the first time a metric changes, a test that clicks
+// nothing and passes.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AComponentCanBeAddedToTheSelectedEntityAndUndone)
+{
+    Fixture fixture;
+    Harness harness{fixture.context};
+
+    const auto componentCount = [&fixture] {
+        const StudioEntity* found = fixture.context.getScene().findEntity(fixture.entity);
+        return found != nullptr ? found->getComponents().size() : std::size_t{0};
+    };
+
+    const std::size_t before = componentCount();
+    CNA_STUDIO_EXPECT_EQ(before, std::size_t{1});
+
+    // The Add button is at the right-hand end of the last row. Swept from the bottom of the panel
+    // upward, because the row it is on moves with the number of properties above it.
+    bool added = false;
+    for (float y = harness.bounds.bottom() - 8.0f;
+         y > harness.bounds.top() && !added; y -= 5.0f)
+    {
+        harness.click(harness.bounds.right() - 24.0f, y);
+        added = componentCount() > before;
+    }
+
+    CNA_STUDIO_EXPECT(added);
+    CNA_STUDIO_EXPECT_EQ(componentCount(), before + 1);
+
+    // Through the history like every other edit. A component added outside it is one Undo cannot
+    // take back, and adding the wrong one is exactly the mistake a click makes.
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().canUndo());
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(componentCount(), before);
+}
+
+CNA_STUDIO_TEST(AComponentIsRemovedFromItsOwnHeaderAndUndone)
+{
+    // A Transform alone cannot be removed -- its descriptor marks it required -- so the entity
+    // gets a second component to take away. That the required one *refuses* is the other half, and
+    // is asserted by the count not falling to zero.
+    Fixture fixture;
+    {
+        StudioEntity* entity = fixture.context.getScene().findEntity(fixture.entity);
+        CNA_STUDIO_EXPECT(entity != nullptr);
+        entity->getComponents().push_back(StudioComponent{"CNA.SpriteRenderer"});
+    }
+
+    Harness harness{fixture.context};
+
+    const auto componentCount = [&fixture] {
+        const StudioEntity* found = fixture.context.getScene().findEntity(fixture.entity);
+        return found != nullptr ? found->getComponents().size() : std::size_t{0};
+    };
+
+    const std::size_t before = componentCount();
+    CNA_STUDIO_EXPECT_EQ(before, std::size_t{2});
+
+    bool removed = false;
+    for (float y = harness.bounds.top() + 8.0f;
+         y < harness.bounds.bottom() && !removed; y += 5.0f)
+    {
+        harness.click(harness.bounds.right() - 12.0f, y);
+        removed = componentCount() < before;
+    }
+
+    CNA_STUDIO_EXPECT(removed);
+    CNA_STUDIO_EXPECT_EQ(componentCount(), before - 1);
+
+    // And it is the *right* one. The sweep starts at the top, where the Transform's header is, so
+    // a Remove that ignored `required` would have taken the Transform first -- and an entity
+    // without one is not an entity. Asserting only the count would pass either way.
+    {
+        const StudioEntity* found = fixture.context.getScene().findEntity(fixture.entity);
+        CNA_STUDIO_EXPECT(found->findComponent("CNA.Transform") != nullptr);
+        CNA_STUDIO_EXPECT(found->findComponent("CNA.SpriteRenderer") == nullptr);
+    }
+
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().canUndo());
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(componentCount(), before);
+}
