@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 24 of 31 complete `█████████░░░`
+**Progress:** 25 of 31 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -26,7 +26,7 @@
 | `STUDIO-03014` | Headless test renderer capturing draw data and widget geometry | ✅ | `STUDIO-03009` |
 | `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain | ✅ | `STUDIO-03003` |
 | `STUDIO-03020` | Cursor shape requests from widgets | ✅ | `STUDIO-03009` |
-| `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ⬜ | `STUDIO-03009` |
+| `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ✅ | `STUDIO-03009` |
 | `STUDIO-03022` | Popup and modal layering with correct input blocking | 🔄 | `STUDIO-03009` |
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
 | `STUDIO-03024` | Text selection model for text fields | ✅ | `STUDIO-03007` |
@@ -313,3 +313,46 @@ in the suite nondeterministic
 **Verification.** `tests/StudioTextEditTests.cpp` — commit on Enter and not before, Escape leaving
 the value alone, the router being told a key means text, and a click placing the caret where it
 landed rather than at an end
+
+### `STUDIO-03021` — Tooltip model with delay, placement and dismissal
+
+**Acceptance.** A tooltip appears only after the pointer has *rested* on one control, names that
+control and its shortcut, stays inside the window, and never covers what is being dragged
+
+**It became necessary rather than nice when the toolbar went icon-only** (`STUDIO-04008`). An icon
+toolbar with no tooltips is less discoverable than the row of words it replaced, so the tooltip is
+part of that change rather than a later polish pass. The text is the label, the shortcut and the
+action's description — assembled from the action registry, so a command whose shortcut is rebound
+says so without anybody remembering to update a string.
+
+**The delay is the whole feature, and it is a per-widget clock, not a per-pointer one.** Without a
+delay, sweeping the pointer across a toolbar flashes six tooltips on the way to the seventh, and the
+flicker is what the eye follows, so the one the user wanted is the one they do not read. The clock
+therefore belongs to a *widget*: it resets whenever the hovered widget changes, including to
+nothing, so coming back to a control waits again rather than snapping the tooltip open.
+
+**Advanced at end of frame, and that is not an implementation detail.** Hover is decided during the
+input pass, so asking which widget is hovered at the *start* of a frame answers with the previous
+frame's. The first implementation did exactly that, and the off-by-one frame ate the delay: on the
+frame the pointer crossed from one button to the next, the change was invisible, the clock never
+reset, and the new button's tooltip appeared instantly. The delay worked only for the first control
+the pointer ever touched — which no screenshot would have shown. `MovingToAnotherControlStartsTheWaitAgain`
+is the test that caught it.
+
+**Placement.** Below the control by default, flipped above when there is no room, and clamped
+horizontally, so a tooltip on the last toolbar button stays on screen. Anchored to the widget's
+rectangle rather than to the pointer, which is what keeps it off the thing it describes. Drawn in
+its own layer above menus, and refused outright while anything is being dragged.
+
+**It found a screenshot test that had been photographing nothing.** `--shell-pointer=40,40` is the
+*gap* between two toolbar buttons at scale 1, so `CnaStudioShellPreviewPressedToolbar` had been
+capturing a toolbar at rest and passing every run. Both that test and the new tooltip capture now
+point at (20, 40), and `TheShellsFirstToolbarButtonIsUnderThePointTheScreenshotTestsUse` pins the
+number so moving the toolbar fails loudly rather than quietly emptying those captures.
+
+**Verification.** `tests/StudioTooltipTests.cpp` — the wait, the reset on moving to another control,
+the reset on leaving and returning, one tooltip at a time with the anchor on the control, nothing
+during a drag, the shell's toolbar carrying its shortcut, and staying inside the window. Plus
+`CnaStudioShellPreviewTooltip`, which captures a real one through the rasterizer and fails the run
+if none appeared, and `CnaStudioRejectsATooltipThatNeverAppears`, so resting somewhere that offers
+none is an error rather than a picture of the shell at rest passing for a picture of a tooltip

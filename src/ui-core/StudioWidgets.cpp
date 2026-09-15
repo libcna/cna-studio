@@ -274,6 +274,12 @@ namespace CNA::Studio
         const StudioTheme& theme = frame.theme();
         StudioWidgetResult result = interactControl(frame, id, bounds, options.enabled,
                                                     options.focusable, options.cursor);
+
+        // Offered even when disabled: "why is this greyed out" is exactly the moment somebody
+        // hovers for an explanation, and a tooltip that vanished then would be missing at the one
+        // time it is most wanted.
+        if (!options.tooltip.empty()) { (void)frame.requestTooltip(id, options.tooltip, bounds); }
+
         if (!frame.isDrawPass()) { return result; }
 
         const StudioControlState state = resolveState(result.interaction, options.selected);

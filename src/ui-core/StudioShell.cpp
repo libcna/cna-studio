@@ -596,6 +596,82 @@ namespace CNA::Studio
         // overlap. Being in a raised input layer is what stops the panels beneath from responding;
         // being described last is what stops the popup from being drawn underneath them.
         describeMenuPopup();
+
+        // After even that: a tooltip is the only thing that may cover an open menu, because it
+        // describes whatever the pointer is resting on and the pointer may be resting on the menu.
+        describeTooltip();
+    }
+
+    void StudioShell::describeTooltip()
+    {
+        if (!frame_.isDrawPass()) { return; }
+
+        const StudioFrame::StudioTooltipRequest& request = frame_.tooltip();
+        if (!request.visible()) { return; }
+
+        const StudioTheme& theme = frame_.theme();
+        const float padding = metricOf(theme, StudioMetric::SpacingSmall);
+
+        // Wrapped at the newline the caller put in, not at a width: a tooltip is one line of label
+        // and one of help, and reflowing it to a measured width would put a sentence's break
+        // somewhere different every time the pointer moved to a wider control.
+        std::vector<std::string_view> lines;
+        std::size_t from = 0;
+        while (from <= request.text.size())
+        {
+            const std::size_t newline = request.text.find('\n', from);
+            const std::size_t end = newline == std::string::npos ? request.text.size() : newline;
+            lines.push_back(std::string_view{request.text}.substr(from, end - from));
+            if (newline == std::string::npos) { break; }
+            from = newline + 1;
+        }
+
+        float widest = 0.0f;
+        float height = 0.0f;
+        const float lineHeight = frame_.measureText(StudioFontRole::BodySmall, "Ag").lineHeight;
+        for (const std::string_view& line : lines)
+        {
+            widest = std::max(widest, frame_.measureText(StudioFontRole::BodySmall, line).width);
+            height += lineHeight;
+        }
+
+        const float width = std::ceil(widest + padding * 2.0f);
+        const float total = std::ceil(height + padding * 2.0f);
+
+        // Below the widget it describes, not under the pointer. A tooltip that followed the
+        // pointer covers whatever is beneath it and moves while being read; anchored to the
+        // control, it sits still and never hides the thing it is explaining.
+        float x = std::round(request.anchor.left());
+        float y = std::round(request.anchor.bottom() + metricOf(theme, StudioMetric::SpacingXSmall));
+
+        // Clamped into the window, and flipped above the widget rather than clipped when there is
+        // no room below -- a tooltip cut in half by the window edge says nothing.
+        x = std::min(x, std::max(0.0f, layout_.window.right() - width));
+        x = std::max(x, layout_.window.left());
+        if (y + total > layout_.window.bottom())
+        {
+            y = std::round(request.anchor.top() - total
+                           - metricOf(theme, StudioMetric::SpacingXSmall));
+        }
+        y = std::max(y, layout_.window.top());
+
+        const UiRect box{x, y, width, total};
+
+        frame_.pushLayer(kTooltipLayer);
+        frame_.drawList().fillRoundedRect(box, theme.color(StudioColorRole::TooltipBackground),
+                                          metricOf(theme, StudioMetric::CornerRadius));
+        frame_.drawList().strokeRect(box, theme.color(StudioColorRole::Border),
+                                     metricOf(theme, StudioMetric::BorderWidth));
+
+        UiRect cursor = box.inset(UiEdges{padding});
+        for (std::size_t i = 0; i < lines.size(); ++i)
+        {
+            const UiRect row = cursor.splitTop(lineHeight);
+            studioDrawText(frame_, row, lines[i], StudioFontRole::BodySmall,
+                           theme.color(i == 0 ? StudioColorRole::TextPrimary
+                                              : StudioColorRole::TextSecondary));
+        }
+        frame_.popLayer();
     }
 
     void StudioShell::describeMenuBar()
@@ -801,6 +877,19 @@ namespace CNA::Studio
 
             const std::string_view label = action != nullptr ? std::string_view{action->label}
                                                              : std::string_view{entry.id};
+
+            // The label, its shortcut, and a sentence of help. An icon-only toolbar is only
+            // discoverable through this -- and a tooltip that merely repeated the word the button
+            // would have shown would make the icons no more discoverable than before.
+            std::string tooltip{label};
+            if (action != nullptr)
+            {
+                const std::string chord = describeStudioShortcut(action->shortcut);
+                if (!chord.empty()) { tooltip += "  (" + chord + ")"; }
+                if (!action->description.empty()) { tooltip += "\n" + action->description; }
+            }
+            options.tooltip = tooltip;
+
             const StudioWidgetResult result =
                 studioButton(frame_, frame_.ids().make(entry.id), entry.bounds, label, options);
 

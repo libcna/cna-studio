@@ -68,6 +68,7 @@ namespace CNA::Studio
             if (argument == "--shell-mouse-down") { options.shellPreviewMouseDown = true; continue; }
             if (argument == "--host-capabilities") { options.hostCapabilities = true; continue; }
             if (argument == "--export-overwrite") { options.exportOverwrite = true; continue; }
+            if (argument == "--shell-tooltip") { options.shellPreviewTooltip = true; continue; }
 
             if (splitOption(argument, name, value))
             {
@@ -288,6 +289,7 @@ namespace CNA::Studio
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
+            "  --shell-tooltip    Rest the pointer until a tooltip appears.\n"
             "                       preview. Needs --shell-pointer.\n"
             "  --ui=studio        Run the native Studio UI in a window (needs a CNA build).\n"
             "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"

@@ -526,6 +526,14 @@ namespace CNA::Studio
          */
         static constexpr int kDockPreviewLayer = 1;
 
+        /**
+         * @brief The layer a tooltip draws in.
+         *
+         * Above everything, an open menu included: a tooltip describes whatever the pointer is
+         * resting on, and the pointer may be resting on a menu row.
+         */
+        static constexpr int kTooltipLayer = 2;
+
     private:
         /** @brief Where one menu title sits in the bar. */
         struct MenuTitleGeometry
@@ -562,6 +570,7 @@ namespace CNA::Studio
         void describeDocks();
         void describeSplitters();
         void describeDockDrag();
+        void describeTooltip();
         void resolveDropTarget();
         void applyDrop();
         void describeStatusBar();

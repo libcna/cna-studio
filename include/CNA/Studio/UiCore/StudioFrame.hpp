@@ -343,6 +343,59 @@ namespace CNA::Studio
         /** @brief The cursor shape the platform should show this frame. */
         [[nodiscard]] StudioCursor cursor() const { return cursor_; }
 
+        // --- Tooltips (STUDIO-03021) --------------------------------------------------------------
+
+        /** @brief A tooltip that has waited long enough to be shown. */
+        struct StudioTooltipRequest
+        {
+            /** @brief The widget it belongs to. Invalid when nothing is showing one. */
+            WidgetId owner;
+
+            /** @brief What it says. */
+            std::string text;
+
+            /** @brief The widget's rectangle, so the tooltip can be placed beside rather than over it. */
+            UiRect anchor;
+
+            /** @brief How long the pointer has rested on the widget, in seconds. */
+            float hoverSeconds = 0.0f;
+
+            /** @brief Whether there is a tooltip to draw. */
+            [[nodiscard]] bool visible() const { return owner.isValid() && !text.empty(); }
+        };
+
+        /**
+         * @brief Offers a tooltip for a widget.
+         *
+         * Honoured only for the widget the pointer is actually resting on, like @ref requestCursor
+         * — every widget can offer one, and at most one is showing.
+         *
+         * A tooltip appears after a delay rather than immediately. Without one, moving the pointer
+         * across a toolbar flashes six tooltips on the way to the seventh, which is worse than
+         * having none: the flicker is what the eye follows, so the one the user wanted is the one
+         * they do not read.
+         *
+         * @param id The offering widget.
+         * @param text What to say. Empty offers nothing.
+         * @param bounds The widget's rectangle, so the tooltip can avoid covering it.
+         * @return True when this widget is the one whose tooltip would show.
+         */
+        bool requestTooltip(WidgetId id, std::string_view text, const UiRect& bounds);
+
+        /** @brief The tooltip to draw this frame, if any. */
+        [[nodiscard]] const StudioTooltipRequest& tooltip() const { return tooltip_; }
+
+        /**
+         * @brief How long the pointer must rest before a tooltip appears, in seconds.
+         *
+         * A setting rather than a constant because it is the kind of number people disagree about,
+         * and because a test wants to reach the shown state without waiting.
+         */
+        void setTooltipDelay(float seconds) { tooltipDelay_ = std::max(0.0f, seconds); }
+
+        /** @brief The tooltip delay in seconds. */
+        [[nodiscard]] float tooltipDelay() const { return tooltipDelay_; }
+
         // --- Clipboard (STUDIO-03025) -------------------------------------------------------------
 
         /**
@@ -411,6 +464,10 @@ namespace CNA::Studio
         StudioFontAtlas* atlas_ = nullptr;
 
         StudioCursor cursor_ = StudioCursor::Arrow;
+        StudioTooltipRequest tooltip_;
+        WidgetId tooltipHovered_;
+        float tooltipHoverSeconds_ = 0.0f;
+        float tooltipDelay_ = 0.6f;
         std::function<std::string()> readClipboard_;
         std::function<void(const std::string&)> writeClipboard_;
         std::string localClipboard_;

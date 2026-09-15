@@ -202,6 +202,15 @@ namespace CNA::Studio
         std::string shellPreviewDragPanel;
 
         /**
+         * @brief Hold the pointer still long enough for a tooltip to appear, for the capture.
+         *
+         * A tooltip is a *timed* state: it exists only after the pointer has rested. No single
+         * input snapshot expresses that, so the preview has to run frames rather than describe a
+         * moment -- the same reason `--shell-drag` exists.
+         */
+        bool shellPreviewTooltip = false;
+
+        /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *
          * Play mode offers exactly the backends whose player executable is installed, which is a

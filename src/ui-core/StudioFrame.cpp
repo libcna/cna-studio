@@ -83,6 +83,8 @@ namespace CNA::Studio
 
         interactions_.clear();
         cursor_ = StudioCursor::Arrow;
+
+        tooltip_ = StudioTooltipRequest{};
     }
 
     void StudioFrame::beginLayout() { enter(StudioFramePhase::Layout, StudioFramePhase::Build); }
@@ -143,6 +145,27 @@ namespace CNA::Studio
         // widget that had focus while this frame's input was routed. Resolving it between the
         // passes would draw the ring on one widget and have sent the keystrokes to another.
         router_.endFrame();
+
+        // The hover clock advances here, once per frame, and only now: hover is decided during the
+        // input pass, so asking at the start of a frame answers with the *previous* frame's widget.
+        // That off-by-one frame is not cosmetic -- it is the whole delay. Sweeping the pointer from
+        // one toolbar button to the next, the frame of the move would still be counted against the
+        // button just left, the clock would never reset, and the new button's tooltip would appear
+        // instantly. The delay would then work only for the first control the pointer ever touched.
+        const WidgetId hovered = router_.hoveredId();
+        if (hovered.isValid() && hovered == tooltipHovered_)
+        {
+            tooltipHoverSeconds_ += pendingInput_.deltaSeconds > 0.0f ? pendingInput_.deltaSeconds
+                                                                     : 1.0f / 60.0f;
+        }
+        else
+        {
+            // Reset on *any* change of hovered widget, including to nothing. A clock that kept
+            // counting across a gap would make the tooltip snap back the instant the pointer
+            // returned, which is the flicker the delay exists to prevent.
+            tooltipHoverSeconds_ = 0.0f;
+        }
+        tooltipHovered_ = hovered;
 
         ++frameIndex_;
         phase_ = StudioFramePhase::Idle;
@@ -238,6 +261,28 @@ namespace CNA::Studio
         if (!owns) { return false; }
 
         cursor_ = cursor;
+        return true;
+    }
+
+    bool StudioFrame::requestTooltip(WidgetId id, std::string_view text, const UiRect& bounds)
+    {
+        if (!id.isValid() || text.empty()) { return false; }
+
+        // Only the widget under the pointer, and only when nothing is being dragged: a tooltip
+        // that appeared halfway through a splitter drag would cover the thing being dragged.
+        if (router_.activeId().isValid()) { return false; }
+        if (router_.hoveredId() != id) { return false; }
+
+        // The clock belongs to a widget, not to the pointer. On the frame the pointer crosses from
+        // one control to the next, the clock still holds the time spent on the one it left; letting
+        // this widget read it would hand it a delay it never waited out.
+        if (tooltipHovered_ != id) { return false; }
+        if (tooltipHoverSeconds_ < tooltipDelay_) { return false; }
+
+        tooltip_.owner = id;
+        tooltip_.text = std::string{text};
+        tooltip_.anchor = bounds;
+        tooltip_.hoverSeconds = tooltipHoverSeconds_;
         return true;
     }
 

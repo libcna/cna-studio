@@ -123,6 +123,15 @@ namespace CNA::Studio
         StudioIcon icon = StudioIcon::None;
 
         /**
+         * @brief What a tooltip says about this button. Empty offers none.
+         *
+         * Not derived from the label. An icon-only button's tooltip needs to say more than the
+         * word the button would have shown — "Undo (Ctrl+Z)" rather than "Undo" — and a button
+         * showing its label usually needs no tooltip at all.
+         */
+        std::string_view tooltip;
+
+        /**
          * @brief Draw the icon only, even when a label is given.
          *
          * The label is still what a screen reader and a tooltip use, and it is still what decides

@@ -8,6 +8,7 @@
  * toolkit, under the null UI in CI, and under a future Qt implementation.
  */
 
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -190,6 +191,30 @@ namespace
         shell.renderFrame(input);
         textures.apply(shell.drawData());
         shell.renderFrame(input);
+
+        if (options.shellPreviewTooltip)
+        {
+            // Frames, not a flag. A tooltip appears after the pointer has *rested*, so the only
+            // way to capture one is to let the clock run -- reaching into the shell to set a
+            // "tooltip showing" field would capture a state no amount of hovering produces.
+            // The +3 covers the frame that establishes the hover (the clock only starts once the
+            // pointer has been seen over the control) and leaves a frame in hand, so a delay that
+            // divides exactly into sixtieths is not decided by a floating-point comparison.
+            const int frames = static_cast<int>(
+                std::ceil(shell.frame().tooltipDelay() * 60.0f)) + 3;
+            for (int i = 0; i < frames; ++i)
+            {
+                shell.renderFrame(input);
+                textures.apply(shell.drawData());
+            }
+
+            if (!shell.frame().tooltip().visible())
+            {
+                std::cerr << "cna-studio: no tooltip appeared. --shell-tooltip needs "
+                             "--shell-pointer over a control that offers one.\n";
+                return 2;
+            }
+        }
 
         if (!options.shellPreviewDragPanel.empty())
         {

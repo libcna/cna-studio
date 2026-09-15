@@ -48,7 +48,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**131 of 478 tasks complete** `█████░░░░░░░░░░░░░░░░░░░`  27.4%
+**132 of 478 tasks complete** `███████░░░░░░░░░░░░░░░░░░`  27.6%
 
 | Status | Count |
 |--------|------:|
@@ -72,7 +72,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
 | 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 27 | 22 | `████████░░` |
-| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 31 | 24 | `███████░░░` |
+| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 31 | 25 | `████████░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 19 | 10 | `████░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 14 | 12 | `██████░░░░` |
 | 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 23 | 11 | `████░░░░░░` |

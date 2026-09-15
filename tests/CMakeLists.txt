@@ -31,6 +31,7 @@ add_executable(cna-studio-tests
     StudioShellActionTests.cpp
     StudioContentBrowserTests.cpp
     StudioDockDragTests.cpp
+    StudioTooltipTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -188,7 +189,7 @@ set_tests_properties(CnaStudioShellPreviewOpenMenu PROPERTIES TIMEOUT 60)
 
 add_test(NAME CnaStudioShellPreviewPressedToolbar
     COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-pressed.png
-                       --shell-size=1280x720 --shell-pointer=40,40 --shell-mouse-down)
+                       --shell-size=1280x720 --shell-pointer=20,40 --shell-mouse-down)
 set_tests_properties(CnaStudioShellPreviewPressedToolbar PROPERTIES TIMEOUT 60)
 
 # A menu title that does not exist is an error naming the ones that do, rather than a picture of a
@@ -200,6 +201,20 @@ add_test(NAME CnaStudioShellPreviewDockDrag
                        --shell-size=1280x720 --shell-drag=layers
                        --shell-pointer=1000,400 --shell-mouse-down)
 set_tests_properties(CnaStudioShellPreviewDockDrag PROPERTIES TIMEOUT 60)
+
+# The icon toolbar is only as discoverable as its tooltips, so the tooltip is captured rather than
+# assumed: the run fails outright if resting the pointer on a toolbar button produces none.
+add_test(NAME CnaStudioShellPreviewTooltip
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-tooltip.png
+                       --shell-size=1280x720 --shell-pointer=20,40 --shell-tooltip)
+set_tests_properties(CnaStudioShellPreviewTooltip PROPERTIES TIMEOUT 60)
+
+# And resting somewhere that offers none is an error rather than a picture of the shell at rest
+# passing for a picture of a tooltip.
+add_test(NAME CnaStudioRejectsATooltipThatNeverAppears
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/no-tooltip.png
+                       --shell-size=1280x720 --shell-pointer=640,400 --shell-tooltip)
+set_tests_properties(CnaStudioRejectsATooltipThatNeverAppears PROPERTIES WILL_FAIL TRUE TIMEOUT 60)
 
 # Dragging to a point too close to the tab starts nothing, and a capture of a drag that never
 # began would be a picture of the shell at rest passing for a picture of a drag.
