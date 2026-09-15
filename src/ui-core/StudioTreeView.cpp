@@ -152,10 +152,9 @@ namespace CNA::Studio
                                               theme.color(StudioColorRole::ControlBackgroundHover));
                 }
 
-                const StudioColorRole labelRole =
-                    !row.enabled ? StudioColorRole::TextDisabled
-                                 : (row.selected ? StudioColorRole::TextPrimary
-                                                 : StudioColorRole::TextPrimary);
+                const StudioColorRole labelRole = (!row.enabled || row.muted)
+                    ? StudioColorRole::TextDisabled
+                    : StudioColorRole::TextPrimary;
 
                 UiRect labelArea = cursor;
                 if (!row.detail.empty())

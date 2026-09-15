@@ -455,6 +455,11 @@ int main(int argc, char** argv)
                 std::cout << ", outliner showing " << result.outlinerRowsDrawn << " of "
                           << result.outlinerRowsTotal << " entities";
             }
+            if (result.contentRowsTotal > 0)
+            {
+                std::cout << ", content showing " << result.contentRowsDrawn << " of "
+                          << result.contentRowsTotal << " rows";
+            }
             if (result.detailsRowsDrawn > 0)
             {
                 std::cout << ", details showing " << result.detailsRowsDrawn << " rows";

@@ -418,7 +418,8 @@ endif()
 add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioOutlinerPanel.cpp
     src/shell-panels/StudioDetailsPanel.cpp
-    src/shell-panels/StudioShellActions.cpp)
+    src/shell-panels/StudioShellActions.cpp
+    src/shell-panels/StudioContentBrowser.cpp)
 target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context)
 
 # ---------------------------------------------------------------------------------------------

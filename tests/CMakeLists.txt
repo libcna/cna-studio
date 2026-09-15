@@ -29,6 +29,7 @@ add_executable(cna-studio-tests
     StudioTextEditTests.cpp
     StudioDetailsPanelTests.cpp
     StudioShellActionTests.cpp
+    StudioContentBrowserTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp

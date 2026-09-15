@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 6 of 26 complete `██░░░░░░░░░░`
+**Progress:** 7 of 26 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -17,7 +17,7 @@
 | `STUDIO-07005` | Port the Console / Output Log | ✅ | `STUDIO-07001` |
 | `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
 | `STUDIO-07007` | Port the Inspector panel (Details) | ✅ | `STUDIO-07001`, `STUDIO-03035` |
-| `STUDIO-07008` | Port the Content Browser | ⬜ | `STUDIO-07001` |
+| `STUDIO-07008` | Port the Content Browser | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
 | `STUDIO-07010` | Port the Build panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07011` | Port the Diagnostics panel | ⬜ | `STUDIO-07001` |
@@ -176,3 +176,28 @@ and list add/remove/reorder. Pickers, not text fields: four numbers is not a col
 
 **Acceptance.** `SceneCommands` gains a set-enabled command and the Details panel routes the
 checkbox through it, like every other edit
+
+### `STUDIO-07008` — Port the Content Browser
+
+**Acceptance.** The project's assets as folders and files: folders before their contents, files
+sorted within a folder, each file showing its type and each folder how much is in it, and clicking
+a file selecting it
+
+**It reads the asset database, not the filesystem.** The database is what knows an asset's stable
+id, its type, and whether its source has gone. A browser that walked the directory instead would
+show files Studio does not track and hide the one fact that matters about a tracked file whose
+source has vanished
+
+**Folders are derived from paths.** A folder therefore exists exactly when something tracked is in
+it. An empty directory on disk does not appear, which is the honest answer: showing it would promise
+a place to put things the database does not know about
+
+**A missing source is dimmed, not disabled.** The distinction was found by a test that could not
+click the row it was meant to. An asset whose file has gone should read as wrong at a glance *and*
+stay selectable — it is the row a user most needs to click, because clicking it is how they find
+out what references the lost file. `StudioTreeRow` grew a `muted` flag so "looks wrong" and "cannot
+be touched" stopped being the same thing
+
+**Verification.** `tests/StudioContentBrowserTests.cpp` — folders derived and ordered, collapsing
+hiding subfolders as well as files, a missing source listed and marked and still clickable, types
+and counts, a click selecting a file and not a folder, and an empty project saying so

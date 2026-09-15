@@ -129,6 +129,12 @@ namespace CNA::Studio
         /** @brief How many Details rows the ported inspector put on screen. */
         std::size_t detailsRowsDrawn = 0;
 
+        /** @brief How many Content Browser rows the ported panel put on screen. */
+        std::size_t contentRowsDrawn = 0;
+
+        /** @brief How many rows the asset database and the current expansion produced. */
+        std::size_t contentRowsTotal = 0;
+
         /** @brief Whether a stored workspace arrangement was found and applied at start-up. */
         bool layoutRestored = false;
 

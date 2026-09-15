@@ -65,8 +65,23 @@ namespace CNA::Studio
         /** @brief Whether the row is part of the current selection. */
         bool selected = false;
 
-        /** @brief False to draw the row dimmed, for something hidden or disabled. */
+        /**
+         * @brief False to draw the row dimmed *and* make it unclickable.
+         *
+         * For a row there is genuinely nothing to do with. Rarer than it looks: see @ref muted.
+         */
         bool enabled = true;
+
+        /**
+         * @brief Draw the row dimmed while leaving it fully interactive.
+         *
+         * The distinction matters more than it sounds. An asset whose source file has gone should
+         * read as wrong at a glance *and* still be selectable — it is the row a user most needs to
+         * click, because clicking it is how they find out what references it. Conflating "looks
+         * wrong" with "cannot be touched" makes exactly the rows that need attention the ones
+         * nothing can reach.
+         */
+        bool muted = false;
     };
 
     /**

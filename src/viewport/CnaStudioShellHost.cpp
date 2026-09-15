@@ -22,10 +22,12 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
@@ -143,6 +145,28 @@ namespace CNA::Studio
                         }
                     });
 
+                // The Content Browser (STUDIO-07008), the fourth ported panel.
+                shell_->setPanelContent("content",
+                    [this](StudioFrame& frame, const UiRect& bounds) {
+                        const StudioContentBrowserResult content = studioContentBrowser(
+                            frame, bounds, *context_, contentState_, selectedAsset_);
+                        if (frame.isDrawPass())
+                        {
+                            contentRowsDrawn_ = content.rowsDrawn;
+                            contentRowsTotal_ = content.rowsTotal;
+                        }
+                        if (content.selectedAsset.isValid())
+                        {
+                            const AssetRecord* record = context_->getAssets().find(
+                                content.selectedAsset);
+                            if (record != nullptr)
+                            {
+                                log_.append(LogSeverity::Trace,
+                                            "Selected asset '" + record->sourcePath + "'.");
+                            }
+                        }
+                    });
+
                 // The Details panel (STUDIO-07007), the third ported and the first that writes to
                 // the document. Every edit goes through the command history, so Ctrl+Z reaches it.
                 shell_->setPanelContent("details",
@@ -232,6 +256,8 @@ namespace CNA::Studio
             [[nodiscard]] std::size_t outlinerRowsDrawn() const { return outlinerRowsDrawn_; }
             [[nodiscard]] std::size_t outlinerRowsTotal() const { return outlinerRowsTotal_; }
             [[nodiscard]] std::size_t detailsRowsDrawn() const { return detailsRowsDrawn_; }
+            [[nodiscard]] std::size_t contentRowsDrawn() const { return contentRowsDrawn_; }
+            [[nodiscard]] std::size_t contentRowsTotal() const { return contentRowsTotal_; }
             [[nodiscard]] std::size_t logRowsDrawn() const { return logRowsDrawn_; }
             [[nodiscard]] std::size_t logRowsMatching() const { return logRowsMatching_; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
@@ -447,6 +473,10 @@ namespace CNA::Studio
             std::size_t outlinerRowsDrawn_ = 0;
             std::size_t outlinerRowsTotal_ = 0;
             std::size_t detailsRowsDrawn_ = 0;
+            StudioTreeState contentState_;
+            Uuid selectedAsset_;
+            std::size_t contentRowsDrawn_ = 0;
+            std::size_t contentRowsTotal_ = 0;
             StudioLog log_;
             std::size_t logRowsDrawn_ = 0;
             std::size_t logRowsMatching_ = 0;
@@ -481,6 +511,8 @@ namespace CNA::Studio
         result.outlinerRowsDrawn = game.outlinerRowsDrawn();
         result.outlinerRowsTotal = game.outlinerRowsTotal();
         result.detailsRowsDrawn = game.detailsRowsDrawn();
+        result.contentRowsDrawn = game.contentRowsDrawn();
+        result.contentRowsTotal = game.contentRowsTotal();
         result.logRowsDrawn = game.logRowsDrawn();
         result.logRowsMatching = game.logRowsMatching();
         result.layoutRestored = game.layoutRestored();
