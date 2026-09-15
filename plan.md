@@ -48,13 +48,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**160 of 488 tasks complete** `████████░░░░░░░░░░░░░░░░░`  32.8%
+**161 of 488 tasks complete** `████████░░░░░░░░░░░░░░░░░`  33.0%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 160 |
+| ✅ Complete | 161 |
 | 🔄 In progress | 10 |
-| ⬜ Not started | 312 |
+| ⬜ Not started | 311 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 4 |
 | **Total** | **488** |
@@ -69,7 +69,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 | Phase | Title | Ids | Status | Tasks | Done | Progress |
 |------:|-------|-----|:------:|------:|-----:|----------|
-| 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
+| 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 13 | `█████████░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
 | 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 27 | 22 | `████████░░` |
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 33 | 29 | `█████████░` |

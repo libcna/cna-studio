@@ -45,6 +45,9 @@ namespace CNA::Studio
         Insert, Delete, Backspace, Space, Enter, Escape,
         A, C, V, X, Y, Z,
         D, F, N, Q, S, W, E, R,
+        // Appended rather than inserted, like every other addition to a list something else counts
+        // through: O is Open, and taking Ctrl+D for it would have repurposed Duplicate.
+        O,
         F1, F2, F5,
 
         // Digits, named rather than spelt, because an enumerator cannot begin with one. Appended

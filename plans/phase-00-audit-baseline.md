@@ -6,7 +6,7 @@
 
 **Exit criteria.** The imported tree builds clean and green from an empty build directory, its numbers are written down, and the provenance of every file is recorded.
 
-**Progress:** 12 of 15 complete `█████████░░░`
+**Progress:** 13 of 15 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-00011` | Re-audit current CNA (`next`) for renderers, platforms and capability reporting | ✅ | `STUDIO-00003` |
 | `STUDIO-00012` | Re-verify the prototype-era CNA gaps against current CNA | ✅ | `STUDIO-00011` |
 | `STUDIO-00013` | Capture reference screenshots of the prototype UI before migration begins | ⬜ | `STUDIO-00004` |
-| `STUDIO-00014` | Record the prototype panel, menu and shortcut inventory as the migration checklist | ⬜ | `STUDIO-00003` |
+| `STUDIO-00014` | Record the prototype panel, menu and shortcut inventory as the migration checklist | ✅ | `STUDIO-00003` |
 | `STUDIO-00015` | Measure baseline start-up time and headless frame cost | ⬜ | `STUDIO-00004` |
 
 ## Acceptance and verification
@@ -101,6 +101,28 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-00014` — Record the prototype panel, menu and shortcut inventory as the migration checklist
 
 **Acceptance.** Every panel, menu item, toolbar control and keyboard shortcut listed with its owning source file, so Phase 7 can prove parity item by item rather than by impression
+
+**A checklist rather than a document.** `docs/MIGRATION-INVENTORY.md` would have been a record of
+intentions; the test suite makes it a *check*. An item marked answered must resolve — a panel id to
+a registered panel that draws something, a command id to a command that exists and has a handler,
+and a chord to a command bound to that same chord. An item with no native answer carries the reason,
+in the same discipline as the unimplemented-command and empty-panel guards.
+
+**What writing it down found, which is the point.** Three chords silently disagreed with the
+prototype's: `Ctrl+N` meant New *Scene* there and New *Project* natively (and there was no native
+New Scene at all); `Ctrl+D` was Duplicate there and Open Project natively, with Duplicate pushed to
+`Ctrl+Shift+D`; and `X`, the gizmo-space toggle, had no native command whatsoever. Each would have
+shipped as "the shortcut I have used for a year does something else now" — the worst kind of
+regression, because it works and so nothing reports it. All three are fixed, which needed a new key
+in the vocabulary (`O`, so Open could take the conventional `Ctrl+O` and give `Ctrl+D` back).
+
+**What it cannot check** is whether the two *behave* the same, which is `STUDIO-07020`–`07023`. It
+checks that the counterpart exists, and that is where these were found.
+
+**Verification.** `tests/StudioMigrationInventoryTests.cpp`: the file exists and lists enough to be
+a checklist, every answered panel is registered and draws, every answered chord is bound to that
+chord, and every answered menu item's command exists with a handler — each checked by pointing a row
+at the wrong thing and watching it name the line
 
 ### `STUDIO-00015` — Measure baseline start-up time and headless frame cost
 

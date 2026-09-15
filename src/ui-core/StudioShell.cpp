@@ -129,14 +129,19 @@ namespace CNA::Studio
     {
         const std::string sep{kStudioMenuSeparatorId};
         return {
-            {"File", {"studio.file.newProject", "studio.file.openProject", sep,
+            // New Scene first, where the prototype has it: it is the frequent one, and a menu that
+            // put the project commands above it would have people reaching past them all day.
+            {"File", {"studio.file.newScene", sep,
+                      "studio.file.newProject", "studio.file.openProject", sep,
                       "studio.file.save", "studio.file.saveAll", sep, "studio.file.quit"}},
             {"Edit", {"studio.edit.undo", "studio.edit.redo", sep,
                       "studio.edit.duplicate", "studio.edit.delete"}},
             {"View", {"studio.view.focusSelected", "studio.view.toggleGrid", sep,
-                      "studio.view.translate", "studio.view.rotate", "studio.view.scale"}},
+                      "studio.view.translate", "studio.view.rotate", "studio.view.scale",
+                      "studio.view.toggleGizmoSpace"}},
             {"Project", {}},
-            {"Build", {"studio.build.build", "studio.build.package"}},
+            {"Build", {"studio.build.build", "studio.build.cancel", sep,
+                       "studio.build.package"}},
             {"Play", {"studio.play.play", "studio.play.stop"}},
             {"Tools", {}},
             // The panel list is filled in by registerPanel(), because which panels exist is decided

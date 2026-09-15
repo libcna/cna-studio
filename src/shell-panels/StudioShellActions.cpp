@@ -76,6 +76,22 @@ namespace CNA::Studio
                  }
              });
 
+        // New Scene, which the prototype has on Ctrl+N and the native shell did not have at all
+        // (docs/MIGRATION-INVENTORY.md). Refused with unsaved changes rather than discarding them:
+        // a key people press all day must not be able to throw work away without asking.
+        bind("studio.file.newScene",
+             [&context] { return context.hasProject(); },
+             [&context, &log] {
+                 if (context.getHistory().isDirty())
+                 {
+                     log.append(LogSeverity::Warning,
+                                "Save the scene before starting a new one, or undo your changes.");
+                     return;
+                 }
+                 context.newScene();
+                 log.append(LogSeverity::Info, "Started a new scene.");
+             });
+
         bind("studio.edit.delete",
              [&context] { return !context.getSelection().empty(); },
              [&context, &log] {

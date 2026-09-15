@@ -55,7 +55,8 @@ namespace CNA::Studio
                 case UiKey::V: return "V";  case UiKey::X: return "X";
                 case UiKey::Y: return "Y";  case UiKey::Z: return "Z";
                 case UiKey::D: return "D";  case UiKey::F: return "F";
-                case UiKey::N: return "N";  case UiKey::Q: return "Q";
+                case UiKey::N: return "N";  case UiKey::O: return "O";
+                case UiKey::Q: return "Q";
                 case UiKey::S: return "S";  case UiKey::W: return "W";
                 case UiKey::E: return "E";  case UiKey::R: return "R";
                 case UiKey::F1: return "F1"; case UiKey::F2: return "F2";
@@ -283,10 +284,17 @@ namespace CNA::Studio
 
         using C = StudioActionCategory;
 
+        // The chords follow the prototype's, which is what existing users' hands already know
+        // (docs/MIGRATION-INVENTORY.md). Ctrl+N is New *Scene* there and is the frequent one, so it
+        // keeps the plain chord; New Project takes the Shift variant, as it does in most IDEs.
+        command("studio.file.newScene", "New Scene",
+                "Start an empty scene.", C::File, chord(UiKey::N, mods(true)));
         command("studio.file.newProject", "New Project...",
-                "Create a new CNA game project.", C::File, chord(UiKey::N, mods(true)));
+                "Create a new CNA game project.", C::File, chord(UiKey::N, mods(true, true)));
+        // Ctrl+O, not Ctrl+D: Ctrl+D is Duplicate in the prototype and in every editor that has a
+        // duplicate, and taking it for Open would silently repurpose a key people press all day.
         command("studio.file.openProject", "Open Project...",
-                "Open an existing CNA game project.", C::File, chord(UiKey::D, mods(true)));
+                "Open an existing CNA game project.", C::File, chord(UiKey::O, mods(true)));
         command("studio.file.save", "Save",
                 "Save the active document.", C::File, chord(UiKey::S, mods(true)));
         command("studio.file.saveAll", "Save All",
@@ -300,7 +308,7 @@ namespace CNA::Studio
         command("studio.edit.redo", "Redo",
                 "Redo the last undone change.", C::Edit, chord(UiKey::Y, mods(true)));
         command("studio.edit.duplicate", "Duplicate",
-                "Duplicate the selection.", C::Edit, chord(UiKey::D, mods(true, true)));
+                "Duplicate the selection.", C::Edit, chord(UiKey::D, mods(true)));
         command("studio.edit.delete", "Delete",
                 "Delete the selection.", C::Edit, chord(UiKey::Delete));
 
@@ -312,6 +320,8 @@ namespace CNA::Studio
                 "Switch the gizmo to translation.", C::View, chord(UiKey::W));
         command("studio.view.rotate", "Rotate",
                 "Switch the gizmo to rotation.", C::View, chord(UiKey::E));
+        command("studio.view.toggleGizmoSpace", "Toggle Gizmo Space",
+                "Switch the gizmo between world and local space.", C::View, chord(UiKey::X));
         command("studio.view.scale", "Scale",
                 "Switch the gizmo to scaling.", C::View, chord(UiKey::R));
 

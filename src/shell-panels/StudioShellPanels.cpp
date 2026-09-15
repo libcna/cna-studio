@@ -379,6 +379,25 @@ namespace CNA::Studio
         // worse than one that plainly does not respond.
         if (services_.camera == nullptr) { return; }
 
+        // X, which the prototype has and the native shell did not (docs/MIGRATION-INVENTORY.md).
+        // A toggle rather than two commands, as it is there: there are two spaces, and a toggle
+        // needs no second binding to get back.
+        if (const StudioAction* existing = shell.actions().find("studio.view.toggleGizmoSpace"))
+        {
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this] { return viewportState_.space == GizmoSpace::Local; };
+            action.run = [this] {
+                viewportState_.space = viewportState_.space == GizmoSpace::World
+                    ? GizmoSpace::Local : GizmoSpace::World;
+                // Any drag in flight ends with the space that owned it, for the same reason a mode
+                // change does: a translate half-finished in world space would keep writing world
+                // deltas into a local transform.
+                viewportState_.endDrag();
+            };
+            shell.actions().add(std::move(action));
+        }
+
         // The toolbar's three transform buttons, which have been drawing and doing nothing since
         // the toolbar existed. Bound here rather than with the document commands because the mode
         // they set is the viewport's, and checkable so the toolbar shows which one is on -- three

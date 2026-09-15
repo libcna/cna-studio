@@ -146,13 +146,13 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **160 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **161 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
 exactly the failure the first was written to prevent in the other file.
 
-**Phase 0 — Audit and baseline** (12 of 15). Imported `cna-lab/cna-editor` at
+**Phase 0 — Audit and baseline** (13 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641`, verified its baseline, re-audited current CNA.
 
 **Phase 1 — Product rename** (13 of 16). `cna-studio` executable, `cna-studio-*` targets, the

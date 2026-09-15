@@ -43,6 +43,7 @@ namespace CNA::Studio
                 case UiKey::Y: return ImGuiKey_Y;
                 case UiKey::Z: return ImGuiKey_Z;
                 case UiKey::D: return ImGuiKey_D;
+                case UiKey::O: return ImGuiKey_O;
                 case UiKey::F: return ImGuiKey_F;
                 case UiKey::N: return ImGuiKey_N;
                 case UiKey::S: return ImGuiKey_S;

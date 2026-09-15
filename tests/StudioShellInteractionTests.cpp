@@ -286,22 +286,31 @@ CNA_STUDIO_TEST(ArrowKeysMoveTheHighlightSkippingSeparatorsAndEnterInvokes)
     harness.click(file.centerX(), file.centerY());
     CNA_STUDIO_EXPECT_EQ(harness.shell.highlightedMenuEntry(), -1);
 
-    // Down three times from nothing: new, open, then past the separator to save.
-    harness.frame(withKey(UiKey::DownArrow));
-    harness.frame(at(600.0f, 400.0f));
-    harness.frame(withKey(UiKey::DownArrow));
-    harness.frame(at(600.0f, 400.0f));
-    harness.frame(withKey(UiKey::DownArrow));
+    // Walked to the row rather than counted to it: the File menu gains and loses items, and a test
+    // that pressed Down a fixed number of times would fail for the one reason that is never a
+    // defect. Every step is asserted not to land on a separator, which is what the test is about.
+    int highlighted = -1;
+    for (int step = 0; step < 20; ++step)
+    {
+        harness.frame(withKey(UiKey::DownArrow));
+        harness.frame(at(600.0f, 400.0f));
 
-    const int highlighted = harness.shell.highlightedMenuEntry();
-    CNA_STUDIO_EXPECT(highlighted >= 0);
-    CNA_STUDIO_EXPECT(harness.shell.menuRowActionId(static_cast<std::size_t>(highlighted))
-                      != kStudioMenuSeparatorId);
+        highlighted = harness.shell.highlightedMenuEntry();
+        CNA_STUDIO_EXPECT(highlighted >= 0);
+        CNA_STUDIO_EXPECT(harness.shell.menuRowActionId(static_cast<std::size_t>(highlighted))
+                          != kStudioMenuSeparatorId);
+
+        if (harness.shell.menuRowActionId(static_cast<std::size_t>(highlighted))
+            == "studio.file.save")
+        {
+            break;
+        }
+    }
+
     CNA_STUDIO_EXPECT_EQ(std::string{harness.shell.menuRowActionId(
                              static_cast<std::size_t>(highlighted))},
                          std::string{"studio.file.save"});
 
-    harness.frame(at(600.0f, 400.0f));
     harness.frame(withKey(UiKey::Enter));
     CNA_STUDIO_EXPECT_EQ(harness.recorder.count("studio.file.save"), 1);
     CNA_STUDIO_EXPECT_EQ(harness.shell.openMenu(), -1);
