@@ -295,6 +295,22 @@ namespace CNA::Studio
                     }
                     continue;
                 }
+                if (name == "--screenshot-min-colors")
+                {
+                    try
+                    {
+                        const int wanted = std::stoi(value);
+                        if (wanted < 0) { throw std::out_of_range{"negative"}; }
+                        options.screenshotMinColors = static_cast<std::size_t>(wanted);
+                    }
+                    catch (const std::exception&)
+                    {
+                        options.hasError = true;
+                        options.errorMessage =
+                            "--screenshot-min-colors expects a count, got '" + value + "'";
+                    }
+                    continue;
+                }
                 if (name == "--graphics")
                 {
                     // Rejected rather than ignored, because silently accepting it would teach
@@ -366,6 +382,8 @@ namespace CNA::Studio
             "  --orbit=YAW,PITCH  Orbit the 3D camera to these angles, in degrees. Needs --view=3d.\n"
             "  --frames=N         Exit after N frames. Useful for smoke tests.\n"
             "  --screenshot=PATH  Write a PNG of the final frame. Requires --frames.\n"
+            "  --screenshot-min-colors=N  Fail if the captured frame holds fewer distinct\n"
+            "                     colours than N, so a blank window fails rather than passing.\n"
             "  --autosave=SECONDS Crash-recovery snapshot interval. 0 disables. Default: 30.\n"
             "  --recovery-dir=DIR Where snapshots are kept. Default: the per-user state directory.\n"
             "  --list-backends    Print the CNA graphics backends Studio knows about.\n"

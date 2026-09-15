@@ -782,6 +782,7 @@ int main(int argc, char** argv)
         CNA::Studio::CnaStudioShellHostOptions hostOptions;
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.screenshotPath = options.screenshotPath;
+        hostOptions.screenshotMinColors = options.screenshotMinColors;
         hostOptions.uiScale = static_cast<float>(options.shellPreviewScale);  // 0 means "not given"
 
         hostOptions.theme = options.shellPreviewTheme;
@@ -812,9 +813,15 @@ int main(int argc, char** argv)
         }
         if (!options.screenshotPath.empty() && !result.screenshotWritten)
         {
-            std::cerr << "cna-studio: no screenshot was written to '" << options.screenshotPath
-                      << "'. --screenshot needs --frames, and the renderer must support reading "
-                         "back its own back buffer.\n";
+            // Silent when the capture was refused for being blank: that reason has already been
+            // printed, and guessing at a second one sends the reader looking for a fault that is
+            // not there.
+            if (!result.screenshotTooFlat)
+            {
+                std::cerr << "cna-studio: no screenshot was written to '" << options.screenshotPath
+                          << "'. --screenshot needs --frames, and the renderer must support reading "
+                             "back its own back buffer.\n";
+            }
             return 4;
         }
         if (!result.layoutProblem.empty())
@@ -928,6 +935,7 @@ int main(int argc, char** argv)
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.layoutPath = resolveLayoutPath();
         hostOptions.screenshotPath = options.screenshotPath;
+        hostOptions.screenshotMinColors = options.screenshotMinColors;
         hostOptions.windowTitle = application->getContext().hasProject()
                                       ? "CNA Studio -- " + application->getContext().getProject().getName()
                                       : "CNA Studio";
@@ -953,9 +961,15 @@ int main(int argc, char** argv)
 
         if (!options.screenshotPath.empty() && !result.screenshotWritten)
         {
-            std::cerr << "cna-studio: no screenshot was written to '" << options.screenshotPath
-                      << "'. --screenshot needs --frames, and the backend must support reading "
-                         "back its own back buffer.\n";
+            // Silent when the capture was refused for being blank: that reason has already been
+            // printed, and guessing at a second one sends the reader looking for a fault that is
+            // not there.
+            if (!result.screenshotTooFlat)
+            {
+                std::cerr << "cna-studio: no screenshot was written to '" << options.screenshotPath
+                          << "'. --screenshot needs --frames, and the backend must support reading "
+                             "back its own back buffer.\n";
+            }
             return 4;
         }
 

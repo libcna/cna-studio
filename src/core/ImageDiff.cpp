@@ -123,4 +123,36 @@ namespace CNA::Studio
         }
         return result;
     }
+
+    std::size_t countDistinctColors(const std::uint8_t* rgba, std::size_t pixelCount,
+                                    std::size_t stopAt)
+    {
+        if (rgba == nullptr || pixelCount == 0 || stopAt == 0) { return 0; }
+
+        // A flat set of the colours seen so far rather than a hash set. `stopAt` is a handful --
+        // the callers ask "more than eight?" -- so a linear scan over at most that many entries
+        // beats hashing every pixel of a 1920x1080 frame.
+        std::vector<std::uint32_t> seen;
+        seen.reserve(stopAt);
+
+        for (std::size_t i = 0; i < pixelCount; ++i)
+        {
+            const std::uint8_t* texel = rgba + i * 4;
+            const std::uint32_t color = (static_cast<std::uint32_t>(texel[0]) << 24)
+                                      | (static_cast<std::uint32_t>(texel[1]) << 16)
+                                      | (static_cast<std::uint32_t>(texel[2]) << 8)
+                                      | static_cast<std::uint32_t>(texel[3]);
+
+            if (std::find(seen.begin(), seen.end(), color) != seen.end()) { continue; }
+            seen.push_back(color);
+            if (seen.size() >= stopAt) { return stopAt; }
+        }
+        return seen.size();
+    }
+
+    std::size_t countDistinctColors(const ImageBuffer& image, std::size_t stopAt)
+    {
+        if (!image.isWellFormed()) { return 0; }
+        return countDistinctColors(image.pixels.data(), image.getPixelCount(), stopAt);
+    }
 }

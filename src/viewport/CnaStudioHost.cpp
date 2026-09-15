@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Viewport/CnaStudioHost.hpp"
 
-#include <iostream>
-
 #include <algorithm>
+#include <cstdint>
 #include <exception>
+#include <iostream>
 #include <vector>
 
 #include "Microsoft/Xna/Framework/Color.hpp"
@@ -27,6 +27,42 @@
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
+
+namespace
+{
+    /**
+     * @brief Whether @p pixels is too flat to be a picture of anything, and says so if it is.
+     *
+     * Counted from the packed value rather than from the channels, because the question is only
+     * whether two texels differ and packing is a fixed permutation of the same bits: no assumption
+     * about channel order is needed, and one that was wrong would be invisible here.
+     *
+     * @param pixels The captured frame.
+     * @param minimum How many distinct colours are required. Zero asks nothing.
+     * @param path The file being written, for the message.
+     * @return True when the capture should be treated as a failure.
+     */
+    bool captureIsBlank(const std::vector<Xna::Color>& pixels, std::size_t minimum,
+                        const std::string& path)
+    {
+        if (minimum == 0) { return false; }
+
+        std::vector<std::uint32_t> seen;
+        seen.reserve(minimum);
+        for (const Xna::Color& texel : pixels)
+        {
+            const auto packed = static_cast<std::uint32_t>(texel.getPackedValueProperty());
+            if (std::find(seen.begin(), seen.end(), packed) != seen.end()) { continue; }
+            seen.push_back(packed);
+            if (seen.size() >= minimum) { return false; }
+        }
+
+        std::cerr << "cna-studio: " << path << " holds only " << seen.size()
+                  << " distinct colours, and " << minimum << " were required -- the frame was "
+                  << "captured but nothing was drawn in it.\n";
+        return true;
+    }
+}
 
 namespace CNA::Studio
 {
@@ -58,6 +94,9 @@ namespace CNA::Studio
 
         /** @brief Returns true when a screenshot was requested and written. */
         [[nodiscard]] bool wasScreenshotWritten() const;
+
+        /** @brief Whether a capture was refused for holding too few colours to be a picture. */
+        [[nodiscard]] bool wasScreenshotTooFlat() const;
 
         /** @brief The start-up host capability verdict (STUDIO-02021). */
         [[nodiscard]] const StudioHostEvaluation& getCapabilities() const;
@@ -91,6 +130,7 @@ namespace CNA::Studio
         float lastDisplayWidth = 0.0f;
         float lastDisplayHeight = 0.0f;
         bool screenshotWritten = false;
+        bool screenshotTooFlat = false;
         bool screenshotAttempted = false;
         std::uint64_t frameCount = 0;
         bool contentLoaded = false;
@@ -152,6 +192,8 @@ namespace CNA::Studio
     float CnaStudioHost::getLastDisplayHeight() const { return impl_->lastDisplayHeight; }
 
     bool CnaStudioHost::wasScreenshotWritten() const { return impl_->screenshotWritten; }
+
+    bool CnaStudioHost::wasScreenshotTooFlat() const { return impl_->screenshotTooFlat; }
 
     const StudioHostEvaluation& CnaStudioHost::getCapabilities() const
     {
@@ -358,10 +400,19 @@ namespace CNA::Studio
         {
             device.GetBackBufferData(pixels.data(), static_cast<int>(pixelCount));
 
+            // Checked before the file is written, so a blank capture does not also leave a picture
+            // behind for somebody to look at and believe.
+            impl_->screenshotAttempted = true;
+            if (captureIsBlank(pixels, impl_->options.screenshotMinColors,
+                               impl_->options.screenshotPath))
+            {
+                impl_->screenshotTooFlat = true;
+                return;
+            }
+
             XnaGraphics::Texture2D capture{device, width, height};
             capture.SetData(pixels.data(), static_cast<int>(pixelCount));
             capture.SaveAsPng(impl_->options.screenshotPath);
-            impl_->screenshotAttempted = true;
             impl_->screenshotWritten = true;
 
             impl_->application->getContext().log(
@@ -429,6 +480,7 @@ namespace CNA::Studio
         result.displayWidth = host.getLastDisplayWidth();
         result.displayHeight = host.getLastDisplayHeight();
         result.screenshotWritten = host.wasScreenshotWritten();
+        result.screenshotTooFlat = host.wasScreenshotTooFlat();
         result.capabilityReport = host.getCapabilities().report();
         result.rendererCanHostStudio = host.getCapabilities().canHostStudio;
 

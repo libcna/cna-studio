@@ -61,6 +61,14 @@ namespace CNA::Studio
         std::string screenshotPath;
 
         /**
+         * @brief Fail the run when the captured frame holds fewer distinct colours than this.
+         *
+         * Zero asks nothing. Without it a graphical smoke test cannot tell a working editor from
+         * one that opened a window and drew nothing into it: both write a file.
+         */
+        std::size_t screenshotMinColors = 0;
+
+        /**
          * @brief Print the host capability report to the log on start-up.
          *
          * Off by default because it is a dozen lines nobody reads on a working build, and on by
@@ -113,6 +121,16 @@ namespace CNA::Studio
 
         /** @brief True when a requested screenshot reached disk. */
         bool screenshotWritten = false;
+
+        /**
+         * @brief True when the capture was refused for holding too few colours to be a picture.
+         *
+         * Separate from @ref screenshotWritten because the two want different explanations. "No
+         * screenshot was written" is otherwise followed by a guess at why -- no frame limit, or a
+         * renderer that cannot read back -- and printing that guess after the real reason has
+         * already been given sends the reader looking for a second fault that is not there.
+         */
+        bool screenshotTooFlat = false;
 
         /** @brief The CNA backend the session actually ran on. */
         std::string backend;

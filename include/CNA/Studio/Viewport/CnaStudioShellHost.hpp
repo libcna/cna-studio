@@ -56,6 +56,15 @@ namespace CNA::Studio
         std::string screenshotPath;
 
         /**
+         * @brief Fail the run when the captured frame holds fewer distinct colours than this.
+         *
+         * Zero asks nothing. "The file appearing is the test" above was not quite true: the file
+         * appears for a blank window too. This is what makes the capture an assertion about the
+         * picture rather than about the process having survived.
+         */
+        std::size_t screenshotMinColors = 0;
+
+        /**
          * @brief Where to remember the workspace arrangement between runs. Empty disables it.
          *
          * A path rather than a flag, so the tests can point it at a temporary file and a developer
@@ -180,6 +189,16 @@ namespace CNA::Studio
 
         /** @brief True when a requested screenshot reached disk. */
         bool screenshotWritten = false;
+
+        /**
+         * @brief True when the capture was refused for holding too few colours to be a picture.
+         *
+         * Separate from @ref screenshotWritten because the two want different explanations. "No
+         * screenshot was written" is otherwise followed by a guess at why -- no frame limit, or a
+         * renderer that cannot read back -- and printing that guess after the real reason has
+         * already been given sends the reader looking for a second fault that is not there.
+         */
+        bool screenshotTooFlat = false;
 
         /** @brief The CNA renderer the session ran on. */
         std::string renderer;

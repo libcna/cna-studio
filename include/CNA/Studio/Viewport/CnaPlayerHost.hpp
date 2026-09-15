@@ -45,6 +45,15 @@ namespace CNA::Studio
          * the failure those two cases share is invisible from the outside.
          */
         std::string screenshotPath;
+
+        /**
+         * @brief Fail the run when the captured frame holds fewer distinct colours than this.
+         *
+         * Zero asks nothing. The comment on the graphical smoke test says the capture is the
+         * assertion, and it was only half of one: a player that ran the protocol and drew nothing
+         * still writes a perfectly valid PNG of an empty frame.
+         */
+        std::size_t screenshotMinColors = 0;
     };
 
     /** @brief What a hosted player session did. */

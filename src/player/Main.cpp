@@ -39,6 +39,7 @@ namespace
         std::string scenePath;
         std::string requestedBackend;
         std::string screenshotPath;
+        std::size_t screenshotMinColors = 0;
         std::uint16_t studioPort = 0;
         int frameLimit = 0;
         bool headless = false;
@@ -86,6 +87,22 @@ namespace
                     continue;
                 }
                 if (name == "--screenshot") { options.screenshotPath = value; continue; }
+                if (name == "--screenshot-min-colors")
+                {
+                    try
+                    {
+                        const int wanted = std::stoi(value);
+                        if (wanted < 0) { throw std::out_of_range{"negative"}; }
+                        options.screenshotMinColors = static_cast<std::size_t>(wanted);
+                    }
+                    catch (const std::exception&)
+                    {
+                        options.hasError = true;
+                        options.errorMessage =
+                            "--screenshot-min-colors expects a count, got '" + value + "'";
+                    }
+                    continue;
+                }
                 if (name == "--frames")
                 {
                     try { options.frameLimit = std::stoi(value); }
@@ -127,6 +144,8 @@ namespace
             "  --studio-port=N      Connect to cna-studio on 127.0.0.1:N. Without it the player\n"
             "                       runs standalone, with no bridge.\n"
             "  --frames=N           Exit after N frames. Used by tests.\n"
+            "  --screenshot-min-colors=N  Fail if the captured frame holds fewer distinct\n"
+            "                       colours than N, so a blank frame fails rather than passing.\n"
             "  --screenshot=PATH    Write a PNG of the final frame. Needs --frames, so there is a\n"
             "                       defined frame to capture.\n"
             "  --headless           Run with no window.\n"
@@ -250,6 +269,7 @@ int main(int argc, char** argv)
         hostOptions.windowTitle = "cna-player -- " + host.getProject().getName() + " (" + backend + ")";
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.screenshotPath = options.screenshotPath;
+        hostOptions.screenshotMinColors = options.screenshotMinColors;
 
         const CNA::Studio::CnaPlayerHostResult result = CNA::Studio::runPlayerInWindow(
             hostOptions, host, pumpBridge,

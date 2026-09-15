@@ -130,4 +130,30 @@ namespace CNA::Studio
     [[nodiscard]] ImageBuffer makeDifferenceImage(const ImageBuffer& a,
                                                   const ImageBuffer& b,
                                                   int tolerance = kDefaultImageTolerance);
+
+    /**
+     * @brief How many distinct colours @p rgba holds, counting no further than @p stopAt.
+     *
+     * The question this answers is "did anything get drawn", and it is asked because a graphical
+     * smoke test that asserts on *counts* -- draw calls, triangles, entities -- passes for a
+     * window that opened and rendered nothing. A blank frame has one colour, or two where a border
+     * was cleared to something else; a frame of a real UI has hundreds, because antialiased text
+     * alone produces a spread at every glyph edge. So the threshold between them is not delicate.
+     *
+     * Counting stops at @p stopAt because the caller only ever compares against a small number and
+     * a full count of a 1920x1080 frame is work nobody asked for.
+     *
+     * @param rgba Pixel bytes, R G B A per pixel.
+     * @param pixelCount How many pixels @p rgba holds.
+     * @param stopAt Stop once this many distinct colours have been seen.
+     * @return The number seen, which is @p stopAt when counting stopped early.
+     */
+    [[nodiscard]] std::size_t countDistinctColors(const std::uint8_t* rgba, std::size_t pixelCount,
+                                                  std::size_t stopAt);
+
+    /**
+     * @brief How many distinct colours @p image holds, counting no further than @p stopAt.
+     * @see countDistinctColors(const std::uint8_t*, std::size_t, std::size_t)
+     */
+    [[nodiscard]] std::size_t countDistinctColors(const ImageBuffer& image, std::size_t stopAt);
 }

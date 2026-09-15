@@ -6,8 +6,10 @@
 
 #include "CNA/Studio/Viewport/CnaStudioShellHost.hpp"
 
-#include <iostream>
+#include <algorithm>
+#include <cstdint>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -43,6 +45,42 @@
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
+
+namespace
+{
+    /**
+     * @brief Whether @p pixels is too flat to be a picture of anything, and says so if it is.
+     *
+     * Counted from the packed value rather than from the channels, because the question is only
+     * whether two texels differ and packing is a fixed permutation of the same bits: no assumption
+     * about channel order is needed, and one that was wrong would be invisible here.
+     *
+     * @param pixels The captured frame.
+     * @param minimum How many distinct colours are required. Zero asks nothing.
+     * @param path The file being written, for the message.
+     * @return True when the capture should be treated as a failure.
+     */
+    bool captureIsBlank(const std::vector<Xna::Color>& pixels, std::size_t minimum,
+                        const std::string& path)
+    {
+        if (minimum == 0) { return false; }
+
+        std::vector<std::uint32_t> seen;
+        seen.reserve(minimum);
+        for (const Xna::Color& texel : pixels)
+        {
+            const auto packed = static_cast<std::uint32_t>(texel.getPackedValueProperty());
+            if (std::find(seen.begin(), seen.end(), packed) != seen.end()) { continue; }
+            seen.push_back(packed);
+            if (seen.size() >= minimum) { return false; }
+        }
+
+        std::cerr << "cna-studio: " << path << " holds only " << seen.size()
+                  << " distinct colours, and " << minimum << " were required -- the frame was "
+                  << "captured but nothing was drawn in it.\n";
+        return true;
+    }
+}
 
 namespace CNA::Studio
 {
@@ -215,6 +253,9 @@ namespace CNA::Studio
             [[nodiscard]] float displayWidth() const { return displayWidth_; }
             [[nodiscard]] float displayHeight() const { return displayHeight_; }
             [[nodiscard]] bool screenshotWritten() const { return screenshotWritten_; }
+
+            /** @brief Whether the capture was refused for holding too few colours. */
+            [[nodiscard]] bool screenshotTooFlat() const { return screenshotTooFlat_; }
             [[nodiscard]] bool viewportComposited() const { return viewportComposited_; }
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
@@ -541,10 +582,20 @@ namespace CNA::Studio
                 try
                 {
                     device.GetBackBufferData(pixels.data(), static_cast<int>(count));
+
+                    // Checked before the file is written, so a blank capture does not also leave
+                    // a picture behind for somebody to look at and believe.
+                    screenshotAttempted_ = true;
+                    if (captureIsBlank(pixels, options_.screenshotMinColors,
+                                       options_.screenshotPath))
+                    {
+                        screenshotTooFlat_ = true;
+                        return;
+                    }
+
                     XnaGraphics::Texture2D capture{device, width, height};
                     capture.SetData(pixels.data(), static_cast<int>(count));
                     capture.SaveAsPng(options_.screenshotPath);
-                    screenshotAttempted_ = true;
                     screenshotWritten_ = true;
                 }
                 catch (const std::exception& exception)
@@ -569,6 +620,7 @@ namespace CNA::Studio
             bool contentLoaded_ = false;
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
+            bool screenshotTooFlat_ = false;
             bool viewportComposited_ = false;
             std::unique_ptr<StudioContext> context_;
             StudioLog log_;
@@ -616,6 +668,7 @@ namespace CNA::Studio
         result.displayWidth = game.displayWidth();
         result.displayHeight = game.displayHeight();
         result.screenshotWritten = game.screenshotWritten();
+        result.screenshotTooFlat = game.screenshotTooFlat();
         result.capabilityReport = game.capabilities().report();
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();

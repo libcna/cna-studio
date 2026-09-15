@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 14 of 20 complete `████████░░░░`
+**Progress:** 15 of 20 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,9 +22,9 @@
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss | ⬜ | `STUDIO-04002` |
 | `STUDIO-04011` | Window resize handling without artefacts | ⬜ | `STUDIO-04010` |
 | `STUDIO-04012` | Render-target composition for the viewport panel | ✅ | `STUDIO-04004` |
-| `STUDIO-04013` | Screenshot and readback support for visual testing | ⬜ | `STUDIO-04001` |
+| `STUDIO-04013` | Screenshot and readback support for visual testing | ✅ | `STUDIO-04001` |
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
-| `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | ⬜ | `STUDIO-04013` |
+| `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | 🔄 | `STUDIO-04013` |
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
 | `STUDIO-04017` | Upload only the changed region of the atlas | ✅ | `STUDIO-04005` |
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
@@ -220,6 +220,47 @@ CNA-free half — the texture reaching the draw data, and the placeholder return
 away. On a real device, `CnaStudioNativeShellCompositesTheScene` asserts on the words *compositing
 the scene* rather than on a screenshot, because a viewport drawing its grid and one drawing the
 scene produce the same draw-call count and the same perfectly valid picture
+
+### `STUDIO-04013` — Screenshot and readback support for visual testing
+
+**Acceptance.** A scripted run can capture the frame it drew, so a test can assert on the picture
+rather than on the process having survived.
+
+**Done, and recorded late.** All three hosts — the native shell, the Dear ImGui editor and
+`cna-player` — read back the device's back buffer with `GetBackBufferData` and write a PNG, gated on
+a frame limit because there is no final frame without one. The capture reports failure honestly:
+`screenshotAttempted` and `screenshotWritten` are two flags rather than one, because setting
+"written" in the failure path makes a failed capture report success and silently defeats the
+assertion. Eleven CTest cases rest on it.
+
+**Reach forbids readback**, so the hosts ask for the HiDef profile. A player previewing a
+Reach-profile game is a different question and belongs to the target profile (`STUDIO-17007`).
+
+### `STUDIO-04015` — Per-renderer smoke test: draw a reference panel and assert non-empty output
+
+**Acceptance.** Every renderer that satisfies the host contract draws the reference panel, and the
+output is asserted to be non-empty rather than merely present.
+
+**The "non-empty output" half is done; the "per-renderer" half is blocked.**
+
+*Non-empty output.* The graphical cases asserted on counts — draw calls, triangles, rows — and the
+comment above one of them said the screenshot *is* the test. It was not: a file appears for a blank
+window too. Counts separate a shell that submitted geometry from one that submitted none, and say
+nothing about a frame whose geometry rendered to nothing — a wrong blend state, a clip rectangle
+that excludes the window, a vertex colour with no alpha, or a renderer quietly dropping the calls
+all report every draw call and produce a blank picture. So `--screenshot-min-colors=N` fails the run
+when the captured frame holds fewer than N distinct colours, and every capturing case in CI passes
+16. A blank frame has one colour, or two where something was cleared to another shade; a real shell
+frame has over a thousand, because antialiased text alone spreads at every glyph edge.
+
+The count runs on the *captured pixels before the file is written*, so a blank capture does not also
+leave a picture behind for somebody to look at and believe. It counts packed values rather than
+channels, because the question is only whether two texels differ and packing is a fixed permutation
+of the same bits — an assumption about channel order would be invisible if it were wrong.
+
+*Per-renderer.* Still one renderer: CI builds `SOFTWARE`, because it needs no GPU and no display.
+The rest is `docs/CNA-GAPS.md` G-10 — the renderers that can host Studio need a display and
+undocumented sibling checkouts — and is the reason this task is 🔄 rather than ✅.
 
 ### `STUDIO-04019` — Font fallback, so text outside the shipped faces is readable rather than boxes
 

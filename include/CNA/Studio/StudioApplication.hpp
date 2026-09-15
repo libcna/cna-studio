@@ -117,6 +117,21 @@ namespace CNA::Studio
         std::string screenshotPath;
 
         /**
+         * @brief Fail the run when the captured frame holds fewer distinct colours than this.
+         *
+         * Zero, the default, asks nothing. The comment above says the image is the test, and it
+         * was not quite: the file appears for a blank window too, and every graphical case
+         * asserted on counts -- draw calls, triangles, rows -- which a window that rendered
+         * nothing can still report. This is the assertion that was missing.
+         *
+         * A blank frame has one colour, or two where something was cleared to a different shade;
+         * a frame of a real UI has hundreds, because antialiased text alone spreads at every glyph
+         * edge. The threshold between those is not delicate, so a small number is enough and
+         * nothing is gained by tuning it.
+         */
+        std::size_t screenshotMinColors = 0;
+
+        /**
          * @brief Render the native Studio shell to this PNG and exit.
          *
          * The shell of `plan.md` Phase 6 is real geometry but not yet interactive, so it is

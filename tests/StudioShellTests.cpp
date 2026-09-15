@@ -644,6 +644,42 @@ CNA_STUDIO_TEST(TwoRendersOfDifferentContentDifferMeasurably)
     CNA_STUDIO_EXPECT(difference.differingPixels > 0);
 }
 
+CNA_STUDIO_TEST(ABlankFrameAndARealOneAreTellableApartByTheirColours)
+{
+    // The assertion the graphical smoke tests were missing (STUDIO-04015). They check draw-call
+    // and triangle counts, which separates a shell that submitted geometry from one that submitted
+    // none -- and says nothing about a frame whose geometry rendered to nothing. A wrong blend
+    // state, a clip rectangle that excludes the window, a vertex colour with no alpha, or a
+    // renderer quietly dropping the calls all report every draw call and produce a blank picture.
+    //
+    // This is the arithmetic behind `--screenshot-min-colors`, tested here where a blank frame can
+    // be constructed rather than waited for.
+    ImageBuffer blank;
+    blank.width = 64;
+    blank.height = 48;
+    blank.pixels.assign(blank.getPixelCount() * 4, 0);
+    for (std::size_t i = 0; i < blank.pixels.size(); i += 4) { blank.pixels[i + 3] = 255; }
+    CNA_STUDIO_EXPECT_EQ(countDistinctColors(blank, 16), std::size_t{1});
+
+    // Cleared to one colour with a border in another -- still blank, and the shape a window that
+    // opened and drew nothing actually takes.
+    for (int x = 0; x < blank.width; ++x)
+    {
+        blank.pixels[static_cast<std::size_t>(x) * 4] = 40;
+    }
+    CNA_STUDIO_EXPECT_EQ(countDistinctColors(blank, 16), std::size_t{2});
+
+    const ShellRender shell = renderShell(640.0f, 360.0f);
+    const ImageBuffer drawn = rasterizeUiDrawData(shell.data, StudioColor{0, 0, 0, 255});
+    CNA_STUDIO_EXPECT_EQ(countDistinctColors(drawn, 16), std::size_t{16});
+
+    // The count stops where it is told to, so a caller asking "more than sixteen?" of a
+    // 1920x1080 frame does not pay for a full census of it.
+    CNA_STUDIO_EXPECT_EQ(countDistinctColors(drawn, 4), std::size_t{4});
+    CNA_STUDIO_EXPECT_EQ(countDistinctColors(drawn, 0), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(countDistinctColors(ImageBuffer{}, 16), std::size_t{0});
+}
+
 CNA_STUDIO_TEST(APngIsWrittenAndIsReadableAsOne)
 {
     const ShellRender shell = renderShell(64.0f, 48.0f);

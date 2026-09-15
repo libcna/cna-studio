@@ -408,14 +408,22 @@ if(CNA_STUDIO_WITH_CNA)
     # through Studio's own software rasterizer, which would pass just as happily if CNA's side of
     # the seam were broken.
     #
-    # The assertion is the draw-call count, not the exit code. A shell that built its widget tree
-    # and then submitted nothing would open a window, clear it to the theme background, write a
-    # perfectly valid screenshot of an empty frame and exit zero; requiring a non-zero count of
-    # draw calls and triangles is what separates that from a shell that actually drew.
+    # Two assertions, not one, because each misses what the other catches. The draw-call count
+    # separates a shell that submitted geometry from one that built its widget tree and submitted
+    # nothing -- that one would open a window, clear it to the theme background, write a perfectly
+    # valid screenshot of an empty frame and exit zero. And `--screenshot-min-colors` separates a
+    # frame that *drew* from one that submitted geometry which rendered to nothing: a wrong blend
+    # state, a clip rectangle that excludes the window, a vertex colour with no alpha, or a
+    # renderer quietly dropping the calls all report every draw call and produce a blank picture.
+    #
+    # Sixteen because a blank frame has one colour, or two where something was cleared to another
+    # shade, and a real shell frame has over a thousand -- antialiased text alone spreads at every
+    # glyph edge. Nothing is gained by tuning a threshold with that much room either side.
     add_test(NAME CnaStudioNativeShellWindowSmoke
         COMMAND cna-studio --ui=studio --workspace=none
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke.png
+            --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellWindowSmoke PROPERTIES
         PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
 
@@ -426,7 +434,8 @@ if(CNA_STUDIO_WITH_CNA)
     add_test(NAME CnaStudioNativeShellWindowSmokeLightTheme
         COMMAND cna-studio --ui=studio --shell-theme=light --workspace=none
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-light.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-light.png
+            --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellWindowSmokeLightTheme PROPERTIES
         PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
 
@@ -435,7 +444,8 @@ if(CNA_STUDIO_WITH_CNA)
     add_test(NAME CnaStudioNativeShellWindowSmokeHiDpi
         COMMAND cna-studio --ui=studio --shell-scale=2 --workspace=none
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-2x.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-smoke-2x.png
+            --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellWindowSmokeHiDpi PROPERTIES
         PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
 
@@ -445,7 +455,8 @@ if(CNA_STUDIO_WITH_CNA)
     add_test(NAME CnaStudioNativeShellCompositesTheScene
         COMMAND cna-studio --ui=studio --workspace=none --frames=20
             --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-viewport.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-viewport.png
+            --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellCompositesTheScene PROPERTIES
         PASS_REGULAR_EXPRESSION "viewport compositing the scene")
 
@@ -485,7 +496,8 @@ if(CNA_STUDIO_WITH_CNA)
     add_test(NAME CnaStudioNativeShellOutputLog
         COMMAND cna-studio --ui=studio --workspace=none --panel=output
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-output-log.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-output-log.png
+            --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
         PASS_REGULAR_EXPRESSION "output log showing [1-9][0-9]* of [1-9][0-9]* messages")
 
@@ -504,7 +516,8 @@ if(CNA_STUDIO_WITH_CNA)
         COMMAND cna-studio --ui=studio --workspace=none --panel=output
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-project.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-project.png
+            --screenshot-min-colors=16)
     # Three assertions in one line, each of which only the whole stack can satisfy: the context
     # opened the project (the status bar), the World Outliner is reading the scene it opened (five
     # entities, which is what Level01 holds), and the Output Log is reading the editor's own
@@ -520,7 +533,8 @@ if(CNA_STUDIO_WITH_CNA)
         COMMAND cna-studio --ui=studio --workspace=none --select=Player
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-details.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-details.png
+            --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
         PASS_REGULAR_EXPRESSION "outliner showing [1-9][0-9]* of 5 entities.*details showing [1-9][0-9]* rows")
 
@@ -633,7 +647,8 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
         COMMAND cna-studio
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke.png
+            --screenshot-min-colors=16)
 
     # How this test reaches a display depends on the backend, and getting it wrong makes the test
     # fail for reasons that have nothing to do with the editor.
@@ -662,7 +677,8 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
         COMMAND cna-studio --view=3d
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke-3d.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke-3d.png
+            --screenshot-min-colors=16)
 
     if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE")
         set_tests_properties(CnaStudioWindowSmoke3D PROPERTIES
@@ -705,7 +721,8 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
         COMMAND cna-player
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/player-smoke.png)
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/player-smoke.png
+            --screenshot-min-colors=16)
 
     if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaPlayerWindowSmoke PROPERTIES
