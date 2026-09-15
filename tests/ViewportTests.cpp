@@ -11,6 +11,8 @@
 
 #include "TestHarness.hpp"
 
+#include <set>
+
 #include <cmath>
 
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
@@ -1426,3 +1428,65 @@ CNA_STUDIO_TEST(AnAnimatedSpriteIsSizedByItsFrameNotItsSheet)
     CNA_STUDIO_EXPECT_EQ(bounds->max.x - bounds->min.x, 32.0f);
     CNA_STUDIO_EXPECT_EQ(bounds->max.y - bounds->min.y, 48.0f);
 }
+
+// ------------------------------------------------------------------------------------------------
+// The input seam (STUDIO-04020)
+// ------------------------------------------------------------------------------------------------
+
+#if defined(CNA_STUDIO_HAS_CNA)
+
+#    include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
+
+CNA_STUDIO_TEST(EveryKeyStudioCanAskAboutIsOneTheHostCanReport)
+{
+    // A key in Studio's vocabulary that the platform never maps is a shortcut that does not fire,
+    // with nothing on screen to see and no error anywhere. It is the quietest failure in the input
+    // path and the easiest to introduce: adding a key to the enumeration is one edit and mapping it
+    // is another, in a different file, in the one module that does not build without a CNA
+    // checkout.
+    //
+    // Two were missing when this was written -- Digit2 and Digit3, the 2D/3D view toggles, which
+    // the ImGui path had mapped and this one had not.
+    const std::vector<CnaUiPlatformKeyBinding>& bindings = cnaUiPlatformKeyBindings();
+
+    std::set<int> mappedUiKeys;
+    std::set<int> mappedHostKeys;
+    std::size_t duplicates = 0;
+
+    for (const CnaUiPlatformKeyBinding& binding : bindings)
+    {
+        if (!mappedUiKeys.insert(static_cast<int>(binding.uiKey)).second)
+        {
+            ++duplicates;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "UiKey " + std::to_string(static_cast<int>(binding.uiKey))
+                + " is mapped more than once; the later mapping silently wins.");
+        }
+        if (!mappedHostKeys.insert(binding.xnaKey).second)
+        {
+            ++duplicates;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "host key " + std::to_string(binding.xnaKey)
+                + " is bound to two different UiKeys, so one of them fires on the wrong key.");
+        }
+    }
+    CNA_STUDIO_EXPECT_EQ(duplicates, std::size_t{0});
+
+    std::size_t unmapped = 0;
+    for (int key = static_cast<int>(UiKey::None) + 1; key < static_cast<int>(UiKey::Count); ++key)
+    {
+        if (mappedUiKeys.count(key) == 0)
+        {
+            ++unmapped;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "UiKey " + std::to_string(key) + " has no host mapping, so a shortcut using it "
+                "never fires through the native UI. Add it to cnaUiPlatformKeyBindings().");
+        }
+    }
+    CNA_STUDIO_EXPECT_EQ(unmapped, std::size_t{0});
+
+    // And the table is not empty for a trivial reason.
+    CNA_STUDIO_EXPECT(bindings.size() >= std::size_t{30});
+}
+
+#endif  // CNA_STUDIO_HAS_CNA

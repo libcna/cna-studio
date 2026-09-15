@@ -34,53 +34,52 @@ namespace CNA::Studio
 {
     namespace
     {
-        struct KeyBinding
-        {
-            UiKey uiKey;
-            XnaInput::Keys xnaKey;
-        };
-
         /**
          * @brief The keys the editor binds shortcuts or navigation to.
          *
          * Deliberately not an exhaustive keyboard map: printable characters arrive through
          * TextInputEXT, so this table only needs the keys that *act* rather than type.
          */
-        const std::vector<KeyBinding>& keyBindings()
+        const std::vector<CnaUiPlatformKeyBinding>& keyBindingsImpl()
         {
-            static const std::vector<KeyBinding> bindings{
-                {UiKey::Tab, XnaInput::Keys::Tab},
-                {UiKey::LeftArrow, XnaInput::Keys::Left},
-                {UiKey::RightArrow, XnaInput::Keys::Right},
-                {UiKey::UpArrow, XnaInput::Keys::Up},
-                {UiKey::DownArrow, XnaInput::Keys::Down},
-                {UiKey::PageUp, XnaInput::Keys::PageUp},
-                {UiKey::PageDown, XnaInput::Keys::PageDown},
-                {UiKey::Home, XnaInput::Keys::Home},
-                {UiKey::End, XnaInput::Keys::End},
-                {UiKey::Insert, XnaInput::Keys::Insert},
-                {UiKey::Delete, XnaInput::Keys::Delete},
-                {UiKey::Backspace, XnaInput::Keys::Back},
-                {UiKey::Space, XnaInput::Keys::Space},
-                {UiKey::Enter, XnaInput::Keys::Enter},
-                {UiKey::Escape, XnaInput::Keys::Escape},
-                {UiKey::A, XnaInput::Keys::A},
-                {UiKey::C, XnaInput::Keys::C},
-                {UiKey::V, XnaInput::Keys::V},
-                {UiKey::X, XnaInput::Keys::X},
-                {UiKey::Y, XnaInput::Keys::Y},
-                {UiKey::Z, XnaInput::Keys::Z},
-                {UiKey::D, XnaInput::Keys::D},
-                {UiKey::F, XnaInput::Keys::F},
-                {UiKey::N, XnaInput::Keys::N},
-                {UiKey::S, XnaInput::Keys::S},
-                {UiKey::W, XnaInput::Keys::W},
-                {UiKey::Q, XnaInput::Keys::Q},
-                {UiKey::E, XnaInput::Keys::E},
-                {UiKey::R, XnaInput::Keys::R},
-                {UiKey::F1, XnaInput::Keys::F1},
-                {UiKey::F2, XnaInput::Keys::F2},
-                {UiKey::F5, XnaInput::Keys::F5},
+            static const std::vector<CnaUiPlatformKeyBinding> bindings{
+                {UiKey::Tab, static_cast<int>(XnaInput::Keys::Tab)},
+                {UiKey::LeftArrow, static_cast<int>(XnaInput::Keys::Left)},
+                {UiKey::RightArrow, static_cast<int>(XnaInput::Keys::Right)},
+                {UiKey::UpArrow, static_cast<int>(XnaInput::Keys::Up)},
+                {UiKey::DownArrow, static_cast<int>(XnaInput::Keys::Down)},
+                {UiKey::PageUp, static_cast<int>(XnaInput::Keys::PageUp)},
+                {UiKey::PageDown, static_cast<int>(XnaInput::Keys::PageDown)},
+                {UiKey::Home, static_cast<int>(XnaInput::Keys::Home)},
+                {UiKey::End, static_cast<int>(XnaInput::Keys::End)},
+                {UiKey::Insert, static_cast<int>(XnaInput::Keys::Insert)},
+                {UiKey::Delete, static_cast<int>(XnaInput::Keys::Delete)},
+                {UiKey::Backspace, static_cast<int>(XnaInput::Keys::Back)},
+                {UiKey::Space, static_cast<int>(XnaInput::Keys::Space)},
+                {UiKey::Enter, static_cast<int>(XnaInput::Keys::Enter)},
+                {UiKey::Escape, static_cast<int>(XnaInput::Keys::Escape)},
+                {UiKey::A, static_cast<int>(XnaInput::Keys::A)},
+                {UiKey::C, static_cast<int>(XnaInput::Keys::C)},
+                {UiKey::V, static_cast<int>(XnaInput::Keys::V)},
+                {UiKey::X, static_cast<int>(XnaInput::Keys::X)},
+                {UiKey::Y, static_cast<int>(XnaInput::Keys::Y)},
+                {UiKey::Z, static_cast<int>(XnaInput::Keys::Z)},
+                {UiKey::D, static_cast<int>(XnaInput::Keys::D)},
+                {UiKey::F, static_cast<int>(XnaInput::Keys::F)},
+                {UiKey::N, static_cast<int>(XnaInput::Keys::N)},
+                {UiKey::S, static_cast<int>(XnaInput::Keys::S)},
+                {UiKey::W, static_cast<int>(XnaInput::Keys::W)},
+                {UiKey::Q, static_cast<int>(XnaInput::Keys::Q)},
+                {UiKey::E, static_cast<int>(XnaInput::Keys::E)},
+                {UiKey::R, static_cast<int>(XnaInput::Keys::R)},
+                {UiKey::F1, static_cast<int>(XnaInput::Keys::F1)},
+                {UiKey::F2, static_cast<int>(XnaInput::Keys::F2)},
+                {UiKey::F5, static_cast<int>(XnaInput::Keys::F5)},
+                // The 2D/3D view toggles. Missing until a guard test compared this table against
+                // the key vocabulary and found two keys the UI can ask about and this never
+                // reported -- a shortcut that simply does not fire, with nothing to see.
+                {UiKey::Digit2, static_cast<int>(XnaInput::Keys::D2)},
+                {UiKey::Digit3, static_cast<int>(XnaInput::Keys::D3)},
             };
             return bindings;
         }
@@ -89,6 +88,11 @@ namespace CNA::Studio
         {
             return state == XnaInput::ButtonState::Pressed;
         }
+    }
+
+    const std::vector<CnaUiPlatformKeyBinding>& cnaUiPlatformKeyBindings()
+    {
+        return keyBindingsImpl();
     }
 
     struct CnaUiPlatform::Impl
@@ -181,9 +185,9 @@ namespace CNA::Studio
         impl_->haveScrollBaseline = true;
 
         const XnaInput::KeyboardState keyboard = XnaInput::Keyboard::GetState();
-        for (const KeyBinding& binding : keyBindings())
+        for (const CnaUiPlatformKeyBinding& binding : cnaUiPlatformKeyBindings())
         {
-            input.setKeyDown(binding.uiKey, keyboard.IsKeyDown(binding.xnaKey));
+            input.setKeyDown(binding.uiKey, keyboard.IsKeyDown(static_cast<XnaInput::Keys>(binding.xnaKey)));
         }
 
         input.modifiers.control = keyboard.IsKeyDown(XnaInput::Keys::LeftControl)

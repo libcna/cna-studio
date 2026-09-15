@@ -98,6 +98,13 @@ target_sources(cna-studio-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioApplication.cpp"
     ${CNA_STUDIO_PANEL_SOURCES})
 
+# The one module that links CNA. Linked into the tests so the seam itself -- the key map, the
+# capability bridge -- has unit coverage rather than only being exercised through the window smoke
+# tests, where a wrong mapping shows up as a shortcut that quietly does nothing.
+if(CNA_STUDIO_WITH_CNA)
+    target_link_libraries(cna-studio-tests PRIVATE cna-studio-viewport)
+endif()
+
 # The renderer/operating-system gate transcription (STUDIO-29007) can only be *checked* against CNA
 # when there is a CNA checkout to read. Told where it is rather than left to guess: a guard that
 # silently found nothing would pass vacuously, which is the failure mode these tests exist to avoid.

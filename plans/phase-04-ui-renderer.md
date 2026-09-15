@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 7 of 18 complete `████░░░░░░░░`
+**Progress:** 8 of 19 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -28,6 +28,7 @@
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
 | `STUDIO-04017` | Upload only the changed region of the atlas | ⬜ | `STUDIO-04005` |
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ⬜ | `STUDIO-04005` |
+| `STUDIO-04020` | Guard test: every key Studio can ask about is one the host reports | ✅ | — |
 
 ## Acceptance and verification
 
@@ -145,3 +146,24 @@ hidden" becomes a question a headless test can answer
 
 **Acceptance.** Accounts for CNA gap G-03's sampling origin in exactly one place
 
+### `STUDIO-04020` — Guard test: every key Studio can ask about is one the host reports
+
+**Acceptance.** The platform's key map is checked against `UiKey`: every key in the vocabulary has
+exactly one mapping, and no host key is bound twice
+
+**The failure it catches is the quietest one in the input path.** A key Studio can ask about and the
+platform never maps is a shortcut that does not fire — nothing on screen, no error anywhere. It is
+also the easiest to introduce: adding a key to the enumeration is one edit and mapping it is
+another, in a different file, in the one module that does not build without a CNA checkout
+
+**It found two.** `Digit2` and `Digit3`, the 2D/3D view toggles, which the ImGui path mapped and the
+native one did not. Nothing was visibly broken, because nothing in the native shell binds them yet
+— which is exactly how this class of gap survives until somebody does
+
+**What it needed.** The test binary did not link the CNA-linked module at all, so the key map, the
+capability bridge and the shell host had no unit coverage — only the window smoke tests, where a
+wrong mapping shows up as a shortcut that quietly does nothing. It links it now, in the CNA-backed
+configuration
+
+**Verification.** `EveryKeyStudioCanAskAboutIsOneTheHostCanReport`, confirmed to fail on the two
+missing bindings before they were added

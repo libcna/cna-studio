@@ -25,6 +25,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "CNA/Studio/Ui/UiInputState.hpp"
 
@@ -37,6 +38,31 @@ namespace CNA::Studio
      * constructor and is undone in the destructor, so a stale subscriber cannot outlive the
      * platform object and start feeding characters into a destroyed UI.
      */
+    /**
+     * @brief One entry of the map from Studio's key vocabulary to CNA's.
+     *
+     * CNA's `Keys` is held as its underlying integer rather than the enumeration itself, so this
+     * header stays free of CNA's input headers. Every other Studio header that mentions CNA does
+     * the same, and `docs/ARCHITECTURE.md` §2 is why: exactly one module links CNA, and a header
+     * that pulled its types in would quietly widen that to everything that includes it.
+     */
+    struct CnaUiPlatformKeyBinding
+    {
+        UiKey uiKey;
+        int xnaKey = 0;
+    };
+
+    /**
+     * @brief The whole key map, exposed so a test can check it against the vocabulary.
+     *
+     * A key Studio can ask about and this table does not carry is a shortcut that never fires, with
+     * nothing on screen to see and no error anywhere. Two were missing — the 2D/3D view toggles —
+     * until a guard test compared the two lists.
+     *
+     * @return Every mapping, in declaration order.
+     */
+    [[nodiscard]] const std::vector<CnaUiPlatformKeyBinding>& cnaUiPlatformKeyBindings();
+
     class CnaUiPlatform
     {
     public:
