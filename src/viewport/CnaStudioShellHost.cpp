@@ -233,6 +233,14 @@ namespace CNA::Studio
                 shell_->setStatusRight("Renderer: " + CnaUiRenderer::getBackendName()
                                        + "   Platform: " + getHostPlatformName());
 
+                // The same facts About shows, set here because this is where they are known: a
+                // shell that carried its own copy of the renderer name would be a second place it
+                // could be wrong, and About is exactly the dialog people quote in bug reports.
+                shell_->setAboutLines({std::string{"CNA Studio "} + CNA_STUDIO_VERSION,
+                                       "An editor for CNA games.",
+                                       "UI: Studio native.",
+                                       shell_->statusRight()});
+
                 // Real output, not a placeholder. The first question of every graphics bug report
                 // is which renderer this build actually got, and the Output Log is where somebody
                 // looks for it.

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 15 of 23 complete `████████░░░░`
+**Progress:** 16 of 24 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -33,6 +33,7 @@
 | `STUDIO-06020` | `--ui=studio`: the native shell in a real window, on a real CNA device | ✅ | `STUDIO-06018`, `STUDIO-02021` |
 | `STUDIO-06021` | Window smoke tests for the native shell, on a real renderer | ✅ | `STUDIO-06020` |
 | `STUDIO-06022` | The native shell opens a project, on the editor's own context | ✅ | `STUDIO-06020` |
+| `STUDIO-06024` | The About dialog, saying what this build actually is | ✅ | `STUDIO-03040` |
 
 ## Acceptance and verification
 
@@ -349,3 +350,17 @@ Enter, sideways arrows *not* walking the menu bar, one chain at a time, the bloc
 tab that stops being hoverable underneath it, the empty menu, and the five tab-menu behaviours.
 Plus `CnaStudioShellPreviewContextMenu`, which photographs one, and
 `CnaStudioRejectsAContextMenuThatNeverOpens`
+
+### `STUDIO-06024` — The About dialog, saying what this build actually is
+
+**Acceptance.** `studio.help.about` opens a real modal rather than being a menu row that does
+nothing, and what it says is supplied by whoever assembled Studio.
+
+**The host sets the text.** The version, the renderer and the platform are facts about a *build*,
+and a shell carrying its own copy would be a second place they could be wrong — About is exactly
+the dialog people quote in a bug report. The UI core ships the lines it can honestly say for
+itself, so a preview with no device still shows something true rather than an empty box.
+
+**`--shell-invoke=ID`** runs a command before a preview capture, because a modal is reached by a
+menu item and answered by a keystroke, neither of which a still capture can perform. Without it the
+one thing CI could never photograph would be the thing that covers everything else

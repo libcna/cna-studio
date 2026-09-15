@@ -258,6 +258,7 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioTreeView.cpp
     src/ui-core/StudioTextEdit.cpp
     src/ui-core/StudioIcons.cpp
+    src/ui-core/StudioDialog.cpp
     src/ui-core/StudioDockTree.cpp
     src/ui-core/StudioInputRouter.cpp
     src/ui-core/StudioFrame.cpp

@@ -50,6 +50,7 @@
 
 #include "CNA/Studio/Ui/UiInputState.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
+#include "CNA/Studio/UiCore/StudioDialog.hpp"
 #include "CNA/Studio/UiCore/StudioDockTree.hpp"
 #include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
@@ -505,6 +506,21 @@ namespace CNA::Studio
         /** @brief Sets the right-aligned status bar text. */
         void setStatusRight(std::string text) { statusRight_ = std::move(text); }
 
+        /**
+         * @brief Sets what the About dialog says.
+         *
+         * Supplied by whoever assembles Studio rather than compiled in here: the version, the
+         * renderer and the platform are facts about a *build*, and a shell that carried its own
+         * copy would be a second place they could be wrong. Ships with what the UI core itself
+         * can honestly say, so About is never an empty box.
+         *
+         * @param lines One line each, in the order they are shown.
+         */
+        void setAboutLines(std::vector<std::string> lines) { aboutLines_ = std::move(lines); }
+
+        /** @brief What the About dialog says. */
+        [[nodiscard]] const std::vector<std::string>& aboutLines() const { return aboutLines_; }
+
         /** @brief What the status bar says on the left: what the user is working on. */
         [[nodiscard]] const std::string& statusLeft() const { return statusLeft_; }
 
@@ -615,6 +631,41 @@ namespace CNA::Studio
 
         /** @brief Closes whichever popup chain is open, menu-bar or context. */
         void closePopup();
+
+        // --- Modal dialogs (STUDIO-03040) ------------------------------------------------------
+
+        /**
+         * @brief Opens a modal dialog, replacing any other.
+         *
+         * The shell owns the one dialog because a modal is the application's state, not a panel's:
+         * whichever command opened it, what it blocks is the whole window.
+         *
+         * @param request What the dialog says and offers.
+         */
+        void openDialog(StudioDialogRequest request);
+
+        /** @brief Closes the dialog without answering it. */
+        void closeDialog();
+
+        /** @brief Whether a dialog is open. */
+        [[nodiscard]] bool isDialogOpen() const { return dialogOpen_; }
+
+        /** @brief What the open dialog says, or an empty request when none is. */
+        [[nodiscard]] const StudioDialogRequest& dialog() const { return dialog_; }
+
+        /**
+         * @brief What the user did to the dialog on the last frame.
+         *
+         * Read after `renderFrame`. Whoever opened the dialog decides what an answer means — the
+         * shell only carries it — so this is a report rather than a callback the shell would have
+         * to own the lifetime of.
+         */
+        [[nodiscard]] const StudioDialogResult& dialogResult() const { return dialogResult_; }
+
+        /**
+         * @brief Where the open dialog is, for a test or a capture. Empty when none is.
+         */
+        [[nodiscard]] UiRect dialogBounds() const;
 
         /** @brief Whether any popup chain is open, and therefore blocking the panels beneath it. */
         [[nodiscard]] bool isPopupOpen() const { return openMenu_ >= 0 || contextOpen_; }
@@ -781,7 +832,7 @@ namespace CNA::Studio
         [[nodiscard]] static std::vector<std::string> defaultToolbar();
 
         /** @brief The input layer a menu popup routes in. Panels sit at layer zero. */
-        static constexpr int kMenuLayer = 2;
+        static constexpr int kMenuLayer = 3;
 
         /**
          * @brief The layer the dock drop preview draws in.
@@ -790,7 +841,7 @@ namespace CNA::Studio
          * drag is still the thing in front, and a preview drawn over it would obscure the only
          * control that could cancel the gesture.
          */
-        static constexpr int kDockPreviewLayer = 2;
+        static constexpr int kDockPreviewLayer = 3;
 
         /**
          * @brief The layer a tooltip draws in.
@@ -798,7 +849,7 @@ namespace CNA::Studio
          * Above everything, an open menu included: a tooltip describes whatever the pointer is
          * resting on, and the pointer may be resting on a menu row.
          */
-        static constexpr int kTooltipLayer = 3;
+        static constexpr int kTooltipLayer = 5;
 
         /**
          * @brief The layer floating windows draw and take input in.
@@ -809,6 +860,9 @@ namespace CNA::Studio
          * running. A float that blocked the workspace whenever it existed would make the panels
          * under it unusable; one that never blocked would let a button beneath it light up through
          * it, which is worse than either.
+         *
+         * The whole ordering, shared with the frame's own popups and modals, is written down at
+         * @ref StudioFrame::kPopupLayer.
          */
         static constexpr int kFloatingLayer = 1;
 
@@ -889,6 +943,7 @@ namespace CNA::Studio
         void describeToolbar();
         void describeDocks();
         void describeFloating();
+        void describeDialog();
 
         /**
          * @brief Describes one tab group: its strip, its tabs and the showing panel's content.
@@ -1003,8 +1058,15 @@ namespace CNA::Studio
          */
         bool floatGesture_ = false;
 
+        /** @brief The one open dialog, its retained field and what the user last did to it. */
+        StudioDialogRequest dialog_;
+        StudioDialogState dialogState_;
+        StudioDialogResult dialogResult_;
+        bool dialogOpen_ = false;
+
         std::string statusLeft_;
         std::string statusRight_;
+        std::vector<std::string> aboutLines_;
 
         StudioShellLayout layout_;
         std::vector<MenuTitleGeometry> menuTitles_;

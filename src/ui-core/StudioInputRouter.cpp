@@ -48,6 +48,11 @@ namespace CNA::Studio
         focusables_.clear();
         wantsTextInput_ = false;
 
+        // Cleared with the rest of the per-frame record: a focused widget that stopped being
+        // described -- its panel closed, its row scrolled out of a list -- has no rectangle, and
+        // reporting the one it had last time would point at whatever took its place.
+        focusedBounds_ = UiRect{};
+
         // Tab is resolved at end of frame, once every focusable has declared itself -- the widget
         // that should receive focus may not have been described yet when Tab is pressed.
         focusMoveRequested_ = false;
@@ -183,6 +188,7 @@ namespace CNA::Studio
         StudioInteraction result;
         result.disabled = !enabled;
         result.focused = enabled && id.isValid() && id == focused_;
+        if (result.focused) { focusedBounds_ = bounds; }
 
         if (!id.isValid()) { return result; }
 
@@ -290,6 +296,12 @@ namespace CNA::Studio
     void StudioInputRouter::registerFocusable(WidgetId id, bool enabled)
     {
         if (!enabled || !id.isValid()) { return; }
+
+        // Only where input is actually being taken. A widget the current layer blocks cannot be
+        // clicked, so it must not be reachable by Tab either -- otherwise Tab walks out of an open
+        // modal into the panels it covers, which the user can neither see nor act on.
+        if (!layerAcceptsInput()) { return; }
+
         focusables_.push_back(id);
     }
 } // namespace CNA::Studio

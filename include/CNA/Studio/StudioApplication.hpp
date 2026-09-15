@@ -179,6 +179,15 @@ namespace CNA::Studio
         std::string shellPreviewFloat;
 
         /**
+         * @brief A command to invoke before the shell preview is captured, e.g. `studio.help.about`.
+         *
+         * A modal dialog is reached by a menu item and answered by a keystroke, neither of which a
+         * still capture can perform — so without a flag the one thing CI could never photograph
+         * would be the thing that covers everything else.
+         */
+        std::string shellPreviewInvoke;
+
+        /**
          * @brief Report the Studio host capability contract and exit.
          *
          * Prints what Studio requires of a host renderer, and -- on a build with a window host --

@@ -285,6 +285,16 @@ namespace CNA::Studio
         [[nodiscard]] WidgetId focusedId() const { return focused_; }
 
         /**
+         * @brief Where the focused widget was when it was last described. Empty when none is.
+         *
+         * Recorded rather than asked for, because the widget that has focus may be anywhere and
+         * nothing else knows where: a focus ring drawn by the shell, a Tab that scrolls its target
+         * into view, and an accessibility layer reporting the caret all need the same answer, and
+         * a focused control nobody can point at is a keyboard trail the user cannot follow.
+         */
+        [[nodiscard]] const UiRect& focusedBounds() const { return focusedBounds_; }
+
+        /**
          * @brief Moves keyboard focus.
          * @param id Widget to focus, or the invalid id to clear focus.
          */
@@ -332,6 +342,7 @@ namespace CNA::Studio
         float pressX_ = 0.0f;
         float pressY_ = 0.0f;
         WidgetId focused_;
+        UiRect focusedBounds_;
 
         std::vector<WidgetId> focusables_;
         bool wantsTextInput_ = false;

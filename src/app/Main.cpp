@@ -215,6 +215,15 @@ namespace
             context.select(wanted->getId());
         }
 
+        // What this build actually is, rather than what the UI core can say for itself.
+        // The status bar's text verbatim, which already reads "Renderer: NAME" -- prefixing it
+        // again would print the word twice, which is the sort of thing a dialog nobody opens keeps
+        // saying for a year.
+        shell.setAboutLines({std::string{"CNA Studio "} + CNA_STUDIO_VERSION,
+                             "An editor for CNA games.",
+                             "UI: Studio native, headless preview.",
+                             shell.statusRight()});
+
         // `--shell-float=IDS` undocks panels, because a floating window is arranged by dragging
         // and a still capture cannot drag. Before --panel, so a floated panel can also be raised.
         for (std::size_t start = 0; start < options.shellPreviewFloat.size();)
@@ -270,6 +279,19 @@ namespace
                 return 2;
             }
             shell.setOpenMenu(index);
+        }
+
+        // `--shell-invoke=ID` runs a command, so a capture can show what it put on the screen --
+        // a modal dialog above all, which is reached by a menu item and answered by a keystroke.
+        if (!options.shellPreviewInvoke.empty())
+        {
+            if (shell.actions().find(options.shellPreviewInvoke) == nullptr)
+            {
+                std::cerr << "cna-studio: no command called '" << options.shellPreviewInvoke
+                          << "'.\n";
+                return 2;
+            }
+            shell.invoke(options.shellPreviewInvoke);
         }
 
         CNA::Studio::UiInputState input;

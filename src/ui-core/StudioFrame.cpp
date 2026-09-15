@@ -101,6 +101,21 @@ namespace CNA::Studio
 
     void StudioFrame::closePopup() { openPopup_ = WidgetId{}; }
 
+    void StudioFrame::openModal(WidgetId owner)
+    {
+        // A modal takes the keyboard, so anything a popup was holding has to go with it: a
+        // drop-down left open behind a dialog would still be the thing Escape closed.
+        closePopup();
+        openModal_ = owner;
+    }
+
+    void StudioFrame::closeModal() { openModal_ = WidgetId{}; }
+
+    void StudioFrame::deferModal(StudioPopupBody body)
+    {
+        if (body) { modals_.push_back(std::move(body)); }
+    }
+
     void StudioFrame::deferPopup(StudioPopupBody body)
     {
         if (body) { popups_.push_back(std::move(body)); }
@@ -208,6 +223,38 @@ namespace CNA::Studio
 
     }
 
+    void StudioFrame::flushModals()
+    {
+        if (modals_.empty()) { return; }
+
+        std::vector<StudioPopupBody> running;
+        running.swap(modals_);
+
+        const UiRect window{0.0f, 0.0f, pendingInput_.displayWidth, pendingInput_.displayHeight};
+
+        if (isDrawPass())
+        {
+            // A scrim, because "you cannot use the rest of the window" has to be *visible*. A
+            // dialog over an undimmed workspace looks like a panel that happens to be on top, and
+            // a user who does not know they are blocked reads the unresponsive editor as a hang.
+            StudioColor scrim = theme_.color(StudioColorRole::AppBackground);
+            scrim.a = 160;
+            drawList().fillRect(window, scrim);
+        }
+
+        inModal_ = true;
+        pushLayer(kModalLayer);
+        pushClip(window);
+        ids_.push("modal");
+        for (const StudioPopupBody& body : running) { body(*this); }
+        ids_.pop();
+        popClip();
+        popLayer();
+        inModal_ = false;
+
+        modals_.clear();
+    }
+
     UiRect StudioFrame::dragPreviewBounds(float width, float height) const
     {
         const float padding = static_cast<float>(theme_.metric(StudioMetric::SpacingSmall));
@@ -234,7 +281,11 @@ namespace CNA::Studio
         // Raised by the frame itself while a deferred popup is open, because the caller cannot
         // know: a drop-down opened inside a panel is not something the shell was told about, and a
         // list whose rows can be clicked *through* is worse than one that does not open at all.
-        router_.beginFrame(pendingInput_, std::max(blockingLayer_, isAnyPopupOpen() ? kPopupLayer : 0));
+        // A modal outranks a popup and both outrank whatever the caller asked for: a dialog a user
+        // can click behind is not a dialog, and a list whose rows can be clicked through is worse
+        // than one that never opened.
+        const int raised = isAnyModalOpen() ? kModalLayer : (isAnyPopupOpen() ? kPopupLayer : 0);
+        router_.beginFrame(pendingInput_, std::max(blockingLayer_, raised));
         ids_.beginFrame();
     }
 
@@ -446,9 +497,11 @@ namespace CNA::Studio
         frame.beginInput();
         if (describe) { describe(frame); }
         frame.flushPopups();
+        frame.flushModals();
         frame.beginDraw();
         if (describe) { describe(frame); }
         frame.flushPopups();
+        frame.flushModals();
         frame.endFrame();
     }
 

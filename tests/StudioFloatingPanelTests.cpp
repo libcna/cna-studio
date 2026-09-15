@@ -12,6 +12,7 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
 #include <cmath>
 #include <memory>
@@ -430,6 +431,52 @@ CNA_STUDIO_TEST(AFloatBlocksThePanelBeneathItFromRespondingToThePointer)
     const UiRect viewport = shell->panelBounds("viewport");
     shell->renderFrame(at(viewport.right() - 10.0f, viewport.bottom() - 10.0f));
     CNA_STUDIO_EXPECT_EQ(shell->frame().router().blockingLayer(), 0);
+}
+
+CNA_STUDIO_TEST(ADropDownOpenedInsideAFloatBlocksTheFloatUnderneathIt)
+{
+    // The two share a rectangle, so they cannot share an input layer. A list whose rows can be
+    // clicked *through* to the panel holding it is worse than one that never opened -- and the
+    // failure is invisible in a screenshot, because the list draws correctly either way.
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+
+    bool clickedBehind = false;
+    UiRect control;
+    shell->setPanelContent("details", [&](StudioFrame& frame, const UiRect& body) {
+        control = UiRect{body.left() + 8.0f, body.top() + 8.0f, 160.0f, 24.0f};
+        static const std::vector<std::string> items{"one", "two", "three"};
+        int chosen = 0;
+        (void)studioDropdown(frame, frame.ids().make("pick"), control, items, chosen);
+
+        const UiRect under{body.left() + 8.0f, body.top() + 80.0f, 160.0f, 24.0f};
+        if (studioButton(frame, frame.ids().make("under"), under, "Under").activated)
+        {
+            clickedBehind = true;
+        }
+    });
+
+    CNA_STUDIO_EXPECT(shell->floatPanel("details"));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(!control.isEmpty());
+
+    // The button works while the list is closed, so the case below cannot pass for the wrong
+    // reason.
+    const UiRect behind{control.left(), control.top() + 72.0f, 160.0f, 24.0f};
+    shell->renderFrame(at(behind.centerX(), behind.centerY()));
+    shell->renderFrame(at(behind.centerX(), behind.centerY(), true));
+    shell->renderFrame(at(behind.centerX(), behind.centerY(), false));
+    CNA_STUDIO_EXPECT(clickedBehind);
+
+    clickedBehind = false;
+    shell->renderFrame(at(control.centerX(), control.centerY()));
+    shell->renderFrame(at(control.centerX(), control.centerY(), true));
+    shell->renderFrame(at(control.centerX(), control.centerY(), false));
+    CNA_STUDIO_EXPECT(shell->frame().isAnyPopupOpen());
+
+    shell->renderFrame(at(behind.centerX(), behind.centerY()));
+    shell->renderFrame(at(behind.centerX(), behind.centerY(), true));
+    shell->renderFrame(at(behind.centerX(), behind.centerY(), false));
+    CNA_STUDIO_EXPECT(!clickedBehind);
 }
 
 CNA_STUDIO_TEST(ClosingAFloatClosesEveryTabInItRatherThanOnlyTheOneShowing)

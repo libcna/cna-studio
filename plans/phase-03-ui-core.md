@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 28 of 32 complete `███████████░`
+**Progress:** 29 of 33 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -42,6 +42,7 @@
 | `STUDIO-03034` | Tree view: flattened rows, disclosure, indentation and selection | ✅ | `STUDIO-03033` |
 | `STUDIO-03035` | Editable single-line text field over the selection model | ✅ | `STUDIO-03024`, `STUDIO-03025` |
 | `STUDIO-03036` | Drop-down selection over a deferred popup | ✅ | `STUDIO-03022`, `STUDIO-03033` |
+| `STUDIO-03040` | Modal dialogs: a window that owns the frame until it is answered | ✅ | `STUDIO-03022` |
 
 ## Acceptance and verification
 
@@ -447,3 +448,42 @@ undo stack), dismissal by press and by Escape, flipping upwards near the bottom 
 being disabled rather than opening on nothing, keyboard open/move/choose, the opening keystroke not
 also moving, a two-hundred-item list bounded by its row limit, and no phase violations across
 repeated frames
+
+### `STUDIO-03040` — Modal dialogs: a window that owns the frame until it is answered
+
+**Acceptance.** A dialog blocks the window beneath it, traps the keyboard, answers on Escape and on
+Enter, and reports what the user chose — with the caller keeping the state, as everywhere else here.
+
+**Everything that matters about it is what it prevents**, and none of it shows in a screenshot: a
+click behind it reaching a button, Tab walking out into the panels it covers, Escape closing
+something underneath instead of answering it. So the cases are those, each checked against the same
+action plainly working while the dialog is closed — otherwise "the button did nothing" passes for
+the wrong reason.
+
+**The focus trap belongs to the router, not to the dialog.** `registerFocusable` now refuses a
+widget whose layer is blocked, so while a modal is open its own controls *are* the whole Tab ring
+and the traversal cannot leave. A dialog that kept its own focus index would have been a second
+answer to a question the router already answers — and would have left the same bug open for menus
+and popups, which had it too.
+
+**Enter is taken only when no button claimed it.** A focused button activates on Enter itself, and
+overwriting that with the default would make Enter on a focused Cancel mean Discard — the one
+keystroke a confirmation dialog must never get wrong. A text field's `committed` is likewise *not*
+what answers the dialog: a field reports it only when the value actually changed, which is right for
+a property grid and wrong for a name prompt where Enter on an unedited name still means "that one".
+
+**The scrim is not decoration.** A dialog over an undimmed workspace looks like a panel that happens
+to be on top, and a user who does not know they are blocked reads the unresponsive editor as a hang.
+
+**One shared layer axis.** The router's layers are a modal stack rather than a z-order —
+`layerAcceptsInput()` is an equality test — and two vocabularies share it, the frame's popups and
+modals and the shell's floats, menus and tooltips. The whole ordering is now written down once, at
+`StudioFrame::kPopupLayer`. Getting it wrong was not hypothetical: floats and deferred popups shared
+layer 1 for a commit, which let a drop-down opened inside a floating window be clicked *through* to
+the panel holding it.
+
+**Verification.** `tests/StudioDialogTests.cpp`: centred and inside even a 320x200 window, the modal
+layer raised and lowered, a click behind reaching nothing, a button answering, Escape answering,
+a dialog that refuses Escape, Tab unable to leave, a field taking the keyboard on open, Enter
+carrying the text out, an empty required field refusing the affirmative button while Cancel still
+works, a menu closing when a dialog opens, and About being a real dialog whose text the host sets

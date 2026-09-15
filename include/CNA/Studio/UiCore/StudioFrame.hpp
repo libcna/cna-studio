@@ -304,8 +304,93 @@ namespace CNA::Studio
          */
         void flushPopups();
 
-        /** @brief The input layer a deferred popup routes in. */
-        static constexpr int kPopupLayer = 1;
+        /**
+         * @brief The input layer a deferred popup routes in.
+         *
+         * ### One axis, shared with the shell
+         *
+         * The router's layers are a *modal* stack, not a z-order: `layerAcceptsInput()` is an
+         * equality test, so exactly one layer takes input at a time and the numbers only ever
+         * decide who that is. Drawing order is description order and has nothing to do with them.
+         *
+         * Two vocabularies share the axis — the frame's own popups and modals, and
+         * `StudioShell`'s floating windows, menus and tooltips — so the whole ordering is written
+         * down here, in the one place that owns the router:
+         *
+         * | Layer | What routes there                               | Declared by |
+         * |------:|-------------------------------------------------|-------------|
+         * |     0 | the docked workspace                            | the default |
+         * |     1 | floating windows                                | shell       |
+         * |     2 | a deferred popup — a drop-down's list            | here        |
+         * |     3 | an open menu, and the dock drop preview it draws | shell       |
+         * |     4 | a modal dialog                                  | here        |
+         * |     5 | a tooltip (drawn only; never a blocking layer)   | shell       |
+         *
+         * A popup above a float is not decoration: a drop-down opened *inside* a floating window
+         * shares that window's rectangle, and a list whose rows can be clicked through to the
+         * panel under them is worse than one that never opened.
+         */
+        static constexpr int kPopupLayer = 2;
+
+        /**
+         * @brief The input layer a modal dialog routes in.
+         *
+         * Above every popup and every menu, because a modal is the one thing that owns the frame
+         * until it is answered — a dialog a user can click behind is not a dialog.
+         */
+        static constexpr int kModalLayer = 4;
+
+        // --- Modals ----------------------------------------------------------------------------
+        //
+        // A dialog that owns the frame until it is answered. Unlike a popup it is not dismissed by
+        // clicking away — that is the whole point of it — so it is *state* the caller sets and
+        // clears rather than something the frame closes on its behalf.
+
+        /**
+         * @brief Opens a modal owned by @p owner, replacing any other.
+         *
+         * One at a time. A second modal over the first is a state with no correct Escape
+         * behaviour, and every use for it is better served by the first dialog saying more.
+         *
+         * @param owner The widget or command the dialog belongs to.
+         */
+        void openModal(WidgetId owner);
+
+        /** @brief Closes the open modal, whichever widget owns it. */
+        void closeModal();
+
+        /**
+         * @brief Whether a particular modal is open.
+         * @param owner The widget to ask about.
+         */
+        [[nodiscard]] bool isModalOpen(WidgetId owner) const
+        {
+            return owner.isValid() && openModal_ == owner;
+        }
+
+        /** @brief Whether any modal is open. */
+        [[nodiscard]] bool isAnyModalOpen() const { return openModal_.isValid(); }
+
+        /** @brief The widget owning the open modal, or an invalid id. */
+        [[nodiscard]] WidgetId openModalOwner() const { return openModal_; }
+
+        /**
+         * @brief Queues a modal body to run at the end of this pass.
+         * @param body What to describe.
+         */
+        void deferModal(StudioPopupBody body);
+
+        /**
+         * @brief Runs every deferred modal, over a scrim, against the window's clip.
+         *
+         * Called once per pass after @ref flushPopups: a drop-down opened *inside* a dialog has to
+         * draw over it, and a dialog that could be covered by the list it opened would be a dialog
+         * with an unusable control on it.
+         */
+        void flushModals();
+
+        /** @brief Whether the frame is inside a modal body right now. */
+        [[nodiscard]] bool isInModal() const { return inModal_; }
 
         // --- Drag and drop ---------------------------------------------------------------------
         //
@@ -620,6 +705,10 @@ namespace CNA::Studio
         WidgetId openPopup_;
         std::vector<StudioPopupBody> popups_;
         bool inPopup_ = false;
+
+        WidgetId openModal_;
+        std::vector<StudioPopupBody> modals_;
+        bool inModal_ = false;
 
         StudioTooltipRequest tooltip_;
         WidgetId tooltipHovered_;

@@ -70,6 +70,18 @@ namespace CNA::Studio
             reset.run = [this]() { resetLayout(); };
             actions_.add(std::move(reset));
         }
+        if (const StudioAction* found = actions_.find("studio.help.about"))
+        {
+            StudioAction about = *found;
+            about.run = [this]() {
+                StudioDialogRequest request;
+                request.title = "About CNA Studio";
+                request.lines = aboutLines_;
+                request.buttons = {"Close"};
+                openDialog(std::move(request));
+            };
+            actions_.add(std::move(about));
+        }
         if (const StudioAction* found = actions_.find(std::string{kStudioDockAllActionId}))
         {
             StudioAction dockAll = *found;
@@ -82,6 +94,12 @@ namespace CNA::Studio
 
         statusLeft_ = "No project open";
         statusRight_ = "Renderer: unknown";
+
+        // What the UI core can say for itself. A host that knows its version and its renderer
+        // replaces this with the truth; a preview that does not still shows something honest
+        // rather than an empty box.
+        aboutLines_ = {"CNA Studio", "An editor for CNA games.",
+                       "Native Studio UI, no Dear ImGui."};
     }
 
     std::vector<StudioMenuDefinition> StudioShell::defaultMenus()
@@ -562,6 +580,50 @@ namespace CNA::Studio
         contextRows_.clear();
     }
 
+    void StudioShell::openDialog(StudioDialogRequest request)
+    {
+        // The menu that opened it goes with it. A dialog raised from a menu item while the menu
+        // stayed up would leave two things claiming the keyboard, and Escape would answer the
+        // wrong one.
+        closePopup();
+        frame_.openModal(frame_.ids().make("studio.dialog"));
+
+        dialog_ = std::move(request);
+        dialogState_ = StudioDialogState{};
+        dialogResult_ = StudioDialogResult{};
+        dialogOpen_ = true;
+    }
+
+    void StudioShell::closeDialog()
+    {
+        frame_.closeModal();
+        dialogOpen_ = false;
+        dialogState_ = StudioDialogState{};
+    }
+
+    UiRect StudioShell::dialogBounds() const
+    {
+        if (!dialogOpen_) { return UiRect{}; }
+        return studioDialogBounds(frame_, layout_.window, dialog_);
+    }
+
+    void StudioShell::describeDialog()
+    {
+        if (!dialogOpen_) { return; }
+
+        frame_.deferModal([this](StudioFrame& frame) {
+            const StudioDialogResult answered =
+                studioDialog(frame, layout_.window, dialog_, dialogState_);
+            if (!frame.isInputPass()) { return; }
+
+            dialogResult_ = answered;
+            // Closed here rather than left to the caller, because the caller reads the answer
+            // *after* the frame: a dialog that stayed open until somebody remembered to close it
+            // would take a second click to dismiss and would answer twice in between.
+            if (answered.answered()) { closeDialog(); }
+        });
+    }
+
     void StudioShell::invoke(std::string_view id)
     {
         const StudioActionResult result = actions_.invoke(id);
@@ -686,6 +748,7 @@ namespace CNA::Studio
     {
         invoked_.clear();
         refused_.clear();
+        dialogResult_ = StudioDialogResult{};
         keyboardConsumed_ = false;
 
         // The blocking layer is decided before anything is described, from state that already
@@ -1009,9 +1072,18 @@ namespace CNA::Studio
         // being described last is what stops the popup from being drawn underneath them.
         describeMenuPopup();
 
+        // Queued before the popups are flushed, so the dialog's own body is in this pass's modal
+        // list rather than the next one's.
+        describeDialog();
+
         // Deferred popups -- a drop-down's list opened inside a panel -- come after the panels
         // that queued them and before the tooltip, for the same reason menus do.
         frame_.flushPopups();
+
+        // And a modal after those, over its scrim: a dialog is the one thing that covers an open
+        // menu, and a drop-down opened *on* a dialog is queued from inside this call and runs on
+        // the next frame's flush above -- which is why the two are not one function.
+        frame_.flushModals();
 
         // After even that: a tooltip is the only thing that may cover an open menu, because it
         // describes whatever the pointer is resting on and the pointer may be resting on the menu.
