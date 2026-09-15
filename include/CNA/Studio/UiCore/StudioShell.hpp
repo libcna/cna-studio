@@ -72,6 +72,9 @@ namespace CNA::Studio
     /** @brief The id prefix of the show/hide command the shell registers for each panel. */
     inline constexpr std::string_view kStudioPanelActionPrefix = "studio.window.panel.";
 
+    /** @brief The id prefix of the close command the shell registers for each panel. */
+    inline constexpr std::string_view kStudioClosePanelActionPrefix = "studio.window.closePanel.";
+
     /**
      * @brief A panel the shell knows about.
      *
@@ -528,8 +531,36 @@ namespace CNA::Studio
         /** @brief The submenu switch delay in seconds. */
         [[nodiscard]] float submenuSwitchDelay() const { return submenuSwitchDelay_; }
 
-        /** @brief Whether a menu is open and therefore blocking the panels beneath it. */
+        /** @brief Whether a menu-bar menu is open. */
         [[nodiscard]] bool isMenuOpen() const { return openMenu_ >= 0; }
+
+        /**
+         * @brief Opens a context menu at a point.
+         *
+         * The same rows, the same submenus and the same keyboard traversal as a menu-bar menu:
+         * a context menu differs only in where its first popup is anchored. Anything else would
+         * be a second menu implementation, and the two would drift.
+         *
+         * @param rows What it offers.
+         * @param x    Where the pointer was, in logical units.
+         * @param y    Where the pointer was, in logical units.
+         */
+        void openContextMenu(std::vector<StudioMenuEntry> rows, float x, float y);
+
+        /** @brief Whether a context menu is open. */
+        [[nodiscard]] bool isContextMenuOpen() const { return contextOpen_; }
+
+        /** @brief The rows the open context menu was given. */
+        [[nodiscard]] const std::vector<StudioMenuEntry>& contextMenuRows() const
+        {
+            return contextRows_;
+        }
+
+        /** @brief Closes whichever popup chain is open, menu-bar or context. */
+        void closePopup();
+
+        /** @brief Whether any popup chain is open, and therefore blocking the panels beneath it. */
+        [[nodiscard]] bool isPopupOpen() const { return openMenu_ >= 0 || contextOpen_; }
 
         /**
          * @brief The action ids invoked during the last frame, in order.
@@ -641,6 +672,20 @@ namespace CNA::Studio
          */
         [[nodiscard]] static std::string panelActionId(std::string_view panelId);
 
+        /**
+         * @brief The close command id the shell registers for a panel.
+         * @param panelId The panel's stable id.
+         * @return `"studio.window.closePanel."` followed by @p panelId.
+         */
+        [[nodiscard]] static std::string closePanelActionId(std::string_view panelId);
+
+        /**
+         * @brief The rows a panel tab's context menu offers.
+         * @param panelId The panel whose tab was right-clicked.
+         * @return Close, a rule, and the same panel list the Window menu carries.
+         */
+        [[nodiscard]] std::vector<StudioMenuEntry> tabContextMenu(std::string_view panelId) const;
+
         /** @brief Studio's default menu bar: File, Edit, View, Project, Build, Play, Tools, Window, Help. */
         [[nodiscard]] static std::vector<StudioMenuDefinition> defaultMenus();
 
@@ -716,17 +761,28 @@ namespace CNA::Studio
         void describeMenuBar();
         void describeMenuPopup();
 
+        /** @brief Where a popup opens relative to what it belongs to. */
+        enum class MenuPlacement
+        {
+            /** @brief Under the menu bar, aligned with a title. */
+            Below,
+            /** @brief Beside a parent row, which is what a submenu does. */
+            Beside,
+            /** @brief With its corner on a point, which is what a context menu does. */
+            AtPoint
+        };
+
         /**
          * @brief Lays one popup out from its rows.
-         * @param entries The rows to measure.
-         * @param anchor  The rectangle to open beside: the menu title for level 0, the parent row
-         *                for a submenu.
-         * @param sideways True for a submenu, which opens to the right of @p anchor rather than
-         *                 below it.
+         * @param entries   The rows to measure.
+         * @param anchor    What it opens from: a menu title, a parent row, or a degenerate
+         *                  rectangle at the pointer.
+         * @param placement How it sits relative to @p anchor.
          * @return Its rectangle and rows.
          */
         [[nodiscard]] MenuLevel layOutMenuLevel(const std::vector<StudioMenuEntry>& entries,
-                                                const UiRect& anchor, bool sideways) const;
+                                                const UiRect& anchor,
+                                                MenuPlacement placement) const;
 
         /** @brief The rows one open level draws, or nullptr when the path no longer resolves. */
         [[nodiscard]] const std::vector<StudioMenuEntry>* entriesForLevel(std::size_t level) const;
@@ -798,6 +854,17 @@ namespace CNA::Studio
         std::vector<ToolbarEntryGeometry> toolbarEntries_;
 
         int openMenu_ = -1;
+
+        /**
+         * @brief A context menu's rows, owned rather than referenced.
+         *
+         * Whoever opens one builds it from what was right-clicked, and that selection can change
+         * -- or be deleted -- while the menu is up. Copying is what keeps the popup describing
+         * what the user asked about rather than following the ground out from under itself.
+         */
+        std::vector<StudioMenuEntry> contextRows_;
+        UiRect contextAnchor_;
+        bool contextOpen_ = false;
 
         /**
          * @brief Which row of each popup has its submenu open, deepest last.

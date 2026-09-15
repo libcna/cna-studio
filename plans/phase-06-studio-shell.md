@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 13 of 23 complete `███████░░░░░`
+**Progress:** 14 of 23 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -15,7 +15,7 @@
 | `STUDIO-06023` | Bind the core commands to the editor, with live enablement | ✅ | `STUDIO-06002`, `STUDIO-06022` |
 | `STUDIO-06003` | Application menu bar | ✅ | `STUDIO-06002` |
 | `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | ✅ | `STUDIO-06003` |
-| `STUDIO-06005` | Context menus | ⬜ | `STUDIO-06003` |
+| `STUDIO-06005` | Context menus | ✅ | `STUDIO-06003`, `STUDIO-06017` |
 | `STUDIO-06006` | Main toolbar | 🔄 | `STUDIO-06002` |
 | `STUDIO-06007` | Status bar | 🔄 | `STUDIO-06001` |
 | `STUDIO-06008` | Keyboard shortcut dispatch with scope precedence | ✅ | `STUDIO-06001` |
@@ -272,3 +272,52 @@ from inside one, pressing outside, the lit trail), the keyboard (Right in, Left 
 level, Enter opening rather than closing, arrows moving inside the deepest popup, and Right on a
 plain row still walking the bar), and the Window panel list. Plus `CnaStudioShellPreviewSubmenu`,
 which photographs one through the rasterizer, and `CnaStudioRejectsUnknownShellSubmenu`
+
+### `STUDIO-06005` — Context menus
+
+**Acceptance.** A right-click opens a menu at the pointer offering what applies to the thing under
+it, with the same rows, submenus, keyboard and dismissal as a menu-bar menu
+
+**One chain, two roots.** A context menu is not a second popup implementation; it is the existing
+chain with its first level anchored at a point instead of under a menu-bar title. Everything below
+that — submenus, the corner-cutting delay, the arrow keys, Escape backing out one level, the
+blocking layer, the "press elsewhere to cancel" rule — is the same code. Two implementations would
+have drifted, and the drift would have shown up as a context menu whose submenus behaved subtly
+differently from the File menu's.
+
+**Placement flips rather than slides.** A menu opened near the right or bottom edge moves to the
+other side of the pointer, not along the edge. Sliding would leave the popup under the pointer, and
+the first thing the user did would be to choose a row by accident.
+
+**Its rows are copied, not referenced.** Whoever opens a context menu builds it from what was
+right-clicked, and that selection can change — or be deleted — while the menu is up. Copying is what
+keeps the popup describing what the user asked about rather than following the ground out from
+under itself.
+
+**Only one chain at a time.** Right-clicking with the File menu down replaces it, and opening a
+menu-bar menu closes a context menu. Two popups competing for the keyboard is a state with no
+correct behaviour, so it is made unreachable rather than handled.
+
+**Either button dismisses it.** A right-click elsewhere is a request for a *different* context
+menu, and one that left the first up would stack popups.
+
+**An empty context menu does not open.** A popup with nothing in it is a rectangle the user has to
+click away, and it is exactly what a caller produces when the thing right-clicked offers no
+commands.
+
+**Shipped on panel tabs**, the first thing in the shell that has a context worth a menu: Close, a
+rule, and the same `Panels` submenu the Window menu carries — because the user who has just closed a
+panel is exactly the user who needs to find it again. Close is a real registered command per panel
+(`studio.window.closePanel.<id>`), enabled only while the panel is open and closable, so the
+viewport's row is drawn disabled rather than drawn enabled and then refusing. Right-clicking a tab
+selects it first: a menu acting on a tab the user could not see was chosen would be acting behind
+their back. And it is routed from each tab's own rectangle rather than from the strip, so a
+right-click in the empty space beside the last tab does nothing rather than acting on whichever
+panel happened to be nearest.
+
+**Verification.** `tests/StudioContextMenuTests.cpp` — placement and edge flipping, submenus inside
+one, invoking and closing, dismissal with either button, Escape one level at a time, arrows and
+Enter, sideways arrows *not* walking the menu bar, one chain at a time, the blocking layer and a
+tab that stops being hoverable underneath it, the empty menu, and the five tab-menu behaviours.
+Plus `CnaStudioShellPreviewContextMenu`, which photographs one, and
+`CnaStudioRejectsAContextMenuThatNeverOpens`

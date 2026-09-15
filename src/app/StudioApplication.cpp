@@ -66,6 +66,7 @@ namespace CNA::Studio
             if (argument == "--list-backends") { options.listBackends = true; continue; }
             if (argument == "--compare-backends") { options.compareBackends = true; continue; }
             if (argument == "--shell-mouse-down") { options.shellPreviewMouseDown = true; continue; }
+            if (argument == "--shell-right-click") { options.shellPreviewRightClick = true; continue; }
             if (argument == "--host-capabilities") { options.hostCapabilities = true; continue; }
             if (argument == "--export-overwrite") { options.exportOverwrite = true; continue; }
             if (argument == "--shell-tooltip") { options.shellPreviewTooltip = true; continue; }
@@ -287,6 +288,7 @@ namespace CNA::Studio
             "  --shell-preview=P  Render the native Studio shell to PNG at P and exit.\n"
             "  --shell-pointer=X,Y  Place the pointer, so hover states are capturable.\n"
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
+            "  --shell-right-click  Right-click at the pointer, opening a context menu.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File or Window>Panels.\n"
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
             "  --shell-tooltip    Rest the pointer until a tooltip appears.\n"

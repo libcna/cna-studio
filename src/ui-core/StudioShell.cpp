@@ -124,10 +124,47 @@ namespace CNA::Studio
         return std::string{kStudioPanelActionPrefix} + std::string{panelId};
     }
 
+    std::string StudioShell::closePanelActionId(std::string_view panelId)
+    {
+        return std::string{kStudioClosePanelActionPrefix} + std::string{panelId};
+    }
+
+    std::vector<StudioMenuEntry> StudioShell::tabContextMenu(std::string_view panelId) const
+    {
+        std::vector<StudioMenuEntry> rows;
+        rows.emplace_back(closePanelActionId(panelId));
+        rows.emplace_back(std::string{kStudioMenuSeparatorId});
+
+        // The whole panel list, not just this one. A user who has just closed a panel is exactly
+        // the user who needs to find it again, and making them go back to the menu bar for it is
+        // the kind of small friction that is never worth the space it saves.
+        std::vector<StudioMenuEntry> panelRows;
+        panelRows.reserve(panels_.size());
+        for (const StudioPanelDescriptor& descriptor : panels_)
+        {
+            panelRows.emplace_back(panelActionId(descriptor.id));
+        }
+        rows.push_back(StudioMenuEntry::submenu(std::string{kStudioPanelMenuLabel},
+                                                std::move(panelRows)));
+        return rows;
+    }
+
     void StudioShell::registerPanelAction(const std::string& panelId)
     {
         const StudioPanelDescriptor* descriptor = panel(panelId);
         if (descriptor == nullptr) { return; }
+
+        StudioAction close;
+        close.id = closePanelActionId(panelId);
+        close.label = "Close";
+        close.description = "Close the " + descriptor->title + " panel.";
+        close.category = StudioActionCategory::Window;
+        close.isEnabled = [this, panelId] {
+            const StudioPanelDescriptor* current = panel(panelId);
+            return current != nullptr && current->closable && isPanelOpen(panelId);
+        };
+        close.run = [this, panelId] { closePanel(panelId); };
+        actions_.add(std::move(close));
 
         StudioAction action;
         action.id = panelActionId(panelId);
@@ -398,6 +435,9 @@ namespace CNA::Studio
     void StudioShell::openMenuAt(int index)
     {
         openMenu_ = index;
+        // One chain at a time: opening a menu-bar menu while a context menu is up replaces it.
+        contextOpen_ = false;
+        contextRows_.clear();
         // Every submenu closes with it: moving along the bar with the arrow keys must not leave
         // the previous menu's submenu hanging over the new one.
         submenuPath_.clear();
@@ -407,6 +447,26 @@ namespace CNA::Studio
         // would make Enter -- pressed to dismiss something else entirely -- run a command the user
         // never looked at.
         highlight_.assign(1, -1);
+    }
+
+    void StudioShell::openContextMenu(std::vector<StudioMenuEntry> rows, float x, float y)
+    {
+        // A menu-bar menu and a context menu are one chain, never two at once: right-clicking with
+        // the File menu down must replace it rather than leave two popups fighting for the
+        // keyboard.
+        setOpenMenu(-1);
+
+        contextRows_ = std::move(rows);
+        contextOpen_ = !contextRows_.empty();
+        contextAnchor_ = UiRect{x, y, 0.0f, 0.0f};
+        if (contextOpen_) { highlight_.assign(1, -1); }
+    }
+
+    void StudioShell::closePopup()
+    {
+        setOpenMenu(-1);
+        contextOpen_ = false;
+        contextRows_.clear();
     }
 
     void StudioShell::invoke(std::string_view id)
@@ -440,7 +500,7 @@ namespace CNA::Studio
 
     bool StudioShell::openSubmenu(std::size_t level, int row)
     {
-        if (!isMenuOpen() || level >= highlight_.size()) { return false; }
+        if (!isPopupOpen() || level >= highlight_.size()) { return false; }
 
         if (row < 0)
         {
@@ -496,10 +556,14 @@ namespace CNA::Studio
 
     const std::vector<StudioMenuEntry>* StudioShell::entriesForLevel(std::size_t level) const
     {
-        if (!isMenuOpen() || static_cast<std::size_t>(openMenu_) >= menus_.size()) { return nullptr; }
+        const std::vector<StudioMenuEntry>* entries = nullptr;
+        if (contextOpen_) { entries = &contextRows_; }
+        else if (isMenuOpen() && static_cast<std::size_t>(openMenu_) < menus_.size())
+        {
+            entries = &menus_[static_cast<std::size_t>(openMenu_)].entries;
+        }
+        if (entries == nullptr) { return nullptr; }
 
-        const std::vector<StudioMenuEntry>* entries =
-            &menus_[static_cast<std::size_t>(openMenu_)].entries;
         for (std::size_t depth = 0; depth < level; ++depth)
         {
             if (depth >= submenuPath_.size()) { return nullptr; }
@@ -534,7 +598,7 @@ namespace CNA::Studio
         // The blocking layer is decided before anything is described, from state that already
         // exists. Inferring it from description order would leak one frame of input to the panels
         // underneath an open menu.
-        frame_.beginFrame(input, isMenuOpen() ? kMenuLayer : 0);
+        frame_.beginFrame(input, isPopupOpen() ? kMenuLayer : 0);
         buildContent();
 
         frame_.beginLayout();
@@ -648,18 +712,23 @@ namespace CNA::Studio
 
         // --- The open menu, and every submenu open beneath it -----------------------------------
         menuLevels_.clear();
-        if (!isMenuOpen() || static_cast<std::size_t>(openMenu_) >= menuTitles_.size()) { return; }
+        if (!isPopupOpen()) { return; }
+        if (isMenuOpen() && static_cast<std::size_t>(openMenu_) >= menuTitles_.size()) { return; }
 
         // Level by level, each opening beside the row that opened it. The path is walked rather
         // than trusted: a menu can be replaced while it is open, and a path that no longer names a
         // submenu simply stops the walk instead of laying out a level that is not there.
-        UiRect anchor = menuTitles_[static_cast<std::size_t>(openMenu_)].bounds;
+        UiRect anchor = contextOpen_ ? contextAnchor_
+                                     : menuTitles_[static_cast<std::size_t>(openMenu_)].bounds;
+        const MenuPlacement rootPlacement =
+            contextOpen_ ? MenuPlacement::AtPoint : MenuPlacement::Below;
         for (std::size_t level = 0;; ++level)
         {
             const std::vector<StudioMenuEntry>* entries = entriesForLevel(level);
             if (entries == nullptr || entries->empty()) { break; }
 
-            MenuLevel laidOut = layOutMenuLevel(*entries, anchor, level > 0);
+            MenuLevel laidOut = layOutMenuLevel(
+                *entries, anchor, level > 0 ? MenuPlacement::Beside : rootPlacement);
             if (laidOut.rows.empty()) { break; }
             menuLevels_.push_back(std::move(laidOut));
 
@@ -680,7 +749,8 @@ namespace CNA::Studio
     }
 
     StudioShell::MenuLevel StudioShell::layOutMenuLevel(const std::vector<StudioMenuEntry>& entries,
-                                                        const UiRect& anchor, bool sideways) const
+                                                        const UiRect& anchor,
+                                                        MenuPlacement placement) const
     {
         MenuLevel level;
         if (entries.empty()) { return level; }
@@ -731,21 +801,39 @@ namespace CNA::Studio
 
         float popupX = 0.0f;
         float popupY = 0.0f;
-        if (sideways)
+        switch (placement)
         {
-            // Beside its row, and flipped to the other side when it would run off: a submenu that
-            // opened half off-screen would have the user chasing it with the pointer.
-            popupX = anchor.right();
-            if (popupX + popupWidth > layout_.window.right())
-            {
-                popupX = anchor.left() - popupWidth;
-            }
-            popupY = anchor.top() - metricOf(theme, StudioMetric::SpacingSmall);
-        }
-        else
-        {
-            popupX = anchor.left();
-            popupY = layout_.menuBar.bottom();
+            case MenuPlacement::Beside:
+                // Beside its row, and flipped to the other side when it would run off: a submenu
+                // that opened half off-screen would have the user chasing it with the pointer.
+                popupX = anchor.right();
+                if (popupX + popupWidth > layout_.window.right())
+                {
+                    popupX = anchor.left() - popupWidth;
+                }
+                popupY = anchor.top() - metricOf(theme, StudioMetric::SpacingSmall);
+                break;
+
+            case MenuPlacement::AtPoint:
+                // Down and to the right of the pointer, flipping to the other side of it rather
+                // than sliding along the edge: a context menu that slid would end up under the
+                // pointer, and the first thing the user did would be to choose a row by accident.
+                popupX = anchor.left();
+                popupY = anchor.top();
+                if (popupX + popupWidth > layout_.window.right())
+                {
+                    popupX = anchor.left() - popupWidth;
+                }
+                if (popupY + totalHeight > layout_.window.bottom())
+                {
+                    popupY = anchor.top() - totalHeight;
+                }
+                break;
+
+            case MenuPlacement::Below:
+                popupX = anchor.left();
+                popupY = layout_.menuBar.bottom();
+                break;
         }
 
         popupX = std::min(popupX, layout_.window.right() - popupWidth);
@@ -957,7 +1045,7 @@ namespace CNA::Studio
 
     void StudioShell::describeMenuPopup()
     {
-        if (!isMenuOpen() || menuLevels_.empty()) { return; }
+        if (!isPopupOpen() || menuLevels_.empty()) { return; }
 
         const StudioTheme& theme = frame_.theme();
         StudioInputRouter& router = frame_.router();
@@ -982,7 +1070,7 @@ namespace CNA::Studio
         int hoveredRow = -1;
 
         frame_.pushLayer(kMenuLayer);
-        frame_.ids().push("menu");
+        frame_.ids().push(contextOpen_ ? "context" : "menu");
         frame_.ids().pushIndex(openMenu_);
 
         for (std::size_t level = 0; level < menuLevels_.size(); ++level)
@@ -1083,16 +1171,20 @@ namespace CNA::Studio
 
         if (activatedThisPass)
         {
-            setOpenMenu(-1);
+            closePopup();
             return;
         }
 
         // A press that landed on neither the bar nor any open popup dismisses the menu without
-        // activating anything -- the other half of "click elsewhere to cancel".
-        if (router.mousePressed(UiMouseButton::Left) && deepestUnderPointer < 0
-            && !layout_.menuBar.contains(pointerX, pointerY))
+        // activating anything -- the other half of "click elsewhere to cancel". A context menu has
+        // no bar to spare, and either button dismisses it, because a right-click elsewhere is a
+        // request for a *different* context menu.
+        const bool pressedAway = router.mousePressed(UiMouseButton::Left)
+                              || (contextOpen_ && router.mousePressed(UiMouseButton::Right));
+        if (pressedAway && deepestUnderPointer < 0
+            && (contextOpen_ || !layout_.menuBar.contains(pointerX, pointerY)))
         {
-            setOpenMenu(-1);
+            closePopup();
         }
     }
 
@@ -1274,6 +1366,21 @@ namespace CNA::Studio
 
                 if (frame_.isInputPass()) { tabBounds_.emplace_back(panelId, tab); }
                 if (result.activated) { node.activePanel = i; }
+
+                // Right-click opens the tab's context menu. Routed from the tab's own rectangle
+                // rather than from a hit test over the strip, so a right-click in the empty space
+                // beside the last tab does nothing rather than acting on whichever panel happened
+                // to be nearest.
+                if (frame_.isInputPass()
+                    && frame_.router().mousePressed(UiMouseButton::Right)
+                    && tab.contains(frame_.input().mouseX, frame_.input().mouseY))
+                {
+                    // Selected first: a context menu that acted on a tab the user could not see
+                    // was chosen would be acting behind their back.
+                    node.activePanel = i;
+                    openContextMenu(tabContextMenu(panelId), frame_.input().mouseX,
+                                    frame_.input().mouseY);
+                }
 
                 // A tab held and dragged beyond a threshold starts a dock drag. The threshold is
                 // what keeps a click that wobbled by a pixel from becoming a rearrangement --
@@ -1637,12 +1744,12 @@ namespace CNA::Studio
 
         const MenuRowGeometry& entry = menuLevels_[level].rows[static_cast<std::size_t>(row)];
         if (!entry.separator && !entry.submenu && entry.enabled) { invoke(entry.id); }
-        setOpenMenu(-1);
+        closePopup();
     }
 
     void StudioShell::handleMenuKeyboard()
     {
-        if (!isMenuOpen()) { return; }
+        if (!isPopupOpen()) { return; }
 
         StudioInputRouter& router = frame_.router();
 
@@ -1651,7 +1758,7 @@ namespace CNA::Studio
             // One level at a time. Escape inside a submenu backs out of it; only Escape with
             // nothing nested closes the whole menu, which is what lets a user who opened a submenu
             // by accident get back without losing their place.
-            if (!closeDeepestSubmenu()) { setOpenMenu(-1); }
+            if (!closeDeepestSubmenu()) { closePopup(); }
             keyboardConsumed_ = true;
             return;
         }
@@ -1676,7 +1783,9 @@ namespace CNA::Studio
             // Into the submenu when the highlighted row has one, and on to the next menu in the
             // bar when it does not. Both are what a desktop menu does, and which one applies is
             // decided by the row rather than by a mode.
-            if (!openHighlightedSubmenu() && !menus_.empty())
+            // A context menu has no bar to walk along, so Right on a plain row does nothing
+            // rather than opening a menu the user cannot see the title of.
+            if (!openHighlightedSubmenu() && isMenuOpen() && !menus_.empty())
             {
                 const auto count = static_cast<int>(menus_.size());
                 openMenuAt((openMenu_ + 1) % count);
@@ -1685,7 +1794,7 @@ namespace CNA::Studio
         if (router.keyPressed(UiKey::LeftArrow))
         {
             keyboardConsumed_ = true;
-            if (!closeDeepestSubmenu() && !menus_.empty())
+            if (!closeDeepestSubmenu() && isMenuOpen() && !menus_.empty())
             {
                 const auto count = static_cast<int>(menus_.size());
                 openMenuAt((openMenu_ - 1 + count) % count);
@@ -1704,7 +1813,7 @@ namespace CNA::Studio
         // While a menu is open the menu owns the keyboard: Enter chooses a row, Escape closes, and
         // neither should also fire whatever global chord happens to use the same key. The same
         // holds for the frame a menu closes *on*, which is what keyboardConsumed_ carries.
-        if (isMenuOpen() || keyboardConsumed_) { return; }
+        if (isPopupOpen() || keyboardConsumed_) { return; }
 
         StudioInputRouter& router = frame_.router();
         const UiKeyModifiers modifiers = router.modifiers();

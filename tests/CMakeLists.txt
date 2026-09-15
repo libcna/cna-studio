@@ -33,6 +33,7 @@ add_executable(cna-studio-tests
     StudioDockDragTests.cpp
     StudioTooltipTests.cpp
     StudioSubmenuTests.cpp
+    StudioContextMenuTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -202,6 +203,20 @@ add_test(NAME CnaStudioShellPreviewDockDrag
                        --shell-size=1280x720 --shell-drag=layers
                        --shell-pointer=1000,400 --shell-mouse-down)
 set_tests_properties(CnaStudioShellPreviewDockDrag PROPERTIES TIMEOUT 60)
+
+# A context menu on a panel tab, which is the shell's own first user of the mechanism.
+add_test(NAME CnaStudioShellPreviewContextMenu
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-context.png
+                       --shell-size=1280x720 --shell-pointer=133,533 --shell-right-click)
+set_tests_properties(CnaStudioShellPreviewContextMenu PROPERTIES TIMEOUT 60)
+
+# And right-clicking something that offers none is an error rather than a capture of the shell at
+# rest passing for a capture of a context menu.
+add_test(NAME CnaStudioRejectsAContextMenuThatNeverOpens
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/no-context.png
+                       --shell-size=1280x720 --shell-pointer=640,300 --shell-right-click)
+set_tests_properties(CnaStudioRejectsAContextMenuThatNeverOpens PROPERTIES
+    WILL_FAIL TRUE TIMEOUT 60)
 
 # A submenu open beside its parent, which is the one menu state a top-level capture cannot reach.
 add_test(NAME CnaStudioShellPreviewSubmenu

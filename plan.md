@@ -48,7 +48,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**134 of 478 tasks complete** `███████░░░░░░░░░░░░░░░░░░`  28.0%
+**135 of 478 tasks complete** `███████░░░░░░░░░░░░░░░░░░`  28.2%
 
 | Status | Count |
 |--------|------:|
@@ -75,7 +75,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 31 | 25 | `████████░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 19 | 10 | `████░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 14 | 12 | `██████░░░░` |
-| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 23 | 13 | `██████░░░░` |
+| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 23 | 14 | `██████░░░░` |
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 26 | 7 | `░░░░░░░░░░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |

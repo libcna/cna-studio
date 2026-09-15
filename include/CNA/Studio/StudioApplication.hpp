@@ -154,6 +154,14 @@ namespace CNA::Studio
         bool shellPreviewMouseDown = false;
 
         /**
+         * @brief True to right-click at the pointer before capturing, opening a context menu.
+         *
+         * A press and a release, not a held button: a context menu opens on the press and the
+         * capture wants the menu, not a button the user is still holding.
+         */
+        bool shellPreviewRightClick = false;
+
+        /**
          * @brief Menu to open in the shell preview, e.g. `"File"` or `"Window>Panels"`.
          *
          * A `>`-separated path, because a submenu is reached by hovering and a harness that could

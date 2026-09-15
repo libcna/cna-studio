@@ -203,6 +203,25 @@ namespace
         textures.apply(shell.drawData());
         shell.renderFrame(input);
 
+        if (options.shellPreviewRightClick)
+        {
+            // A press and a release. The menu opens on the press; holding the button through the
+            // capture would photograph a gesture nobody makes.
+            CNA::Studio::UiInputState pressed = input;
+            pressed.setMouseDown(CNA::Studio::UiMouseButton::Right, true);
+            shell.renderFrame(pressed);
+            textures.apply(shell.drawData());
+            shell.renderFrame(input);
+            textures.apply(shell.drawData());
+
+            if (!shell.isContextMenuOpen())
+            {
+                std::cerr << "cna-studio: no context menu appeared. --shell-right-click needs "
+                             "--shell-pointer over something that offers one.\n";
+                return 2;
+            }
+        }
+
         // One level per step, each needing a frame to lay out before the next can be found in it.
         for (std::size_t depth = 1; depth < menuPath.size(); ++depth)
         {
