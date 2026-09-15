@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 10 of 35 complete `███░░░░░░░░░`
+**Progress:** 12 of 36 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -68,9 +68,10 @@ truth rather than any one product's expression of it.
 | `STUDIO-35051` | Viewport grid that reads as a ground plane, with origin axes | ⬜ | — |
 | `STUDIO-35052` | An orientation widget in the viewport corner | ⬜ | `STUDIO-35050` |
 | `STUDIO-35053` | Selection feedback in the viewport: outline, pivot, bounds | ⬜ | — |
-| `STUDIO-35060` | World Outliner: visibility and lock affordances per row | ⬜ | `STUDIO-35031` |
+| `STUDIO-35060` | World Outliner: a visibility toggle on every row | ✅ | `STUDIO-35031` |
+| `STUDIO-35062` | A lock concept in the scene document, and its outliner affordance | ⬜ | `STUDIO-35060` |
 | `STUDIO-35061` | World Outliner: search, filter and prefab indicators | ⬜ | `STUDIO-35031` |
-| `STUDIO-35070` | Status bar density and legibility | 🔄 | `STUDIO-35021` |
+| `STUDIO-35070` | Status bar density and legibility | ✅ | `STUDIO-35021` |
 | `STUDIO-35071` | Toolbar ergonomics: grouping, hover, active and disabled states | 🔄 | `STUDIO-35021` |
 | `STUDIO-35080` | Visual regression suite 2.0: five resolutions, both themes, four scenarios | ✅ | `STUDIO-35021` |
 | `STUDIO-35081` | Replace the prototype comparison with the professional-environment criterion | ✅ | — |
@@ -332,3 +333,50 @@ expensive mistake, so the run fails rather than capturing the shell at rest.
 probes — "the viewport occupies the middle 60% of the window" — are the next layer and are
 `STUDIO-35082`. The floor here separates *drew nothing* from *drew something*; it does not separate
 *drew the right thing*.
+
+### `STUDIO-35060` — A visibility toggle on every outliner row
+
+**Acceptance.** An entity can be shown or hidden from its row, through the history.
+
+**Why it has to be on the row.** An outliner where hiding an entity means selecting it, finding the
+Details panel and unticking a box is one where nobody hides anything — and hiding things is how a
+large scene is worked on at all.
+
+**The entity's `enabled` flag rather than a second "visible" one.** A scene has no such field, and
+inventing one would put a presentation concern into the document format, where it would then have
+to be migrated, validated and exported — and it would be a *second* thing that hides an entity,
+which is one too many.
+
+**Drawn only while the row is hovered or the toggle is off**, which is what every outliner that has
+one does: a column of forty identical eyes is a column of noise, and the rows that matter are the
+ones *not* in the default state. The hit area is described in both cases either way — a button that
+existed only while hovered would be one a user cannot click, because the frame in which they press
+is the frame it was there. Only the *drawing* is conditional.
+
+**And the label stops where the toggle starts, hovered or not.** Text that reflowed as the pointer
+crossed a row would be the most distracting thing in the panel.
+
+**A press on the toggle is not a press on the row.** The toggle is described before the row's own
+drawing so it wins the click, and the panel returns after handling it rather than falling through —
+handling both would hide an entity and select it in one gesture.
+
+### `STUDIO-35062` — A lock concept in the scene document
+
+**Not done, and it is not a visual task.** Locking an entity against selection and editing needs a
+field in the scene format, its migration, its export behaviour and a rule in every place that picks
+or edits. `STUDIO-35060` covers visibility because `enabled` already exists and already means what
+it needs to mean; there is no equivalent for lock, and adding an icon for a state nothing enforces
+would be worse than having neither.
+
+### `STUDIO-35070` — Status bar density and legibility
+
+**Acceptance.** The bar's facts can be told apart at a glance, and the one a user reads deliberately
+is not the faintest text in the window.
+
+**Two changes, both about hierarchy rather than about size.** Each right-hand fact is a *label* and
+a *value* now rather than one grey sentence: "Renderer: OPENGL4 on SDL3" in one colour is a string a
+reader has to parse, and the label dimmed with the value at full weight is two things they can pick
+out — the value being the half anybody is looking for. And the left-hand message, which is the
+answer to "what am I looking at", is primary text unconditionally. It used to share the build
+target's grey unless the scene was dirty, which made the project's own name the faintest deliberate
+text in the window.

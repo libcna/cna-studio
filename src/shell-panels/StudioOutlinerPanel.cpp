@@ -84,6 +84,19 @@ namespace CNA::Studio
             row.enabled = entity->isEnabled();
             row.icon = iconFor(*entity);
 
+            // `STUDIO-35060`. An outliner where hiding an entity means selecting it, finding the
+            // Details panel and unticking a box is one where nobody hides anything -- and hiding
+            // things is how a large scene is worked on at all.
+            //
+            // The entity's `enabled` flag rather than a second "visible" one. A scene has no such
+            // field, and inventing one would put a presentation concern into the document format,
+            // where it would then have to be migrated, validated and exported -- and it would be a
+            // second thing that hides an entity, which is one too many.
+            row.toggleIcon = StudioIcon::Visible;
+            row.toggleOffIcon = StudioIcon::Hidden;
+            row.toggleOn = entity->isEnabled();
+            row.toggleTooltip = entity->isEnabled() ? "Hide this entity" : "Show this entity";
+
             // The component list is what tells a camera from a sprite at a glance, and it is the
             // first thing anybody looks for in an outliner. One name reads; five is a wall.
             if (entity->getComponents().size() == 1)
@@ -158,6 +171,22 @@ namespace CNA::Studio
                                                                       tree.renamedTo));
                 result.renamed = true;
             }
+        }
+
+        if (tree.toggledRowAction.has_value())
+        {
+            const Uuid id = Uuid::parse(rows[*tree.toggledRowAction].id);
+            const StudioEntity* entity = context.getScene().findEntity(id);
+            if (entity != nullptr)
+            {
+                // Through the history, like every other edit, and *before* the click below is
+                // considered: a press on the toggle is not a press on the row, and handling both
+                // would hide an entity and select it in one gesture.
+                context.execute(std::make_unique<SetEntityEnabledCommand>(
+                    context.getScene(), id, !entity->isEnabled()));
+                result.visibilityChanged = true;
+            }
+            return result;
         }
 
         if (tree.clicked.has_value())

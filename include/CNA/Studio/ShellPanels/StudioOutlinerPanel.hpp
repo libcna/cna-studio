@@ -54,6 +54,9 @@ namespace CNA::Studio
 
         /** @brief Whether an entity was renamed in place this frame. Input pass only. */
         bool renamed = false;
+
+        /** @brief Whether an entity was shown or hidden from its row this frame. Input pass only. */
+        bool visibilityChanged = false;
     };
 
     /**

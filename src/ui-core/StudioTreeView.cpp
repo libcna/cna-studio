@@ -226,6 +226,45 @@ namespace CNA::Studio
                 continue;
             }
 
+            // The trailing toggle, described before the row's own drawing so it wins the click
+            // against the row underneath it -- the row is one widget covering the whole line, and a
+            // button described after it would be a button the row swallows every press of.
+            if (row.toggleIcon != StudioIcon::None)
+            {
+                const float size = metricOf(theme, StudioMetric::IconSize);
+                const UiRect box{rowBounds.right() - padding - size,
+                                 std::round(rowBounds.centerY() - size * 0.5f), size, size};
+
+                // Drawn only while the row is hovered or the toggle is off, which is what every
+                // outliner that has one does: a column of forty identical eyes is a column of
+                // noise, and the rows that matter are the ones *not* in the default state.
+                const bool show = interaction.hovered || !row.toggleOn;
+
+                StudioButtonOptions options;
+                options.icon = (!row.toggleOn && row.toggleOffIcon != StudioIcon::None)
+                    ? row.toggleOffIcon
+                    : row.toggleIcon;
+                options.iconOnly = true;
+                options.kind = StudioButtonKind::Ghost;
+                options.tooltip = row.toggleTooltip;
+                options.focusable = false;
+
+                // Described in both passes either way, so the hit area does not appear and vanish
+                // under the pointer; only the *drawing* is conditional. A button that existed only
+                // while hovered would be one a user cannot click, because the frame in which they
+                // press is the frame it was there.
+                const bool clicked = show
+                    ? studioButton(frame, frame.ids().make("toggle"), box, row.toggleTooltip,
+                                   options).activated
+                    : frame.interact(frame.ids().make("toggle"), box, /*enabled=*/true).clicked;
+
+                if (frame.isInputPass() && clicked) { result.toggledRowAction = index; }
+
+                // And the label stops where the toggle starts, hovered or not: text that reflowed
+                // as the pointer crossed a row would be the most distracting thing in the panel.
+                cursor.splitRight(std::min(cursor.width, size + padding));
+            }
+
             if (frame.isDrawPass())
             {
                 if (dropHovered)

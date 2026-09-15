@@ -127,6 +127,28 @@ namespace CNA::Studio
 
         /** @brief Payload type this row accepts a drop of. Empty means it accepts none. */
         std::string dropType;
+
+        /**
+         * @brief A toggle at the right-hand end of the row, or `None` for no toggle.
+         *
+         * `STUDIO-35060`. An outliner where hiding an entity means selecting it, finding the
+         * Details panel and unticking a box is one where nobody hides anything — and hiding things
+         * is how a large scene is worked on at all. The affordance has to be *on the row*.
+         *
+         * Drawn only while the row is hovered or the toggle is off, which is what every outliner
+         * that has one does: a column of forty identical eyes is a column of noise, and the rows
+         * that matter are the ones that are *not* in the default state.
+         */
+        StudioIcon toggleIcon = StudioIcon::None;
+
+        /** @brief What to draw instead while @ref toggleOn is false. `None` keeps @ref toggleIcon. */
+        StudioIcon toggleOffIcon = StudioIcon::None;
+
+        /** @brief The toggle's state. */
+        bool toggleOn = true;
+
+        /** @brief Hover help for the toggle. */
+        std::string toggleTooltip;
     };
 
     /**
@@ -230,6 +252,9 @@ namespace CNA::Studio
 
         /** @brief How many rows were actually drawn. */
         std::size_t rowsDrawn = 0;
+
+        /** @brief Index of the row whose trailing toggle was clicked. Input pass only. */
+        std::optional<std::size_t> toggledRowAction;
 
         /** @brief Index of the row a payload was dropped on. Input pass only. */
         std::optional<std::size_t> dropped;

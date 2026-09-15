@@ -278,3 +278,42 @@ CNA_STUDIO_TEST(ADeepSceneIsDrawnRatherThanDescended)
     CNA_STUDIO_EXPECT(drawn < std::size_t{100});
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
 }
+
+// ------------------------------------------------------------------------------------------------
+// Showing and hiding from the row (STUDIO-35060)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(EveryOutlinerRowCarriesAVisibilityToggle)
+{
+    // An outliner where hiding an entity means selecting it, finding the Details panel and
+    // unticking a box is one where nobody hides anything -- and hiding things is how a large scene
+    // is worked on at all. The affordance has to be on the row.
+    SceneDocument scene;
+    const Uuid visible = scene.addEntity(StudioEntity{Uuid::generate(), "Visible"});
+    StudioEntity hiddenEntity{Uuid::generate(), "Hidden"};
+    hiddenEntity.setEnabled(false);
+    const Uuid hidden = scene.addEntity(std::move(hiddenEntity));
+
+    StudioTreeState state;
+    const std::vector<StudioTreeRow> rows = studioOutlinerRows(scene, {}, state);
+
+    const auto rowFor = [&rows](const Uuid& id) -> const StudioTreeRow* {
+        for (const StudioTreeRow& row : rows)
+        {
+            if (row.id == id.toString()) { return &row; }
+        }
+        return nullptr;
+    };
+
+    CNA_STUDIO_EXPECT(rowFor(visible) != nullptr);
+    CNA_STUDIO_EXPECT(rowFor(visible)->toggleIcon == StudioIcon::Visible);
+    CNA_STUDIO_EXPECT(rowFor(visible)->toggleOffIcon == StudioIcon::Hidden);
+    CNA_STUDIO_EXPECT(rowFor(visible)->toggleOn);
+
+    // The pair has to be one drawing with one difference or the control reads as two unrelated
+    // states rather than as on and off, and the tooltip says what the click will *do* rather than
+    // what the state *is* -- "Hidden" on a button is a label a user has to invert to use.
+    CNA_STUDIO_EXPECT(!rowFor(hidden)->toggleOn);
+    CNA_STUDIO_EXPECT_EQ(rowFor(visible)->toggleTooltip, std::string{"Hide this entity"});
+    CNA_STUDIO_EXPECT_EQ(rowFor(hidden)->toggleTooltip, std::string{"Show this entity"});
+}

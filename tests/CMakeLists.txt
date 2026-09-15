@@ -472,6 +472,24 @@ if(CNA_STUDIO_WITH_CNA)
     set(CNA_STUDIO_TEST_DISPLAY ":0" CACHE STRING
         "DISPLAY used by cna-studio ctests that need a real graphics context")
 
+    # How a windowed case gets a surface, decided once.
+    #
+    # SOFTWARE and HEADLESS rasterise on the CPU and are happy with SDL's dummy video driver, which
+    # needs no display at all. Every other renderer needs a real one: SDL's dummy driver has no GL,
+    # no Vulkan and no surface, and a case that asks for `dummy` on OPENGL4 does not fall back --
+    # it throws "OpenGL support is either not configured in SDL or not available in current SDL
+    # video driver (dummy)" and the run aborts.
+    #
+    # Spelled out in one variable because it was spelled out in eleven places, and the eleventh was
+    # the one that had not been updated: CnaStudioNativeShellDoesNotModifyTheProject asked for the
+    # dummy driver unconditionally and failed the moment a renderer that needs a display existed.
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS"
+       OR CNA_GRAPHICS_RENDERER STREQUAL "STUB")
+        set(CNA_STUDIO_TEST_SURFACE "SDL_VIDEODRIVER=dummy")
+    else()
+        set(CNA_STUDIO_TEST_SURFACE "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
+    endif()
+
     # The native Studio shell in a real window, through a real CNA renderer -- the whole strangler
     # seam end to end: StudioShell describes, CnaUiPlatform fills UiInputState from CNA's input,
     # CnaUiRenderer draws UiDrawData through CNA's graphics API, and the back buffer comes back as
@@ -634,7 +652,7 @@ if(CNA_STUDIO_WITH_CNA)
             "-DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/../examples"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/NativeShellProjectTest.cmake")
     set_tests_properties(CnaStudioNativeShellDoesNotModifyTheProject PROPERTIES
-        ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+        ENVIRONMENT "${CNA_STUDIO_TEST_SURFACE}" TIMEOUT 180)
 
     # The workspace layout survives a real process exit. Two processes rather than one, because
     # that is the thing being tested: a unit test proves the store round-trips in memory, and only

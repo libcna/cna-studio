@@ -2711,25 +2711,43 @@ namespace CNA::Studio
         // Right to left, because the right-hand facts are fixed-width answers and the left-hand
         // message is whatever the project is called: laid out the other way, a long project name
         // would push the renderer off the end of the bar.
-        const auto sayRight = [&](const std::string& text, StudioColorRole role) {
-            if (text.empty()) { return; }
-            const float width = std::min(inner.width, std::ceil(studioLabelWidth(
-                frame_, text, StudioFontRole::BodySmall)));
-            const UiRect box = inner.splitRight(width);
+        //
+        // `STUDIO-35070`. Each fact is a *label* and a *value* rather than one grey sentence.
+        // "Renderer: OPENGL4 on SDL3" in one colour is a string a reader has to parse; the label
+        // dimmed and the value at full contrast is two things they can pick out at a glance -- and
+        // the value is the half anybody is looking for. Everything on this bar used to be
+        // TextSecondary, which made the whole row read as a disclaimer.
+        const auto sayRight = [&](std::string_view label, const std::string& value,
+                                  StudioColorRole valueRole) {
+            if (value.empty()) { return; }
+
+            const float valueWidth = std::ceil(studioLabelWidth(frame_, value,
+                                                               StudioFontRole::BodySmall));
+            const float labelWidth = label.empty()
+                ? 0.0f
+                : std::ceil(studioLabelWidth(frame_, label, StudioFontRole::BodySmall) + gap);
+
+            const UiRect box = inner.splitRight(std::min(inner.width, valueWidth + labelWidth));
             if (frame_.isDrawPass())
             {
-                studioDrawText(frame_, box, text, StudioFontRole::BodySmall, theme.color(role),
-                               StudioTextAlign::Right);
+                UiRect cursor = box;
+                const UiRect valueBox = cursor.splitRight(std::min(cursor.width, valueWidth));
+                studioDrawText(frame_, valueBox, value, StudioFontRole::BodySmall,
+                               theme.color(valueRole), StudioTextAlign::Right);
+                if (!label.empty() && cursor.width > 0.0f)
+                {
+                    studioDrawText(frame_, cursor, label, StudioFontRole::BodySmall,
+                                   theme.color(StudioColorRole::TextDisabled),
+                                   StudioTextAlign::Right);
+                }
             }
             inner.splitRight(spacing);
         };
 
-        sayRight(status_.renderer.empty() ? std::string{} : "Renderer: " + status_.renderer,
-                 StudioColorRole::TextSecondary);
+        sayRight("Renderer", status_.renderer, StudioColorRole::TextSecondary);
         // The target this project *ships* on, which is not the renderer Studio is drawing with --
         // conflating the two is exactly the mistake that makes somebody test on the wrong backend.
-        sayRight(status_.target.empty() ? std::string{} : "Target: " + status_.target,
-                 StudioColorRole::TextSecondary);
+        sayRight("Target", status_.target, StudioColorRole::TextSecondary);
 
         // The running job, between the two, with room to grow into whatever the message leaves.
         if (!status_.jobs.empty() && inner.width > 0.0f)
@@ -2792,9 +2810,12 @@ namespace CNA::Studio
             const std::string message =
                 wrong ? status_.problem
                       : (status_.modified ? "\u2022 " + status_.message : status_.message);
+            // `STUDIO-35070`. Primary either way. This is the answer to "what am I looking at",
+            // which is the one thing on the bar a user reads deliberately rather than glances at,
+            // and it was drawn in the same grey as the build target unless the scene was dirty --
+            // so the project's own name was the faintest deliberate text in the window.
             const StudioColorRole role = wrong ? StudioColorRole::Error
-                                       : (status_.modified ? StudioColorRole::TextPrimary
-                                                            : StudioColorRole::TextSecondary);
+                                              : StudioColorRole::TextPrimary;
             studioDrawText(frame_, inner, message, StudioFontRole::BodySmall, theme.color(role),
                            StudioTextAlign::Left);
         }
