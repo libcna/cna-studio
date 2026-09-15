@@ -27,6 +27,8 @@
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
+
+#include <cstdint>
 #include "CNA/Studio/Viewport/StudioViewport.hpp"
 
 namespace CNA::Studio
@@ -53,6 +55,24 @@ namespace CNA::Studio
         ScaleGizmoDrag scale;
 
         /**
+         * @brief The same gesture applied to a whole selection.
+         *
+         * Runs *beside* the three above rather than instead of them: those compute what the
+         * gesture is — how far along an axis, through what angle, by what factor — and this turns
+         * that one answer into an edit per entity. Two gesture implementations would be two
+         * chances for the group and the entity under the cursor to disagree.
+         */
+        MultiTransformDrag multi;
+
+        /**
+         * @brief Distinguishes one multi-drag from the next in the undo stack's merge key.
+         *
+         * Without it, two consecutive group drags would merge into one undo entry — and undoing
+         * would jump back past a gesture the user had already finished and accepted.
+         */
+        std::uint64_t multiDragId = 0;
+
+        /**
          * @brief Whether this drag has already pushed a command.
          *
          * The first frame of a drag opens an undo entry and every frame after it merges into that
@@ -72,6 +92,7 @@ namespace CNA::Studio
             translate.end();
             rotate.end();
             scale.end();
+            multi.end();
             dragHasEdited = false;
         }
     };

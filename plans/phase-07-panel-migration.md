@@ -416,9 +416,21 @@ it hits
 pointer, the middle *or* right button pans, a click picks the topmost sprite and Ctrl adds to the
 selection, a click on nothing clears it, and **all three manipulators drag** — translate
 axis-constrained, rotate about the ring, scale as a screen-space ratio — with Ctrl snapping to the
-project's step or the visible grid. What does not: dragging a *multi*-selection (the machinery
-exists; only one entity moves today), the 3D view toggle, tilemap painting, and forwarding input to
-a running player. Each is its own task and each is a real piece of the prototype's viewport.
+project's step or the visible grid, **on one entity or on a whole selection**. What does not: the 3D
+view toggle, tilemap painting, and forwarding input to a running player. Each is its own task and
+each is a real piece of the prototype's viewport.
+
+**A group drag is one gesture applied many times, not many gestures.** The three drags above compute
+*what the gesture is* — how far along an axis, through what angle, by what factor — and the
+multi-drag turns that one answer into an edit per entity. Two gesture implementations would be two
+chances for the group and the entity under the cursor to disagree. The manipulator sits at the
+average of the selection's positions, which is where the renderer already draws it, so hit-testing
+happens where the gizmo *is*; and the pivot is the one captured when the drag began, because the
+entities move as it proceeds and a centre recomputed from them chases itself.
+
+**Two group drags are two undo entries.** They share a merge-key shape, so without a counter
+distinguishing them the second would merge into the first and one Ctrl+Z would jump back past a
+gesture the user had already finished.
 
 **The whole drag is one undo entry.** The first frame opens it and every frame after merges into
 it. Sixty entries a second is an undo stack nobody can use: Ctrl+Z would rewind the gesture frame by

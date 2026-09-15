@@ -528,3 +528,80 @@ CNA_STUDIO_TEST(TheToolbarsTransformButtonsChooseTheManipulator)
     shell.renderFrame(input);
     CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.scale"));
 }
+
+CNA_STUDIO_TEST(DraggingAMultiSelectionMovesEveryEntityByTheSameAmount)
+{
+    // And by the *same* amount: a group drag that moved the grabbed entity further than the rest
+    // would tear the arrangement apart, which is the one thing a user selects a group to preserve.
+    Fixture fixture;
+    fixture.context.select(fixture.left);
+    fixture.context.toggleSelection(fixture.right);
+    fixture.settle();
+
+    const StudioVector3 leftBefore = positionOf(fixture.context, fixture.left);
+    const StudioVector3 rightBefore = positionOf(fixture.context, fixture.right);
+
+    // The manipulator sits at the average of the two, which is where the renderer draws it.
+    const auto pivot =
+        computeSelectionPivot(fixture.context.getScene(), fixture.context.getSelection());
+    CNA_STUDIO_EXPECT(pivot.has_value());
+
+    auto layout = computeTranslateGizmoLayout(fixture.context.getScene(), fixture.camera,
+                                              fixture.context.getSelection().back());
+    placeGizmoAt(*layout, fixture.camera, *pivot);
+
+    UiInputState down = at(layout->origin.x, layout->origin.y);
+    down.setMouseDown(UiMouseButton::Left, true);
+    fixture.run(at(layout->origin.x, layout->origin.y));
+    fixture.run(down);
+    CNA_STUDIO_EXPECT(fixture.state.dragging());
+
+    UiInputState moved = at(layout->origin.x + 40.0f, layout->origin.y + 20.0f);
+    moved.setMouseDown(UiMouseButton::Left, true);
+    fixture.run(moved);
+    fixture.run(at(layout->origin.x + 40.0f, layout->origin.y + 20.0f));
+
+    const StudioVector3 leftAfter = positionOf(fixture.context, fixture.left);
+    const StudioVector3 rightAfter = positionOf(fixture.context, fixture.right);
+
+    CNA_STUDIO_EXPECT(std::abs(leftAfter.x - leftBefore.x) > 1.0f);
+    CNA_STUDIO_EXPECT(std::abs((leftAfter.x - leftBefore.x) - (rightAfter.x - rightBefore.x)) < 0.01f);
+    CNA_STUDIO_EXPECT(std::abs((leftAfter.y - leftBefore.y) - (rightAfter.y - rightBefore.y)) < 0.01f);
+
+    // One undo entry for the whole group and the whole gesture.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{1});
+    fixture.context.getHistory().undo();
+    CNA_STUDIO_EXPECT(std::abs(positionOf(fixture.context, fixture.left).x - leftBefore.x) < 0.01f);
+    CNA_STUDIO_EXPECT(std::abs(positionOf(fixture.context, fixture.right).x - rightBefore.x) < 0.01f);
+}
+
+CNA_STUDIO_TEST(TwoGroupDragsAreTwoUndoEntriesRatherThanOne)
+{
+    // They share a merge key shape, so without something distinguishing them the second would
+    // merge into the first -- and one Ctrl+Z would jump back past a gesture already finished.
+    Fixture fixture;
+    fixture.context.select(fixture.left);
+    fixture.context.toggleSelection(fixture.right);
+    fixture.settle();
+
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const auto pivot =
+            computeSelectionPivot(fixture.context.getScene(), fixture.context.getSelection());
+        auto layout = computeTranslateGizmoLayout(fixture.context.getScene(), fixture.camera,
+                                                  fixture.context.getSelection().back());
+        placeGizmoAt(*layout, fixture.camera, *pivot);
+
+        UiInputState down = at(layout->origin.x, layout->origin.y);
+        down.setMouseDown(UiMouseButton::Left, true);
+        fixture.run(at(layout->origin.x, layout->origin.y));
+        fixture.run(down);
+
+        UiInputState moved = at(layout->origin.x + 30.0f, layout->origin.y);
+        moved.setMouseDown(UiMouseButton::Left, true);
+        fixture.run(moved);
+        fixture.run(at(layout->origin.x + 30.0f, layout->origin.y));
+    }
+
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{2});
+}

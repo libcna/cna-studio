@@ -15,6 +15,8 @@
 
 #include <cmath>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace CNA::Studio
@@ -72,42 +74,116 @@ namespace CNA::Studio
          * @return True when a drag began, meaning the press must not also pick.
          */
         bool beginGizmoDrag(StudioContext& context, StudioCamera2D& camera,
-                            StudioViewportState& state, const Uuid& entityId,
+                            StudioViewportState& state, const std::vector<Uuid>& selection,
                             const StudioVector2& pointer)
         {
             const SceneDocument& scene = context.getScene();
+            const Uuid entityId = selection.back();
 
+            // A selection of more than one puts the manipulator at the *average* of their
+            // positions, and the renderer draws it there. Hit-testing anywhere else would mean
+            // grabbing a gizmo that is not where it is drawn.
+            const std::optional<StudioVector2> pivot = selection.size() > 1
+                ? computeSelectionPivot(scene, selection)
+                : std::nullopt;
+
+            bool began = false;
             switch (state.mode)
             {
                 case GizmoMode::Translate:
                 {
-                    const auto layout =
-                        computeTranslateGizmoLayout(scene, camera, entityId, state.space);
+                    auto layout = computeTranslateGizmoLayout(scene, camera, entityId, state.space);
                     if (!layout) { return false; }
+                    if (pivot) { placeGizmoAt(*layout, camera, *pivot); }
+
                     const GizmoHandle handle = hitTestTranslateGizmo(*layout, pointer);
                     if (handle == GizmoHandle::None) { return false; }
-                    return state.translate.begin(scene, camera, entityId, handle, pointer,
-                                                 state.space);
+                    began = state.translate.begin(scene, camera, entityId, handle, pointer,
+                                                  state.space);
+                    break;
                 }
                 case GizmoMode::Rotate:
                 {
-                    const auto layout = computeRotateGizmoLayout(scene, camera, entityId);
+                    auto layout = computeRotateGizmoLayout(scene, camera, entityId);
                     if (!layout) { return false; }
+                    if (pivot) { placeGizmoAt(*layout, camera, *pivot); }
+
                     if (hitTestRotateGizmo(*layout, pointer) == GizmoHandle::None) { return false; }
-                    return state.rotate.begin(scene, *layout, entityId, pointer);
+                    began = state.rotate.begin(scene, *layout, entityId, pointer);
+                    break;
                 }
                 case GizmoMode::Scale:
                 {
-                    const auto layout = computeScaleGizmoLayout(scene, camera, entityId);
+                    auto layout = computeScaleGizmoLayout(scene, camera, entityId);
                     if (!layout) { return false; }
+                    if (pivot) { placeGizmoAt(*layout, camera, *pivot); }
+
                     const GizmoHandle handle = hitTestScaleGizmo(*layout, pointer);
                     if (handle == GizmoHandle::None) { return false; }
-                    return state.scale.begin(scene, *layout, entityId, handle, pointer);
+                    began = state.scale.begin(scene, *layout, entityId, handle, pointer);
+                    break;
                 }
                 case GizmoMode::None:
                     break;
             }
-            return false;
+
+            if (began && pivot)
+            {
+                // The roots only: a child moves when its parent does, and applying a drag to both
+                // would move it twice.
+                state.multi.begin(scene, selection, *pivot);
+                ++state.multiDragId;
+            }
+            return began;
+        }
+
+        /** @brief Applies one frame of a drag that is moving a whole selection. */
+        bool updateMultiDrag(StudioContext& context, const StudioCamera2D& camera,
+                             StudioViewportState& state, const StudioVector2& pointer,
+                             const GizmoSnap& snap)
+        {
+            const SceneDocument& scene = context.getScene();
+            std::vector<EntityTransformEdit> edits;
+
+            if (state.translate.isActive())
+            {
+                edits = state.multi.translate(
+                    scene, state.translate.getWorldDelta(camera, pointer, snap));
+            }
+            else if (state.rotate.isActive())
+            {
+                auto layout = computeRotateGizmoLayout(scene, camera, state.rotate.getEntityId());
+                if (!layout) { return false; }
+                // The pivot captured when the drag began, not a fresh centroid: the entities are
+                // moving as the drag proceeds, and a centre recomputed from them chases itself.
+                placeGizmoAt(*layout, camera, state.multi.getPivot());
+                edits = state.multi.rotate(scene, state.rotate.getDeltaAngle(*layout, pointer, snap));
+            }
+            else if (state.scale.isActive())
+            {
+                auto layout = computeScaleGizmoLayout(scene, camera, state.scale.getEntityId());
+                if (!layout) { return false; }
+                placeGizmoAt(*layout, camera, state.multi.getPivot());
+
+                const float factor = state.scale.getFactor(*layout, pointer, snap);
+                const GizmoHandle handle = state.scale.getHandle();
+                edits = state.multi.scale(
+                    scene, StudioVector2{handle == GizmoHandle::YAxis ? 1.0f : factor,
+                                         handle == GizmoHandle::XAxis ? 1.0f : factor});
+            }
+
+            if (edits.empty()) { return false; }
+
+            // One command for the whole selection, and one undo entry for the whole drag. A command
+            // per entity would make undoing one gesture several presses of Ctrl+Z, and would undo
+            // them one at a time through arrangements the scene was never in.
+            context.execute(
+                std::make_unique<TransformEntitiesCommand>(
+                    context.getScene(), std::move(edits),
+                    "transform-many:" + std::to_string(state.multiDragId)),
+                state.dragHasEdited ? MergePolicy::MergeWithPrevious : MergePolicy::NewEntry);
+            state.dragHasEdited = true;
+            return true;
         }
 
         /** @brief Applies one frame of whichever drag is in flight. @return True when it moved. */
@@ -115,6 +191,11 @@ namespace CNA::Studio
                              StudioViewportState& state, const StudioVector2& pointer,
                              const GizmoSnap& snap)
         {
+            if (state.multi.isActive())
+            {
+                return updateMultiDrag(context, camera, state, pointer, snap);
+            }
+
             const SceneDocument& scene = context.getScene();
 
             if (state.translate.isActive())
@@ -206,7 +287,7 @@ namespace CNA::Studio
 
         const std::vector<Uuid>& selection = context.getSelection();
         if (surface.pressed && state.mode != GizmoMode::None && !selection.empty()
-            && beginGizmoDrag(context, camera, state, selection.back(), pointer))
+            && beginGizmoDrag(context, camera, state, selection, pointer))
         {
             return result;
         }
