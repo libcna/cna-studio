@@ -274,6 +274,9 @@ namespace CNA::Studio
 
         command("studio.build.build", "Build",
                 "Build the project with its own CMake.", C::Build, chord(UiKey::F2));
+        command("studio.build.cancel", "Cancel Build",
+                "Stop the build that is running.", C::Build, {});
+
         command("studio.build.package", "Package...",
                 "Package a standalone build of the game.", C::Build, {});
 

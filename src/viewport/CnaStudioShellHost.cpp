@@ -132,7 +132,7 @@ namespace CNA::Studio
                         // would not load leaves the user with no way to open a different one.
                         log_.append(LogSeverity::Error,
                                     "Could not open '" + options.projectPath + "'.");
-                        shell_->setStatusLeft("Could not open " + options.projectPath);
+                        shell_->status().problem = "Could not open " + options.projectPath;
                     }
                 }
 
@@ -248,8 +248,8 @@ namespace CNA::Studio
                     return;
                 }
 
-                shell_->setStatusRight("Renderer: " + CnaUiRenderer::getBackendName()
-                                       + "   Platform: " + getHostPlatformName());
+                shell_->status().renderer =
+                    CnaUiRenderer::getBackendName() + " on " + getHostPlatformName();
 
                 // The same facts About shows, set here because this is where they are known: a
                 // shell that carried its own copy of the renderer name would be a second place it
@@ -257,7 +257,7 @@ namespace CNA::Studio
                 shell_->setAboutLines({std::string{"CNA Studio "} + CNA_STUDIO_VERSION,
                                        "An editor for CNA games.",
                                        "UI: Studio native.",
-                                       shell_->statusRight()});
+                                       "Renderer: " + shell_->status().renderer});
 
                 // Real output, not a placeholder. The first question of every graphics bug report
                 // is which renderer this build actually got, and the Output Log is where somebody

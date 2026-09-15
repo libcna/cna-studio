@@ -44,6 +44,71 @@ namespace CNA::Studio
         build_.poll();
         pollPlayer();
         comparison_.poll(nowSeconds);
+        publishStatus();
+    }
+
+    void StudioShellPanels::publishStatus()
+    {
+        if (shell_ == nullptr) { return; }
+
+        StudioStatusModel& status = shell_->status();
+
+        if (context_.hasProject())
+        {
+            status.message = context_.getProject().getName() + "  --  "
+                           + context_.getScene().getName();
+            status.target = studioTargetProfileSummary(
+                context_.getProject().getActiveTargetProfile());
+            // A project that opened answers whatever went wrong before it.
+            status.problem.clear();
+        }
+        else
+        {
+            status.message = "No project open";
+            status.target.clear();
+        }
+
+        // The document's own answer rather than a flag somebody has to remember to set: an
+        // unsaved-changes mark that can be wrong is worse than none, because it is the one thing
+        // a user checks before closing the window.
+        status.modified = context_.hasProject() && context_.getHistory().isDirty();
+
+        // Rebuilt every poll rather than edited, so a job that ended cannot leave a bar behind:
+        // the status bar reports what is running now, and "now" is what a poll is for.
+        status.jobs.clear();
+
+        if (build_.getState() == BuildState::Running)
+        {
+            StudioStatusJob job;
+            const std::size_t steps = build_.getSteps().size();
+            const std::size_t done = build_.getStepNumber();
+            job.label = steps > 0
+                ? "Building, step " + std::to_string(std::min(done + 1, steps)) + " of "
+                      + std::to_string(steps)
+                : std::string{"Building"};
+            job.progress = steps > 0 ? static_cast<float>(done) / static_cast<float>(steps) : -1.0f;
+            job.stopActionId = "studio.build.cancel";
+            status.jobs.push_back(std::move(job));
+        }
+
+        const ComparisonState comparison = comparison_.getState();
+        if (comparison == ComparisonState::Launching || comparison == ComparisonState::Capturing)
+        {
+            StudioStatusJob job;
+            job.label = std::string{"Comparing renderers: "} + toString(comparison);
+            // No progress: the run is waiting on several games to open windows, and a bar that
+            // guessed at how long that takes would be inventing a number in the one place the
+            // editor reports facts.
+            status.jobs.push_back(std::move(job));
+        }
+
+        if (player_.isRunning())
+        {
+            StudioStatusJob job;
+            job.label = "Playing";
+            job.stopActionId = "studio.play.stop";
+            status.jobs.push_back(std::move(job));
+        }
     }
 
     void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
@@ -460,6 +525,19 @@ namespace CNA::Studio
                 }
             };
             shell.actions().add(std::move(build));
+        }
+
+        // The one the status bar's Stop button invokes. A job the user can see running and cannot
+        // stop is the worst kind of progress report.
+        if (const StudioAction* found = shell.actions().find("studio.build.cancel"))
+        {
+            StudioAction cancel = *found;
+            cancel.isEnabled = [this] { return build_.getState() == BuildState::Running; };
+            cancel.run = [this] {
+                build_.cancel();
+                log_.append(LogSeverity::Warning, "Build cancelled.");
+            };
+            shell.actions().add(std::move(cancel));
         }
 
         if (const StudioAction* found = shell.actions().find("studio.play.play"))

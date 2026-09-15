@@ -202,7 +202,8 @@ CNA_STUDIO_TEST(EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered)
     //
     // Each entry says what it is waiting for. None of them is waiting on nothing.
     const std::vector<std::pair<std::string, std::string>> pending = {
-        {"studio.file.newProject", "a modal dialog and a file picker (STUDIO-03022, STUDIO-08001)"},
+        {"studio.file.newProject", "a project template and a file picker (STUDIO-08001); the "
+                                   "modal it also needed now exists"},
         {"studio.file.openProject", "a file picker; --project opens one today"},
         {"studio.file.quit", "the shell asking its host to close, which no host exposes yet"},
         {"studio.view.toggleGrid", "a grid option on the viewport, which the renderer does not take"},

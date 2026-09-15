@@ -95,6 +95,61 @@ namespace CNA::Studio
     /** @brief The id of the command that saves the current arrangement under a name. */
     inline constexpr std::string_view kStudioSaveLayoutAsActionId = "studio.window.saveLayoutAs";
 
+    /** @brief One piece of background work the status bar reports on. */
+    struct StudioStatusJob
+    {
+        /** @brief What is running, e.g. `"Building Linux x86_64 Debug"`. */
+        std::string label;
+
+        /**
+         * @brief How far along, in `[0, 1]`, or negative when the length is not known.
+         *
+         * Negative is a real answer rather than a missing one: a player that has been launched is
+         * running for as long as the user plays, and a bar pretending to know how long that is
+         * would be lying in the one place the editor reports facts.
+         */
+        float progress = -1.0f;
+
+        /** @brief A command that stops it, or empty. Drawn as a button when the command exists. */
+        std::string stopActionId;
+    };
+
+    /**
+     * @brief What the status bar says.
+     *
+     * Fields rather than two strings, because each part answers a different question and a caller
+     * composing them into one line would decide the layout: what is open, whether it is saved,
+     * what is running, what this project ships on, and what Studio itself is drawing on. The shell
+     * lays them out, which is what keeps a build's progress bar in the same place whatever the
+     * project is called.
+     */
+    struct StudioStatusModel
+    {
+        /** @brief The left-hand text: what the user is working on. */
+        std::string message;
+
+        /**
+         * @brief Something wrong, shown in place of @ref message until it is cleared.
+         *
+         * Separate because @ref message is rebuilt from the document every poll, and a reason a
+         * project would not open would be overwritten by the next frame -- leaving "No project
+         * open", which is true and useless. Sticky, because the user may not have been looking.
+         */
+        std::string problem;
+
+        /** @brief True when the document has unsaved changes. */
+        bool modified = false;
+
+        /** @brief The active build target, e.g. `"Linux x86_64 - opengles3 - Debug"`. */
+        std::string target;
+
+        /** @brief What Studio itself is drawing on, e.g. `"opengles3 on sdl3"`. */
+        std::string renderer;
+
+        /** @brief Background work. The first is the one shown. */
+        std::vector<StudioStatusJob> jobs;
+    };
+
     /**
      * @brief What the shell asks of whoever owns the layout file.
      *
@@ -533,10 +588,22 @@ namespace CNA::Studio
         /** @brief Whether typed input is being consumed this frame. */
         [[nodiscard]] bool isTextInputActive() const { return textInputActive_; }
 
-        /** @brief Sets the left-aligned status bar text. */
-        void setStatusLeft(std::string text) { statusLeft_ = std::move(text); }
-        /** @brief Sets the right-aligned status bar text. */
-        void setStatusRight(std::string text) { statusRight_ = std::move(text); }
+        /**
+         * @brief Sets the left-hand status bar text: what the user is working on.
+         *
+         * A convenience over @ref status, because "which project is open" and "why it would not
+         * open" are the two things every host has to say and both go in the same place.
+         */
+        void setStatusLeft(std::string text) { status_.message = std::move(text); }
+
+        /** @brief Replaces the whole status model. */
+        void setStatus(StudioStatusModel status) { status_ = std::move(status); }
+
+        /** @brief The status model, for a caller changing one field. */
+        [[nodiscard]] StudioStatusModel& status() { return status_; }
+
+        /** @brief What the status bar is saying. */
+        [[nodiscard]] const StudioStatusModel& status() const { return status_; }
 
         /**
          * @brief Sets what the About dialog says.
@@ -554,10 +621,7 @@ namespace CNA::Studio
         [[nodiscard]] const std::vector<std::string>& aboutLines() const { return aboutLines_; }
 
         /** @brief What the status bar says on the left: what the user is working on. */
-        [[nodiscard]] const std::string& statusLeft() const { return statusLeft_; }
-
-        /** @brief What the status bar says on the right: what the build is running on. */
-        [[nodiscard]] const std::string& statusRight() const { return statusRight_; }
+        [[nodiscard]] const std::string& statusLeft() const { return status_.message; }
 
         /** @brief The theme in use. */
         [[nodiscard]] const StudioTheme& theme() const { return frame_.theme(); }
@@ -1177,8 +1241,7 @@ namespace CNA::Studio
         StudioDialogResult dialogResult_;
         bool dialogOpen_ = false;
 
-        std::string statusLeft_;
-        std::string statusRight_;
+        StudioStatusModel status_;
         std::vector<std::string> aboutLines_;
 
         StudioShellLayout layout_;

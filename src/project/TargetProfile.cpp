@@ -404,6 +404,17 @@ namespace CNA::Studio
         return validation;
     }
 
+    std::string studioTargetProfileSummary(const StudioTargetProfile& profile)
+    {
+        std::string summary{studioTargetOsDisplayName(profile.os)};
+        summary += " ";
+        summary += studioArchitectureName(profile.architecture);
+        summary += " - " + profile.renderer;
+        summary += " - ";
+        summary += studioBuildConfigurationName(profile.configuration);
+        return summary;
+    }
+
     std::string studioRendererCnaIdentity(std::string_view renderer)
     {
         // Upper case, because that is how CNA spells its renderer and platform identities. Studio

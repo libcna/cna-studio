@@ -215,6 +215,15 @@ namespace CNA::Studio
         /** @brief Pumps the bridge once a frame and reports what the player said. */
         void pollPlayer();
 
+        /**
+         * @brief Tells the status bar what is open and what is running.
+         *
+         * Here rather than in the shell, because this is the object that owns the build, the
+         * player and the comparison: a status bar that had to be told separately would be a second
+         * list of running work to keep in step with the first.
+         */
+        void publishStatus();
+
         /** @brief Borrowed so the viewport can be re-bound when a camera arrives. */
         StudioShell* shell_ = nullptr;
 

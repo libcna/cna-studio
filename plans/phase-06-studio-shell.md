@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 16 of 24 complete `████████░░░░`
+**Progress:** 17 of 24 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -17,7 +17,7 @@
 | `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | ✅ | `STUDIO-06003` |
 | `STUDIO-06005` | Context menus | ✅ | `STUDIO-06003`, `STUDIO-06017` |
 | `STUDIO-06006` | Main toolbar | ✅ | `STUDIO-06002`, `STUDIO-07009` |
-| `STUDIO-06007` | Status bar | 🔄 | `STUDIO-06001` |
+| `STUDIO-06007` | Status bar | ✅ | `STUDIO-06001`, `STUDIO-02040` |
 | `STUDIO-06008` | Keyboard shortcut dispatch with scope precedence | ✅ | `STUDIO-06001` |
 | `STUDIO-06009` | Preferences model, separate from project settings | ⬜ | `STUDIO-06001` |
 | `STUDIO-06010` | Preferences persistence, versioning and migration | ⬜ | `STUDIO-06009` |
@@ -110,8 +110,36 @@ the toolbar and correctly enabled, and the native shell has no play service yet 
 
 **Acceptance.** Current renderer, target profile, background job progress, project state
 
-**In progress.** Two text slots exist and are drawn. Background job progress and the target profile
-need the services that own them
+**Fields rather than two strings.** Each part answers a different question — what is open, whether
+it is saved, what is running, what this project ships on, and what Studio itself is drawing on — and
+a caller composing them into one line would be deciding the layout. The shell lays them out, which
+is what keeps a build's progress bar in the same place whatever the project is called, and the parts
+are laid out **right to left** so that a long project name cannot push the renderer off the end.
+
+**The target is not the renderer.** What the project ships on and what Studio is drawing with are
+different facts, and a bar that said one where it meant the other is how somebody tests on the wrong
+backend for a week. `studioTargetProfileSummary` is the one place that words a profile, because it
+is shown here, in the Build panel's target list and in a build log.
+
+**The job list is rebuilt every poll, never edited.** The bar reports what is running *now*, and
+"now" is what a poll is for: a list that was edited would leave a progress bar on screen for a build
+that finished. A job whose length is not known reports that rather than inventing a bar — a player
+runs for as long as the user plays, and guessing at that would be lying in the one place the editor
+reports facts. Every job may name a command that stops it, and the bar draws it as a button: a job
+the user can see running and cannot stop is the worst kind of progress report. That is what
+`studio.build.cancel` is for, which nothing had bound.
+
+**A problem is sticky where a message is not.** The message is rebuilt from the document on every
+poll, so a reason a project would not open would be overwritten by the next frame, leaving "No
+project open" — true and useless. The problem stays up, in the error colour, until a project opens
+and answers it.
+
+**Verification.** `tests/StudioStatusBarTests.cpp`: one wording for a profile, the empty state, what
+is open and what it ships on, the target being the project's rather than Studio's renderer, the
+unsaved mark appearing and clearing through a real command, a problem surviving a poll and being
+cleared by an open, a running job's Stop invoking its own command and being greyed when that command
+is, a finished job leaving no bar, an unknown length drawing none, and the bar producing valid draw
+data with no phase violations at 320, 640, 1280 and 2560 wide
 
 ### `STUDIO-06008` — Keyboard shortcut dispatch with scope precedence
 

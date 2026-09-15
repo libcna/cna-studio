@@ -271,6 +271,18 @@ namespace CNA::Studio
      * @param renderer Studio's lower-case renderer name.
      * @return CNA's identity for it, or the name upper-cased when it is not one Studio knows.
      */
+    /**
+     * @brief A profile as one readable line, e.g. `"Linux x86_64 - opengles3 - Release"`.
+     *
+     * One place decides the wording, because it is shown in the status bar, in the Build panel's
+     * target list and in a build log, and three spellings of the same profile read as three
+     * different targets.
+     *
+     * @param profile The profile.
+     * @return Its description.
+     */
+    [[nodiscard]] std::string studioTargetProfileSummary(const StudioTargetProfile& profile);
+
     [[nodiscard]] std::string studioRendererCnaIdentity(std::string_view renderer);
 
     /**

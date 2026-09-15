@@ -184,11 +184,10 @@ namespace
                 std::filesystem::path{options.executablePath}.parent_path().generic_string()));
         }
 
-        if (context.hasProject())
-        {
-            shell.setStatusLeft(context.getProject().getName() + "  --  "
-                                + context.getScene().getName());
-        }
+        // Through the panels, which is what fills the status bar in the real editor -- a preview
+        // that composed its own status line would photograph a bar this Studio never draws.
+        panels.poll(0.0);
+        shell.status().renderer = "none, headless preview";
         if (options.projectPath.empty())
         {
             // Said once, so a capture of the empty shell is legible rather than looking like the
@@ -216,13 +215,10 @@ namespace
         }
 
         // What this build actually is, rather than what the UI core can say for itself.
-        // The status bar's text verbatim, which already reads "Renderer: NAME" -- prefixing it
-        // again would print the word twice, which is the sort of thing a dialog nobody opens keeps
-        // saying for a year.
         shell.setAboutLines({std::string{"CNA Studio "} + CNA_STUDIO_VERSION,
                              "An editor for CNA games.",
                              "UI: Studio native, headless preview.",
-                             shell.statusRight()});
+                             "Renderer: " + shell.status().renderer});
 
         // `--shell-float=IDS` undocks panels, because a floating window is arranged by dragging
         // and a still capture cannot drag. Before --panel, so a floated panel can also be raised.

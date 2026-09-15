@@ -109,8 +109,8 @@ namespace CNA::Studio
             actions_.add(std::move(dockAll));
         }
 
-        statusLeft_ = "No project open";
-        statusRight_ = "Renderer: unknown";
+        status_.message = "No project open";
+        status_.renderer = "unknown";
 
         // What the UI core can say for itself. A host that knows its version and its renderer
         // replaces this with the truth; a preview that does not still shows something honest
@@ -2341,23 +2341,120 @@ namespace CNA::Studio
 
     void StudioShell::describeStatusBar()
     {
-        if (!frame_.isDrawPass() || layout_.statusBar.isEmpty()) { return; }
+        if (layout_.statusBar.isEmpty()) { return; }
 
         const StudioTheme& theme = frame_.theme();
-        frame_.drawList().fillRect(layout_.statusBar, theme.color(StudioColorRole::PanelHeader));
-        frame_.drawList().drawHorizontalSeparator(
-            UiRect{layout_.statusBar.left(), layout_.statusBar.top(), layout_.statusBar.width, 0.0f},
-            theme.color(StudioColorRole::Separator),
-            metricOf(theme, StudioMetric::SeparatorThickness));
+        const float spacing = metricOf(theme, StudioMetric::SpacingMedium);
+        const float gap = metricOf(theme, StudioMetric::SpacingSmall);
 
-        const UiRect inner =
-            layout_.statusBar.inset(UiEdges{metricOf(theme, StudioMetric::SpacingMedium), 0.0f});
+        if (frame_.isDrawPass())
+        {
+            frame_.drawList().fillRect(layout_.statusBar,
+                                       theme.color(StudioColorRole::PanelHeader));
+            frame_.drawList().drawHorizontalSeparator(
+                UiRect{layout_.statusBar.left(), layout_.statusBar.top(),
+                       layout_.statusBar.width, 0.0f},
+                theme.color(StudioColorRole::Separator),
+                metricOf(theme, StudioMetric::SeparatorThickness));
+        }
+
+        UiRect inner = layout_.statusBar.inset(UiEdges{spacing, 0.0f});
         if (inner.isEmpty()) { return; }
 
-        studioDrawText(frame_, inner, statusLeft_, StudioFontRole::BodySmall,
-                       theme.color(StudioColorRole::TextSecondary), StudioTextAlign::Left);
-        studioDrawText(frame_, inner, statusRight_, StudioFontRole::BodySmall,
-                       theme.color(StudioColorRole::TextSecondary), StudioTextAlign::Right);
+        frame_.ids().push("status");
+
+        // Right to left, because the right-hand facts are fixed-width answers and the left-hand
+        // message is whatever the project is called: laid out the other way, a long project name
+        // would push the renderer off the end of the bar.
+        const auto sayRight = [&](const std::string& text, StudioColorRole role) {
+            if (text.empty()) { return; }
+            const float width = std::min(inner.width, std::ceil(studioLabelWidth(
+                frame_, text, StudioFontRole::BodySmall)));
+            const UiRect box = inner.splitRight(width);
+            if (frame_.isDrawPass())
+            {
+                studioDrawText(frame_, box, text, StudioFontRole::BodySmall, theme.color(role),
+                               StudioTextAlign::Right);
+            }
+            inner.splitRight(spacing);
+        };
+
+        sayRight(status_.renderer.empty() ? std::string{} : "Renderer: " + status_.renderer,
+                 StudioColorRole::TextSecondary);
+        // The target this project *ships* on, which is not the renderer Studio is drawing with --
+        // conflating the two is exactly the mistake that makes somebody test on the wrong backend.
+        sayRight(status_.target.empty() ? std::string{} : "Target: " + status_.target,
+                 StudioColorRole::TextSecondary);
+
+        // The running job, between the two, with room to grow into whatever the message leaves.
+        if (!status_.jobs.empty() && inner.width > 0.0f)
+        {
+            const StudioStatusJob& job = status_.jobs.front();
+
+            if (!job.stopActionId.empty() && actions_.find(job.stopActionId) != nullptr)
+            {
+                const float width = std::min(inner.width, std::ceil(studioLabelWidth(
+                    frame_, "Stop", StudioFontRole::BodySmall)) + spacing * 2.0f);
+                const UiRect box = inner.splitRight(width).inset(UiEdges{0.0f, gap * 0.5f});
+
+                StudioButtonOptions options;
+                options.enabled = actions_.isEnabled(job.stopActionId);
+                options.tooltip = "Stop this job";
+                if (studioButton(frame_, frame_.ids().make("stop"), box, "Stop", options).activated)
+                {
+                    invoke(job.stopActionId);
+                }
+                inner.splitRight(gap);
+            }
+
+            if (job.progress >= 0.0f)
+            {
+                const float width = std::min(inner.width * 0.4f,
+                                             metricOf(theme, StudioMetric::ControlHeight) * 5.0f);
+                const UiRect track = inner.splitRight(width)
+                                          .inset(UiEdges{0.0f, metricOf(theme,
+                                                 StudioMetric::SpacingSmall)});
+                if (frame_.isDrawPass() && !track.isEmpty())
+                {
+                    frame_.drawList().fillRect(track,
+                                               theme.color(StudioColorRole::ControlBackground));
+                    UiRect filled = track;
+                    filled.width = std::round(track.width * std::clamp(job.progress, 0.0f, 1.0f));
+                    if (filled.width > 0.0f)
+                    {
+                        frame_.drawList().fillRect(filled, theme.color(StudioColorRole::Accent));
+                    }
+                    frame_.drawList().strokeRect(track, theme.color(StudioColorRole::Separator),
+                                                 metricOf(theme,
+                                                          StudioMetric::SeparatorThickness));
+                }
+                inner.splitRight(gap);
+            }
+
+            if (frame_.isDrawPass() && inner.width > 0.0f)
+            {
+                studioDrawText(frame_, inner, job.label, StudioFontRole::BodySmall,
+                               theme.color(StudioColorRole::TextPrimary), StudioTextAlign::Right);
+            }
+        }
+
+        if (frame_.isDrawPass() && inner.width > 0.0f)
+        {
+            // The dot is the whole unsaved-changes affordance, and it goes with the name rather
+            // than somewhere else on the bar: a mark whose subject the user has to work out is a
+            // mark they stop reading.
+            const bool wrong = !status_.problem.empty();
+            const std::string message =
+                wrong ? status_.problem
+                      : (status_.modified ? "\u2022 " + status_.message : status_.message);
+            const StudioColorRole role = wrong ? StudioColorRole::Error
+                                       : (status_.modified ? StudioColorRole::TextPrimary
+                                                            : StudioColorRole::TextSecondary);
+            studioDrawText(frame_, inner, message, StudioFontRole::BodySmall, theme.color(role),
+                           StudioTextAlign::Left);
+        }
+
+        frame_.ids().pop();
     }
 
     void StudioShell::moveHighlight(int delta)
