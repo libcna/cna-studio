@@ -30,10 +30,13 @@
 
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
+#include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -52,6 +55,53 @@ namespace CNA::Studio
      */
     inline constexpr std::string_view kStudioAssetDragType = "asset";
 
+    /** @brief How the Content Browser presents what a folder holds. */
+    enum class StudioContentView : std::uint8_t
+    {
+        /**
+         * @brief One row per asset, with its kind on the right.
+         *
+         * Dense, sortable by eye, and the right answer for a folder of two hundred scripts. It is
+         * the wrong answer for a folder of textures, where the thing a user is looking for is a
+         * *picture* and a list of file names makes them open each one to find it.
+         */
+        List,
+        /**
+         * @brief A grid of cards, one per asset.
+         *
+         * `STUDIO-35040`. What every professional content browser defaults to, and for a reason
+         * that is about content rather than about fashion: an asset is a thing with an appearance,
+         * and a browser that shows only its name is a file manager.
+         */
+        Grid
+    };
+
+    /** @brief Returns a stable English name for a view, for preferences and tests. */
+    [[nodiscard]] std::string_view studioContentViewName(StudioContentView view);
+
+    /** @brief What the Content Browser remembers between frames. */
+    struct StudioContentBrowserState
+    {
+        /** @brief Which folders are open, and the scroll position. Shared by both views. */
+        StudioTreeState tree;
+
+        /** @brief List or grid. */
+        StudioContentView view = StudioContentView::Grid;
+
+        /**
+         * @brief The folder the grid is showing, as a path. Empty is the project root.
+         *
+         * The grid shows *one* folder, unlike the list, which shows the whole tree at once. That
+         * is the difference between the two presentations rather than an incidental one: a grid of
+         * every asset in a project is a wall, and the folder a user is in is the unit they think
+         * in.
+         */
+        std::string folder;
+
+        /** @brief How wide a card is, in unscaled pixels. */
+        float cardSize = 96.0f;
+    };
+
     struct StudioContentBrowserResult
     {
         /** @brief How many rows were drawn. */
@@ -65,6 +115,15 @@ namespace CNA::Studio
 
         /** @brief The asset the user clicked, if any. Input pass only. */
         Uuid selectedAsset;
+
+        /** @brief How many cards the grid drew. Zero in list view. */
+        std::size_t cardsDrawn = 0;
+
+        /** @brief Which view drew this frame. */
+        StudioContentView view = StudioContentView::List;
+
+        /** @brief The folder the grid is showing, for the breadcrumb and for tests. */
+        std::string folder;
     };
 
     /**
@@ -84,16 +143,79 @@ namespace CNA::Studio
                                                                const StudioTreeState& state);
 
     /**
-     * @brief Draws the Content Browser.
+     * @brief One card in the grid: an asset or a folder, with what it is and what it is called.
+     *
+     * Built by @ref studioContentCards and handed to the drawing, so the two can fail separately.
+     * Deciding *what a folder holds* is arithmetic over a database and is testable with no frame;
+     * deciding *where a card goes* is layout. A screenshot cannot tell the two apart and a bug in
+     * either looks like the other.
+     */
+    struct StudioContentCard
+    {
+        /** @brief The asset's id, or empty for a folder. */
+        Uuid assetId;
+        /** @brief The folder's path, or empty for an asset. */
+        std::string folder;
+        /** @brief What the card says. */
+        std::string label;
+        /** @brief The kind, under the label: `"Texture2D"`, `"3 items"`. */
+        std::string detail;
+        /** @brief The picture. */
+        StudioIcon icon = StudioIcon::File;
+        /** @brief Its colour. Warning for an asset whose file has gone. */
+        StudioColorRole iconRole = StudioColorRole::TextSecondary;
+        /** @brief Whether this is the selected asset. */
+        bool selected = false;
+        /** @brief Whether the asset's source file is missing. */
+        bool missing = false;
+
+        /** @brief Whether clicking this card enters a folder rather than selecting an asset. */
+        [[nodiscard]] bool isFolder() const { return !folder.empty(); }
+    };
+
+    /**
+     * @brief What one folder holds, as cards: its subfolders first, then its assets.
+     *
+     * Folders first because a user navigating is looking for a folder and a user browsing is
+     * looking at assets, and the first of those is the one that is *interrupted* by having to scan
+     * past two hundred textures.
+     *
+     * @param assets The database.
+     * @param folder The folder to show. Empty is the project root.
+     * @param selected The currently selected asset, marked on its card.
+     * @return The cards, in display order.
+     */
+    [[nodiscard]] std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
+                                                                     const std::string& folder,
+                                                                     const Uuid& selected);
+
+    /**
+     * @brief The path segments of @p folder, outermost first, for a breadcrumb.
+     *
+     * The project root is always the first entry and is named rather than shown as an empty
+     * string: "Project / Assets" is a place and "/ Assets" is a path fragment. It is called
+     * "Project" rather than "Assets" although the root usually *contains* a folder of that name --
+     * which is exactly why, because "Assets / Assets / Textures" is a user wondering which of the
+     * two they are in.
+     *
+     * @param folder The folder path, or empty for the root.
+     * @return One entry per level: the label to show and the path clicking it navigates to.
+     */
+    [[nodiscard]] std::vector<std::pair<std::string, std::string>> studioContentBreadcrumb(
+        const std::string& folder);
+
+    /**
+     * @brief Draws the Content Browser in whichever view its state names.
      *
      * @param frame The frame.
      * @param bounds The panel's content rectangle.
      * @param context The editor, for its asset database.
-     * @param state Folder expansion, owned by the caller so it survives the frame.
+     * @param state The view, the folder, the expansion and the card size.
      * @param selected The selected asset; updated when the user clicks a file.
      * @return What happened.
      */
     StudioContentBrowserResult studioContentBrowser(StudioFrame& frame, const UiRect& bounds,
                                                     const StudioContext& context,
-                                                    StudioTreeState& state, Uuid& selected);
+                                                    StudioContentBrowserState& state,
+                                                    Uuid& selected);
 }

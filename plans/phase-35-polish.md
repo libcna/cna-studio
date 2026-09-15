@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 8 of 34 complete `██░░░░░░░░░░`
+**Progress:** 9 of 34 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -61,9 +61,9 @@ truth rather than any one product's expression of it.
 | `STUDIO-35036` | Every primitive the draw list emits names a texture a backend can resolve | ✅ | — |
 | `STUDIO-35034` | Entity and asset reference fields that show what they point at | ⬜ | `STUDIO-35033` |
 | `STUDIO-35035` | Multi-selection state in the Details panel | ⬜ | `STUDIO-35033` |
-| `STUDIO-35040` | Content Browser thumbnail grid, with a list/grid switch | ⬜ | `STUDIO-35030` |
+| `STUDIO-35040` | Content Browser card grid, with a list/grid switch | ✅ | `STUDIO-35030` |
 | `STUDIO-35041` | Real content thumbnails, cached and generated off the frame | ⬜ | `STUDIO-35040` |
-| `STUDIO-35042` | Content Browser breadcrumbs, search and type filters | ⬜ | `STUDIO-35040` |
+| `STUDIO-35042` | Content Browser search and type filters | ⬜ | `STUDIO-35040` |
 | `STUDIO-35050` | Viewport toolbar: view, transform mode, space and snap, over the scene | ✅ | `STUDIO-35021` |
 | `STUDIO-35051` | Viewport grid that reads as a ground plane, with origin axes | ⬜ | — |
 | `STUDIO-35052` | An orientation widget in the viewport corner | ⬜ | `STUDIO-35050` |
@@ -249,3 +249,49 @@ this shape of failure between the two *CNA* backends; this is the same failure o
 asserts every emitted command names it. Without an atlas the default genuinely *is*
 `kUiTextureNone` — correct for a draw list nobody will render, and exactly the state in which the
 assertion would say nothing.
+
+### `STUDIO-35040` — Content Browser card grid
+
+**Acceptance.** A folder of textures reads as a folder of textures rather than as a list of file
+names, and a user can switch between the two presentations.
+
+**Why a browser needs both.** A list is dense, scannable by eye and the right answer for a folder of
+two hundred scripts. It is the wrong answer for a folder of textures, where the thing a user is
+looking for is a *picture* — and a browser that shows only names makes them open each one to find
+it. An asset is a thing with an appearance, and a browser that shows only its name is a file
+manager.
+
+**The grid shows one folder; the tree shows the whole project.** That is the difference between the
+two presentations rather than an incidental one: a grid of every asset under a folder is a wall, and
+the folder a user is *in* is the unit they think in. So the grid gets a breadcrumb, every segment
+clickable — a path drawn as text says where the user is and leaves going up a level to a control
+that does not exist.
+
+**The root crumb is called "Project", not "Assets"**, although the root usually *contains* a folder
+called Assets. That is exactly why: a breadcrumb reading "Assets / Assets / Textures" is a user
+wondering which of the two they are in.
+
+**Folders before files, always.** A user navigating is looking for a folder and a user browsing is
+looking at assets, and the first of those is the one interrupted by having to scan past two hundred
+textures. A folder's card counts everything *underneath* it rather than its immediate children:
+"3 items" on a folder nobody has opened is the number that decides whether opening it is worth the
+click.
+
+**A folder card opens on a single click**, unlike the tree, where a click selects and the triangle
+opens. A grid has no triangle and no second thing to click — a folder card that needed a double
+click would be one a user opens by accident on the first try and not at all on the second.
+
+**Cards are culled against the viewport rather than left to the scissor.** A project with four
+thousand assets in one folder would otherwise describe four thousand widgets to show twenty, and
+every one of them registers with the input router whether or not it is visible.
+
+**The icon is drawn into the rectangle a thumbnail will use**, at 56% of the card, so `STUDIO-35041`
+replaces the picture without moving anything. Labels are truncated rather than wrapped: two lines of
+file name would make the cards different heights, and a grid whose rows do not line up is not a grid.
+
+**Verification.** `TheGridShowsOneFoldersImmediateContentsAndNotTheWholeProject`,
+`AFolderCardSaysHowMuchIsUnderIt`, `TheBreadcrumbNamesTheRootAndEveryLevelBelowIt`,
+`AMissingAssetsCardSaysSoInTheWarningColour` and `BothViewsHaveANameAndTheGridIsTheDefault` — all
+over `studioContentCards` and `studioContentBreadcrumb`, which take a database and a string and need
+no frame. Deciding what a folder holds and deciding where a card goes fail separately, and a
+screenshot cannot tell them apart.

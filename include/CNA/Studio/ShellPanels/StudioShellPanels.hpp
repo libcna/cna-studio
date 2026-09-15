@@ -35,6 +35,7 @@
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildService.hpp"
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioPlayService.hpp"
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
@@ -462,7 +463,7 @@ namespace CNA::Studio
         bool framedIn3D_ = false;
 
         StudioTreeState outlinerState_;
-        StudioTreeState contentState_;
+        StudioContentBrowserState contentState_;
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;
         StudioTreeState layersState_;

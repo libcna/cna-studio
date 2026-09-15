@@ -233,7 +233,10 @@ CNA_STUDIO_TEST(ClickingAFileSelectsItAndClickingAFolderDoesNot)
     AssetDatabase& assets = context.getAssets();
     const Uuid file = track(assets, "Assets/player.png", AssetType::Texture2D);
 
-    StudioTreeState state;
+    // The list view, because what this case is about is the tree: a click landing on the file row
+    // rather than on the folder above it. The grid has its own cases below.
+    StudioContentBrowserState state;
+    state.view = StudioContentView::List;
     Uuid selected;
 
     auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
@@ -268,7 +271,7 @@ CNA_STUDIO_TEST(ClickingAFileSelectsItAndClickingAFolderDoesNot)
 CNA_STUDIO_TEST(AProjectWithNoAssetsSaysSoRatherThanShowingNothing)
 {
     StudioContext context;
-    StudioTreeState state;
+    StudioContentBrowserState state;
     Uuid selected;
 
     auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
@@ -288,4 +291,126 @@ CNA_STUDIO_TEST(AProjectWithNoAssetsSaysSoRatherThanShowingNothing)
     CNA_STUDIO_EXPECT_EQ(result.rowsTotal, std::size_t{0});
     CNA_STUDIO_EXPECT_EQ(result.missingCount, std::size_t{0});
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+}
+
+// ------------------------------------------------------------------------------------------------
+// The grid (STUDIO-35040)
+//
+// Two things fail separately here and a screenshot cannot tell them apart: deciding *what a folder
+// holds*, which is arithmetic over a database, and deciding *where a card goes*, which is layout.
+// studioContentCards is the first, and is tested with no frame at all.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheGridShowsOneFoldersImmediateContentsAndNotTheWholeProject)
+{
+    // The difference between the grid and the tree beside it. A grid of every asset under a folder
+    // is a wall, and the folder a user is *in* is the unit they think in.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+    track(assets, "Assets/Textures/enemy.png", AssetType::Texture2D);
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+    track(assets, "Assets/Models/detail/bolt.gltf", AssetType::Model);
+
+    // At the root: one folder, no files.
+    const std::vector<StudioContentCard> root = studioContentCards(assets, {}, Uuid{});
+    CNA_STUDIO_EXPECT_EQ(root.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(root.front().isFolder());
+    CNA_STUDIO_EXPECT_EQ(root.front().label, std::string{"Assets"});
+
+    // Inside Assets: two folders, no files. Not the four assets underneath them.
+    const std::vector<StudioContentCard> inside =
+        studioContentCards(assets, "Assets", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(inside.size(), std::size_t{2});
+    for (const StudioContentCard& card : inside) { CNA_STUDIO_EXPECT(card.isFolder()); }
+
+    // Inside Textures: two files and no folder.
+    const std::vector<StudioContentCard> textures =
+        studioContentCards(assets, "Assets/Textures", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(textures.size(), std::size_t{2});
+    for (const StudioContentCard& card : textures)
+    {
+        CNA_STUDIO_EXPECT(!card.isFolder());
+        // The kind's icon, unless the file has gone -- which it has here, because the database is
+        // not pointed at a real project root. Written as the rule rather than as the answer,
+        // because the override is deliberate and a test asserting Texture unconditionally would be
+        // a test demanding the override be removed.
+        CNA_STUDIO_EXPECT(card.icon
+                          == (card.missing ? StudioIcon::Warning : StudioIcon::Texture));
+    }
+
+    // And Models, which has both: the folder comes first. A user navigating is looking for a
+    // folder; a user browsing is looking at assets, and the first is the one interrupted by having
+    // to scan past the second.
+    const std::vector<StudioContentCard> models =
+        studioContentCards(assets, "Assets/Models", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(models.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(models.front().isFolder());
+    CNA_STUDIO_EXPECT(!models.back().isFolder());
+}
+
+CNA_STUDIO_TEST(AFolderCardSaysHowMuchIsUnderIt)
+{
+    // Everything underneath, not only the immediate children: "3 items" on a folder a user has not
+    // opened is the number that tells them whether opening it is worth the click.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+    track(assets, "Assets/Models/detail/bolt.gltf", AssetType::Model);
+    track(assets, "Assets/Models/detail/nut.gltf", AssetType::Model);
+
+    const std::vector<StudioContentCard> cards =
+        studioContentCards(assets, "Assets", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(cards.front().detail, std::string{"3 items"});
+}
+
+CNA_STUDIO_TEST(TheBreadcrumbNamesTheRootAndEveryLevelBelowIt)
+{
+    const auto crumbs = studioContentBreadcrumb("Assets/Models/detail");
+    CNA_STUDIO_EXPECT_EQ(crumbs.size(), std::size_t{4});
+
+    // "Project" rather than "Assets", although the root usually contains a folder called Assets --
+    // which is exactly why: "Assets / Assets / Models" is a user wondering which of the two they
+    // are in.
+    CNA_STUDIO_EXPECT_EQ(crumbs[0].first, std::string{"Project"});
+    CNA_STUDIO_EXPECT(crumbs[0].second.empty());
+    CNA_STUDIO_EXPECT_EQ(crumbs[1].first, std::string{"Assets"});
+    CNA_STUDIO_EXPECT_EQ(crumbs[1].second, std::string{"Assets"});
+    CNA_STUDIO_EXPECT_EQ(crumbs[3].first, std::string{"detail"});
+    CNA_STUDIO_EXPECT_EQ(crumbs[3].second, std::string{"Assets/Models/detail"});
+
+    // The root alone is still a crumb. A breadcrumb that vanished at the top would leave nothing
+    // to say where the user is when they are where they started.
+    CNA_STUDIO_EXPECT_EQ(studioContentBreadcrumb({}).size(), std::size_t{1});
+}
+
+CNA_STUDIO_TEST(AMissingAssetsCardSaysSoInTheWarningColour)
+{
+    // The one card whose *state* matters more than its kind. A folder of two hundred textures with
+    // one missing is a folder where the missing one has to be findable without reading any of them.
+    // There is no such file: the database is not pointed at a real project root, so every record
+    // is missing. That is the condition under test, and it is what a moved folder looks like.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/Textures/gone.png", AssetType::Texture2D);
+
+    const std::vector<StudioContentCard> cards =
+        studioContentCards(assets, "Assets/Textures", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(cards.front().missing);
+    CNA_STUDIO_EXPECT(cards.front().icon == StudioIcon::Warning);
+    CNA_STUDIO_EXPECT(cards.front().iconRole == StudioColorRole::Warning);
+    CNA_STUDIO_EXPECT_EQ(cards.front().detail, std::string{"missing"});
+}
+
+CNA_STUDIO_TEST(BothViewsHaveANameAndTheGridIsTheDefault)
+{
+    CNA_STUDIO_EXPECT(!studioContentViewName(StudioContentView::List).empty());
+    CNA_STUDIO_EXPECT(!studioContentViewName(StudioContentView::Grid).empty());
+
+    // The default is the grid, which is what every professional content browser defaults to and
+    // for a reason about content rather than fashion: an asset is a thing with an appearance, and
+    // a browser that shows only its name is a file manager.
+    CNA_STUDIO_EXPECT(StudioContentBrowserState{}.view == StudioContentView::Grid);
 }
