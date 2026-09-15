@@ -779,6 +779,11 @@ int main(int argc, char** argv)
         hostOptions.focusPanel = options.focusPanel;
         hostOptions.projectPath = options.projectPath;
         hostOptions.selectEntity = options.selectEntity;
+        if (options.windowWidth > 0 && options.windowHeight > 0)
+        {
+            hostOptions.windowWidth = options.windowWidth;
+            hostOptions.windowHeight = options.windowHeight;
+        }
         hostOptions.executablePath = options.executablePath;
         if (options.workspacePath == "none") { hostOptions.workspacePath.clear(); }
         else if (!options.workspacePath.empty()) { hostOptions.workspacePath = options.workspacePath; }
@@ -912,6 +917,12 @@ int main(int argc, char** argv)
         hostOptions.windowTitle = application->getContext().hasProject()
                                       ? "CNA Studio -- " + application->getContext().getProject().getName()
                                       : "CNA Studio";
+        // Zero means "not given", so the host's own default stands.
+        if (options.windowWidth > 0 && options.windowHeight > 0)
+        {
+            hostOptions.windowWidth = options.windowWidth;
+            hostOptions.windowHeight = options.windowHeight;
+        }
 
         const CNA::Studio::CnaStudioHostResult result =
             CNA::Studio::runStudioInWindow(hostOptions, std::move(application));

@@ -386,3 +386,80 @@ CNA_STUDIO_TEST(ThePrototypesDockSidesAreWhereTheNativeDefaultLayoutPutsThem)
     // A table whose rows all stopped parsing would otherwise pass by checking nothing.
     CNA_STUDIO_EXPECT(checked >= 9);
 }
+
+// --- The visual acceptance review (plan.md STUDIO-00013, STUDIO-07023) -------------------------
+
+CNA_STUDIO_TEST(TheReferenceCapturesExistAtTheSizesTheReviewClaims)
+{
+    // A review of four pictures is worth nothing if the pictures are not there, and "the same
+    // screen at the same size on both" is the whole of what makes them comparable. Checked from the
+    // PNG headers rather than from the filenames, which are a claim rather than a fact.
+    const std::vector<std::pair<std::string, std::pair<int, int>>> expected = {
+        {"prototype-1280x720.png", {1280, 720}},
+        {"native-1280x720.png", {1280, 720}},
+        {"prototype-1920x1080.png", {1920, 1080}},
+        {"native-1920x1080.png", {1920, 1080}}};
+
+    for (const auto& [name, size] : expected)
+    {
+        const std::filesystem::path path = sourceRoot() / "docs" / "reference" / name;
+        std::ifstream stream{path, std::ios::binary};
+        if (!stream)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "docs/reference/" + name + " is missing, so VISUAL-ACCEPTANCE.md reviews a picture "
+                "nobody can look at.");
+            continue;
+        }
+
+        std::vector<char> header(24);
+        stream.read(header.data(), static_cast<std::streamsize>(header.size()));
+        if (stream.gcount() < 24)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__, "docs/reference/" + name
+                                                             + " is not long enough to be a PNG.");
+            continue;
+        }
+
+        const auto read32 = [&](std::size_t at) {
+            return (static_cast<int>(static_cast<unsigned char>(header[at])) << 24)
+                 | (static_cast<int>(static_cast<unsigned char>(header[at + 1])) << 16)
+                 | (static_cast<int>(static_cast<unsigned char>(header[at + 2])) << 8)
+                 | static_cast<int>(static_cast<unsigned char>(header[at + 3]));
+        };
+
+        const int width = read32(16);
+        const int height = read32(20);
+        if (width != size.first || height != size.second)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "docs/reference/" + name + " is " + std::to_string(width) + "x"
+                + std::to_string(height) + ", and the review compares it with something "
+                + std::to_string(size.first) + "x" + std::to_string(size.second) + ".");
+        }
+    }
+}
+
+CNA_STUDIO_TEST(TheReviewAndTheInventoryAgreeAboutWhatIsMissing)
+{
+    // Two documents describing the same gap is two places for it to be quietly closed in one of
+    // them. The review found these; the inventory is where the migration reads them back.
+    const std::string review = readFile("docs/VISUAL-ACCEPTANCE.md");
+    const std::string inventory = readFile("docs/MIGRATION-INVENTORY.md");
+
+    CNA_STUDIO_EXPECT(!review.empty());
+    CNA_STUDIO_EXPECT(!inventory.empty());
+
+    for (const char* missing : {"Scene Environment", "Grid Snap", "layer list"})
+    {
+        const bool inReview = review.find(missing) != std::string::npos;
+        const bool inInventory = inventory.find(missing) != std::string::npos;
+        if (inReview != inInventory)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"'"} + missing + "' is named by "
+                + (inReview ? "the visual review" : "the inventory") + " and not by the other, so "
+                "the two disagree about what the native shell is still missing.");
+        }
+    }
+}

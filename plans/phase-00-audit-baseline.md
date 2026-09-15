@@ -6,7 +6,7 @@
 
 **Exit criteria.** The imported tree builds clean and green from an empty build directory, its numbers are written down, and the provenance of every file is recorded.
 
-**Progress:** 13 of 15 complete `██████████░░`
+**Progress:** 14 of 15 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,7 +22,7 @@
 | `STUDIO-00010` | Configure the repository-local commit identity | ✅ | — |
 | `STUDIO-00011` | Re-audit current CNA (`next`) for renderers, platforms and capability reporting | ✅ | `STUDIO-00003` |
 | `STUDIO-00012` | Re-verify the prototype-era CNA gaps against current CNA | ✅ | `STUDIO-00011` |
-| `STUDIO-00013` | Capture reference screenshots of the prototype UI before migration begins | ⬜ | `STUDIO-00004` |
+| `STUDIO-00013` | Capture reference screenshots of the prototype UI before migration begins | ✅ | `STUDIO-00004` |
 | `STUDIO-00014` | Record the prototype panel, menu and shortcut inventory as the migration checklist | ✅ | `STUDIO-00003` |
 | `STUDIO-00015` | Measure baseline start-up time and headless frame cost | ⬜ | `STUDIO-00004` |
 
@@ -96,7 +96,18 @@ Tasks whose completion condition is not obvious from the title.
 
 **Acceptance.** The documented panel layout captured at 1280x720 and 1920x1080 through a real CNA device, stored as the "before" reference for the UI migration
 
-**Verification.** Needs a CNA build and a display; blocked on CI graphics (STUDIO-33010)
+**Verification.** `docs/reference/prototype-1280x720.png` and `prototype-1920x1080.png`, with the
+native shell beside each at the same size, and `TheReferenceCapturesExistAtTheSizesTheReviewClaims`
+checking the dimensions from the PNG headers rather than from the filenames
+
+**It was never blocked on a display.** This said "blocked on CI graphics (`STUDIO-33010`)" and had
+said so since before `STUDIO-33023` existed. The `SOFTWARE` renderer *is* a real CNA device and
+needs no display at all, which is exactly why CI runs on it — so the reference could have been taken
+at any point after that job landed. Answered by trying it rather than by reading the note.
+
+**What it needed instead** was `--window-size`: both UIs open a real window through CNA and neither
+could be asked for one of a given size, so "the same screen at the same resolution on both" was not
+capturable. That is the comparison the whole reference exists for
 
 ### `STUDIO-00014` — Record the prototype panel, menu and shortcut inventory as the migration checklist
 

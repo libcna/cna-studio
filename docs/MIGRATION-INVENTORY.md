@@ -162,6 +162,27 @@ is in for exactly that reason, and a toolbar that cannot be read is half a contr
 
 ---
 
+## Panel content the surface tables cannot see
+
+A panel can be ported, appear above as ✅, and still be missing something, because these tables
+account for panels rather than for what is *in* one. The Inspector is the case: it shows something
+else entirely when **nothing is selected**, and the native Details panel shows only a sentence
+asking the user to select something.
+
+Found by `docs/VISUAL-ACCEPTANCE.md` — by putting the two editors side by side at the same size and
+looking, which is the one thing the machine-checked lists cannot do.
+
+| Panel | What | Native | Status |
+|-------|------|--------|--------|
+| Inspector | Scene Environment: ambient colour and fog | — | ⬜ |
+| Inspector | Grid Snap, editable | — | ⬜ |
+| Inspector | The project's layer list, with add | — | ⬜ |
+
+The native Layers panel is not an answer to the third: it lists what is *on* each layer, which is a
+different question from what the layers are called.
+
+---
+
 ## Keyboard shortcuts
 
 Taken from `StudioApplication::handleShortcuts`. Each must resolve to a native action bound to the

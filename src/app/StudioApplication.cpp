@@ -43,6 +43,38 @@ namespace CNA::Studio
         }
     }
 
+    namespace
+    {
+        /**
+         * @brief Parses `WIDTHxHEIGHT`, both positive.
+         *
+         * Shared by `--shell-size` and `--window-size`, so the two cannot come to disagree about
+         * what a size looks like -- the kind of difference nobody notices until one of them
+         * accepts something the other rejects.
+         *
+         * @param text What the user typed.
+         * @param width Receives the width.
+         * @param height Receives the height.
+         * @return False when it is not two positive numbers around an `x`.
+         */
+        bool parseSize(const std::string& text, int& width, int& height)
+        {
+            const std::size_t separator = text.find('x');
+            if (separator == std::string::npos) { return false; }
+
+            try
+            {
+                const int parsedWidth = std::stoi(text.substr(0, separator));
+                const int parsedHeight = std::stoi(text.substr(separator + 1));
+                if (parsedWidth <= 0 || parsedHeight <= 0) { return false; }
+                width = parsedWidth;
+                height = parsedHeight;
+                return true;
+            }
+            catch (const std::exception&) { return false; }
+        }
+    }
+
     StudioOptions StudioOptions::parse(int argc, const char* const* argv)
     {
         StudioOptions options;
@@ -94,27 +126,10 @@ namespace CNA::Studio
                 }
                 if (name == "--shell-size")
                 {
-                    // WxH. A malformed size is an error rather than a silent default, for the same
+                    // A malformed size is an error rather than a silent default, for the same
                     // reason --view is: this flag exists to be set from a script that cannot see
                     // the picture it asked for.
-                    const std::size_t separator = value.find('x');
-                    bool parsed = false;
-                    if (separator != std::string::npos)
-                    {
-                        try
-                        {
-                            const int width = std::stoi(value.substr(0, separator));
-                            const int height = std::stoi(value.substr(separator + 1));
-                            if (width > 0 && height > 0)
-                            {
-                                options.shellPreviewWidth = width;
-                                options.shellPreviewHeight = height;
-                                parsed = true;
-                            }
-                        }
-                        catch (const std::exception&) { parsed = false; }
-                    }
-                    if (!parsed)
+                    if (!parseSize(value, options.shellPreviewWidth, options.shellPreviewHeight))
                     {
                         options.hasError = true;
                         options.errorMessage = "--shell-size expects WIDTHxHEIGHT, got '" + value + "'";
@@ -162,6 +177,21 @@ namespace CNA::Studio
                 if (name == "--shell-panel-only")
                 {
                     options.shellPreviewPanelOnly = value;
+                    continue;
+                }
+                if (name == "--window-size")
+                {
+                    int width = 0;
+                    int height = 0;
+                    if (!parseSize(value, width, height))
+                    {
+                        options.hasError = true;
+                        options.errorMessage =
+                            "--window-size expects WIDTHxHEIGHT, got '" + value + "'";
+                        continue;
+                    }
+                    options.windowWidth = width;
+                    options.windowHeight = height;
                     continue;
                 }
                 if (name == "--shell-notify")
@@ -312,6 +342,7 @@ namespace CNA::Studio
             "  --shell-open-menu=T  Open the menu titled T, e.g. File or Window>Panels.\n"
             "  --shell-float=IDS    Undock these panels into floating windows, comma separated.\n"
             "  --shell-invoke=ID    Invoke this command before capturing, e.g. studio.help.about.\n"
+            "  --window-size=WxH  Size of the real window, for --ui=imgui and --ui=studio.\n"
             "  --shell-notify=LIST  Post notifications before capturing, comma separated, each\n"
             "                       SEVERITY|TITLE[|DETAIL[|ACTION]] where SEVERITY is info,\n"
             "                       success, warning or error.\n"

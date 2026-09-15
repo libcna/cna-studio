@@ -146,13 +146,13 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **169 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **171 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
 exactly the failure the first was written to prevent in the other file.
 
-**Phase 0 — Audit and baseline** (13 of 15). Imported `cna-lab/cna-editor` at
+**Phase 0 — Audit and baseline** (14 of 15). Imported `cna-lab/cna-editor` at
 `3bce82dd74e9a201a21e31308d43d2ee7761d641`, verified its baseline, re-audited current CNA.
 
 **Phase 1 — Product rename** (13 of 16). `cna-studio` executable, `cna-studio-*` targets, the
@@ -200,7 +200,7 @@ survives a restart; and **notifications** — a build, a package, a renderer com
 player announcing itself over the corner of the workspace, with the panel that explains it offered
 as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
-**Phase 7 — Panel migration** (18 of 27, 2 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (19 of 27, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
@@ -224,6 +224,10 @@ worked while nothing rendered in between. **Parity is now proven underneath the 
 `docs/UI-CAPABILITY-PARITY.md` accounts for all thirty-nine `StudioUi` capabilities the prototype's
 panels are written against, each with a native answer and a named test the suite checks *exists*,
 and the prototype's four dock sides are checked against where the native layout actually resolves.
+**The two UIs are captured side by side** in `docs/reference/` at 1280x720 and 1920x1080 through a
+real CNA renderer, reviewed in `docs/VISUAL-ACCEPTANCE.md` — which found three things no surface
+inventory could: the prototype's Inspector shows the Scene Environment, an editable Grid Snap and
+the project's layer list when nothing is selected, and the native Details panel shows a sentence.
 
 **Phase 16 — Play in editor** (4 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a

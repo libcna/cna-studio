@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 18 of 27 complete `████████░░░░`
+**Progress:** 19 of 27 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -32,7 +32,7 @@
 | `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ✅ | `STUDIO-00014`, `STUDIO-07014` |
 | `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ✅ | `STUDIO-07020` |
 | `STUDIO-07022` | Prove docking parity | ✅ | `STUDIO-07020` |
-| `STUDIO-07023` | Visual acceptance review against the Phase 0 reference screenshots | ⬜ | `STUDIO-00013`, `STUDIO-07020` |
+| `STUDIO-07023` | Visual acceptance review against the Phase 0 reference screenshots | ✅ | `STUDIO-00013`, `STUDIO-07020` |
 | `STUDIO-07024` | Layers panel: the project's render layers and what is on each | ✅ | `STUDIO-03034` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07021`, `STUDIO-07022`, `STUDIO-07023` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
@@ -197,6 +197,29 @@ tab in front is would report the other six as placed nowhere — a fact about ta
 where the panel lives. And measured relative to the viewport rather than to the window, because
 "beside the viewport" is what a side means, and a fraction of the window would have to be rewritten
 whenever the default proportions were tuned.
+
+### `STUDIO-07023` — Visual acceptance review against the Phase 0 reference screenshots
+
+**Acceptance.** The two UIs captured side by side, at the same sizes, showing the same project, and
+a written judgement about the difference.
+
+**`docs/VISUAL-ACCEPTANCE.md`**, over the four captures in `docs/reference/`. The review is a
+judgement and says so: no test can assert that one editor looks better than another. What the suite
+checks is that the four captures exist, that they are the sizes the review claims — read from the
+PNG headers rather than from the filenames, which are a claim rather than a fact — and that
+everything the review calls unanswered is unanswered in the inventory too, so the two documents
+cannot come to disagree about what is missing.
+
+**What it found, which is why it exists.** Three things, all in one place and none of them visible
+to the panel inventory: the prototype's Inspector shows the **Scene Environment** (ambient colour
+and fog), an editable **Grid Snap**, and the project's **layer list** when nothing is selected, and
+the native Details panel shows only "Select an entity to see its details." The inventory accounts
+for *panels*, and the Inspector is ported — what it structurally cannot see is that a ported panel
+shows something else entirely in a state nobody thought to compare. They are inventory rows now.
+
+**And what it found about itself.** The native shell is ahead of the prototype on everything a user
+sees first — real type, nine menus to three, a toolbar and a status bar the prototype has not got at
+all — and behind it on one screen's worth of scene-level settings.
 
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 

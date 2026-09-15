@@ -214,6 +214,19 @@ namespace CNA::Studio
         std::string shellPreviewNotify;
 
         /**
+         * @brief Window width for a real window, or zero for the host's default.
+         *
+         * Separate from `--shell-size`, which is the *headless* preview's raster size. Both UIs
+         * open a real window through CNA and neither could be asked for one of a given size, which
+         * made "the same screen at the same resolution on both" impossible to capture -- and that
+         * comparison is the whole of `STUDIO-07023`.
+         */
+        int windowWidth = 0;
+
+        /** @brief Window height for a real window, or zero for the host's default. */
+        int windowHeight = 0;
+
+        /**
          * @brief Report the Studio host capability contract and exit.
          *
          * Prints what Studio requires of a host renderer, and -- on a build with a window host --
