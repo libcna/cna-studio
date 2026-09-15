@@ -146,7 +146,8 @@ namespace CNA::Studio
             {"Project", {}},
             {"Build", {"studio.build.build", "studio.build.cancel", sep,
                        "studio.build.package"}},
-            {"Play", {"studio.play.play", "studio.play.stop"}},
+            {"Play", {"studio.play.play", "studio.play.pause", "studio.play.stop", sep,
+                      "studio.play.step", "studio.play.restart"}},
             {"Tools", {}},
             // The panel list is filled in by registerPanel(), because which panels exist is decided
             // at run time by whoever assembles the shell. It ships empty rather than absent so the
@@ -169,7 +170,8 @@ namespace CNA::Studio
                 "studio.edit.undo", "studio.edit.redo", sep,
                 "studio.view.translate", "studio.view.rotate", "studio.view.scale", sep,
                 "studio.view.toggleGrid", sep,
-                "studio.play.play", "studio.play.stop", sep,
+                "studio.play.play", "studio.play.pause", "studio.play.step",
+                "studio.play.stop", sep,
                 "studio.build.build"};
     }
 

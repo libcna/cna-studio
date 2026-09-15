@@ -49,6 +49,21 @@
 
 namespace CNA::Studio
 {
+    /**
+     * @brief Whether a game launched from the editor is running, paused, or not running.
+     *
+     * Declared here rather than reusing the prototype's `PlayMode`, which lives in the Dear ImGui
+     * panel headers that `STUDIO-07030` deletes. The native module must not depend on them, and the
+     * alternative -- moving the prototype's enum somewhere shared -- would be rearranging code that
+     * is on its way out.
+     */
+    enum class StudioPlayState
+    {
+        Stopped,
+        Playing,
+        Paused
+    };
+
     class StudioContext;
 
     /** @brief What a host can offer the panels that the panels cannot do themselves. */
@@ -181,6 +196,33 @@ namespace CNA::Studio
 
         /** @brief Whether a player is running right now. */
         [[nodiscard]] bool isPlaying() const;
+
+        /** @brief Whether a player is running and paused. */
+        [[nodiscard]] StudioPlayState playState() const { return playState_; }
+
+        /**
+         * @brief Asks the running game to pause or resume.
+         *
+         * Follows the player's state only once the request is on the wire: a toolbar that says
+         * "Paused" over a game that never got the message is worse than one that did nothing.
+         *
+         * @param paused True to pause.
+         * @return True when the request was sent.
+         */
+        bool setPlayPaused(bool paused);
+
+        /**
+         * @brief Asks a paused game to advance one frame.
+         *
+         * Only means something while paused; the player ignores it otherwise, and offering it
+         * while the game is running would suggest a control that does nothing.
+         *
+         * @return True when the request was sent.
+         */
+        bool stepPlayFrame();
+
+        /** @brief Stops the running game and starts it again from the scene as it now stands. */
+        void restartPlaying();
 
         /** @brief The backend comparison this Studio would run, for a caller to report on. */
         [[nodiscard]] const BackendComparison& comparison() const { return comparison_; }
@@ -325,6 +367,9 @@ namespace CNA::Studio
 
         /** @brief The build's state last poll, so a finish is noticed as a transition. */
         BuildState buildWasState_ = BuildState::Idle;
+
+        /** @brief Whether the running game is playing or paused. */
+        StudioPlayState playState_ = StudioPlayState::Stopped;
 
         /** @brief Snapshots of the open scene, and whatever a previous session left behind. */
         StudioRecoverySession recovery_{context_};

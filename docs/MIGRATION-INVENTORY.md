@@ -114,9 +114,9 @@ name would be matching on something nobody can check.
 |---------|---------|--------|--------|--------|
 | Play | Start the game | `Play` | `studio.play.play` | ✅ |
 | Play | Stop the running game | `Stop` | `studio.play.stop` | ✅ |
-| Play | Pause the running game | `Pause` | — | ⬜ |
-| Play | Resume a paused game | `Resume` | — | ⬜ |
-| Play | Advance one frame | `Step` | — | ⬜ |
+| Play | Pause the running game | `Pause` | `studio.play.pause` | ✅ |
+| Play | Resume a paused game | `Resume` | `studio.play.pause` | ✅ |
+| Play | Advance one frame | `Step` | `studio.play.step` | ✅ |
 | Play | Which backend to launch on | `Backend` | — | 🔄 |
 | Tools | Tilemap tool | `##tool` | — | ⬜ |
 | Tools | Tile to paint | `Tile` | — | ⬜ |
@@ -129,8 +129,14 @@ name would be matching on something nobody can check.
 and fill tools, so it arrives with them. Finding it is what this table was for — it is drawn a
 hundred lines below the rest of the toolbar, under a condition, and it had been in no list at all.
 
-**Pause, Resume and Step** are ⬜ because the native player is started and stopped as a process and
-has no protocol to pause it. That is `STUDIO-16015`, and it is a player feature rather than a UI one.
+**Pause, Resume and Step** are ✅ as of `STUDIO-16015`. The protocol was always there — the player
+has honoured `Pause`, `Resume` and `StepFrame` since play mode existed, with its own tests — and what
+was missing was an editor that sent them. One checkable Pause answers two of the prototype's rows:
+a button that renames itself between Pause and Resume is one a user cannot find twice, and a toolbar
+has to *show* whether the game is paused, because the window is there either way.
+
+Restart is new rather than ported: the prototype has none, and stopping and starting is how a user
+sees the edits they have made since pressing Play.
 
 **The backend** is 🔄 rather than ⬜: the native Play launches the renderer the project's active
 target profile names, falling back to whatever player build is installed, so the common case is

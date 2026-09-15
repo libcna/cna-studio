@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **165 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **166 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -217,10 +217,12 @@ and the offer arrives as a sticky notification rather than a log line at start-u
 was the second: an editable tree row, `F2` taken back from Build (which is `Ctrl+B` now, because the
 prototype's `F2` is Rename), and the rename through the history like every other edit.
 
-**Phase 16 — Play in editor** (3 of 18). Play and Stop from the native shell with mutually exclusive
+**Phase 16 — Play in editor** (4 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a
 process that started and vanished; and the player's ending read from its process status and reported
-exactly once.
+exactly once. **Pause, Step and Restart**: the protocol has always been there and the editor had
+never sent it, so a checkable Pause, a Step live only while paused, and a Restart that is a stop and
+a start — which is how a user sees the edits made since pressing Play.
 
 **Phase 17 — Build profiles** (5 of 12). The target profile model, OS/platform/architecture and
 renderer selection, build configuration, and the migration of the game's configure command onto the

@@ -271,7 +271,10 @@ namespace CNA::Studio
         if (player_.isRunning())
         {
             StudioStatusJob job;
-            job.label = "Playing";
+            // Which of the two, because a paused game and a running one look identical from the
+            // editor -- the window is there either way -- and the difference is the whole point of
+            // having paused it.
+            job.label = playState_ == StudioPlayState::Paused ? "Paused" : "Playing";
             job.stopActionId = "studio.play.stop";
             status.jobs.push_back(std::move(job));
         }
@@ -347,12 +350,50 @@ namespace CNA::Studio
         playerWasRunning_ = true;
         log_.append(LogSeverity::Info,
                     "Playing on " + build->backend + " (" + build->executablePath + ").");
+        playState_ = StudioPlayState::Playing;
+    }
+
+    bool StudioShellPanels::setPlayPaused(bool paused)
+    {
+        if (playState_ == StudioPlayState::Stopped) { return false; }
+        if ((playState_ == StudioPlayState::Paused) == paused) { return false; }
+
+        StudioMessage message;
+        message.type = paused ? StudioMessageType::Pause : StudioMessageType::Resume;
+        message.payload = JsonValue::makeObject();
+
+        // Only follow the player's state once the request is actually on the wire.
+        if (!player_.send(message)) { return false; }
+
+        playState_ = paused ? StudioPlayState::Paused : StudioPlayState::Playing;
+        log_.append(LogSeverity::Info, paused ? "Paused the player." : "Resumed the player.");
+        return true;
+    }
+
+    bool StudioShellPanels::stepPlayFrame()
+    {
+        if (playState_ != StudioPlayState::Paused) { return false; }
+
+        StudioMessage message;
+        message.type = StudioMessageType::StepFrame;
+        message.payload = JsonValue::makeObject();
+        return player_.send(message);
+    }
+
+    void StudioShellPanels::restartPlaying()
+    {
+        // Stop and start, rather than a message asking the game to reload itself. The player reads
+        // the scene from disk when it starts, so a restart is how the user sees the edits they have
+        // made since -- which is what they mean by it.
+        if (player_.isRunning()) { stopPlaying(); }
+        startPlaying();
     }
 
     void StudioShellPanels::stopPlaying()
     {
         if (!player_.isRunning()) { return; }
         player_.stop();
+        playState_ = StudioPlayState::Stopped;
         // Said here, so the poll that follows does not report the same ending a second time as an
         // exit the editor did not expect.
         playerWasRunning_ = false;
@@ -449,6 +490,10 @@ namespace CNA::Studio
         if (running == playerWasRunning_) { return; }
         playerWasRunning_ = running;
         if (running) { return; }
+
+        // A game that exited while paused leaves nothing paused. Without this the Pause command
+        // stays checked over a game that is not there, and Step offers to advance it.
+        playState_ = StudioPlayState::Stopped;
 
         // Said either way. A game that exited because it finished and one that crashed look
         // identical from the editor unless the reason is reported.
@@ -827,6 +872,35 @@ namespace CNA::Studio
                                                 context_.getPrimarySelection(), outlinerState_);
             };
             shell.actions().add(std::move(rename));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.play.pause"))
+        {
+            StudioAction pause = *found;
+            pause.isEnabled = [this] { return playState_ != StudioPlayState::Stopped; };
+            pause.isChecked = [this] { return playState_ == StudioPlayState::Paused; };
+            pause.run = [this] { (void)setPlayPaused(playState_ != StudioPlayState::Paused); };
+            shell.actions().add(std::move(pause));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.play.step"))
+        {
+            // Enabled only while paused, because that is the only time it does anything. A control
+            // that is live and does nothing is one the user stops believing.
+            StudioAction step = *found;
+            step.isEnabled = [this] { return playState_ == StudioPlayState::Paused; };
+            step.run = [this] { (void)stepPlayFrame(); };
+            shell.actions().add(std::move(step));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.play.restart"))
+        {
+            StudioAction restart = *found;
+            restart.isEnabled = [this] {
+                return context_.hasProject() && !playerBuilds_.empty();
+            };
+            restart.run = [this] { restartPlaying(); };
+            shell.actions().add(std::move(restart));
         }
 
         if (const StudioAction* found = shell.actions().find("studio.build.package"))

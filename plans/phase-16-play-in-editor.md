@@ -6,7 +6,7 @@
 
 **Exit criteria.** Play, pause, step, stop, restart, live edits and crash isolation all work against a real game process.
 
-**Progress:** 3 of 18 complete `██░░░░░░░░░░`
+**Progress:** 4 of 18 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,7 @@
 | `STUDIO-16012` | Play and Stop from the native shell, with mutually exclusive enablement | ✅ | `STUDIO-06023`, `STUDIO-07017` |
 | `STUDIO-16013` | A player that cannot be launched is refused at the launch, not later | ✅ | `STUDIO-16012` |
 | `STUDIO-16014` | The player's ending read from its process status and reported once | ✅ | `STUDIO-16012` |
-| `STUDIO-16015` | Pause, Step and Restart from the native shell | ⬜ | `STUDIO-16012` |
+| `STUDIO-16015` | Pause, Step and Restart from the native shell | ✅ | `STUDIO-16012` |
 | `STUDIO-16020` | Investigate displaying player output inside a Studio viewport | 🔬 | `STUDIO-16010` |
 | `STUDIO-16021` | Decide the native code reload strategy | 🔬 | `STUDIO-15008` |
 | `STUDIO-16022` | Implement the chosen reload strategy | ⬜ | `STUDIO-16021` |
@@ -47,6 +47,32 @@ active target profile's renderer, and falls back to whatever was discovered when
 was built. That is the right default and it is not yet a selection — refusing to play because the
 preferred renderer is missing would help nobody, but neither does a user who wants to check a
 second backend having to edit the target profile to do it.
+
+### `STUDIO-16015` — Pause, Step and Restart from the native shell
+
+**Acceptance.** A running game can be paused and resumed, advanced one frame at a time while
+paused, and restarted; the editor follows the player's state rather than announcing it, and every
+control is offered only when it does something.
+
+**The protocol was always there.** `PlayerHost` has honoured `Pause`, `Resume` and `StepFrame`
+since play mode existed, with its own tests (`PlayerHostHonoursPauseStepAndResume`). What was
+missing was an editor that sent them: the native shell had Play and Stop and nothing else, so the
+inventory's toolbar table listed Pause, Resume and Step as unanswered.
+
+**Follow, do not announce.** The editor's state changes only once `send` has put the request on the
+wire. A toolbar that says "Paused" over a game that never got the message is worse than one that did
+nothing, because the user then believes it.
+
+**One checkable Pause answers two of the prototype's rows.** A button that renames itself between
+Pause and Resume is one a user cannot find twice, and a toolbar has to *show* whether the game is
+paused: the window is there either way, so nothing else says which. Step is enabled only while
+paused, because the player ignores it otherwise and a control that is live and does nothing is how
+a user learns to distrust a toolbar.
+
+**Restart is new rather than ported.** The prototype has none. It is a stop and a start, not a
+message asking the game to reload itself: the player reads the scene from disk when it starts, so
+that is how a user sees the edits they have made since pressing Play. Offered before anything is
+running too, so one intention is one button whatever the state.
 
 ### `STUDIO-16012` — Play and Stop from the native shell, with mutually exclusive enablement
 

@@ -255,3 +255,177 @@ CNA_STUDIO_TEST(PlayAndStopAreNeverBothAvailable)
     CNA_STUDIO_EXPECT(!(play && stop));
     CNA_STUDIO_EXPECT(play);
 }
+
+// --- Pause, Step and Restart (plan.md STUDIO-16015) --------------------------------------------
+
+CNA_STUDIO_TEST(TheThreePlayControlsAreGreyedOutWhileNothingIsRunning)
+{
+    // Which is nearly always. Pause, Step and Restart over a stopped editor are three controls that
+    // do nothing, and a toolbar with three of those is a toolbar nobody reads.
+    Harness harness;
+    harness.frame();
+
+    CNA_STUDIO_EXPECT(!harness.shell.actions().isEnabled("studio.play.pause"));
+    CNA_STUDIO_EXPECT(!harness.shell.actions().isEnabled("studio.play.step"));
+    CNA_STUDIO_EXPECT(!harness.shell.actions().isEnabled("studio.play.restart"));
+
+    // And asking anyway changes nothing rather than pretending.
+    CNA_STUDIO_EXPECT(!harness.panels.setPlayPaused(true));
+    CNA_STUDIO_EXPECT(!harness.panels.stepPlayFrame());
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Stopped);
+}
+
+CNA_STUDIO_TEST(StepIsOfferedOnlyWhilePausedRatherThanWheneverAGameIsRunning)
+{
+    // The player ignores a step while running, so a Step that were live then would be a control
+    // that is enabled and does nothing -- which is how a user learns to distrust a toolbar.
+    Harness harness;
+    const ScopedProject project{"stepstate"};
+    CNA_STUDIO_EXPECT(harness.context.openProject(project.file()));
+    CNA_STUDIO_EXPECT(harness.context.saveScene(project.scene()));
+    harness.panels.setPlayerBuilds({PlayerBuild{"default", "/bin/true"}});
+    harness.frame();
+
+    harness.shell.invoke("studio.play.play");
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Playing);
+    harness.frame();
+    CNA_STUDIO_EXPECT(harness.shell.actions().isEnabled("studio.play.pause"));
+    CNA_STUDIO_EXPECT(!harness.shell.actions().isEnabled("studio.play.step"));
+
+    // And Pause is a toggle that reports, not a button that renames itself: unchecked while the
+    // game is running is how the toolbar says which of the two states it is in.
+    const StudioAction* pause = harness.shell.actions().find("studio.play.pause");
+    CNA_STUDIO_EXPECT(pause != nullptr && pause->checkable);
+    if (pause != nullptr) { CNA_STUDIO_EXPECT(pause->isChecked && !pause->isChecked()); }
+}
+
+CNA_STUDIO_TEST(APlayerThatExitsLeavesNothingPaused)
+{
+    // A game that was paused and then closed leaves Pause checked over a window that is not there,
+    // and Step offering to advance it. The exit has to clear the state as well as the process.
+    if (!std::filesystem::exists("/bin/true")) { return; }
+
+    Harness harness;
+    const ScopedProject project{"exitpaused"};
+    CNA_STUDIO_EXPECT(harness.context.openProject(project.file()));
+    CNA_STUDIO_EXPECT(harness.context.saveScene(project.scene()));
+    harness.panels.setPlayerBuilds({PlayerBuild{"default", "/bin/true"}});
+    harness.frame();
+
+    harness.shell.invoke("studio.play.play");
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Playing);
+
+    double now = 0.0;
+    for (int attempt = 0;
+         attempt < 400 && !contains(harness.lastMessage(), "Player exited");
+         ++attempt)
+    {
+        now += 0.005;
+        harness.panels.poll(now);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Stopped);
+    harness.frame();
+    CNA_STUDIO_EXPECT(!harness.shell.actions().isEnabled("studio.play.pause"));
+    CNA_STUDIO_EXPECT(!harness.shell.actions().isEnabled("studio.play.step"));
+}
+
+CNA_STUDIO_TEST(RestartStopsWhatIsRunningAndStartsItAgain)
+{
+    // A restart is how a user sees the edits they have made since pressing Play: the player reads
+    // the scene from disk when it starts, so stopping and starting is the whole mechanism.
+    if (!std::filesystem::exists("/bin/true")) { return; }
+
+    Harness harness;
+    const ScopedProject project{"restart"};
+    CNA_STUDIO_EXPECT(harness.context.openProject(project.file()));
+    CNA_STUDIO_EXPECT(harness.context.saveScene(project.scene()));
+    harness.panels.setPlayerBuilds({PlayerBuild{"default", "/bin/true"}});
+    harness.frame();
+
+    harness.shell.invoke("studio.play.play");
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Playing);
+
+    harness.shell.invoke("studio.play.restart");
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Playing);
+
+    // Two launches in the log, because a restart that only stopped would look identical from here.
+    std::size_t launches = 0;
+    for (const StudioLogEntry& entry : harness.log.entries())
+    {
+        if (contains(entry.message, "Playing on default")) { launches += entry.repeats; }
+    }
+    CNA_STUDIO_EXPECT_EQ(launches, std::size_t{2});
+}
+
+CNA_STUDIO_TEST(RestartIsOfferedBeforeAnythingIsRunning)
+{
+    // It is Play with a stop in front of it, so refusing it when nothing is running would make the
+    // user press two different buttons for the same intention depending on state they may not know.
+    Harness harness;
+    const ScopedProject project{"restartcold"};
+    CNA_STUDIO_EXPECT(harness.context.openProject(project.file()));
+    harness.panels.setPlayerBuilds({PlayerBuild{"default", "/bin/true"}});
+    harness.frame();
+
+    CNA_STUDIO_EXPECT(harness.shell.actions().isEnabled("studio.play.restart"));
+}
+
+CNA_STUDIO_TEST(PausingARealPlayerFollowsItRatherThanAnnouncingIt)
+{
+    // The end-to-end case, and the one rule worth having: the editor follows the player's state
+    // only once the request is on the wire. A toolbar that says "Paused" over a game that never
+    // got the message is worse than one that did nothing, because the user then believes it.
+    const std::vector<PlayerBuild> builds =
+        discoverPlayerBuilds(std::filesystem::path{CNA_STUDIO_TEST_PLAYER_DIR}.generic_string());
+    if (builds.empty()) { return; }
+
+    Harness harness;
+    const ScopedProject project{"realpause"};
+    CNA_STUDIO_EXPECT(harness.context.openProject(project.file()));
+    CNA_STUDIO_EXPECT(harness.context.saveScene(project.scene()));
+    harness.panels.setPlayerBuilds(builds);
+    harness.frame();
+
+    harness.shell.invoke("studio.play.play");
+    if (!harness.panels.isPlaying()) { return; }
+
+    // The player has to be listening before a message can reach it. Polled across frames the way
+    // the editor does, rather than slept for.
+    double now = 0.0;
+    for (int attempt = 0; attempt < 400 && !harness.panels.setPlayPaused(true); ++attempt)
+    {
+        now += 0.005;
+        harness.panels.poll(now);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Paused);
+
+    harness.frame();
+    CNA_STUDIO_EXPECT(harness.shell.actions().isEnabled("studio.play.step"));
+    const StudioAction* pause = harness.shell.actions().find("studio.play.pause");
+    CNA_STUDIO_EXPECT(pause != nullptr && pause->isChecked && pause->isChecked());
+
+    // The status bar says which of the two, because a paused game and a running one look identical
+    // from the editor: the window is there either way.
+    harness.panels.poll(now + 0.005);
+    bool said = false;
+    for (const StudioStatusJob& job : harness.shell.status().jobs)
+    {
+        if (job.label == "Paused") { said = true; }
+    }
+    CNA_STUDIO_EXPECT(said);
+
+    CNA_STUDIO_EXPECT(harness.panels.stepPlayFrame());
+
+    // Stepping does not resume: one step is one frame, which is the point of having it.
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Paused);
+
+    CNA_STUDIO_EXPECT(harness.panels.setPlayPaused(false));
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Playing);
+    CNA_STUDIO_EXPECT(!harness.panels.setPlayPaused(false));
+
+    harness.shell.invoke("studio.play.stop");
+}

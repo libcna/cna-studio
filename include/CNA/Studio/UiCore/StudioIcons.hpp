@@ -66,6 +66,8 @@ namespace CNA::Studio
 
         // Play and build
         Play,
+        Pause,
+        Step,
         Stop,
         Build,
         Package,

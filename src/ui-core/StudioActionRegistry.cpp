@@ -341,6 +341,17 @@ namespace CNA::Studio
                 "Launch the game in a player process.", C::Play, chord(UiKey::F5));
         command("studio.play.stop", "Stop",
                 "Stop the running player.", C::Play, chord(UiKey::F5, mods(false, true)));
+        // Checkable rather than a button whose label flips between Pause and Resume. A menu row
+        // that renames itself is one a user cannot find twice, and a toolbar has to *show* whether
+        // the game is paused: the window is there either way, so nothing else says which.
+        command("studio.play.pause", "Pause",
+                "Pause the running game, or resume it.", C::Play,
+                chord(UiKey::F5, mods(true)), /*checkable=*/true);
+        command("studio.play.step", "Step One Frame",
+                "Advance a paused game by a single frame.", C::Play, chord(UiKey::F5, mods(false, false, true)));
+        command("studio.play.restart", "Restart",
+                "Stop the game and start it again from the scene as it now stands.", C::Play,
+                StudioShortcut{});
 
         command("studio.build.build", "Build",
                 // Ctrl+B, not F2: F2 is Rename in the prototype (docs/MIGRATION-INVENTORY.md) and

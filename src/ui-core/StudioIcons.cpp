@@ -162,7 +162,7 @@ namespace CNA::Studio
         constexpr std::array<std::string_view, static_cast<std::size_t>(StudioIcon::Count)> kNames{
             "none",   "save",     "folder",  "file",      "undo",   "redo",
             "delete", "duplicate", "translate", "rotate",  "scale",  "grid",
-            "focus",  "play",     "stop",    "build",     "package", "close",
+            "focus",  "play",     "pause",   "step",      "stop",    "build",     "package", "close",
             "chevronRight", "chevronDown", "search", "warning", "error", "info",
         };
     }
@@ -188,7 +188,7 @@ namespace CNA::Studio
         // nothing in common structurally, and a convention that worked for both would constrain
         // every future id to be named after its picture.
         struct Mapping { std::string_view id; StudioIcon icon; };
-        static constexpr std::array<Mapping, 16> kMappings{{
+        static constexpr Mapping kMappings[]{
             {"studio.file.save", StudioIcon::Save},
             {"studio.file.saveAll", StudioIcon::Save},
             {"studio.file.openProject", StudioIcon::Folder},
@@ -203,9 +203,11 @@ namespace CNA::Studio
             {"studio.view.toggleGrid", StudioIcon::Grid},
             {"studio.view.focusSelected", StudioIcon::Focus},
             {"studio.play.play", StudioIcon::Play},
+            {"studio.play.pause", StudioIcon::Pause},
+            {"studio.play.step", StudioIcon::Step},
             {"studio.play.stop", StudioIcon::Stop},
             {"studio.build.build", StudioIcon::Build},
-        }};
+        };
 
         for (const Mapping& mapping : kMappings)
         {
@@ -317,6 +319,20 @@ namespace CNA::Studio
 
             case StudioIcon::Play:
                 triangle(frame, space, 4.5f, 2.5f, 4.5f, 13.5f, 13.0f, 8.0f, color);
+                break;
+
+            case StudioIcon::Pause:
+                // Two bars, the international pause, at the same height as Play's triangle so the
+                // pair does not jump when one replaces the other in the eye.
+                box(frame, space, 4.5f, 2.5f, 7.0f, 13.5f, color);
+                box(frame, space, 9.0f, 2.5f, 11.5f, 13.5f, color);
+                break;
+
+            case StudioIcon::Step:
+                // Play with a wall in front of it: one frame and stop. Same triangle as Play,
+                // narrowed to leave room for the bar, so the two read as a family.
+                triangle(frame, space, 3.5f, 2.5f, 3.5f, 13.5f, 10.5f, 8.0f, color);
+                box(frame, space, 11.5f, 2.5f, 13.5f, 13.5f, color);
                 break;
 
             case StudioIcon::Stop:
