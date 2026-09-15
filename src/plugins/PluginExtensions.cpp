@@ -15,11 +15,13 @@ namespace CNA::Studio
             if (existing.title == panel.title)
             {
                 existing = std::move(panel);
+                ++revision_;
                 return;
             }
         }
 
         panels_.push_back(std::move(panel));
+        ++revision_;
     }
 
     void PluginExtensionRegistry::addMenuCommand(PluginMenuCommand command)
@@ -28,6 +30,7 @@ namespace CNA::Studio
         // not wrong -- two plugins may each offer "Export" -- while two panels with one title
         // cannot both exist, because the title *is* the window's identity.
         commands_.push_back(std::move(command));
+        ++revision_;
     }
 
     std::size_t PluginExtensionRegistry::removeAllFrom(std::string_view ownerId)
@@ -44,7 +47,9 @@ namespace CNA::Studio
                                        { return command.ownerId == ownerId; }),
                         commands_.end());
 
-        return before - (panels_.size() + commands_.size());
+        const std::size_t removed = before - (panels_.size() + commands_.size());
+        if (removed != 0) { ++revision_; }
+        return removed;
     }
 
     std::vector<std::string> PluginExtensionRegistry::getMenuNames() const

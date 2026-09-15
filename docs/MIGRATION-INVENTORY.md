@@ -81,7 +81,7 @@ Panels the native shell adds, which the prototype has no equivalent for: `layers
 | View | Rotate Gizmo | `E` | `studio.view.rotate` | ✅ |
 | View | Scale Gizmo | `R` | `studio.view.scale` | ✅ |
 | View | Use Local Space / Use World Space | `X` | `studio.view.toggleGizmoSpace` | ✅ |
-| *plugin* | Plugin menus and commands | — | — | ⬜ |
+| *plugin* | Plugin menus and commands | `studio.plugin.*` | ✅ |
 
 **Recover / Discard Unsaved Scene** are ✅ as of `StudioRecoverySession`, which is the flow itself
 rather than a second copy of it: the snapshot timer, the scan after a project opens, and the two
@@ -95,10 +95,23 @@ the CNA host closed the window, and the two had nothing to do with each other �
 was nowhere for "the scene has unsaved changes" to be asked. It is a seam now, like the clipboard
 and the workspace, and quitting with unsaved work asks first.
 
-**Plugin menus** are ⬜ and are the one item here that is genuinely architectural. The prototype
-lets a plugin add a top-level menu and commands under it; the native shell's menus are built from
-action ids, so a plugin would register actions and a menu definition rather than draw rows. That is
-Phase 28 work.
+**Plugin menus** were the one item here that was genuinely architectural, and are ✅. The prototype
+*draws* them: it walks the extension registry every frame and calls `beginMenu` and `menuItem`. That
+works, and it is exactly why a plugin command there can never have a shortcut, never be greyed out,
+never appear on a toolbar and never show up in the shortcut editor — it is not a command, it is a
+row.
+
+Natively each becomes a registry action with an id under `studio.plugin.`, and the menu names it.
+Everything the registry offers then applies to it without plugin menus being a special case
+anywhere. A menu a plugin asks for by a name Studio already uses *is* that menu, with one separator
+before the plugin's rows — rather than a second menu of the same name beside it, which is what Dear
+ImGui's `BeginMenu` produces because it has no opinion about a title it has already seen. A menu
+only the plugin knows the name of is created before Help, which is last in every application anybody
+has used.
+
+Rebuilt whenever the extension registry's revision changes, so unloading a plugin takes its rows and
+its commands with it — a row left behind would call an `invoke` pointing into a library the host has
+closed.
 
 ---
 

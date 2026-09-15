@@ -430,6 +430,7 @@ add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioDiagnosticsPanel.cpp
     src/shell-panels/StudioHistoryPanel.cpp
     src/shell-panels/StudioLayersPanel.cpp
+    src/shell-panels/StudioPluginMenus.cpp
     src/shell-panels/StudioPreferencesPanel.cpp
     src/shell-panels/StudioProblemsPanel.cpp
     src/shell-panels/StudioShellPanels.cpp

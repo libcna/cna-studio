@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **171 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **173 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -200,7 +200,7 @@ survives a restart; and **notifications** — a build, a package, a renderer com
 player announcing itself over the corner of the workspace, with the panel that explains it offered
 as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
-**Phase 7 — Panel migration** (19 of 27, 2 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (21 of 27, 3 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
@@ -230,7 +230,9 @@ inventory could: the prototype's Inspector shows the Scene Environment, an edita
 the project's layer list when nothing is selected, and the native Details panel showed a sentence.
 All three are answered now, in the Details panel standing idle and through the command history —
 and closing them found that `studioTextField` committed **twice** for any caller that normalises
-what it stores, which is every numeric field in Studio.
+what it stores, which is every numeric field in Studio. **Plugin menus** were the last unanswered
+menu row and the one architectural one: a plugin's commands are registry actions now rather than
+rows somebody draws, so a shortcut, enablement and the shortcut editor apply to them for free.
 
 **Phase 16 — Play in editor** (4 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a

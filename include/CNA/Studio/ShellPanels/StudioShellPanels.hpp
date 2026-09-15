@@ -43,6 +43,7 @@
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -126,6 +127,9 @@ namespace CNA::Studio
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
         std::size_t sceneWarnings = 0;
+
+        /** @brief How many plugin commands are on the menus. */
+        std::size_t pluginMenuRows = 0;
     };
 
     /**
@@ -356,6 +360,9 @@ namespace CNA::Studio
         /** @brief Asks the shell's host to close, and says so when nothing can. */
         void closeStudio();
 
+        /** @brief Rebuilds the plugin menus when the extension registry has moved on. */
+        void pollPlugins();
+
         /** @brief Announces a build that has just finished, either way. */
         void pollBuild();
 
@@ -414,6 +421,15 @@ namespace CNA::Studio
 
         /** @brief The project the last scan was for, so opening another triggers a new one. */
         std::string recoveryProject_;
+
+        /**
+         * @brief The plugin registry's revision when the menus were last built.
+         *
+         * Starts at zero, which is also a registry nobody has touched -- so a Studio with no
+         * plugins never rebuilds, and one whose plugins loaded before these panels existed rebuilds
+         * on its first poll.
+         */
+        std::uint64_t pluginRevision_ = 0;
         std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
 
         StudioViewportState viewportState_;

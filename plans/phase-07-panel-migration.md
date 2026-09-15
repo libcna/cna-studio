@@ -6,14 +6,14 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 19 of 27 complete `████████░░░░`
+**Progress:** 21 of 27 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-07001` | Compatibility adapter so unported panels keep working during the migration | 🔄 | `STUDIO-06015` |
-| `STUDIO-07002` | Port the main menu bar | ⬜ | `STUDIO-06003` |
-| `STUDIO-07003` | Port the toolbar | ⬜ | `STUDIO-06006` |
-| `STUDIO-07004` | Port the status bar | ⬜ | `STUDIO-06007` |
+| `STUDIO-07002` | Port the main menu bar | ✅ | `STUDIO-06003` |
+| `STUDIO-07003` | Port the toolbar | 🔄 | `STUDIO-06006` |
+| `STUDIO-07004` | Port the status bar | ✅ | `STUDIO-06007` |
 | `STUDIO-07005` | Port the Console / Output Log | ✅ | `STUDIO-07001` |
 | `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
 | `STUDIO-07007` | Port the Inspector panel (Details) | ✅ | `STUDIO-07001`, `STUDIO-03035` |
@@ -60,6 +60,61 @@ now serves the editor and the preview, so what CI photographs is what a user see
 What does not hold yet is the words *one running Studio*: the two presentations are still two entry
 points, `--ui=imgui` and `--ui=studio`, rather than one process showing ported and unported panels
 side by side. That is the remaining half, and it is what `STUDIO-06015` is waiting on
+
+### `STUDIO-07002` — Port the main menu bar
+
+**Acceptance.** Every item the prototype's menu bar draws is reachable from the native one.
+
+**Done.** `docs/MIGRATION-INVENTORY.md`'s menu table accounts for every row the prototype draws and
+every one resolves. The native bar is ahead rather than level: nine menus to three, built from the
+registry so a row cannot exist and do nothing, with nested submenus, hover opening, keyboard
+traversal and context menus (`STUDIO-06003`, `STUDIO-06017`).
+
+**Plugin menus were the one architectural item**, and are the difference the registry was for. The
+prototype *draws* them — it walks the extension registry every frame and calls `beginMenu` and
+`menuItem` — which works, and which is exactly why a plugin command there can never have a shortcut,
+never be greyed out, never appear on a toolbar and never show up in the shortcut editor. It is not a
+command, it is a row.
+
+`bindStudioPluginMenus` makes each one a registry action under `studio.plugin.`, and the menu names
+the id. A menu a plugin asks for by a name Studio already uses *is* that menu, with one separator
+before the plugin's rows, rather than a second menu of the same name beside it — which is what Dear
+ImGui produces, because `BeginMenu` has no opinion about a title it has already seen. A menu only
+the plugin knows the name of is created before Help.
+
+Rebuilt from a **revision counter** on the extension registry rather than from a callback: a
+callback would put the menu rebuild inside a plugin's load, which is where a plugin that throws
+would take the menu bar with it. Unloading takes the rows and the commands with it, because a row
+left behind calls an `invoke` pointing into a library the host has closed — and reloading three
+times leaves one of everything rather than three.
+
+**What writing it found.** `StudioActionRegistry::add` returns whether it *replaced* a command, not
+whether it succeeded. Reading it as success dropped every plugin row while registering every plugin
+action, which is the shape of bug that looks like the menus being wrong rather than the caller.
+
+### `STUDIO-07003` — Port the toolbar
+
+**Acceptance.** Every control the prototype's toolbars offer is reachable from the native one.
+
+**In progress, and the remainder is three rows.** The prototype has no application toolbar at all;
+its controls live inside the Viewport panel, which means they move and resize with it and vanish if
+it is closed. The native toolbar is icons at the top of the window, driven by the registry.
+
+`docs/MIGRATION-INVENTORY.md`'s toolbar table accounts for all eleven controls. Play, Stop, Pause,
+Step, the manipulator and the backend chooser are answered; **the tilemap tool, the tile index and
+2D/3D** are not, and are waiting on the phases that own them (25 and 11).
+
+### `STUDIO-07004` — Port the status bar
+
+**Acceptance.** Whatever the prototype's status bar says is said by the native one.
+
+**Done by there being nothing to port.** The prototype has no status bar: grep the panel sources and
+there is not one. The native bar (`STUDIO-06007`) is therefore new rather than a port, and carries
+what is open, whether it is saved, what is running with a progress bar and a Stop, the active target
+profile, and what Studio itself is drawing on.
+
+Recorded rather than quietly ticked, because "nothing to port" and "ported" are different facts and
+only one of them is a reason to stop looking.
 
 ### `STUDIO-07005` — Port the Console / Output Log
 

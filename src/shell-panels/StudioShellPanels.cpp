@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 
+#include "CNA/Studio/ShellPanels/StudioPluginMenus.hpp"
+
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Project/ProjectExport.hpp"
@@ -50,6 +52,7 @@ namespace CNA::Studio
 
     void StudioShellPanels::poll(double nowSeconds)
     {
+        pollPlugins();
         pollRecovery(nowSeconds);
         build_.poll();
         pollBuild();
@@ -127,6 +130,21 @@ namespace CNA::Studio
         // host that forgot the seam -- and a Quit that silently does nothing reads as a broken menu.
         log_.append(LogSeverity::Warning,
                     "Nothing here can close CNA Studio: this build has no window to close.");
+    }
+
+    void StudioShellPanels::pollPlugins()
+    {
+        if (shell_ == nullptr) { return; }
+
+        // A revision rather than a callback. Rebuilding the menus from inside a plugin's load is
+        // rebuilding them inside code that may throw, and a plugin that failed halfway would take
+        // the menu bar with it.
+        const std::uint64_t revision = context_.getPluginExtensions().revision();
+        if (revision == pluginRevision_) { return; }
+        pluginRevision_ = revision;
+
+        const std::size_t rows = bindStudioPluginMenus(*shell_, context_, log_);
+        counts_.pluginMenuRows = rows;
     }
 
     void StudioShellPanels::pollRecovery(double nowSeconds)

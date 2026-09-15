@@ -31,6 +31,7 @@
  * frame that draws it rather than at the moment of the mistake.
  */
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -118,8 +119,21 @@ namespace CNA::Studio
         /** @brief The distinct menu names commands were registered under, in first-seen order. */
         [[nodiscard]] std::vector<std::string> getMenuNames() const;
 
+        /**
+         * @brief Counts every change to this registry, so a reader can tell it has moved on.
+         *
+         * A counter rather than a callback. The native shell turns these registrations into
+         * *actions and menu definitions* rather than drawing them each frame, which is the whole
+         * difference between a plugin row that has a shortcut and one that is only a row -- and
+         * that conversion has to happen when the registry changes rather than every frame. A
+         * callback would put the shell's rebuild inside a plugin's load, which is where a plugin
+         * that throws would take the menus with it.
+         */
+        [[nodiscard]] std::uint64_t revision() const { return revision_; }
+
     private:
         std::vector<PluginPanel> panels_;
         std::vector<PluginMenuCommand> commands_;
+        std::uint64_t revision_ = 0;
     };
 }
