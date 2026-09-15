@@ -137,6 +137,12 @@ namespace CNA::Studio
          */
         void setViewportServices(StudioCamera2D& camera, SpriteSizeProvider spriteSize);
 
+        /** @brief Which manipulator the viewport shows, so the renderer draws the same one. */
+        [[nodiscard]] GizmoMode viewportMode() const { return viewportState_.mode; }
+
+        /** @brief Which frame the translate manipulator's arms follow. */
+        [[nodiscard]] GizmoSpace viewportSpace() const { return viewportState_.space; }
+
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_; }
 
@@ -164,6 +170,7 @@ namespace CNA::Studio
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;
         StudioTreeState diagnosticsState_;
+        StudioViewportState viewportState_;
         Uuid selectedAsset_;
 
         BuildProcess build_;

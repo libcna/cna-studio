@@ -414,9 +414,33 @@ it hits
 
 **In progress.** What holds: the scene is composited (`STUDIO-04012`), the wheel zooms about the
 pointer, the middle *or* right button pans, a click picks the topmost sprite and Ctrl adds to the
-selection, and a click on nothing clears it. What does not: the gizmos, dragging an entity, the 3D
-view toggle, tilemap painting, and forwarding input to a running player. Each is its own task and
-each is a real piece of the prototype's viewport.
+selection, a click on nothing clears it, and **all three manipulators drag** — translate
+axis-constrained, rotate about the ring, scale as a screen-space ratio — with Ctrl snapping to the
+project's step or the visible grid. What does not: dragging a *multi*-selection (the machinery
+exists; only one entity moves today), the 3D view toggle, tilemap painting, and forwarding input to
+a running player. Each is its own task and each is a real piece of the prototype's viewport.
+
+**The whole drag is one undo entry.** The first frame opens it and every frame after merges into
+it. Sixty entries a second is an undo stack nobody can use: Ctrl+Z would rewind the gesture frame by
+frame, and nobody counts frames.
+
+**While a manipulator has the pointer, nothing else does.** The press that grabs an arm must not
+also pick — a user aiming at an arm lying over another sprite would select that sprite and lose the
+thing they were moving — and the drag must not also pan, or the camera would take the entity with
+it. The manipulator is therefore resolved before the camera and before the selection, and it returns
+immediately. That ordering was wrong when first written, and the test that catches it holds the
+middle button down through a gizmo drag.
+
+**A release ends it wherever the pointer is.** A drag that only ended when the release landed back
+inside the viewport would leave the gizmo stuck to the cursor the moment somebody let go over a
+panel.
+
+**And the toolbar's three transform buttons finally do something.** They have been drawing since
+the toolbar existed. They are checkable now, so the toolbar shows which manipulator is on — three
+buttons that look the same whichever is active is three buttons nobody trusts — and switching mode
+ends any drag in flight, because a half-finished translate would otherwise keep writing positions
+after the user reached for Rotate. The renderer is told the same mode, so the manipulator drawn is
+the one a drag will grab.
 
 **The panel draws nothing**, which is what makes this half testable at all. The scene arrives as a
 texture; this is the camera the pointer moves and what a click in it selects, and both are
@@ -439,4 +463,8 @@ missed would be unforgivable.
 **Verification.** `tests/StudioViewportPanelTests.cpp`: the camera told its extent, zoom keeping the
 world point under the pointer, both pan buttons, a pan that began elsewhere ignored, picking,
 clearing, Ctrl adding, Ctrl-missing leaving the selection alone, the reported world position, and an
-empty rectangle doing nothing rather than dividing by it
+empty rectangle doing nothing rather than dividing by it — plus the manipulators: a press on
+an arm dragging rather than selecting, an axis-constrained move, one undo entry for a whole drag
+that undoes to where it started, a release outside the viewport ending it, `GizmoMode::None`
+picking as before, the rotate and scale manipulators writing their own property, a drag that does
+not also pan, and the toolbar choosing the manipulator through the real shell

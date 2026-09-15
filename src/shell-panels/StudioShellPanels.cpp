@@ -21,6 +21,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace CNA::Studio
@@ -54,9 +55,32 @@ namespace CNA::Studio
         // worse than one that plainly does not respond.
         if (services_.camera == nullptr) { return; }
 
+        // The toolbar's three transform buttons, which have been drawing and doing nothing since
+        // the toolbar existed. Bound here rather than with the document commands because the mode
+        // they set is the viewport's, and checkable so the toolbar shows which one is on -- three
+        // buttons that all look the same whichever is active is three buttons nobody trusts.
+        for (const auto& [id, mode] : {std::pair{"studio.view.translate", GizmoMode::Translate},
+                                       std::pair{"studio.view.rotate", GizmoMode::Rotate},
+                                       std::pair{"studio.view.scale", GizmoMode::Scale}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this, mode] { return viewportState_.mode == mode; };
+            action.run = [this, mode] {
+                viewportState_.mode = mode;
+                // Any drag in flight ends with the mode that owned it: a translate half-finished
+                // when the user reaches for Rotate would otherwise keep writing positions.
+                viewportState_.endDrag();
+            };
+            shell.actions().add(std::move(action));
+        }
+
         shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {
             const StudioViewportResult viewport = studioViewportPanel(
-                frame, bounds, context_, *services_.camera, services_.spriteSize);
+                frame, bounds, context_, *services_.camera, viewportState_, services_.spriteSize);
 
             // No "camera changed" callback: the host renders the scene every frame anyway, and a
             // hook nothing sets is scaffolding rather than a seam.

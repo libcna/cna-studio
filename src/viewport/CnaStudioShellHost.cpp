@@ -416,9 +416,11 @@ namespace CNA::Studio
                     return;
                 }
 
+                // The mode the toolbar chose, so the manipulator drawn is the one a drag will
+                // grab. Two sources of truth here would show a rotate ring and move the entity.
                 const UiTextureId texture = sceneViewport_->render(
                     context_->getScene(), width, height, context_->getSelection(),
-                    GizmoMode::Translate);
+                    panels_->viewportMode(), panels_->viewportSpace());
 
                 shell_->setViewportImage(texture,
                                          sceneViewport_->isRenderTextureFlippedVertically());

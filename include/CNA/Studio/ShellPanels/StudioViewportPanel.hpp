@@ -24,12 +24,57 @@
 
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Scene/StudioCamera2D.hpp"
+#include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
+#include "CNA/Studio/Viewport/StudioViewport.hpp"
 
 namespace CNA::Studio
 {
     class StudioContext;
+
+    /**
+     * @brief The viewport's own retained state: which manipulator is showing, and any drag in it.
+     *
+     * Held by the caller rather than by the frame's widget store because a gizmo drag is *editor*
+     * state, not widget state: it survives the panel being scrolled, re-docked or momentarily
+     * hidden, and it is the thing an undo has to be able to reason about.
+     */
+    struct StudioViewportState
+    {
+        /** @brief Which manipulator the selection shows. */
+        GizmoMode mode = GizmoMode::Translate;
+
+        /** @brief Whether the translate gizmo's arms follow the world axes or the entity's own. */
+        GizmoSpace space = GizmoSpace::World;
+
+        TranslateGizmoDrag translate;
+        RotateGizmoDrag rotate;
+        ScaleGizmoDrag scale;
+
+        /**
+         * @brief Whether this drag has already pushed a command.
+         *
+         * The first frame of a drag opens an undo entry and every frame after it merges into that
+         * one, so the whole gesture is a single Ctrl+Z rather than one per frame at sixty a second.
+         */
+        bool dragHasEdited = false;
+
+        /** @brief True while any manipulator is being dragged. */
+        [[nodiscard]] bool dragging() const
+        {
+            return translate.isActive() || rotate.isActive() || scale.isActive();
+        }
+
+        /** @brief Ends whatever drag is in flight. */
+        void endDrag()
+        {
+            translate.end();
+            rotate.end();
+            scale.end();
+            dragHasEdited = false;
+        }
+    };
 
     /** @brief What the user did in the viewport this frame. */
     struct StudioViewportResult
@@ -48,6 +93,9 @@ namespace CNA::Studio
 
         /** @brief Whether the pointer is over the viewport at all. */
         bool pointerInside = false;
+
+        /** @brief A manipulator moved the selection this frame. Input pass only. */
+        bool transformed = false;
     };
 
     /**
@@ -57,11 +105,13 @@ namespace CNA::Studio
      * @param bounds The viewport panel's body, in window coordinates.
      * @param context The editor. Its scene is picked against; its selection is written.
      * @param camera The editor camera, panned and zoomed in place.
+     * @param state Which manipulator is showing, and any drag in progress.
      * @param sizeProvider Resolves a sprite's texel size for picking. An empty provider makes
      *        every sprite pick at its default size, which is what a build with no device can know.
      * @return What happened.
      */
     StudioViewportResult studioViewportPanel(StudioFrame& frame, const UiRect& bounds,
                                              StudioContext& context, StudioCamera2D& camera,
+                                             StudioViewportState& state,
                                              const SpriteSizeProvider& sizeProvider = {});
 }
