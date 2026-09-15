@@ -45,9 +45,9 @@ namespace CNA::Studio
     enum class PlayerExitReason
     {
         StillRunning,
-        /** @brief The player exited cleanly. */
+        /** @brief The player ran to completion and returned success. */
         Exited,
-        /** @brief The player died or the connection dropped unexpectedly. */
+        /** @brief The player died on a signal or returned a failure code. */
         Crashed,
         /** @brief The editor asked it to stop. */
         StoppedByStudio,
@@ -75,6 +75,11 @@ namespace CNA::Studio
 
         /**
          * @brief Binds a port, then launches @p build with the project and that port.
+         *
+         * A failure to launch is reported here rather than as an immediate exit: the child says
+         * so over a close-on-exec pipe, so a missing or unrunnable player binary comes back from
+         * this call on every platform instead of surfacing later as a process that started and
+         * vanished.
          *
          * @param build The player binary to run.
          * @param projectPath Absolute path to the `.cnaproject`.
@@ -129,13 +134,25 @@ namespace CNA::Studio
         [[nodiscard]] bool isHelloSent() const { return helloSent_; }
 
     private:
+        /**
+         * @brief Settles the exit reason if the player has ended since it was last asked.
+         *
+         * Collecting a child is a one-shot act: whichever call waits on it first gets the status
+         * and every later one gets nothing. So the reason is settled wherever the death is first
+         * *noticed*, rather than only in poll() -- otherwise a toolbar asking isRunning() to
+         * decide whether to grey out Stop would quietly swallow the exit, and the editor would
+         * never report that the game had ended.
+         */
+        void refreshExitReason() const;
+
         struct Impl;
         std::unique_ptr<Impl> impl_;
         MessageChannel channel_;
         std::string error_;
         std::string projectPath_;
         bool helloSent_ = false;
+        bool started_ = false;
         std::string reportedBackend_;
-        PlayerExitReason exitReason_ = PlayerExitReason::StillRunning;
+        mutable PlayerExitReason exitReason_ = PlayerExitReason::StillRunning;
     };
 }

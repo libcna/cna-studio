@@ -28,6 +28,7 @@
 
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Project/BuildRunner.hpp"
+#include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
@@ -88,6 +89,7 @@ namespace CNA::Studio
         std::size_t diagnosticRowsDrawn = 0;
         std::size_t viewportSelections = 0;
         std::size_t layerRowsDrawn = 0;
+        std::size_t playerMessages = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
         std::size_t sceneWarnings = 0;
@@ -145,6 +147,20 @@ namespace CNA::Studio
         /** @brief Which frame the translate manipulator's arms follow. */
         [[nodiscard]] GizmoSpace viewportSpace() const { return viewportState_.space; }
 
+        /**
+         * @brief Tells the shell which player binaries exist beside it.
+         *
+         * "Run this on Vulkan" means "launch cna-player-vulkan", so what Play can do is decided
+         * by what is on disk. One setter rather than two, because the Diagnostics panel reports
+         * the same list and two copies would be two chances to disagree.
+         *
+         * @param builds The discovered players, by renderer.
+         */
+        void setPlayerBuilds(std::vector<PlayerBuild> builds);
+
+        /** @brief Whether a player is running right now. */
+        [[nodiscard]] bool isPlaying() const;
+
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_; }
 
@@ -162,6 +178,15 @@ namespace CNA::Studio
 
         /** @brief Writes the project out as a standalone CNA game and says where. */
         void packageProject();
+
+        /** @brief The player binary Play would launch, or nullptr when none was found. */
+        [[nodiscard]] const PlayerBuild* choosePlayerBuild() const;
+
+        void startPlaying();
+        void stopPlaying();
+
+        /** @brief Pumps the bridge once a frame and reports what the player said. */
+        void pollPlayer();
 
         /** @brief Borrowed so the viewport can be re-bound when a camera arrives. */
         StudioShell* shell_ = nullptr;
@@ -181,6 +206,19 @@ namespace CNA::Studio
 
         BuildProcess build_;
         std::unique_ptr<StudioBuildPanel> buildPanel_;
+
+        /**
+         * @brief The player this Studio launches, and the builds it can choose from.
+         *
+         * Owned here for the same reason the build process is: two of either would be two
+         * processes racing for one project, and the panel that reports on it must be reporting on
+         * the one Play actually started.
+         */
+        PlayerProcess player_;
+        std::vector<PlayerBuild> playerBuilds_;
+
+        /** @brief Whether the player was running when it was last polled. See pollPlayer(). */
+        bool playerWasRunning_ = false;
 
         StudioDiagnosticsInfo diagnostics_;
         StudioShellPanelCounts counts_;

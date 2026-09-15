@@ -9,7 +9,10 @@
 #if defined(_WIN32)
 #    include <windows.h>
 #else
+#    include <cerrno>
 #    include <csignal>
+#    include <cstring>
+#    include <fcntl.h>
 #    include <sys/types.h>
 #    include <sys/wait.h>
 #    include <unistd.h>
@@ -20,6 +23,11 @@ namespace CNA::Studio
     namespace
     {
         constexpr const char* kPlayerPrefix = "cna-player";
+
+#if !defined(_WIN32)
+        /** @brief What the child returns when execv failed, matching the shell's convention. */
+        constexpr int kExecFailedExitCode = 127;
+#endif
 
 #if defined(_WIN32)
         constexpr const char* kExecutableSuffix = ".exe";
@@ -95,18 +103,53 @@ namespace CNA::Studio
         pid_t pid = -1;
 #endif
 
+        /**
+         * @brief How the player ended, read once and kept.
+         *
+         * The status can only be collected by whichever wait sees the child first, and that is
+         * whatever the editor happens to call -- so it is recorded here rather than left to be
+         * asked for later, when it would already have been thrown away.
+         */
+        mutable bool finished = false;
+        mutable bool killedBySignal = false;
+        mutable int exitCode = 0;
+
+        /** @brief True when the player ran to completion and returned success. */
+        [[nodiscard]] bool exitedCleanly() const
+        {
+            return finished && !killedBySignal && exitCode == 0;
+        }
+
         [[nodiscard]] bool isAlive() const
         {
 #if defined(_WIN32)
-            if (!spawned) { return false; }
-            DWORD exitCode = 0;
-            return GetExitCodeProcess(process.hProcess, &exitCode) && exitCode == STILL_ACTIVE;
+            if (!spawned || finished) { return false; }
+            DWORD code = 0;
+            if (!GetExitCodeProcess(process.hProcess, &code))
+            {
+                finished = true;
+                return false;
+            }
+            if (code == STILL_ACTIVE) { return true; }
+            finished = true;
+            exitCode = static_cast<int>(code);
+            return false;
 #else
-            if (pid <= 0) { return false; }
+            if (pid <= 0 || finished) { return false; }
             // WNOHANG so the editor never blocks on a player that is still running.
             int status = 0;
             const pid_t result = ::waitpid(pid, &status, WNOHANG);
-            return result == 0;
+            if (result == 0) { return true; }
+
+            // Anything else means the child is gone, and when the wait collected it this is the
+            // one chance to read how it went: a second wait would report only ECHILD.
+            finished = true;
+            if (result > 0)
+            {
+                killedBySignal = WIFSIGNALED(status);
+                exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 0;
+            }
+            return false;
 #endif
         }
 
@@ -120,10 +163,19 @@ namespace CNA::Studio
             spawned = false;
 #else
             if (pid <= 0) { return; }
-            int status = 0;
-            // Reaping matters: an unreaped child stays a zombie for the editor's whole session,
-            // and a user who starts play mode fifty times would leak fifty process table entries.
-            ::waitpid(pid, &status, WNOHANG);
+            if (!finished)
+            {
+                // Reaping matters: an unreaped child stays a zombie for the editor's whole
+                // session, and a user who starts play mode fifty times would leak fifty process
+                // table entries.
+                int status = 0;
+                if (::waitpid(pid, &status, WNOHANG) > 0)
+                {
+                    finished = true;
+                    killedBySignal = WIFSIGNALED(status);
+                    exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 0;
+                }
+            }
             pid = -1;
 #endif
         }
@@ -139,6 +191,12 @@ namespace CNA::Studio
 
         bool spawn(const std::string& executable, const std::vector<std::string>& arguments, std::string& error)
         {
+            // Cleared first: the same PlayerProcess is reused for every play session, and a status
+            // left over from the last one would report the new player as already dead.
+            finished = false;
+            killedBySignal = false;
+            exitCode = 0;
+
 #if defined(_WIN32)
             std::string commandLine = "\"" + executable + "\"";
             for (const std::string& argument : arguments) { commandLine += " \"" + argument + "\""; }
@@ -164,20 +222,74 @@ namespace CNA::Studio
             for (std::string& value : storage) { argv.push_back(value.data()); }
             argv.push_back(nullptr);
 
+            // A close-on-exec pipe, so the child can report a failure that happens after the
+            // fork. Without it "the player binary is missing" is indistinguishable from "the
+            // player started and exited at once": exec failure lives in the child, where there is
+            // nothing left to return it to. The successful case writes nothing and the descriptor
+            // closes itself on exec, so the read ends at once with end-of-file.
+            int report[2] = {-1, -1};
+            if (::pipe(report) != 0)
+            {
+                error = "could not create the launch pipe: " + std::string{std::strerror(errno)};
+                return false;
+            }
+            ::fcntl(report[1], F_SETFD, ::fcntl(report[1], F_GETFD) | FD_CLOEXEC);
+
             const pid_t child = ::fork();
             if (child < 0)
             {
-                error = "fork failed";
+                error = "fork failed: " + std::string{std::strerror(errno)};
+                ::close(report[0]);
+                ::close(report[1]);
                 return false;
             }
             if (child == 0)
             {
+                ::close(report[0]);
                 ::execv(executable.c_str(), argv.data());
-                // Reached only when execv failed. _exit rather than exit: the child is a copy of
-                // the editor, and running the editor's atexit handlers here would flush its
-                // buffers twice and could corrupt files it had open.
-                ::_exit(127);
+
+                // Reached only when execv failed. The parent is waiting on the other end of the
+                // pipe for exactly this.
+                const int failure = errno;
+                const ssize_t written =
+                    ::write(report[1], &failure, sizeof(failure));
+                (void)written;
+
+                // _exit rather than exit: the child is a copy of the editor, and running the
+                // editor's atexit handlers here would flush its buffers twice and could corrupt
+                // files it had open.
+                ::_exit(kExecFailedExitCode);
             }
+
+            ::close(report[1]);
+            int childErrno = 0;
+            ssize_t received = 0;
+            for (;;)
+            {
+                const ssize_t chunk = ::read(report[0], reinterpret_cast<char*>(&childErrno) + received,
+                                             sizeof(childErrno) - static_cast<std::size_t>(received));
+                if (chunk > 0)
+                {
+                    received += chunk;
+                    if (received == static_cast<ssize_t>(sizeof(childErrno))) { break; }
+                    continue;
+                }
+                // Zero is end-of-file, which is the child having exec'd successfully. EINTR is a
+                // signal arriving mid-read and says nothing about the child.
+                if (chunk == 0 || errno != EINTR) { break; }
+            }
+            ::close(report[0]);
+
+            if (received == static_cast<ssize_t>(sizeof(childErrno)))
+            {
+                // The child is already on its way out; collect it so it does not linger as a
+                // zombie for a launch that never happened.
+                int status = 0;
+                ::waitpid(child, &status, 0);
+                error = "could not launch " + executable + ": " + std::strerror(childErrno);
+                return false;
+            }
+
             pid = child;
             return true;
 #endif
@@ -188,7 +300,7 @@ namespace CNA::Studio
 
     PlayerProcess::~PlayerProcess()
     {
-        if (impl_ && impl_->isAlive()) { stop(); }
+        if (impl_ && started_ && impl_->isAlive()) { stop(); }
     }
 
     bool PlayerProcess::start(const PlayerBuild& build,
@@ -199,6 +311,7 @@ namespace CNA::Studio
         reportedBackend_.clear();
         projectPath_ = projectPath;
         helloSent_ = false;
+        started_ = false;
         exitReason_ = PlayerExitReason::StillRunning;
 
         // Listen first, spawn second. The port is then known before the player exists, and the
@@ -223,7 +336,20 @@ namespace CNA::Studio
             return false;
         }
 
+        started_ = true;
         return true;
+    }
+
+    void PlayerProcess::refreshExitReason() const
+    {
+        if (!started_ || exitReason_ != PlayerExitReason::StillRunning) { return; }
+        if (impl_->isAlive()) { return; }
+
+        // A player that stopped without the editor asking has either finished or died, and the
+        // process's own status is what says which. Guessing from the channel would report a
+        // segfault as a clean exit whenever the socket happened to drop first.
+        exitReason_ = impl_->exitedCleanly() ? PlayerExitReason::Exited : PlayerExitReason::Crashed;
+        impl_->reap();
     }
 
     std::vector<StudioMessage> PlayerProcess::poll()
@@ -245,16 +371,7 @@ namespace CNA::Studio
             }
         }
 
-        if (exitReason_ == PlayerExitReason::StillRunning && !impl_->isAlive())
-        {
-            // A player that stopped without the editor asking has either finished or died. The
-            // channel state distinguishes the two: a clean exit closes the connection first.
-            exitReason_ = channel_.getState() == ChannelState::Failed || !channel_.isConnected()
-                              ? PlayerExitReason::Exited
-                              : PlayerExitReason::Crashed;
-            impl_->reap();
-        }
-
+        refreshExitReason();
         return messages;
     }
 
@@ -262,7 +379,8 @@ namespace CNA::Studio
 
     bool PlayerProcess::isRunning() const
     {
-        return exitReason_ == PlayerExitReason::StillRunning && impl_->isAlive();
+        refreshExitReason();
+        return started_ && exitReason_ == PlayerExitReason::StillRunning;
     }
 
     void PlayerProcess::stop()

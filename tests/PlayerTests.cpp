@@ -477,7 +477,7 @@ CNA_STUDIO_TEST(AComparisonNeedsMoreThanOneBackend)
     CNA_STUDIO_EXPECT(!comparison.getError().empty());
 }
 
-CNA_STUDIO_TEST(AComparisonReportsPlayersThatProduceNoFrame)
+CNA_STUDIO_TEST(AComparisonReportsPlayersThatCannotBeLaunched)
 {
     const ScratchProject project{"comparemissing"};
 
@@ -488,24 +488,16 @@ CNA_STUDIO_TEST(AComparisonReportsPlayersThatProduceNoFrame)
                       PlayerBuild{"phantom", "/nowhere/cna-player-phantom"}};
     request.warmupFrames = 0;
 
+    // Refused at once rather than after the timeout: a comparison with nothing to compare has
+    // already answered, and making the user wait thirty seconds for that answer helps nobody.
     BackendComparison comparison;
-    CNA_STUDIO_EXPECT(comparison.start(request, {}));
+    CNA_STUDIO_EXPECT(!comparison.start(request, {}));
+    CNA_STUDIO_EXPECT(comparison.getState() == ComparisonState::Failed);
+    CNA_STUDIO_EXPECT(!comparison.getError().empty());
 
-    // Spawning a missing binary fails in the child, not in the parent, so the failure arrives as
-    // an exit rather than as a refused start. It must not hold the run open for the whole timeout:
-    // a dead player has answered as definitively as a live one.
-    double now = 0.0;
-    for (int step = 0; step < 500 && comparison.getState() != ComparisonState::Finished; ++step)
-    {
-        now += 0.01;
-        comparison.poll(now);
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-    CNA_STUDIO_EXPECT(comparison.getState() == ComparisonState::Finished);
-    CNA_STUDIO_EXPECT(now < 20.0);
-
-    // Each entry says what happened to it, rather than the run reporting one opaque failure.
+    // Each entry says what happened to *it*, rather than the run reporting one opaque failure:
+    // with several backends the interesting case is the one that would not launch among several
+    // that did, and that only reads correctly if every entry carries its own reason.
     CNA_STUDIO_EXPECT_EQ(comparison.getEntries().size(), std::size_t{2});
     for (const ComparisonEntry& entry : comparison.getEntries())
     {
@@ -513,6 +505,44 @@ CNA_STUDIO_TEST(AComparisonReportsPlayersThatProduceNoFrame)
         CNA_STUDIO_EXPECT(!entry.captured);
     }
     CNA_STUDIO_EXPECT(!comparison.allBackendsAgree());
+}
+
+CNA_STUDIO_TEST(AComparisonCarriesOnWithTheBackendsThatDidLaunch)
+{
+    // One backend missing is exactly the kind of thing a comparison exists to find, and it must
+    // not take the others down with it -- the run continues, and the reference moves to a player
+    // that actually started rather than staying on the one that did not.
+    const std::vector<PlayerBuild> discovered = discoverPlayerBuilds(playerDirectory().generic_string());
+    CNA_STUDIO_EXPECT(!discovered.empty());
+    if (discovered.empty()) { return; }
+
+    const ScratchProject project{"comparepartial"};
+
+    ComparisonRequest request;
+    request.projectPath = project.projectPath;
+    request.outputDirectory = (project.directory / "comparison").generic_string();
+    request.builds = {PlayerBuild{"ghost", "/nowhere/cna-player-ghost"},
+                      PlayerBuild{"real", discovered.front().executablePath}};
+    request.warmupFrames = 0;
+
+    BackendComparison comparison;
+    CNA_STUDIO_EXPECT(comparison.start(request, {}));
+
+    CNA_STUDIO_EXPECT_EQ(comparison.getEntries().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(!comparison.getEntries()[0].errorMessage.empty());
+    CNA_STUDIO_EXPECT(!comparison.getEntries()[0].isReference);
+    CNA_STUDIO_EXPECT(comparison.getEntries()[1].isReference);
+
+    double now = 0.0;
+    for (int step = 0; step < 800 && comparison.getState() != ComparisonState::Finished
+                       && comparison.getState() != ComparisonState::Failed;
+         ++step)
+    {
+        now += 0.01;
+        comparison.poll(now);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CNA_STUDIO_EXPECT(comparison.getState() == ComparisonState::Finished);
 }
 
 CNA_STUDIO_TEST(TwoRealPlayersAreComparedAgainstEachOther)
@@ -675,6 +705,10 @@ CNA_STUDIO_TEST(StudioLaunchesARealPlayerProcessAndTalksToIt)
 
 CNA_STUDIO_TEST(PlayerProcessReportsAMissingBinaryRatherThanHanging)
 {
+    // The failure happens after the fork, in the child, where nothing can be returned -- so it is
+    // carried back over a pipe and reported from start(). That it comes back *here* rather than
+    // as a process that started and vanished is the whole point: the editor never shows a Stop
+    // button, never waits for a connection, and can name the path that was not there.
     const ScratchProject project{"bridgemissing"};
 
     PlayerBuild missing;
@@ -682,17 +716,48 @@ CNA_STUDIO_TEST(PlayerProcessReportsAMissingBinaryRatherThanHanging)
     missing.executablePath = (project.directory / "cna-player-nonexistent").generic_string();
 
     PlayerProcess player;
-    player.start(missing, project.projectPath);
+    CNA_STUDIO_EXPECT(!player.start(missing, project.projectPath));
 
-    // On POSIX the fork succeeds and the exec fails in the child, so the failure surfaces as the
-    // process exiting rather than as a spawn error. Either way the editor must notice and must
-    // not sit waiting for a connection that will never arrive.
-    for (int attempt = 0; attempt < 200 && player.isRunning(); ++attempt)
-    {
-        player.poll();
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
     CNA_STUDIO_EXPECT(!player.isRunning());
+    CNA_STUDIO_EXPECT_EQ(std::string{toString(player.getExitReason())},
+                         std::string{"failed to start"});
+    CNA_STUDIO_EXPECT(player.getError().find(missing.executablePath) != std::string::npos);
+
+    // And polling a launch that never happened is harmless rather than a wait for a connection
+    // that will never arrive.
+    for (int attempt = 0; attempt < 10; ++attempt)
+    {
+        CNA_STUDIO_EXPECT(player.poll().empty());
+        CNA_STUDIO_EXPECT(!player.isRunning());
+    }
+}
+
+CNA_STUDIO_TEST(APlayerThatFailsIsDistinguishedFromOneThatFinished)
+{
+    // "The game exited" and "the game crashed" are different things to tell a user, and the
+    // process's own status is the only honest source: the connection drops in both cases, so
+    // reading the answer off the channel would report every segfault as a clean exit.
+    //
+    // Stood in for by /bin/true and /bin/false, which ignore their arguments and differ in
+    // exactly one thing -- the code they return.
+    if (!std::filesystem::exists("/bin/true") || !std::filesystem::exists("/bin/false")) { return; }
+
+    const ScratchProject project{"bridgestatus"};
+
+    const auto runToCompletion = [&](const char* executable) {
+        PlayerProcess player;
+        CNA_STUDIO_EXPECT(player.start(PlayerBuild{"default", executable}, project.projectPath));
+        for (int attempt = 0; attempt < 400 && player.isRunning(); ++attempt)
+        {
+            player.poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CNA_STUDIO_EXPECT(!player.isRunning());
+        return std::string{toString(player.getExitReason())};
+    };
+
+    CNA_STUDIO_EXPECT_EQ(runToCompletion("/bin/true"), std::string{"exited"});
+    CNA_STUDIO_EXPECT_EQ(runToCompletion("/bin/false"), std::string{"crashed"});
 }
 
 /**

@@ -38,7 +38,135 @@ namespace CNA::Studio
         bind(shell);
     }
 
-    void StudioShellPanels::poll() { build_.poll(); }
+    void StudioShellPanels::poll()
+    {
+        build_.poll();
+        pollPlayer();
+    }
+
+    void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
+    {
+        playerBuilds_ = std::move(builds);
+        // The Diagnostics panel reports the same list. One setter, so the two cannot disagree
+        // about what this Studio can run.
+        diagnostics_.players = playerBuilds_;
+    }
+
+    bool StudioShellPanels::isPlaying() const { return player_.isRunning(); }
+
+    const PlayerBuild* StudioShellPanels::choosePlayerBuild() const
+    {
+        if (playerBuilds_.empty()) { return nullptr; }
+
+        // The renderer the project says it ships on, when a player for it was built. Otherwise
+        // whatever is there: a user pressing Play wants to see their game, and refusing because
+        // the preferred renderer is missing helps nobody.
+        const std::string preferred = context_.getProject().getActiveTargetProfile().renderer;
+        for (const PlayerBuild& build : playerBuilds_)
+        {
+            if (build.backend == preferred) { return &build; }
+        }
+        return &playerBuilds_.front();
+    }
+
+    void StudioShellPanels::startPlaying()
+    {
+        const PlayerBuild* build = choosePlayerBuild();
+        if (build == nullptr)
+        {
+            log_.append(LogSeverity::Error,
+                        "No player build was found beside this executable. CNA fixes its renderer "
+                        "at compile time, so Play needs a cna-player-<renderer> binary to launch.");
+            return;
+        }
+
+        // The player is a separate process and reads the scene from disk, so what is on screen has
+        // to be *there* first. Saving silently would be worse than refusing: a user who has not
+        // saved deliberately would find their file overwritten by pressing Play.
+        if (context_.getScenePath().empty())
+        {
+            log_.append(LogSeverity::Warning,
+                        "Save the scene before playing: the player is a separate process and "
+                        "reads it from disk.");
+            return;
+        }
+        if (context_.getHistory().isDirty() && !context_.saveScene())
+        {
+            log_.append(LogSeverity::Error, "Could not save the scene; not starting the player.");
+            return;
+        }
+
+        // Relative to the project, like the build's paths: two processes need not agree on a
+        // working directory, and the project root is the one anchor both already have.
+        std::error_code relativeError;
+        const std::filesystem::path relative = std::filesystem::relative(
+            std::filesystem::path{context_.getScenePath()},
+            std::filesystem::path{context_.getProject().getFilePath()}.parent_path(),
+            relativeError);
+
+        if (!player_.start(*build, context_.getProject().getFilePath(),
+                           relativeError ? std::string{} : relative.generic_string()))
+        {
+            log_.append(LogSeverity::Error, "Could not start the player: " + player_.getError());
+            return;
+        }
+
+        playerWasRunning_ = true;
+        log_.append(LogSeverity::Info,
+                    "Playing on " + build->backend + " (" + build->executablePath + ").");
+    }
+
+    void StudioShellPanels::stopPlaying()
+    {
+        if (!player_.isRunning()) { return; }
+        player_.stop();
+        // Said here, so the poll that follows does not report the same ending a second time as an
+        // exit the editor did not expect.
+        playerWasRunning_ = false;
+        log_.append(LogSeverity::Info, "Stopped the player.");
+    }
+
+    void StudioShellPanels::pollPlayer()
+    {
+        for (const StudioMessage& message : player_.poll())
+        {
+            ++counts_.playerMessages;
+            switch (message.type)
+            {
+                case StudioMessageType::Ready:
+                    // What the player *actually* got, not what Studio asked for. CNA fixes its
+                    // renderer at compile time and a player can be built for one and report
+                    // another; hearing it from the player is the only way to know.
+                    log_.append(LogSeverity::Info,
+                                "Player ready on " + player_.getReportedBackend() + ".");
+                    break;
+                case StudioMessageType::ReportException:
+                    log_.append(LogSeverity::Error,
+                                "Player: " + message.payload["message"].asString("an exception"));
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Compared against what was remembered rather than against a fresh query taken a moment
+        // ago: anything at all may have asked whether the player is running in between -- the
+        // toolbar does, every frame, to decide whether Stop is available -- and the first such
+        // question is what notices the exit. Reading the transition from a local `wasRunning`
+        // would therefore miss it exactly when the editor was doing its job.
+        const bool running = player_.isRunning();
+        if (running == playerWasRunning_) { return; }
+        playerWasRunning_ = running;
+        if (running) { return; }
+
+        // Said either way. A game that exited because it finished and one that crashed look
+        // identical from the editor unless the reason is reported.
+        const PlayerExitReason reason = player_.getExitReason();
+        log_.append(reason == PlayerExitReason::Crashed ? LogSeverity::Error : LogSeverity::Info,
+                    std::string{"Player exited: "} + toString(reason) + ".");
+    }
+
+
 
     void StudioShellPanels::setViewportServices(StudioCamera2D& camera,
                                                 SpriteSizeProvider spriteSize)
@@ -272,6 +400,24 @@ namespace CNA::Studio
                 }
             };
             shell.actions().add(std::move(build));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.play.play"))
+        {
+            StudioAction play = *found;
+            play.isEnabled = [this] {
+                return context_.hasProject() && !playerBuilds_.empty() && !player_.isRunning();
+            };
+            play.run = [this] { startPlaying(); };
+            shell.actions().add(std::move(play));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.play.stop"))
+        {
+            StudioAction stop = *found;
+            stop.isEnabled = [this] { return player_.isRunning(); };
+            stop.run = [this] { stopPlaying(); };
+            shell.actions().add(std::move(stop));
         }
 
         if (const StudioAction* found = shell.actions().find("studio.build.package"))

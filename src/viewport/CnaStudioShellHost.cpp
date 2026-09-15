@@ -285,9 +285,12 @@ namespace CNA::Studio
                 diagnostics.viewportBackend = sceneViewport_->getBackendName();
                 if (!options_.executablePath.empty())
                 {
-                    diagnostics.players = discoverPlayerBuilds(
+                    // Through the panels rather than straight into the diagnostics: Play chooses
+                    // from the same list the Diagnostics panel reports, and two copies would be
+                    // two chances to disagree about what this Studio can run.
+                    panels_->setPlayerBuilds(discoverPlayerBuilds(
                         std::filesystem::path{options_.executablePath}.parent_path()
-                            .generic_string());
+                            .generic_string()));
                 }
 
                 contentLoaded_ = true;

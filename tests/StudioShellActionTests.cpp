@@ -206,8 +206,6 @@ CNA_STUDIO_TEST(EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered)
         {"studio.file.openProject", "a file picker; --project opens one today"},
         {"studio.file.quit", "the shell asking its host to close, which no host exposes yet"},
         {"studio.view.toggleGrid", "a grid option on the viewport, which the renderer does not take"},
-        {"studio.play.play", "a play service in the native shell (Phase 16)"},
-        {"studio.play.stop", "a play service in the native shell (Phase 16)"},
         {"studio.help.about", "a modal dialog (STUDIO-03022)"},
     };
 
