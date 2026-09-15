@@ -14,6 +14,7 @@
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -277,6 +278,40 @@ CNA_STUDIO_TEST(EverySavedLayoutIsACommandAndAMenuRow)
                       != nullptr);
     CNA_STUDIO_EXPECT(shell->actions().find(StudioShell::deleteLayoutActionId("Zoom")) != nullptr);
     CNA_STUDIO_EXPECT(shell->actions().find(std::string{kStudioSaveLayoutAsActionId}) != nullptr);
+}
+
+CNA_STUDIO_TEST(AFreshStudioCanStillReachSaveLayoutAs)
+{
+    // A submenu with nothing in it draws greyed out, so filling Layouts only once a layout exists
+    // would leave a fresh Studio unable to reach the command that creates the first one.
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+    CNA_STUDIO_EXPECT(shell->savedLayouts().empty());
+
+    shell->setOpenMenu(-1);
+    const std::vector<StudioMenuDefinition>& menus = shell->menus();
+    const auto window = std::find_if(menus.begin(), menus.end(),
+        [](const StudioMenuDefinition& menu) { return menu.title == "Window"; });
+    CNA_STUDIO_EXPECT(window != menus.end());
+
+    const auto layouts = std::find_if(window->entries.begin(), window->entries.end(),
+        [](const StudioMenuEntry& entry) {
+            return entry.isSubmenu() && entry.label == kStudioLayoutMenuLabel;
+        });
+    CNA_STUDIO_EXPECT(layouts != window->entries.end());
+    CNA_STUDIO_EXPECT(!layouts->rows.empty());
+    CNA_STUDIO_EXPECT_EQ(layouts->rows.front().id, std::string{kStudioSaveLayoutAsActionId});
+
+    // And replacing the menus refills both submenus rather than emptying them, or a host that
+    // customised its File menu would silently lose its panel list.
+    shell->setMenus(shell->menus());
+    const auto again = std::find_if(shell->menus().begin(), shell->menus().end(),
+        [](const StudioMenuDefinition& menu) { return menu.title == "Window"; });
+    const auto refilled = std::find_if(again->entries.begin(), again->entries.end(),
+        [](const StudioMenuEntry& entry) {
+            return entry.isSubmenu() && entry.label == kStudioPanelMenuLabel;
+        });
+    CNA_STUDIO_EXPECT(refilled != again->entries.end());
+    CNA_STUDIO_EXPECT(!refilled->rows.empty());
 }
 
 CNA_STUDIO_TEST(ApplyingASavedLayoutRearrangesTheWorkspace)

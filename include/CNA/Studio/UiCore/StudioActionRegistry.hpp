@@ -250,6 +250,30 @@ namespace CNA::Studio
     [[nodiscard]] std::string describeStudioShortcut(const StudioShortcut& shortcut);
 
     /**
+     * @brief Parses what @ref describeStudioShortcut writes, e.g. `"Ctrl+Shift+S"`.
+     *
+     * The inverse rather than a second spelling, because a rebinding stored in the user's
+     * preferences is written by one and read by the other: a chord that round-trips differently is
+     * a shortcut that changes when Studio restarts.
+     *
+     * @param text The chord.
+     * @param out Receives the shortcut.
+     * @return False when @p text names no key this build knows; @p out is then unchanged.
+     */
+    [[nodiscard]] bool parseStudioShortcut(std::string_view text, StudioShortcut& out);
+
+    /** @brief The display text for a key, e.g. `"PageDown"`. Empty for @ref UiKey::None. */
+    [[nodiscard]] std::string_view studioKeyName(UiKey key);
+
+    /**
+     * @brief Parses a name from @ref studioKeyName.
+     * @param name The key's name.
+     * @param out Receives the key.
+     * @return False for a name this build does not know.
+     */
+    [[nodiscard]] bool parseStudioKey(std::string_view name, UiKey& out);
+
+    /**
      * @brief Registers Studio's core command set with no handlers attached.
      *
      * The shell needs menus and a toolbar before the services those commands will call exist. This

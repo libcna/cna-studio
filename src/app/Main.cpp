@@ -149,7 +149,10 @@ namespace
         CNA::Studio::StudioTheme theme = options.shellPreviewTheme == "light"
             ? CNA::Studio::StudioTheme::light()
             : CNA::Studio::StudioTheme::dark();
-        theme.setScale(static_cast<float>(options.shellPreviewScale));
+        // Zero means the flag was not given, and a preview has no user preferences to fall back
+        // on -- so it takes the same 100% the flag used to default to.
+        theme.setScale(options.shellPreviewScale > 0.0
+                           ? static_cast<float>(options.shellPreviewScale) : 1.0f);
 
         CNA::Studio::StudioShell shell{theme};
 
@@ -658,7 +661,8 @@ int main(int argc, char** argv)
         CNA::Studio::CnaStudioShellHostOptions hostOptions;
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.screenshotPath = options.screenshotPath;
-        hostOptions.uiScale = static_cast<float>(options.shellPreviewScale);
+        hostOptions.uiScale = static_cast<float>(options.shellPreviewScale);  // 0 means "not given"
+
         hostOptions.theme = options.shellPreviewTheme;
 
         // "none" rather than an empty string for off, because an empty --workspace= reads as a

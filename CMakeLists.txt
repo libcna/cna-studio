@@ -259,6 +259,7 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioTextEdit.cpp
     src/ui-core/StudioIcons.cpp
     src/ui-core/StudioDialog.cpp
+    src/ui-core/StudioPreferences.cpp
     src/ui-core/StudioDockTree.cpp
     src/ui-core/StudioInputRouter.cpp
     src/ui-core/StudioFrame.cpp
@@ -427,6 +428,7 @@ add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioDiagnosticsPanel.cpp
     src/shell-panels/StudioHistoryPanel.cpp
     src/shell-panels/StudioLayersPanel.cpp
+    src/shell-panels/StudioPreferencesPanel.cpp
     src/shell-panels/StudioProblemsPanel.cpp
     src/shell-panels/StudioShellPanels.cpp
     src/shell-panels/StudioViewportPanel.cpp)

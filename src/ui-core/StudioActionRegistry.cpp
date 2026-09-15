@@ -32,7 +32,7 @@ namespace CNA::Studio
         }
 
         /** @brief The display text for a key, for menu shortcut hints. */
-        std::string_view keyName(UiKey key)
+        std::string_view keyNameImpl(UiKey key)
         {
             switch (key)
             {
@@ -86,6 +86,54 @@ namespace CNA::Studio
         return "";
     }
 
+    std::string_view studioKeyName(UiKey key) { return keyNameImpl(key); }
+
+    bool parseStudioKey(std::string_view name, UiKey& out)
+    {
+        if (name.empty()) { return false; }
+
+        // Over the enum rather than a second table: a name list written twice is a list that
+        // disagrees with itself the first time a key is added, and the disagreement is a shortcut
+        // that stops loading.
+        for (int value = 1; value < static_cast<int>(UiKey::Count); ++value)
+        {
+            const auto key = static_cast<UiKey>(value);
+            if (!keyNameImpl(key).empty() && keyNameImpl(key) == name) { out = key; return true; }
+        }
+        return false;
+    }
+
+    bool parseStudioShortcut(std::string_view text, StudioShortcut& out)
+    {
+        if (text.empty()) { return false; }
+
+        StudioShortcut parsed;
+        std::size_t start = 0;
+        while (true)
+        {
+            const std::size_t plus = text.find('+', start);
+            const std::string_view part = text.substr(start, plus == std::string_view::npos
+                                                                 ? std::string_view::npos
+                                                                 : plus - start);
+            if (plus == std::string_view::npos)
+            {
+                if (!parseStudioKey(part, parsed.key)) { return false; }
+                break;
+            }
+
+            if (part == "Ctrl") { parsed.modifiers.control = true; }
+            else if (part == "Alt") { parsed.modifiers.alt = true; }
+            else if (part == "Shift") { parsed.modifiers.shift = true; }
+            else if (part == "Super") { parsed.modifiers.super = true; }
+            else { return false; }
+
+            start = plus + 1;
+        }
+
+        out = parsed;
+        return true;
+    }
+
     std::string describeStudioShortcut(const StudioShortcut& shortcut)
     {
         if (!shortcut.isBound()) { return {}; }
@@ -97,7 +145,7 @@ namespace CNA::Studio
         if (shortcut.modifiers.alt) { text += "Alt+"; }
         if (shortcut.modifiers.shift) { text += "Shift+"; }
         if (shortcut.modifiers.super) { text += "Super+"; }
-        text += keyName(shortcut.key);
+        text += studioKeyName(shortcut.key);
         return text;
     }
 

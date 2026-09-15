@@ -34,6 +34,7 @@
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
+#include "CNA/Studio/UiCore/StudioPreferences.hpp"
 #include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
@@ -69,9 +70,21 @@ namespace CNA::Studio
                 // test would prove nothing.
                 graphics_->setGraphicsProfileProperty(XnaGraphics::GraphicsProfile::HiDef);
 
-                StudioTheme theme = options.theme == "light" ? StudioTheme::light()
-                                                             : StudioTheme::dark();
-                theme.setScale(options.uiScale);
+                // The user's preferences before the theme, because they decide it. A command
+                // line flag still wins: somebody passing --shell-theme is answering this one run,
+                // and honouring the file over the flag would make the flag look broken.
+                const StudioPreferencesStore preferencesStore{StudioPreferencesStore::defaultPath()};
+                const StudioPreferencesDocument storedPreferences = preferencesStore.load();
+                preferencesProblem_ = storedPreferences.problem;
+
+                std::string themeName = storedPreferences.preferences.theme;
+                float scale = storedPreferences.preferences.uiScale;
+                if (!options.theme.empty()) { themeName = options.theme; }
+                if (options.uiScale > 0.0f) { scale = options.uiScale; }
+
+                StudioTheme theme = themeName == "light" ? StudioTheme::light()
+                                                         : StudioTheme::dark();
+                theme.setScale(scale);
                 shell_ = std::make_unique<StudioShell>(std::move(theme));
 
                 // Restored before the window opens, so the first frame the user sees is already
@@ -148,6 +161,14 @@ namespace CNA::Studio
                 };
                 panels_ = std::make_unique<StudioShellPanels>(*shell_, *context_, log_,
                                                               std::move(services));
+
+                // The preferences the theme already came from, and the seam that writes them back.
+                panels_->preferences() = storedPreferences.preferences;
+                panels_->setPreferencesSink([](const StudioPreferences& preferences,
+                                               std::string* problem) {
+                    return StudioPreferencesStore{StudioPreferencesStore::defaultPath()}
+                        .save(preferences, problem);
+                });
 
                 if (!options.selectEntity.empty())
                 {
@@ -272,6 +293,14 @@ namespace CNA::Studio
                     log_.append(LogSeverity::Warning,
                                 outcome.subject + " is not available: " + outcome.reason
                                 + (outcome.detail.empty() ? "" : " (" + outcome.detail + ")"));
+                }
+                if (!preferencesProblem_.empty())
+                {
+                    // Said rather than swallowed: a user whose theme reverted deserves to know
+                    // why, and the alternative is a Studio that silently looks like a fresh
+                    // install every time it starts.
+                    log_.append(LogSeverity::Warning, preferencesProblem_);
+                    preferencesProblem_.clear();
                 }
                 if (!layoutProblem_.empty())
                 {
@@ -526,6 +555,7 @@ namespace CNA::Studio
              */
             std::unique_ptr<StudioViewport> sceneViewport_;
             std::string layoutProblem_;
+            std::string preferencesProblem_;
             bool layoutRestored_ = false;
             std::uint64_t frames_ = 0;
 

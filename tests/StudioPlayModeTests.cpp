@@ -190,8 +190,11 @@ CNA_STUDIO_TEST(APlayerThatEndsOnItsOwnReleasesTheToolbar)
     harness.panels.setPlayerBuilds({PlayerBuild{"default", "/bin/true"}});
     harness.frame();
     harness.shell.invoke("studio.play.play");
-    CNA_STUDIO_EXPECT(harness.panels.isPlaying());
-    CNA_STUDIO_EXPECT(harness.shell.actions().isEnabled("studio.play.stop"));
+
+    // That it *launched* is asserted from the log rather than from isPlaying(), which is a race:
+    // /bin/true can be gone before the next statement runs, and a test that demanded to catch it
+    // mid-flight would fail on a loaded machine for no reason of the editor's.
+    CNA_STUDIO_EXPECT(contains(harness.lastMessage(), "Playing on default"));
 
     // Reaping a child is asynchronous -- the fork returns before the child has even reached its
     // first instruction -- so this waits the way the editor does, across frames, rather than

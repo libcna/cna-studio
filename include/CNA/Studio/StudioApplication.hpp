@@ -132,11 +132,18 @@ namespace CNA::Studio
         /** @brief Height of the shell preview, in logical units. */
         int shellPreviewHeight = 1080;
 
-        /** @brief DPI scale of the shell preview. 1.0 is 100%. */
-        double shellPreviewScale = 1.0;
+        /**
+         * @brief DPI scale of the shell and the preview. 1.0 is 100%; zero means "not given".
+         *
+         * Zero rather than 1.0 as the default, because the user's preferences also answer this and
+         * the flag has to be able to say "I did not". Defaulting to 1.0 would have made every run
+         * look like somebody had passed `--shell-scale=1`, which would override the preference
+         * silently.
+         */
+        double shellPreviewScale = 0.0;
 
-        /** @brief Shell preview theme: `"dark"` or `"light"`. */
-        std::string shellPreviewTheme = "dark";
+        /** @brief Shell theme: `"dark"`, `"light"`, or empty for whatever the user prefers. */
+        std::string shellPreviewTheme;
 
         /**
          * @brief Pointer position for the shell preview, in logical units.

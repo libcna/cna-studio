@@ -58,8 +58,14 @@ namespace CNA::Studio
         registerPanel({"build", "Build"});
         registerPanel({"problems", "Problems"});
         registerPanel({"comparison", "Backends"});
+        registerPanel({"preferences", "Preferences"});
         registerPanel({"diagnostics", "Diagnostics"});
         resetLayout();
+
+        // The Layouts submenu starts with Save Layout As in it, even with nothing saved. Filling
+        // it only when a layout exists would leave a fresh Studio with the submenu greyed out and
+        // no way to reach the command that creates the first one.
+        rebuildLayoutMenu();
 
         // The one core action the shell itself owns, attached here rather than left for a service
         // that will never exist: the workspace arrangement is the shell's own state, and a Window
@@ -371,6 +377,7 @@ namespace CNA::Studio
         dock_.addPanel(bottom, "build");
         dock_.addPanel(bottom, "problems");
         dock_.addPanel(bottom, "comparison");
+        dock_.addPanel(bottom, "preferences");
         dock_.addPanel(bottom, "diagnostics");
         dock_.addPanel(centre, "viewport");
 
@@ -540,6 +547,12 @@ namespace CNA::Studio
     {
         menus_ = std::move(menus);
         setOpenMenu(-1);
+
+        // The two submenus the shell fills in are refilled, or replacing the menus would empty
+        // them -- and an empty submenu draws greyed out, so a host that customised its File menu
+        // would silently lose its panel list.
+        rebuildPanelMenu();
+        rebuildLayoutMenu();
     }
 
     void StudioShell::setToolbar(std::vector<std::string> entries)

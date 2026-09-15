@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 17 of 24 complete `████████░░░░`
+**Progress:** 20 of 24 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,10 +19,10 @@
 | `STUDIO-06006` | Main toolbar | ✅ | `STUDIO-06002`, `STUDIO-07009` |
 | `STUDIO-06007` | Status bar | ✅ | `STUDIO-06001`, `STUDIO-02040` |
 | `STUDIO-06008` | Keyboard shortcut dispatch with scope precedence | ✅ | `STUDIO-06001` |
-| `STUDIO-06009` | Preferences model, separate from project settings | ⬜ | `STUDIO-06001` |
-| `STUDIO-06010` | Preferences persistence, versioning and migration | ⬜ | `STUDIO-06009` |
-| `STUDIO-06011` | Preferences UI | ⬜ | `STUDIO-06009` |
-| `STUDIO-06012` | Shortcut rebinding UI with conflict detection | 🔄 | `STUDIO-06008` |
+| `STUDIO-06009` | Preferences model, separate from project settings | ✅ | `STUDIO-06001` |
+| `STUDIO-06010` | Preferences persistence, versioning and migration | ✅ | `STUDIO-06009` |
+| `STUDIO-06011` | Preferences UI | ✅ | `STUDIO-06009`, `STUDIO-03036` |
+| `STUDIO-06012` | Shortcut rebinding UI with conflict detection | 🔄 | `STUDIO-06008`, `STUDIO-06010` |
 | `STUDIO-06013` | Empty states for every panel | ⬜ | `STUDIO-06003` |
 | `STUDIO-06014` | Notification and toast system for background results | ⬜ | `STUDIO-06007` |
 | `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
@@ -160,9 +160,78 @@ action is refused from its shortcut as well as from its menu row
 
 **Acceptance.** Theme, UI scaling, font size, viewport navigation, camera speed, autosave, external IDE, CMake path, build preferences, default workspace, shortcuts
 
+**The separation is the point, and it goes wrong quietly.** A project's settings travel with the
+project — which renderers it ships on, where its scenes live. A user's preferences travel with the
+*person* — which theme they can read, how fast the camera moves under their hand, where their
+compiler is. A theme committed to version control makes every teammate's Studio dark; a build
+directory kept per-user makes a project build differently for each of them. So this file lives beside
+the workspace layout, in the user's configuration directory, and the project file knows nothing about
+it.
+
+**Everything is clamped, on the way in as well as out.** A UI scale of zero has no pixels and a font
+size of zero has no text, and a user who reached either would have to find and delete the file to get
+back. Zero autosave is the exception: "do not autosave" is a thing a user can mean, so it is kept
+where one second is raised.
+
+**A rebinding is stored as the chord text the menus show.** A file a person may open should read as
+what they see in the UI rather than as a key code they would have to look up — so
+`describeStudioShortcut` gained an inverse, and a test walks every key this build can name to prove
+the two agree. A chord that round-tripped differently would be a shortcut that changed on restart.
+
 ### `STUDIO-06010` — Preferences persistence, versioning and migration
 
 **Acceptance.** Corrupt preferences never make a project unopenable; the fallback is reported, not silent
+
+**A missing field *is* the migration.** Every value has a usable default, so a file written by an
+older Studio reads correctly by leaving the fields it never heard of alone, and needs no per-version
+code. The version number exists for the other direction: a file from a *newer* Studio is refused
+rather than half-read, because a newer one may write a field whose absence means something.
+
+**Reported, never silent, never fatal.** The worst outcome of an unreadable file is a Studio that
+looks like a fresh install, which is one dialog away in any case — but a user whose theme reverted
+deserves to know why, so the reason reaches the Output Log on the first frame. A first run is *not*
+a problem to report: doing so would train them to ignore the channel that reports the real ones.
+
+### `STUDIO-06012` — Shortcut rebinding UI with conflict detection
+
+**Acceptance.** A user can rebind a command from the UI, a chord already bound is refused with the
+command that holds it named, and the binding survives a restart.
+
+**In progress.** Two of the three are done and neither is the UI. `StudioActionRegistry::rebind`
+already refuses a chord bound to a different command — two commands on one chord means one of them
+has stopped working and the user who bound the second has no way to discover which — and
+`STUDIO-06010` stores the rebindings and applies them on start-up, as the chord text the menus show.
+What is missing is the editor: a list of every command with its chord, a row that takes the next
+keystroke, and the conflict shown before it is accepted rather than after. The Preferences panel says
+how many are rebound so the state is at least visible.
+
+### `STUDIO-06011` — Preferences UI
+
+**Acceptance.** Every preference in the model is reachable and changeable, and a change takes effect
+where the user can see it.
+
+**A panel rather than a modal.** Preferences are read and changed *while* working — "the camera is
+too fast" is noticed with a hand on the mouse — and a dialog makes answering it a trip out of and
+back into the viewport. A dockable panel lets the user put it beside the viewport, change a value and
+watch the viewport answer. That is also why every change applies immediately rather than on an OK
+button: a preferences page with Apply is one where the user finds out whether they liked it only
+after committing to it.
+
+**Applied before it is persisted.** A write that fails still leaves the user looking at what they
+chose, so they can see it worked and decide what to do about the file — rather than a Studio that
+reverted and a message about a disk.
+
+**Reset asks.** It is the one control here that discards decisions the user made deliberately; every
+other change is a single value they can put back.
+
+**Verification.** `tests/StudioPreferencesTests.cpp`: the JSON round trip, a chord stored as menu
+text and every nameable key round-tripping, clamping, zero autosave kept where one second is raised,
+one answer per command, a rebinding reaching the registry while an unknown command is skipped — then
+the file: round trip, a first run reporting nothing, a corrupt file falling back and saying so, a
+newer file refused, an older file keeping what it said, a hand-edited value clamped on the way in, an
+unparseable chord skipped — then the panel: it draws with no phase violation, a change reaching the
+theme, a failed save still taking effect, Reset asking first, and the Open-with row reading the
+shell's layouts rather than a copy
 
 ### `STUDIO-06013` — Empty states for every panel
 

@@ -18,6 +18,7 @@
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -47,9 +48,45 @@ namespace CNA::Studio
         publishStatus();
     }
 
+    void StudioShellPanels::applyPreferences()
+    {
+        if (shell_ == nullptr) { return; }
+
+        // Applied before it is persisted, so a write that fails still leaves the user looking at
+        // what they chose: they can see it worked and decide what to do about the file.
+        StudioTheme theme = preferences_.theme == "light" ? StudioTheme::light()
+                                                          : StudioTheme::dark();
+        theme.setScale(preferences_.uiScale);
+        shell_->setTheme(std::move(theme));
+
+        if (!savePreferences_) { return; }
+
+        std::string problem;
+        if (!savePreferences_(preferences_, &problem))
+        {
+            log_.append(LogSeverity::Warning, "Could not save preferences: " + problem);
+        }
+    }
+
     void StudioShellPanels::publishStatus()
     {
         if (shell_ == nullptr) { return; }
+
+        // The Reset confirmation's answer, read here because poll() is the one place this object
+        // runs every frame -- and the shell closes the dialog itself, so waiting for the answer is
+        // waiting for a frame rather than for a callback.
+        if (resettingPreferences_ && !shell_->isDialogOpen())
+        {
+            const bool confirmed = shell_->dialogResult().chosen == 1;
+            resettingPreferences_ = false;
+            if (confirmed)
+            {
+                preferences_ = StudioPreferences{};
+                ++counts_.preferenceChanges;
+                applyPreferences();
+                log_.append(LogSeverity::Info, "Preferences reset to the defaults.");
+            }
+        }
 
         StudioStatusModel& status = shell_->status();
 
@@ -658,6 +695,41 @@ namespace CNA::Studio
                 comparison_.cancel();
                 log_.append(LogSeverity::Warning, "Renderer comparison cancelled.");
             }
+        });
+
+        // The Preferences panel (STUDIO-06011): a panel rather than a modal, because preferences
+        // are read and changed *while* working -- "the camera is too fast" is noticed with a hand
+        // on the mouse, and a dialog makes answering it a trip out of and back into the viewport.
+        shell.setPanelContent("preferences", [this, &shell](StudioFrame& frame,
+                                                            const UiRect& bounds) {
+            StudioPreferencesPanelContext context;
+            context.layoutNames.reserve(shell.savedLayouts().size());
+            for (const StudioNamedLayout& saved : shell.savedLayouts())
+            {
+                context.layoutNames.push_back(saved.name);
+            }
+
+            const StudioPreferencesPanelResult panel =
+                studioPreferencesPanel(frame, bounds, preferences_, context);
+
+            if (panel.resetRequested)
+            {
+                // Asked first, because it is the one control here that discards decisions the user
+                // made deliberately -- and every other change is a single value they can put back.
+                StudioDialogRequest request;
+                request.title = "Reset preferences";
+                request.lines = {"Put every preference back the way Studio ships?",
+                                 "This cannot be undone."};
+                request.buttons = {"Cancel", "Reset"};
+                request.cancelButton = 0;
+                shell.openDialog(std::move(request));
+                resettingPreferences_ = true;
+                return;
+            }
+
+            if (!panel.changed) { return; }
+            ++counts_.preferenceChanges;
+            applyPreferences();
         });
 
         // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI owns --

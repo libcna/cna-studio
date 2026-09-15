@@ -34,6 +34,7 @@
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -104,6 +105,7 @@ namespace CNA::Studio
         std::size_t viewportSelections = 0;
         std::size_t layerRowsDrawn = 0;
         std::size_t comparisonRowsDrawn = 0;
+        std::size_t preferenceChanges = 0;
         std::size_t playerMessages = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
@@ -182,6 +184,40 @@ namespace CNA::Studio
         /** @brief The backend comparison this Studio would run, for a caller to report on. */
         [[nodiscard]] const BackendComparison& comparison() const { return comparison_; }
 
+        /**
+         * @brief The user's preferences, edited by the Preferences panel.
+         *
+         * Held here for the same reason the build is: the panel describes them and something else
+         * persists them, and two copies would be two answers to what the user decided.
+         */
+        [[nodiscard]] StudioPreferences& preferences() { return preferences_; }
+
+        /** @brief The user's preferences. */
+        [[nodiscard]] const StudioPreferences& preferences() const { return preferences_; }
+
+        /**
+         * @brief Sets the seam through which changed preferences reach disk.
+         *
+         * Unset means "nothing is persisted", which the preview wants: a shell that refused to
+         * change a preference because nobody gave it a file would be worse than one that forgets.
+         *
+         * @param save Writes the preferences. Receives the reason on failure.
+         */
+        void setPreferencesSink(std::function<bool(const StudioPreferences&,
+                                                   std::string*)> save)
+        {
+            savePreferences_ = std::move(save);
+        }
+
+        /**
+         * @brief Applies whatever @ref preferences now says to the shell, then persists it.
+         *
+         * Public because a host that has just read the file wants exactly this, and because the
+         * order matters and should not be repeated: applied *before* it is written, so a save that
+         * fails still leaves the user looking at what they chose.
+         */
+        void applyPreferences();
+
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_; }
 
@@ -238,6 +274,11 @@ namespace CNA::Studio
         StudioTreeState layersState_;
         StudioTreeState diagnosticsState_;
         StudioTreeState comparisonState_;
+        StudioPreferences preferences_;
+        std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
+
+        /** @brief Whether the open dialog is this object's Reset confirmation. */
+        bool resettingPreferences_ = false;
         StudioViewportState viewportState_;
         Uuid selectedAsset_;
 
