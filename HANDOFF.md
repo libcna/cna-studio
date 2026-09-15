@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **166 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **168 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -200,7 +200,7 @@ survives a restart; and **notifications** — a build, a package, a renderer com
 player announcing itself over the corner of the workspace, with the panel that explains it offered
 as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
-**Phase 7 — Panel migration** (16 of 27, 2 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (18 of 27, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
@@ -220,7 +220,10 @@ toolbar row closed with a **"Play on" strip** in the Backends panel, overriding 
 renderer the project names — not persisted, because the project's renderer is what the game ships on.
 **File > Exit** became a real command over a `setQuitHandler` seam, asking about unsaved changes
 first, and the dialog gained an answer handler because polling `dialogResult()` a frame later only
-worked while nothing rendered in between.
+worked while nothing rendered in between. **Parity is now proven underneath the surface as well**:
+`docs/UI-CAPABILITY-PARITY.md` accounts for all thirty-nine `StudioUi` capabilities the prototype's
+panels are written against, each with a native answer and a named test the suite checks *exists*,
+and the prototype's four dock sides are checked against where the native layout actually resolves.
 
 **Phase 16 — Play in editor** (4 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a

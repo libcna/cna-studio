@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 16 of 27 complete `███████░░░░░`
+**Progress:** 18 of 27 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -30,8 +30,8 @@
 | `STUDIO-07018` | Editors for the property kinds the Details panel shows read-only | ✅ | `STUDIO-07007`, `STUDIO-03036` |
 | `STUDIO-07019` | An undoable command for an entity's enabled flag | ✅ | `STUDIO-07007` |
 | `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ✅ | `STUDIO-00014`, `STUDIO-07014` |
-| `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ⬜ | `STUDIO-07020` |
-| `STUDIO-07022` | Prove docking parity | ⬜ | `STUDIO-07020` |
+| `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ✅ | `STUDIO-07020` |
+| `STUDIO-07022` | Prove docking parity | ✅ | `STUDIO-07020` |
 | `STUDIO-07023` | Visual acceptance review against the Phase 0 reference screenshots | ⬜ | `STUDIO-00013`, `STUDIO-07020` |
 | `STUDIO-07024` | Layers panel: the project's render layers and what is on each | ✅ | `STUDIO-03034` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07021`, `STUDIO-07022`, `STUDIO-07023` |
@@ -155,6 +155,48 @@ Rename in place was the third, and it found a fourth disagreeing chord: `F2` is 
 prototype and in every file manager, and natively it was Build. Build is `Ctrl+B` now. Writing the
 editable row also found that `studioTextField`'s commit-on-focus-loss had never been able to run —
 every field in Studio silently threw away an edit the user clicked away from.
+
+### `STUDIO-07021` — Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing
+
+**Acceptance.** Every capability the prototype's panels are written against has a named native
+answer and a named test that exercises it.
+
+**Why the surface was not enough.** `STUDIO-07020` accounts for the prototype's panels, menu items,
+toolbar controls and shortcuts. Underneath all of them is `StudioUi` — the interface every prototype
+panel calls — and a method on it with no native answer is a thing the ported panels *cannot do*,
+whatever the inventory says about the panel that used it. A panel can be ported, appear as ✅, and
+still be poorer than the one it replaced.
+
+So `docs/UI-CAPABILITY-PARITY.md` lists all thirty-nine, and the suite checks it in both directions
+and one more: **every row names a test, and that test has to exist**. A parity document is otherwise
+a list of claims, and the claim that costs nothing to write is the one nobody goes back to
+substantiate — the check caught three names invented while writing the table, on its first run.
+
+**What it found.** Nothing missing, which is the answer worth recording. The four capabilities that
+differ — `isRunning`, `sameLine`, `setNextItemWidth`, and `DockSide` on `beginPanel` — differ
+because the native design does not have the problem they solve. `sameLine` and `setNextItemWidth`
+are a cursor-based layout saying "beside the last one" and "this wide"; the native UI has no cursor,
+so a caller splits the rectangle it was given, and the failure they exist to work around cannot
+happen.
+
+### `STUDIO-07022` — Prove docking parity
+
+**Acceptance.** Every panel the prototype opens on a given side is on a matching side of the native
+default arrangement.
+
+**What the prototype actually promises.** A side, and nothing else: `beginPanel("Inspector",
+DockSide::Right)`. That is the whole of it, so that is what parity means here, and the rest of what
+the native model can do — dragging a tab to any edge, tabbing panels together, floating one into its
+own window, saving an arrangement under a name — is more than the prototype offers rather than
+parity with it.
+
+**Checked against the resolved geometry**, not against the calls that built the tree: the tree can
+be right and the layout wrong, and only one of the two is what a user looks at. Against the *group's*
+rectangle rather than the panel's own, because six of the ten share a tab strip and asking where the
+tab in front is would report the other six as placed nowhere — a fact about tabs rather than about
+where the panel lives. And measured relative to the viewport rather than to the window, because
+"beside the viewport" is what a side means, and a fraction of the window would have to be rewritten
+whenever the default proportions were tuned.
 
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 
