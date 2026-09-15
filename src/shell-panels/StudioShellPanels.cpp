@@ -283,6 +283,19 @@ namespace CNA::Studio
     void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
     {
         playerBuilds_ = std::move(builds);
+
+        // An override naming a build that is no longer installed is an override that would make
+        // Play fall back silently to something else. Dropped rather than kept, so what the panel
+        // shows is what Play will do.
+        if (!playerBuildOverride_.empty()
+            && std::none_of(playerBuilds_.begin(), playerBuilds_.end(),
+                            [this](const PlayerBuild& build) {
+                                return build.backend == playerBuildOverride_;
+                            }))
+        {
+            playerBuildOverride_.clear();
+        }
+
         // The Diagnostics panel reports the same list. One setter, so the two cannot disagree
         // about what this Studio can run.
         diagnostics_.players = playerBuilds_;
@@ -290,9 +303,52 @@ namespace CNA::Studio
 
     bool StudioShellPanels::isPlaying() const { return player_.isRunning(); }
 
+    bool StudioShellPanels::selectPlayerBuild(const std::string& backend)
+    {
+        if (backend.empty())
+        {
+            const bool had = !playerBuildOverride_.empty();
+            playerBuildOverride_.clear();
+            if (had)
+            {
+                log_.append(LogSeverity::Info,
+                            "Play will use whatever the project's target profile names.");
+            }
+            return true;
+        }
+
+        for (const PlayerBuild& build : playerBuilds_)
+        {
+            if (build.backend != backend) { continue; }
+            if (playerBuildOverride_ != backend)
+            {
+                playerBuildOverride_ = backend;
+                // Said, because it is a promise that now differs from the project's. A user who
+                // has forgotten they set it would otherwise see the editor disagree with the
+                // project for no visible reason.
+                log_.append(LogSeverity::Info,
+                            "Play will use " + backend + " for this session, whatever the project "
+                            "ships on.");
+            }
+            return true;
+        }
+        return false;
+    }
+
     const PlayerBuild* StudioShellPanels::choosePlayerBuild() const
     {
         if (playerBuilds_.empty()) { return nullptr; }
+
+        // What the user said, if they said anything. An override outranks the project because it
+        // is the more recent and more specific decision, and because the only reason to set one is
+        // to see this scene on that renderer now.
+        if (!playerBuildOverride_.empty())
+        {
+            for (const PlayerBuild& build : playerBuilds_)
+            {
+                if (build.backend == playerBuildOverride_) { return &build; }
+            }
+        }
 
         // The renderer the project says it ships on, when a player for it was built. Otherwise
         // whatever is there: a user pressing Play wants to see their game, and refusing because
@@ -1013,6 +1069,9 @@ namespace CNA::Studio
             view.entries = &comparison_.getEntries();
             view.error = comparison_.getError();
             view.allAgree = comparison_.allBackendsAgree();
+            view.builds = &playerBuilds_;
+            view.playBackendIsOverride = !playerBuildOverride_.empty();
+            if (const PlayerBuild* build = choosePlayerBuild()) { view.playBackend = build->backend; }
             if (view.hasProject)
             {
                 const ComparisonRequest probe = makeComparisonRequest();
@@ -1024,6 +1083,10 @@ namespace CNA::Studio
                 studioComparisonPanel(frame, bounds, view, comparisonState_);
             if (frame.isDrawPass()) { counts_.comparisonRowsDrawn = panel.rowsDrawn; }
 
+            if (panel.playBackendChosen.has_value())
+            {
+                selectPlayerBuild(*panel.playBackendChosen);
+            }
             if (panel.toleranceChanged) { comparisonTolerance_ = panel.tolerance; }
             if (panel.compareRequested) { startComparison(); }
             if (panel.cancelRequested)

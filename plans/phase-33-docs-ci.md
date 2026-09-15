@@ -148,8 +148,22 @@ runner that has one — the cases already labelled `needs-display`
 
 **What holds today.** `STUDIO-33023` covers the CNA seam, the window hosts and the native shell on
 `SOFTWARE`, which needs no display at all. What it cannot cover is anything a GPU does differently:
-`STUDIO-29005`'s renderer matrix, and the `needs-display` cases that exist and are excluded. Those
-need a runner with a device or an Xvfb server, which is infrastructure rather than code
+`STUDIO-29005`'s renderer matrix, and the `needs-display` cases that exist and are excluded.
+
+**What is actually blocking it**, established by trying rather than by reasoning. The display half
+is done: `CNA_STUDIO_TEST_DISPLAY` exists, Xvfb works, and configuring against a renderer that
+needs a context makes fourteen `needs-display` ctests appear and run. What does not exist is such a
+renderer. `SOFTWARE` and `HEADLESS` need no display; `SDL_RENDERER` needs one and cannot host
+Studio at all — the capability contract refuses it for having no 3D pipeline and no depth buffer;
+`SDL_GPU` and `VULKAN` configure but need a Vulkan ICD a bare runner does not have; and every
+OpenGL family needs `easy-gl` and `meta-gl` sibling checkouts that CNA does not vendor. So the job
+needs those two checkouts, Mesa's software GL and Xvfb — a shopping list, recorded as `G-10` in
+`docs/CNA-GAPS.md`, rather than a change to this repository.
+
+**Worth keeping from the attempt.** `SDL_RENDERER` builds a complete Studio and Studio refuses to
+start on it, naming `ThreeDimensionalPipeline` and `DepthStencilBuffer` and saying what each is
+for. That is `STUDIO-02021`'s capability contract exercised against a real inadequate renderer for
+the first time rather than a synthetic capability set, and it behaved as designed
 
 ### `STUDIO-33025` — The software rasterizer keeps its textures between frames
 

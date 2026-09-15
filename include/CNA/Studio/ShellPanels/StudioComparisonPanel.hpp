@@ -35,6 +35,7 @@
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -79,6 +80,27 @@ namespace CNA::Studio
 
         /** @brief Whether every comparable renderer matched the reference. */
         bool allAgree = false;
+
+        /**
+         * @brief The player builds installed beside this Studio, borrowed.
+         *
+         * The same list the Diagnostics panel reports and the same one Play chooses from: this
+         * panel is where a user comes to think about renderers, so it is where choosing one for
+         * the next run belongs.
+         */
+        const std::vector<PlayerBuild>* builds = nullptr;
+
+        /** @brief The backend Play would launch on right now. */
+        std::string playBackend;
+
+        /**
+         * @brief Whether @ref playBackend was chosen here rather than by the project.
+         *
+         * Shown, because the two are different promises. The project's renderer is what the game
+         * ships on; an override is a thing the user did to this session, and one they have
+         * forgotten about would make the editor disagree with the project for no visible reason.
+         */
+        bool playBackendIsOverride = false;
     };
 
     /** @brief What the panel showed and what the user asked for. */
@@ -95,6 +117,14 @@ namespace CNA::Studio
 
         /** @brief The edited tolerance, already clamped. Meaningful when @ref toleranceChanged. */
         int tolerance = kDefaultImageTolerance;
+
+        /**
+         * @brief The backend the user chose to play on, if they chose one. Input pass only.
+         *
+         * An empty string means "back to whatever the project says", which is a different answer
+         * from "no choice was made" -- hence the optional.
+         */
+        std::optional<std::string> playBackendChosen;
 
         /** @brief How many rows were drawn. */
         std::size_t rowsDrawn = 0;

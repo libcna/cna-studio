@@ -117,7 +117,7 @@ name would be matching on something nobody can check.
 | Play | Pause the running game | `Pause` | `studio.play.pause` | ✅ |
 | Play | Resume a paused game | `Resume` | `studio.play.pause` | ✅ |
 | Play | Advance one frame | `Step` | `studio.play.step` | ✅ |
-| Play | Which backend to launch on | `Backend` | — | 🔄 |
+| Play | Which backend to launch on | `Backend` | `studio.window.showPanel.comparison` | ✅ |
 | Tools | Tilemap tool | `##tool` | — | ⬜ |
 | Tools | Tile to paint | `Tile` | — | ⬜ |
 | Tools | Manipulator | `##gizmo` | `studio.view.translate` | ✅ |
@@ -138,10 +138,15 @@ has to *show* whether the game is paused, because the window is there either way
 Restart is new rather than ported: the prototype has none, and stopping and starting is how a user
 sees the edits they have made since pressing Play.
 
-**The backend** is 🔄 rather than ⬜: the native Play launches the renderer the project's active
-target profile names, falling back to whatever player build is installed, so the common case is
-answered and is answered *better* — the choice is a project decision rather than a control the user
-has to get right each time. What is missing is overriding it for one run.
+**The backend** is ✅, answered in two halves. The native Play launches the renderer the project's
+active target profile names, falling back to whatever player build is installed, so the common case
+is answered *better* than a dropdown: the choice is a project decision rather than a control the user
+has to get right each time. And the Backends panel — where a user comes to think about renderers —
+now has a "Play on" strip that overrides it for the session, which is the half that was missing.
+
+Not persisted, deliberately. The project's renderer is what the game ships on; an override is a
+thing somebody did to one session to look at something, and a Studio that remembered it across
+restarts would quietly ship a different answer from the one in the project.
 
 **The manipulator** is ✅ although the shapes differ: the prototype has one dropdown, the native
 toolbar has three checkable buttons, so it shows which mode is on without being opened.

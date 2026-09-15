@@ -275,6 +275,62 @@ namespace CNA::Studio
             }
         }
 
+        // Which renderer Play will use, and a way to say otherwise for this session. Here rather
+        // than on the toolbar because this is the panel a user comes to in order to think about
+        // renderers, and because a chooser beside the *comparison* of them is a chooser whose
+        // meaning needs no explaining.
+        if (view.builds != nullptr && view.builds->size() > 1)
+        {
+            UiRect strip = body.splitTop(std::min(toolbarHeight, body.height))
+                               .inset(UiEdges{spacing, spacing});
+
+            const UiRect labelBox = strip.splitLeft(
+                std::min(strip.width, std::ceil(studioLabelWidth(frame, "Play on")) + spacing));
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, labelBox, "Play on", StudioFontRole::Body,
+                               theme.color(StudioColorRole::TextSecondary));
+            }
+
+            frame.ids().push("playon");
+
+            // "Project" first, because it is the answer that survives the session and the one a
+            // user should be able to get back to without remembering what it was.
+            const std::string projectLabel = "Project";
+            const UiRect projectButton = strip.splitLeft(std::min(
+                strip.width, std::ceil(studioLabelWidth(frame, projectLabel)) + spacing * 3.0f));
+
+            StudioButtonOptions projectOptions;
+            projectOptions.selected = !view.playBackendIsOverride;
+            projectOptions.tooltip = "Launch on whatever the project's target profile names.";
+            if (studioButton(frame, frame.ids().make("project"), projectButton, projectLabel,
+                             projectOptions).activated)
+            {
+                result.playBackendChosen = std::string{};
+            }
+
+            for (const PlayerBuild& build : *view.builds)
+            {
+                if (strip.width <= 0.0f) { break; }
+                strip.splitLeft(std::min(spacing, strip.width));
+
+                const UiRect button = strip.splitLeft(std::min(
+                    strip.width, std::ceil(studioLabelWidth(frame, build.backend)) + spacing * 3.0f));
+                if (button.width <= 0.0f) { break; }
+
+                StudioButtonOptions options;
+                options.selected = view.playBackendIsOverride && view.playBackend == build.backend;
+                options.tooltip = "Launch on " + build.backend + " for this session.";
+                if (studioButton(frame, frame.ids().make(build.backend), button, build.backend,
+                                 options).activated)
+                {
+                    result.playBackendChosen = build.backend;
+                }
+            }
+
+            frame.ids().pop();
+        }
+
         if (frame.isDrawPass())
         {
             frame.drawList().drawHorizontalSeparator(

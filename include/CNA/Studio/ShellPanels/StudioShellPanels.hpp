@@ -197,6 +197,21 @@ namespace CNA::Studio
         /** @brief Whether a player is running right now. */
         [[nodiscard]] bool isPlaying() const;
 
+        /**
+         * @brief Chooses the renderer Play launches on, for this session.
+         *
+         * @param backend An installed build's backend name, or empty to go back to whatever the
+         *        project's target profile names.
+         * @return True when the choice was applied; false when no such build is installed.
+         */
+        bool selectPlayerBuild(const std::string& backend);
+
+        /** @brief The session's renderer override, or empty when the project decides. */
+        [[nodiscard]] const std::string& playerBuildOverride() const { return playerBuildOverride_; }
+
+        /** @brief The player builds installed beside this Studio. */
+        [[nodiscard]] const std::vector<PlayerBuild>& playerBuilds() const { return playerBuilds_; }
+
         /** @brief Whether a player is running and paused. */
         [[nodiscard]] StudioPlayState playState() const { return playState_; }
 
@@ -370,6 +385,15 @@ namespace CNA::Studio
 
         /** @brief Whether the running game is playing or paused. */
         StudioPlayState playState_ = StudioPlayState::Stopped;
+
+        /**
+         * @brief The renderer the user chose for this session, or empty.
+         *
+         * Not persisted, deliberately. The project's renderer is what the game ships on; this is a
+         * thing somebody did to one session to look at something, and a Studio that remembered it
+         * across restarts would quietly ship a different answer from the one in the project.
+         */
+        std::string playerBuildOverride_;
 
         /** @brief Snapshots of the open scene, and whatever a previous session left behind. */
         StudioRecoverySession recovery_{context_};

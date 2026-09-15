@@ -202,6 +202,34 @@ Both halves of this gap stopped that build, and neither is visible in the export
 
 ---
 
+## 🟡 G-10 — The renderers that can host Studio and need a display all need undocumented sibling checkouts
+
+**New, filed by CNA Studio.**
+
+| Field | Value |
+|-------|-------|
+| Affected API | `CNA_GRAPHICS_RENDERER`; `cmake/RendererSelection.cmake` |
+| Current behaviour | Of the renderers that configure from a plain CNA + sharp-runtime checkout, `SOFTWARE` and `HEADLESS` need no display and are what CI uses; `SDL_RENDERER` needs one but cannot host Studio (it reports no `ThreeDimensionalPipeline` and no `DepthStencilBuffer`); `SDL_GPU` and `VULKAN` configure but need a Vulkan ICD, which a bare Linux runner does not have. Every OpenGL family — `OPENGL2`, `OPENGL33`, `OPENGLES3` — fails at configure time asking for an `easy-gl` sibling checkout, which in turn asks for a `meta-gl` sibling of its own. Neither is a submodule and neither is named anywhere a consumer would look before trying |
+| Expected behaviour | The renderer list in `CNA_GRAPHICS_RENDERER`'s cache docstring says which renderers a given checkout can actually build, or CNA documents the sibling checkouts each family needs where the option is declared. Failing at configure time with a clear message is already much better than most; what is missing is being able to find out *first* |
+| Studio impact | `STUDIO-33010` — graphical CI on a renderer that needs a real graphics context — is blocked on this rather than on Studio. With Xvfb running and `CNA_STUDIO_TEST_DISPLAY` pointed at it, the fourteen `needs-display` ctests appear and run; there is simply no renderer available to them that both satisfies Studio's capability contract and needs a display |
+| Workaround | None from Studio's side. The CI job for `STUDIO-33010` needs `easy-gl` and `meta-gl` checked out beside CNA, plus Mesa's software GL and Xvfb, and is a shopping list rather than a code change |
+| Suggested fix | Extend `G-08`'s answer: whatever CNA grows to report which renderers a target can build should also report which of them this checkout has the sources for. The information exists at configure time — the message that refuses `OPENGLES3` proves it |
+| Test needed in CNA | A CI leg that configures each renderer the docstring advertises from a clean checkout and asserts that it either configures or refuses with a message naming what is missing |
+
+**How it was found.** By trying to close `STUDIO-33010` rather than reasoning about it. The display
+plumbing turned out to be the easy half: `CNA_STUDIO_TEST_DISPLAY` already exists, Xvfb works, and
+the fourteen labelled tests appear the moment a renderer that needs a display is configured. What
+does not exist is such a renderer.
+
+**And one thing that worked.** `SDL_RENDERER` builds a complete Studio, and Studio refuses to start
+on it — naming `ThreeDimensionalPipeline` and `DepthStencilBuffer`, saying what each is for, and
+telling the user to build against a renderer that satisfies them. That is the host capability
+contract (`STUDIO-02021`) exercised against a real inadequate renderer for the first time rather
+than against a synthetic capability set, and it behaved exactly as designed: no renderer names, no
+whitelist, a reason per requirement.
+
+---
+
 ## How to add a gap
 
 A gap is worth filing when Studio cannot do something through CNA's public API that CNA plausibly

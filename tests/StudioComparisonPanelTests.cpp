@@ -12,6 +12,9 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
 #include <cmath>
@@ -387,4 +390,110 @@ CNA_STUDIO_TEST(ToleranceIsClampedRatherThanTrusted)
 
     CNA_STUDIO_EXPECT(fixture.last.toleranceChanged);
     CNA_STUDIO_EXPECT_EQ(fixture.last.tolerance, kStudioMaxComparisonTolerance);
+}
+
+// --- Which renderer Play launches on (docs/MIGRATION-INVENTORY.md, toolbar table) ---------------
+
+CNA_STUDIO_TEST(TheProjectDecidesWhichRendererPlayUsesUntilSomebodySaysOtherwise)
+{
+    // The common case, and the one the native shell answers *better* than the prototype's dropdown:
+    // a renderer chosen by the project is a decision that survives the session and is the same for
+    // everyone on the team. What was missing is overriding it for one run.
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell{StudioTheme::dark()};
+    shell.resetLayout();
+    StudioShellPanels panels{shell, context, log};
+
+    panels.setPlayerBuilds({PlayerBuild{"software", "/builds/cna-player-software"},
+                            PlayerBuild{"opengles3", "/builds/cna-player-opengles3"}});
+
+    CNA_STUDIO_EXPECT(panels.playerBuildOverride().empty());
+
+    CNA_STUDIO_EXPECT(panels.selectPlayerBuild("opengles3"));
+    CNA_STUDIO_EXPECT_EQ(panels.playerBuildOverride(), std::string{"opengles3"});
+
+    // Empty means "back to the project", which is a different answer from "no choice was made".
+    CNA_STUDIO_EXPECT(panels.selectPlayerBuild({}));
+    CNA_STUDIO_EXPECT(panels.playerBuildOverride().empty());
+}
+
+CNA_STUDIO_TEST(ChoosingARendererThatIsNotInstalledIsRefused)
+{
+    // Rather than accepted and then quietly ignored at launch, which would leave the panel showing
+    // one renderer and Play using another.
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell{StudioTheme::dark()};
+    shell.resetLayout();
+    StudioShellPanels panels{shell, context, log};
+    panels.setPlayerBuilds({PlayerBuild{"software", "/builds/cna-player-software"}});
+
+    CNA_STUDIO_EXPECT(!panels.selectPlayerBuild("vulkan"));
+    CNA_STUDIO_EXPECT(panels.playerBuildOverride().empty());
+}
+
+CNA_STUDIO_TEST(AnOverrideIsDroppedWhenItsBuildStopsBeingInstalled)
+{
+    // Discovery runs again when the executable directory changes. An override naming a build that
+    // has gone would make Play fall back silently to something else, so the panel would show one
+    // renderer and the game would run on another.
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell{StudioTheme::dark()};
+    shell.resetLayout();
+    StudioShellPanels panels{shell, context, log};
+
+    panels.setPlayerBuilds({PlayerBuild{"software", "/builds/cna-player-software"},
+                            PlayerBuild{"opengles3", "/builds/cna-player-opengles3"}});
+    CNA_STUDIO_EXPECT(panels.selectPlayerBuild("opengles3"));
+
+    panels.setPlayerBuilds({PlayerBuild{"software", "/builds/cna-player-software"}});
+    CNA_STUDIO_EXPECT(panels.playerBuildOverride().empty());
+}
+
+CNA_STUDIO_TEST(TheChooserIsNotDrawnWhenThereIsNothingToChooseBetween)
+{
+    // One installed build is the usual case and offering a choice of one is offering a control
+    // that cannot do anything.
+    std::vector<PlayerBuild> one{PlayerBuild{"software", "/builds/cna-player-software"}};
+
+    // Counted as *controls* rather than as pixels: the question is whether there is something to
+    // press, and a count of glyphs would also move if a label elsewhere changed.
+    Fixture fixture;
+    fixture.view.builds = &one;
+    fixture.view.playBackend = "software";
+    fixture.settle();
+
+    const std::size_t withOne = fixture.frame.interactionCount();
+
+    std::vector<PlayerBuild> two{PlayerBuild{"software", "/builds/cna-player-software"},
+                                 PlayerBuild{"opengles3", "/builds/cna-player-opengles3"}};
+    fixture.view.builds = &two;
+    fixture.settle();
+
+    // Project, and one per build.
+    CNA_STUDIO_EXPECT_EQ(fixture.frame.interactionCount(), withOne + 3);
+}
+
+CNA_STUDIO_TEST(PressingARendererReportsTheChoiceRatherThanMakingItItself)
+{
+    // The panel is a snapshot reader: it says what was pressed and the host decides. A panel that
+    // reached into the run to change it would be a panel no test could drive.
+    std::vector<PlayerBuild> builds{PlayerBuild{"software", "/builds/cna-player-software"},
+                                    PlayerBuild{"opengles3", "/builds/cna-player-opengles3"}};
+
+    Fixture fixture;
+    fixture.view.builds = &builds;
+    fixture.view.playBackend = "software";
+    fixture.settle();
+
+    // The strip sits under the toolbar; its buttons are laid out from the left after the label.
+    const float rowY = 20.0f + 30.0f;
+    for (float x = 40.0f; x < kWidth && !fixture.last.playBackendChosen.has_value(); x += 8.0f)
+    {
+        fixture.click(x, rowY);
+    }
+
+    CNA_STUDIO_EXPECT(fixture.last.playBackendChosen.has_value());
 }
