@@ -31,6 +31,7 @@ add_executable(cna-studio-tests
     StudioShellActionTests.cpp
     StudioContentBrowserTests.cpp
     StudioDockDragTests.cpp
+    StudioFloatingPanelTests.cpp
     StudioTooltipTests.cpp
     StudioSubmenuTests.cpp
     StudioContextMenuTests.cpp

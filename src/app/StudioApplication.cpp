@@ -159,6 +159,11 @@ namespace CNA::Studio
                     }
                     continue;
                 }
+                if (name == "--shell-float")
+                {
+                    options.shellPreviewFloat = value;
+                    continue;
+                }
                 if (name == "--shell-open-menu")
                 {
                     options.shellPreviewOpenMenu = value;
@@ -290,6 +295,7 @@ namespace CNA::Studio
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
             "  --shell-right-click  Right-click at the pointer, opening a context menu.\n"
             "  --shell-open-menu=T  Open the menu titled T, e.g. File or Window>Panels.\n"
+            "  --shell-float=IDS    Undock these panels into floating windows, comma separated.\n"
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
             "  --shell-tooltip    Rest the pointer until a tooltip appears.\n"
             "                       preview. Needs --shell-pointer.\n"

@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 12 of 14 complete `██████████░░`
+**Progress:** 13 of 14 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -15,7 +15,7 @@
 | `STUDIO-05003` | Resizable splitters with minimum sizes and correct cursor shapes | ✅ | `STUDIO-05002` |
 | `STUDIO-05004` | Tab stacks with reordering | ✅ | `STUDIO-05005` |
 | `STUDIO-05005` | Dock a panel to an edge or into a tab group by drag, with drop-target preview | ✅ | `STUDIO-05002`, `STUDIO-05013` |
-| `STUDIO-05006` | Undock to a floating panel | ⬜ | `STUDIO-05005` |
+| `STUDIO-05006` | Undock to a floating panel | ✅ | `STUDIO-05005` |
 | `STUDIO-05007` | Hide, show and close panels | ✅ | `STUDIO-05001` |
 | `STUDIO-05008` | Serialize the workspace layout | ✅ | `STUDIO-05001` |
 | `STUDIO-05009` | Restore the default layout | ✅ | `STUDIO-05008` |
@@ -167,3 +167,47 @@ pointer's position along it — so reordering needed no gesture of its own, whic
 now depends on the one that used to depend on it
 
 **Verification.** `DroppingAPanelBackOnItsOwnTabStripReordersIt`
+
+### `STUDIO-05006` — Undock to a floating panel
+
+**Acceptance.** A panel can be dragged out of the dock tree into a window of its own, moved,
+resized, given more tabs, docked again and saved — and the workspace round-trips through the layout
+file with its floating windows in it.
+
+**A float is not a leaf, and storing it as one would be wrong.** The dock tree stores fractions,
+because a docked arrangement should rescale with the window: an inspector that is a fifth of the
+width stays a fifth of the width on a larger display. A float is the opposite — it is a palette the
+user placed and sized deliberately, and scaling it with the window would grow a small picker into a
+quarter of a 4K screen. So its geometry is in logical units, and layout only *clamps* it back into
+view: a window saved at (3000, 1800) must not be unreachable on a laptop.
+
+**Undocking is a gesture, then a command.** Releasing a dragged tab where no dock leaf is — the menu
+bar, the status bar, the toolbar — undocks it, which needs no explaining to anyone who has already
+dragged a tab across the workspace. The tab's context menu and the Window menu name it as well,
+because a feature reachable only by discovering a gesture is a feature most users never have. The
+way back is one command, `Dock All Windows`, greyed out when there is nothing to recover: without
+it the answer to "my window has gone off the edge" becomes "reset the layout", which costs the user
+everything else they arranged.
+
+**The invisible failure is input, not drawing.** The router's layers are a *modal* stack rather than
+a z-order — exactly one layer takes input at a time — so a float drawn on top would still let the
+button underneath it light up as the pointer crossed the window covering it. The shell raises the
+floating layer only while the pointer is over a float, or while a gesture that began on one is
+still running: a float that blocked the workspace whenever it existed would make the panels under
+it unusable, and one that never blocked would be worse than either.
+
+**Dragging a tab moves the panel; dragging the space beside it moves the window.** That is the
+distinction every editor with floating panels makes, and it is why a float needs no second title bar
+above its tabs.
+
+**Verification.** `tests/StudioFloatingPanelTests.cpp`: undocking leaving the rest of its leaf
+alone, the last panel of a leaf collapsing it, a float left holding nothing being removed, a panel
+open in exactly one place across docks and floats, raising as a rotation, the front-most float being
+the one under the pointer, the off-screen clamp, a float keeping its size where a dock rescales, the
+index shift when a move deletes the source float, docking being the same operation as moving,
+the JSON round trip, a pre-float layout file loading and writing none back, an empty floating window
+being dropped rather than rejecting the document, a duplicate claim being refused, title-bar drag
+with raise, the corner grip and its minimum, a float blocking the tab beneath it, closing a float
+closing every tab in it, Dock All and its enablement, and a float surviving save and restore. Plus
+`ADragThatEndsOverNothingUndocksIntoAFloatingWindow` in `StudioDockDragTests.cpp`, which asserts the
+preview against the outcome

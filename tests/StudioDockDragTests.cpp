@@ -15,6 +15,7 @@
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -223,24 +224,44 @@ CNA_STUDIO_TEST(DroppingAPanelBackOnItsOwnTabStripReordersIt)
     CNA_STUDIO_EXPECT(shell->dockTree().isWellFormed());
 }
 
-CNA_STUDIO_TEST(ADragThatEndsOverNothingChangesNothing)
+CNA_STUDIO_TEST(ADragThatEndsOverNothingUndocksIntoAFloatingWindow)
 {
-    // Releasing outside every dock -- over the menu bar, say -- has to be a no-op rather than a
-    // panel quietly going somewhere. A gesture with no visible outcome must have no invisible one.
+    // Releasing outside every dock -- over the menu bar, say -- is the undock gesture (STUDIO-05006),
+    // and it needs no command of its own precisely because a user who has dragged a tab across the
+    // workspace has already learned it. What it must never be is silent: the panel goes somewhere
+    // the user can see, or the gesture has an invisible outcome.
     const std::unique_ptr<StudioShell> shell = defaultShell();
 
-    const std::vector<std::string> before = groupOf(*shell, "layers");
     const std::size_t leavesBefore = shell->dockTree().leaves().size();
+    CNA_STUDIO_EXPECT(shell->dockTree().floating().empty());
 
     dragFrom(*shell, shell->panelTabBounds("layers"), 400.0f, 2.0f);
     CNA_STUDIO_EXPECT(shell->dockDrag().active());
-    CNA_STUDIO_EXPECT(shell->dockDrag().zone == StudioShell::StudioDropZone::None);
+    CNA_STUDIO_EXPECT(shell->dockDrag().zone == StudioShell::StudioDropZone::Float);
+
+    // The preview is where it will land, and that is asserted against the outcome below rather
+    // than taken on trust: a preview showing one thing while the release does another is the worst
+    // of the three failures, because the user committed on the strength of the picture.
+    const UiRect preview = shell->dockDrag().preview;
+    CNA_STUDIO_EXPECT(!preview.isEmpty());
 
     shell->renderFrame(at(400.0f, 2.0f, false));
 
     CNA_STUDIO_EXPECT(!shell->dockDrag().active());
-    CNA_STUDIO_EXPECT(groupOf(*shell, "layers") == before);
+    CNA_STUDIO_EXPECT_EQ(shell->dockTree().floating().size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(shell->dockTree().findFloatingPanel("layers") == std::size_t{0});
+    CNA_STUDIO_EXPECT(shell->dockTree().findPanel("layers") == kInvalidDockNode);
+
+    // The leaf it left still holds its other panels, so undocking one tab of a group is not a way
+    // to lose the rest.
     CNA_STUDIO_EXPECT_EQ(shell->dockTree().leaves().size(), leavesBefore);
+    CNA_STUDIO_EXPECT(shell->dockTree().isWellFormed());
+
+    // And it is where the preview said, within the rounding that placing a window on whole pixels
+    // costs.
+    const UiRect landed = shell->dockTree().floating().front().bounds;
+    CNA_STUDIO_EXPECT(std::abs(landed.left() - preview.left()) <= 1.0f);
+    CNA_STUDIO_EXPECT(std::abs(landed.top() - preview.top()) <= 1.0f);
 }
 
 CNA_STUDIO_TEST(TheDragPreviewDrawsAndTheFrameStaysWellFormed)

@@ -306,8 +306,23 @@ CNA_STUDIO_TEST(AnEmptyContextMenuIsNotOpenedAtAll)
 // The shell's own first user: a panel tab
 // ---------------------------------------------------------------------------------------------
 
-CNA_STUDIO_TEST(RightClickingAPanelTabOffersCloseAndTheWholePanelList)
+namespace
 {
+    /** @brief The row of menu @p level whose action id is @p id, or -1. */
+    int rowWithId(const StudioShell& shell, std::size_t level, std::string_view id)
+    {
+        for (std::size_t i = 0; i < shell.menuRowCount(level); ++i)
+        {
+            if (shell.menuRowActionId(level, i) == id) { return static_cast<int>(i); }
+        }
+        return -1;
+    }
+}
+
+CNA_STUDIO_TEST(RightClickingAPanelTabOffersCloseFloatAndTheWholePanelList)
+{
+    // Found by id rather than by row number: the menu gains entries over time, and a test that
+    // pinned indices would fail for the one reason that is never a defect.
     Harness harness;
     harness.settle();
 
@@ -319,8 +334,9 @@ CNA_STUDIO_TEST(RightClickingAPanelTabOffersCloseAndTheWholePanelList)
     CNA_STUDIO_EXPECT(harness.shell.isContextMenuOpen());
     CNA_STUDIO_EXPECT_EQ(std::string{harness.shell.menuRowActionId(0, 0)},
                          StudioShell::closePanelActionId("outliner"));
-    CNA_STUDIO_EXPECT_EQ(std::string{harness.shell.menuRowActionId(0, 2)},
-                         std::string{kStudioPanelMenuLabel});
+    CNA_STUDIO_EXPECT(rowWithId(harness.shell, 0, StudioShell::floatPanelActionId("outliner")) >= 0);
+    CNA_STUDIO_EXPECT(rowWithId(harness.shell, 0, kStudioDockAllActionId) >= 0);
+    CNA_STUDIO_EXPECT(rowWithId(harness.shell, 0, kStudioPanelMenuLabel) >= 0);
 }
 
 CNA_STUDIO_TEST(RightClickingATabSelectsItFirst)
@@ -370,15 +386,13 @@ CNA_STUDIO_TEST(ClosingAPanelFromATabLeavesAWayToBringItBack)
     // The Panels submenu of any other tab still lists it, unchecked.
     const UiRect other = harness.shell.panelTabBounds("viewport");
     harness.rightClick(other.centerX(), other.centerY());
-    harness.shell.openSubmenu(0, 2);
+    const int submenu = rowWithId(harness.shell, 0, kStudioPanelMenuLabel);
+    CNA_STUDIO_EXPECT(submenu >= 0);
+    harness.shell.openSubmenu(0, static_cast<std::size_t>(submenu));
     harness.settle();
 
-    int row = -1;
     const std::string wanted = StudioShell::panelActionId("outliner");
-    for (std::size_t i = 0; i < harness.shell.menuRowCount(1); ++i)
-    {
-        if (harness.shell.menuRowActionId(1, i) == wanted) { row = static_cast<int>(i); }
-    }
+    const int row = rowWithId(harness.shell, 1, wanted);
     CNA_STUDIO_EXPECT(row >= 0);
     CNA_STUDIO_EXPECT(!harness.shell.actions().isChecked(wanted));
 

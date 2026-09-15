@@ -271,6 +271,9 @@ namespace CNA::Studio
         command("studio.window.resetLayout", "Reset Layout",
                 "Restore the default panel arrangement.", C::Window, {});
 
+        command("studio.window.dockAll", "Dock All Windows",
+                "Return every floating panel to the workspace.", C::Window, {});
+
         command("studio.help.about", "About CNA Studio",
                 "Version, renderer and platform information.", C::Help, chord(UiKey::F1));
 

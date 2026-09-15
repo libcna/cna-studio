@@ -189,11 +189,9 @@ namespace CNA::Studio
     bool StudioDockTree::movePanel(std::string_view panelId, StudioDockNodeId destination,
                                    std::size_t index)
     {
-        const StudioDockNodeId source = findPanel(panelId);
-        if (source == kInvalidDockNode || !isLive(destination) || !nodes_[destination].isLeaf())
-        {
-            return false;
-        }
+        const bool open = findPanel(panelId) != kInvalidDockNode
+                       || findFloatingPanel(panelId) != kInvalidFloatingDock;
+        if (!open || !isLive(destination) || !nodes_[destination].isLeaf()) { return false; }
 
         std::string moved{panelId};
         removePanel(panelId);
@@ -208,6 +206,29 @@ namespace CNA::Studio
 
     bool StudioDockTree::removePanel(std::string_view panelId)
     {
+        const std::size_t floatIndex = findFloatingPanel(panelId);
+        if (floatIndex != kInvalidFloatingDock)
+        {
+            StudioFloatingDock& window = floating_[floatIndex];
+            const auto found = std::find(window.panels.begin(), window.panels.end(), panelId);
+            const auto position = static_cast<std::size_t>(found - window.panels.begin());
+            window.panels.erase(found);
+
+            // A float left holding nothing goes, rather than staying as a title bar over an empty
+            // rectangle that a user then has to close by hand for no purpose.
+            if (window.panels.empty()) { return releaseFloating(floatIndex); }
+
+            if (window.activePanel >= window.panels.size())
+            {
+                window.activePanel = window.panels.size() - 1;
+            }
+            else if (window.activePanel > position)
+            {
+                --window.activePanel;
+            }
+            return true;
+        }
+
         const StudioDockNodeId leaf = findPanel(panelId);
         if (leaf == kInvalidDockNode) { return false; }
 
@@ -280,11 +301,30 @@ namespace CNA::Studio
         {
             for (const std::string& panel : nodes_[leaf].panels) { result.push_back(panel); }
         }
+        // After the docked ones, because a caller enumerating panels is normally walking the
+        // workspace left to right and a float has no place in that order.
+        for (const StudioFloatingDock& window : floating_)
+        {
+            for (const std::string& panel : window.panels) { result.push_back(panel); }
+        }
         return result;
     }
 
     bool StudioDockTree::activatePanel(std::string_view panelId)
     {
+        const std::size_t floatIndex = findFloatingPanel(panelId);
+        if (floatIndex != kInvalidFloatingDock)
+        {
+            StudioFloatingDock& window = floating_[floatIndex];
+            const auto found = std::find(window.panels.begin(), window.panels.end(), panelId);
+            window.activePanel = static_cast<std::size_t>(found - window.panels.begin());
+
+            // And raised, because a tab brought to the front of a window that is itself behind
+            // another window has not been brought to the front of anything.
+            (void)raiseFloating(floatIndex);
+            return true;
+        }
+
         const StudioDockNodeId leaf = findPanel(panelId);
         if (leaf == kInvalidDockNode) { return false; }
 
@@ -292,6 +332,101 @@ namespace CNA::Studio
         const auto found = std::find(panels.begin(), panels.end(), panelId);
         nodes_[leaf].activePanel = static_cast<std::size_t>(found - panels.begin());
         return true;
+    }
+
+    // --- Floating -----------------------------------------------------------------------------
+
+    StudioFloatingDock& StudioDockTree::floatingAt(std::size_t index) { return floating_[index]; }
+
+    std::size_t StudioDockTree::findFloatingPanel(std::string_view panelId) const
+    {
+        for (std::size_t i = 0; i < floating_.size(); ++i)
+        {
+            const std::vector<std::string>& panels = floating_[i].panels;
+            if (std::find(panels.begin(), panels.end(), panelId) != panels.end()) { return i; }
+        }
+        return kInvalidFloatingDock;
+    }
+
+    bool StudioDockTree::releaseFloating(std::size_t index)
+    {
+        if (index >= floating_.size()) { return false; }
+        floating_.erase(floating_.begin() + static_cast<std::ptrdiff_t>(index));
+        return true;
+    }
+
+    std::size_t StudioDockTree::floatPanel(std::string_view panelId, float x, float y,
+                                           float width, float height)
+    {
+        const bool open = findPanel(panelId) != kInvalidDockNode
+                       || findFloatingPanel(panelId) != kInvalidFloatingDock;
+        if (!open || panelId.empty()) { return kInvalidFloatingDock; }
+
+        std::string moved{panelId};
+        removePanel(panelId);
+
+        StudioFloatingDock window;
+        window.panels.push_back(std::move(moved));
+        window.x = x;
+        window.y = y;
+        // Raised rather than refused: a float dragged out with a two-pixel gesture should be a
+        // small window, not a failed undock the user has to work out how to repeat.
+        window.width = std::max(width, kMinimumFloatingExtent);
+        window.height = std::max(height, kMinimumFloatingExtent);
+
+        floating_.push_back(std::move(window));
+        return floating_.size() - 1;
+    }
+
+    bool StudioDockTree::movePanelToFloating(std::string_view panelId, std::size_t destination,
+                                             std::size_t index)
+    {
+        if (destination >= floating_.size()) { return false; }
+
+        const std::size_t source = findFloatingPanel(panelId);
+        const bool wasDocked = source == kInvalidFloatingDock;
+        if (wasDocked && findPanel(panelId) == kInvalidDockNode) { return false; }
+
+        // Whether the removal will take the source float with it, worked out *before* it happens.
+        // Indices go stale across the erase, so the only thing that survives is an answer computed
+        // while the vector still holds what it is about to lose.
+        const bool sourceVanishes = !wasDocked && floating_[source].panels.size() == 1;
+        if (source == destination && sourceVanishes) { return true; }
+
+        std::string moved{panelId};
+        removePanel(panelId);
+
+        const std::size_t target = (sourceVanishes && source < destination) ? destination - 1
+                                                                            : destination;
+        if (target >= floating_.size()) { return false; }
+
+        StudioFloatingDock& window = floating_[target];
+        const std::size_t position = std::min(index, window.panels.size());
+        window.panels.insert(window.panels.begin() + static_cast<std::ptrdiff_t>(position),
+                             std::move(moved));
+        window.activePanel = position;
+        return true;
+    }
+
+    std::size_t StudioDockTree::raiseFloating(std::size_t index)
+    {
+        if (index >= floating_.size()) { return kInvalidFloatingDock; }
+        if (index + 1 == floating_.size()) { return index; }
+
+        StudioFloatingDock raised = std::move(floating_[index]);
+        floating_.erase(floating_.begin() + static_cast<std::ptrdiff_t>(index));
+        floating_.push_back(std::move(raised));
+        return floating_.size() - 1;
+    }
+
+    std::size_t StudioDockTree::floatingAt(float x, float y) const
+    {
+        // Back to front, so the one the user can see is the one they get.
+        for (std::size_t i = floating_.size(); i-- > 0;)
+        {
+            if (floating_[i].bounds.contains(x, y)) { return i; }
+        }
+        return kInvalidFloatingDock;
     }
 
     void StudioDockTree::computeMinimums(StudioDockNodeId id, float minimumExtent,
@@ -391,6 +526,26 @@ namespace CNA::Studio
     {
         computeMinimums(root_, std::max(0.0f, minimumExtent), std::max(0.0f, tabStripHeight));
         resolve(root_, area, std::max(0.0f, splitterThickness));
+
+        // Floats are placed by the user and kept that way -- but *clamped* into the workspace, so
+        // a window saved at (3000, 1800) on a large display is still reachable on a laptop. The
+        // clamp keeps the whole window in view where it fits, and where it does not it keeps the
+        // top-left corner in: a title bar that cannot be grabbed is a window that cannot be moved.
+        const float strip = std::max(0.0f, tabStripHeight);
+        for (StudioFloatingDock& window : floating_)
+        {
+            window.width = std::clamp(window.width, kMinimumFloatingExtent,
+                                      std::max(kMinimumFloatingExtent, area.width));
+            window.height = std::clamp(window.height, strip + kMinimumFloatingExtent,
+                                       std::max(strip + kMinimumFloatingExtent, area.height));
+
+            window.x = std::clamp(window.x, 0.0f, std::max(0.0f, area.width - window.width));
+            window.y = std::clamp(window.y, 0.0f, std::max(0.0f, area.height - window.height));
+
+            window.bounds = UiRect{std::round(area.left() + window.x),
+                                   std::round(area.top() + window.y),
+                                   std::round(window.width), std::round(window.height)};
+        }
     }
 
     StudioDockLeafGeometry StudioDockTree::leafGeometry(StudioDockNodeId leaf,
@@ -497,6 +652,25 @@ namespace CNA::Studio
             stack.push_back(n.first);
             stack.push_back(n.second);
         }
+
+        // Floats are part of the workspace, so the same rule holds across both: a panel docked in
+        // one place and floating in another is two tabs that both claim to be the Details panel,
+        // and a layout file somebody edited by hand is exactly where that arrives from.
+        for (const StudioFloatingDock& window : floating_)
+        {
+            if (window.panels.empty()) { return fail("a floating window holds no panel"); }
+            if (window.activePanel >= window.panels.size())
+            {
+                return fail("a floating window's active tab is out of range");
+            }
+            for (const std::string& panel : window.panels)
+            {
+                if (!panelIds.insert(panel).second)
+                {
+                    return fail("panel '" + panel + "' is open in two places");
+                }
+            }
+        }
         return true;
     }
 
@@ -532,6 +706,29 @@ namespace CNA::Studio
         JsonValue document = JsonValue::makeObject();
         document.set("version", kLayoutVersion);
         document.set("root", writeNode(writeNode, root_));
+
+        // Written only when there are any, so an ordinary layout file looks exactly as it did
+        // before floats existed -- which is what makes a diff of one legible.
+        if (!floating_.empty())
+        {
+            JsonValue windows = JsonValue::makeArray();
+            for (const StudioFloatingDock& window : floating_)
+            {
+                JsonValue entry = JsonValue::makeObject();
+                JsonValue panels = JsonValue::makeArray();
+                for (const std::string& panel : window.panels) { panels.append(JsonValue{panel}); }
+                entry.set("panels", std::move(panels));
+                entry.set("active", static_cast<int>(window.activePanel));
+                // Geometry, unlike a split's fraction, *is* the user's answer rather than a
+                // proportion of a window they no longer have -- so it is written as they set it.
+                entry.set("x", static_cast<double>(window.x));
+                entry.set("y", static_cast<double>(window.y));
+                entry.set("width", static_cast<double>(window.width));
+                entry.set("height", static_cast<double>(window.height));
+                windows.append(std::move(entry));
+            }
+            document.set("floating", std::move(windows));
+        }
         return document;
     }
 
@@ -601,6 +798,29 @@ namespace CNA::Studio
         };
 
         if (!readNode(readNode, value["root"], tree.root(), 0)) { return reject(problem); }
+
+        for (const JsonValue& entry : value["floating"].getElements())
+        {
+            StudioFloatingDock window;
+            for (const JsonValue& panel : entry["panels"].getElements())
+            {
+                const std::string id = panel.asString();
+                if (!id.empty()) { window.panels.push_back(id); }
+            }
+            // A float holding nothing is dropped rather than restored: it would be a title bar
+            // over an empty rectangle that the user never asked for and has to close by hand.
+            if (window.panels.empty()) { continue; }
+
+            window.activePanel = std::min(
+                static_cast<std::size_t>(std::max(0, entry["active"].asInt(0))),
+                window.panels.size() - 1);
+            window.x = entry["x"].asFloat(0.0f);
+            window.y = entry["y"].asFloat(0.0f);
+            window.width = std::max(entry["width"].asFloat(360.0f), kMinimumFloatingExtent);
+            window.height = std::max(entry["height"].asFloat(280.0f), kMinimumFloatingExtent);
+            tree.floating_.push_back(std::move(window));
+        }
+
         if (!tree.isWellFormed(&problem)) { return reject(problem); }
         return tree;
     }

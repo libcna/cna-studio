@@ -32,6 +32,7 @@ namespace CNA::Studio
         {
             case StudioCursor::Arrow:            return "Arrow";
             case StudioCursor::Hand:             return "Hand";
+            case StudioCursor::Move:             return "Move";
             case StudioCursor::Text:             return "Text";
             case StudioCursor::ResizeHorizontal: return "ResizeHorizontal";
             case StudioCursor::ResizeVertical:   return "ResizeVertical";

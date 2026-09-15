@@ -104,6 +104,8 @@ namespace CNA::Studio
         Arrow,
         /** @brief Over something that can be clicked through, e.g. a link. */
         Hand,
+        /** @brief Over something that can be dragged in any direction, e.g. a floating window. */
+        Move,
         /** @brief Over editable text. */
         Text,
         /** @brief A vertical splitter: drag left and right. */

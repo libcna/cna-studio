@@ -137,6 +137,54 @@ namespace CNA::Studio
     };
 
     /**
+     * @brief A tab group floating free of the dock tree.
+     *
+     * The same shape as a leaf — an ordered list of panels and which one shows — because a float
+     * that could hold only one panel would make "put the inspector and the details side by side
+     * over on the second monitor" impossible, and that is most of why anyone undocks anything.
+     *
+     * ### Why logical units rather than fractions
+     *
+     * The dock tree stores fractions, because a docked arrangement should rescale with the window:
+     * an inspector that is a fifth of the width stays a fifth of the width on a larger display. A
+     * float is the opposite. It is a palette the user placed and sized deliberately, and scaling it
+     * with the window would grow a small colour picker into a quarter of a 4K screen. So its
+     * geometry is what the user set, and @ref StudioDockTree::layout only *clamps* it back into
+     * view — a float saved at (3000, 1800) must not be unreachable on a laptop.
+     */
+    struct StudioFloatingDock
+    {
+        /** @brief Panel ids in tab order. A float with none is removed. */
+        std::vector<std::string> panels;
+
+        /** @brief Index into @ref panels of the tab that is showing. */
+        std::size_t activePanel = 0;
+
+        /** @brief Position relative to the workspace area's top-left, in logical units. */
+        float x = 0.0f;
+        /** @brief Position relative to the workspace area's top-left, in logical units. */
+        float y = 0.0f;
+        /** @brief Width in logical units. */
+        float width = 360.0f;
+        /** @brief Height in logical units. */
+        float height = 280.0f;
+
+        /** @brief Resolved rectangle, filled by @ref StudioDockTree::layout. */
+        UiRect bounds;
+    };
+
+    /** @brief The float no index addresses. */
+    inline constexpr std::size_t kInvalidFloatingDock = static_cast<std::size_t>(-1);
+
+    /**
+     * @brief Smallest extent a floating window is ever given, in logical units.
+     *
+     * Smaller than a docked leaf's minimum on purpose: a float is often a narrow palette, and
+     * holding it to the width an inspector needs would make half of what people float impossible.
+     */
+    inline constexpr float kMinimumFloatingExtent = 80.0f;
+
+    /**
      * @brief A workspace arrangement.
      *
      * Starts as a single empty leaf. Every arrangement a user can reach is built from @ref split,
@@ -236,7 +284,12 @@ namespace CNA::Studio
         bool addPanel(StudioDockNodeId leaf, std::string panelId);
 
         /**
-         * @brief Moves a panel into another leaf.
+         * @brief Moves a panel into a leaf, from anywhere.
+         *
+         * Docking a floating panel is the same operation seen from the other side, so it is this
+         * one rather than a second function: one drag gesture reaches both, and a caller that had
+         * to ask where the panel currently is would be answering a question the tree already knows.
+         *
          * @param panelId Panel to move.
          * @param destination Leaf to move it to.
          * @param index Position in the destination's tab order; past the end appends.
@@ -252,6 +305,9 @@ namespace CNA::Studio
          * nobody can see still takes its share of the split, so closing the last panel in a dock
          * would otherwise leave a permanent empty stripe that no gesture can remove.
          *
+         * A float left holding nothing is removed outright, for the same reason: an empty window
+         * with a title bar and no content is a thing a user has to close by hand for no purpose.
+         *
          * @param panelId Panel to remove.
          * @return True when it was there.
          */
@@ -259,16 +315,100 @@ namespace CNA::Studio
 
         /**
          * @brief Finds the leaf holding a panel.
+         *
+         * Docked leaves only. A panel that has been floated is not in the tree, so this correctly
+         * finds nothing for it — ask @ref findFloatingPanel as well when the question is "is this
+         * panel open anywhere".
+         *
          * @param panelId Panel to find.
          * @return The leaf, or @ref kInvalidDockNode.
          */
         [[nodiscard]] StudioDockNodeId findPanel(std::string_view panelId) const;
 
-        /** @brief Every panel id in the tree, in leaf order. */
+        // --- Floating --------------------------------------------------------------------------
+
+        /** @brief Every float, back to front: the last is the one on top. */
+        [[nodiscard]] const std::vector<StudioFloatingDock>& floating() const { return floating_; }
+
+        /**
+         * @brief Returns a float for modification.
+         * @param index Float index; must be in range.
+         * @return The float.
+         */
+        [[nodiscard]] StudioFloatingDock& floatingAt(std::size_t index);
+
+        /**
+         * @brief Finds the float holding a panel.
+         * @param panelId Panel to find.
+         * @return Its index, or @ref kInvalidFloatingDock.
+         */
+        [[nodiscard]] std::size_t findFloatingPanel(std::string_view panelId) const;
+
+        /**
+         * @brief Takes a panel out of the dock tree and gives it a floating window of its own.
+         *
+         * Undocking is the one operation that can empty a leaf without the panel being closed, so
+         * it collapses exactly as @ref removePanel does: a leaf nobody can see still takes its
+         * share of the split.
+         *
+         * @param panelId Panel to float. May already be floating, which moves it to a new float.
+         * @param x Position relative to the workspace, in logical units.
+         * @param y Position relative to the workspace.
+         * @param width Width in logical units; raised to the minimum when smaller.
+         * @param height Height in logical units; raised to the minimum when smaller.
+         * @return The new float's index, or @ref kInvalidFloatingDock when the panel was not open.
+         */
+        std::size_t floatPanel(std::string_view panelId, float x, float y,
+                               float width = 360.0f, float height = 280.0f);
+
+        /**
+         * @brief Moves a panel into a floating window's tab group, from anywhere.
+         *
+         * Docked or floating, because one drag gesture reaches both and a caller that had to ask
+         * where the panel currently is would be answering a question the tree already knows.
+         *
+         * @param panelId Panel to move.
+         * @param destination Float index to move it into.
+         * @param index Position in the destination's tab order; past the end appends.
+         * @return True when the panel was open and was moved.
+         */
+        bool movePanelToFloating(std::string_view panelId, std::size_t destination,
+                                 std::size_t index = static_cast<std::size_t>(-1));
+
+        /**
+         * @brief Raises a float above the others.
+         *
+         * Z-order is the vector order, so this is a rotation rather than a stored depth: two floats
+         * can never claim the same depth, and "which one is on top" has exactly one answer.
+         *
+         * @param index Float to raise.
+         * @return Its new index, or @ref kInvalidFloatingDock when @p index was out of range.
+         */
+        std::size_t raiseFloating(std::size_t index);
+
+        /**
+         * @brief The float whose resolved rectangle contains (@p x, @p y), front-most first.
+         *
+         * Needs @ref layout to have run. Front-most rather than any, because overlapping floats are
+         * ordinary and the one the user can see is the one they mean.
+         *
+         * @param x Horizontal position in logical units.
+         * @param y Vertical position.
+         * @return The float's index, or @ref kInvalidFloatingDock.
+         */
+        [[nodiscard]] std::size_t floatingAt(float x, float y) const;
+
+
+
+        /** @brief Every panel id, docked leaves in leaf order and then the floats. */
         [[nodiscard]] std::vector<std::string> panels() const;
 
         /**
-         * @brief Makes a panel the showing tab of its leaf.
+         * @brief Makes a panel the showing tab of its leaf or float.
+         *
+         * Activating a floating panel also raises its float: a tab brought forward behind another
+         * window has not been brought forward.
+         *
          * @param panelId Panel to activate.
          * @return True when it was found.
          */
@@ -277,7 +417,7 @@ namespace CNA::Studio
         // --- Geometry --------------------------------------------------------------------------
 
         /**
-         * @brief Resolves every node's rectangle inside @p area.
+         * @brief Resolves every node's rectangle inside @p area, and clamps every float into it.
          *
          * Minimums are computed bottom-up first, so a split knows what its children need before it
          * divides anything. When @p area cannot satisfy the tree's minimum the extents are scaled
@@ -372,6 +512,10 @@ namespace CNA::Studio
         void collectLeaves(StudioDockNodeId id, std::vector<StudioDockNodeId>& out) const;
         void collectSplits(StudioDockNodeId id, std::vector<StudioDockNodeId>& out) const;
 
+        /** @brief Removes @p index and returns whether it was there. */
+        bool releaseFloating(std::size_t index);
+
+        std::vector<StudioFloatingDock> floating_;
         std::vector<StudioDockNode> nodes_;
         std::vector<bool> live_;
         std::vector<StudioDockNodeId> free_;

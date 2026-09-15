@@ -79,4 +79,14 @@ namespace CNA::Studio
 
     /** @brief Smallest extent a docked panel is resolved to, in logical units. */
     inline constexpr float kStudioMinimumDockExtent = 120.0f;
+
+    /**
+     * @brief The size a panel's window takes when it is first undocked, in logical units.
+     *
+     * Large enough to be worth having undocked and small enough not to cover the workspace it was
+     * taken out of: an inspector that opened at half the window would hide the thing it inspects.
+     */
+    inline constexpr float kStudioFloatDropWidth = 360.0f;
+    /** @brief The height a panel's window takes when it is first undocked. @see kStudioFloatDropWidth */
+    inline constexpr float kStudioFloatDropHeight = 280.0f;
 } // namespace CNA::Studio

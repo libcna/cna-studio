@@ -170,6 +170,15 @@ namespace CNA::Studio
         std::string shellPreviewOpenMenu;
 
         /**
+         * @brief Panels to undock into floating windows before the shell preview is captured.
+         *
+         * Comma-separated ids. A floating window is arranged by dragging, which a still capture
+         * cannot do — so without a flag the one arrangement CI could never photograph would be the
+         * one most likely to be drawn wrong.
+         */
+        std::string shellPreviewFloat;
+
+        /**
          * @brief Report the Studio host capability contract and exit.
          *
          * Prints what Studio requires of a host renderer, and -- on a build with a window host --

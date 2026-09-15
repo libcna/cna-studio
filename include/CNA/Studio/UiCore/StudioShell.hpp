@@ -75,6 +75,12 @@ namespace CNA::Studio
     /** @brief The id prefix of the close command the shell registers for each panel. */
     inline constexpr std::string_view kStudioClosePanelActionPrefix = "studio.window.closePanel.";
 
+    /** @brief The id prefix of the undock command the shell registers for each panel. */
+    inline constexpr std::string_view kStudioFloatPanelActionPrefix = "studio.window.floatPanel.";
+
+    /** @brief The id of the command that docks every floating window again. */
+    inline constexpr std::string_view kStudioDockAllActionId = "studio.window.dockAll";
+
     /**
      * @brief A panel the shell knows about.
      *
@@ -329,7 +335,16 @@ namespace CNA::Studio
             Left,
             Right,
             Top,
-            Bottom
+            Bottom,
+            /**
+             * @brief Out of the dock tree entirely, into a floating window.
+             *
+             * Reached by releasing where no dock leaf is — over the menu bar, the status bar, or
+             * another float. Undocking by dragging *somewhere else* rather than by a menu command
+             * is what makes it discoverable: a user who has already dragged a tab across the
+             * workspace has learned the gesture without being told it.
+             */
+            Float
         };
 
         /** @brief A drag in progress, and where it would land. */
@@ -346,6 +361,16 @@ namespace CNA::Studio
 
             /** @brief Where in the target's tab order, for @ref StudioDropZone::Tabs. */
             std::size_t tabIndex = 0;
+
+            /**
+             * @brief The float under the pointer, or @ref kInvalidFloatingDock.
+             *
+             * Set for @ref StudioDropZone::Tabs when the target is a float rather than a leaf, so
+             * one drag can drop a panel into a floating window's tab strip as easily as into a
+             * docked one — a float that could never gain a second tab would make every undock a
+             * separate window.
+             */
+            std::size_t targetFloat = kInvalidFloatingDock;
 
             /** @brief The region the preview highlights. */
             UiRect preview;
@@ -712,6 +737,37 @@ namespace CNA::Studio
         [[nodiscard]] static std::string closePanelActionId(std::string_view panelId);
 
         /**
+         * @brief The id of the command that undocks @p panelId into a floating window.
+         * @param panelId The panel.
+         * @return `studio.window.floatPanel.<id>`.
+         */
+        [[nodiscard]] static std::string floatPanelActionId(std::string_view panelId);
+
+        /**
+         * @brief Undocks a panel into a floating window of its own.
+         *
+         * Placed a little in from the workspace's top-left rather than under the pointer, because
+         * this is the menu path rather than the drag: there is no pointer position that means
+         * anything, and a window that appeared under the menu the user just used would cover it.
+         *
+         * @param id Panel to undock. Must be open.
+         * @return True when it was open and is now floating.
+         */
+        bool floatPanel(std::string_view id);
+
+        /**
+         * @brief Docks every floating window back into the workspace.
+         *
+         * The way out of an arrangement that has got away from the user — a window dragged almost
+         * off the screen, or half a dozen of them over each other. Recovery has to exist and has to
+         * be one command, or the answer becomes "reset the layout", which costs them everything
+         * else they arranged.
+         *
+         * @return How many windows were docked.
+         */
+        std::size_t dockAllFloating();
+
+        /**
          * @brief The rows a panel tab's context menu offers.
          * @param panelId The panel whose tab was right-clicked.
          * @return Close, a rule, and the same panel list the Window menu carries.
@@ -725,7 +781,7 @@ namespace CNA::Studio
         [[nodiscard]] static std::vector<std::string> defaultToolbar();
 
         /** @brief The input layer a menu popup routes in. Panels sit at layer zero. */
-        static constexpr int kMenuLayer = 1;
+        static constexpr int kMenuLayer = 2;
 
         /**
          * @brief The layer the dock drop preview draws in.
@@ -734,7 +790,7 @@ namespace CNA::Studio
          * drag is still the thing in front, and a preview drawn over it would obscure the only
          * control that could cancel the gesture.
          */
-        static constexpr int kDockPreviewLayer = 1;
+        static constexpr int kDockPreviewLayer = 2;
 
         /**
          * @brief The layer a tooltip draws in.
@@ -742,7 +798,19 @@ namespace CNA::Studio
          * Above everything, an open menu included: a tooltip describes whatever the pointer is
          * resting on, and the pointer may be resting on a menu row.
          */
-        static constexpr int kTooltipLayer = 2;
+        static constexpr int kTooltipLayer = 3;
+
+        /**
+         * @brief The layer floating windows draw and take input in.
+         *
+         * Between the docked workspace and an open menu. The router's layers are a *modal* stack
+         * rather than a z-order — exactly one layer takes input at a time — so the shell raises
+         * this one only while the pointer is over a float or a gesture that began on one is still
+         * running. A float that blocked the workspace whenever it existed would make the panels
+         * under it unusable; one that never blocked would let a button beneath it light up through
+         * it, which is worse than either.
+         */
+        static constexpr int kFloatingLayer = 1;
 
     private:
         /** @brief Where one menu title sits in the bar. */
@@ -820,6 +888,37 @@ namespace CNA::Studio
         [[nodiscard]] const std::vector<StudioMenuEntry>* entriesForLevel(std::size_t level) const;
         void describeToolbar();
         void describeDocks();
+        void describeFloating();
+
+        /**
+         * @brief Describes one tab group: its strip, its tabs and the showing panel's content.
+         *
+         * Shared by docked leaves and floating windows, because they *are* the same thing in two
+         * places: the same tabs, the same right-click menu, the same drag-out gesture. Two copies
+         * would be two sets of behaviour to keep in step, and the one that drifted would be the
+         * float — the one used least and noticed last.
+         *
+         * @param panels The group's panels, in tab order. Reordered by nothing here.
+         * @param activePanel Which tab is showing; updated when another is clicked.
+         * @param geometry The group's strip and body.
+         * @param inFloat Whether this group is a floating window, which changes what its tab
+         *        context menu offers and what a drag out of it means.
+         */
+        void describePanelGroup(std::vector<std::string>& panels, std::size_t& activePanel,
+                                const StudioDockLeafGeometry& geometry, bool inFloat);
+
+        /**
+         * @brief One float's title bar and resize grip.
+         *
+         * Described with its own window rather than after all of them, so a window behind cannot
+         * draw its grip over the window in front.
+         *
+         * @param index The float.
+         */
+        void describeFloatingHandles(std::size_t index);
+
+        /** @brief Applies the move or resize in progress. Input pass only. */
+        void applyFloatingGesture();
         void describeSplitters();
         void describeDockDrag();
         void describeTooltip();
@@ -876,6 +975,33 @@ namespace CNA::Studio
 
         /** @brief Tab rectangles resolved this frame, by panel id. */
         std::vector<std::pair<std::string, UiRect>> tabBounds_;
+
+        /**
+         * @brief The float whose title bar is being dragged, or @ref kInvalidFloatingDock.
+         *
+         * Held across frames because a move is a drag: the index is re-read every frame rather
+         * than a pointer being kept, since raising a float renumbers every index above it.
+         */
+        std::size_t movingFloat_ = kInvalidFloatingDock;
+
+        /** @brief The float's own geometry when the gesture began, so the delta cannot drift. */
+        float movingFloatX_ = 0.0f;
+        float movingFloatY_ = 0.0f;
+
+        /** @brief The float being resized by its corner, or @ref kInvalidFloatingDock. */
+        std::size_t resizingFloat_ = kInvalidFloatingDock;
+        float resizingFloatWidth_ = 0.0f;
+        float resizingFloatHeight_ = 0.0f;
+
+        /**
+         * @brief Whether the gesture in progress began on a floating window.
+         *
+         * Kept across frames for the same reason a widget keeps the mouse: a drag that has slid
+         * off the window it started on is still that window's drag, and letting the blocking layer
+         * fall back the moment the pointer leaves would hand the rest of the gesture to whatever
+         * happens to be underneath.
+         */
+        bool floatGesture_ = false;
 
         std::string statusLeft_;
         std::string statusRight_;

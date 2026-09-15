@@ -70,6 +70,15 @@ namespace CNA::Studio
             reset.run = [this]() { resetLayout(); };
             actions_.add(std::move(reset));
         }
+        if (const StudioAction* found = actions_.find(std::string{kStudioDockAllActionId}))
+        {
+            StudioAction dockAll = *found;
+            // Greyed out when there is nothing to recover, rather than drawn available and doing
+            // nothing: the workspace is the shell's own state, so it can answer for itself.
+            dockAll.isEnabled = [this]() { return !dock_.floating().empty(); };
+            dockAll.run = [this]() { (void)dockAllFloating(); };
+            actions_.add(std::move(dockAll));
+        }
 
         statusLeft_ = "No project open";
         statusRight_ = "Renderer: unknown";
@@ -93,7 +102,11 @@ namespace CNA::Studio
             // at run time by whoever assembles the shell. It ships empty rather than absent so the
             // row is in the same place in a shell with no panels as in one with ten.
             {"Window", {StudioMenuEntry::submenu(std::string{kStudioPanelMenuLabel}, {}),
-                        std::string{kStudioMenuSeparatorId}, "studio.window.resetLayout"}},
+                        std::string{kStudioMenuSeparatorId},
+                        // Before Reset Layout, and greyed out until there is something to recover.
+                        // The two are the same kind of answer at different costs, and a user whose
+                        // floating window has got away from them should find the cheap one first.
+                        std::string{kStudioDockAllActionId}, "studio.window.resetLayout"}},
             {"Help", {"studio.help.about"}},
         };
     }
@@ -132,10 +145,60 @@ namespace CNA::Studio
         return std::string{kStudioClosePanelActionPrefix} + std::string{panelId};
     }
 
+    std::string StudioShell::floatPanelActionId(std::string_view panelId)
+    {
+        return std::string{kStudioFloatPanelActionPrefix} + std::string{panelId};
+    }
+
+    bool StudioShell::floatPanel(std::string_view id)
+    {
+        if (!isPanelOpen(id)) { return false; }
+
+        // Offset from the corner by a little more each time, so undocking three panels from a menu
+        // does not stack three windows exactly on top of each other with only the last one visible.
+        const float step = static_cast<float>(dock_.floating().size() % 6)
+                         * metricOf(frame_.theme(), StudioMetric::PanelHeaderHeight) * 2.0f;
+        const float inset = metricOf(frame_.theme(), StudioMetric::SpacingLarge) * 2.0f;
+
+        return dock_.floatPanel(id, inset + step, inset + step,
+                                kStudioFloatDropWidth * frame_.theme().scale(),
+                                kStudioFloatDropHeight * frame_.theme().scale())
+            != kInvalidFloatingDock;
+    }
+
+    std::size_t StudioShell::dockAllFloating()
+    {
+        std::size_t docked = 0;
+        while (!dock_.floating().empty())
+        {
+            // The largest leaf, the same place openPanel puts a panel that has nowhere else to go:
+            // a window recovered into a two-tab corner is a window the user still has to find.
+            StudioDockNodeId largest = kInvalidDockNode;
+            float largestArea = -1.0f;
+            for (const StudioDockNodeId leaf : dock_.leaves())
+            {
+                const UiRect& bounds = dock_.node(leaf).bounds;
+                const float area = bounds.width * bounds.height;
+                if (area > largestArea) { largestArea = area; largest = leaf; }
+            }
+            if (largest == kInvalidDockNode) { largest = dock_.root(); }
+
+            const std::string panelId = dock_.floating().front().panels.front();
+            if (!dock_.movePanel(panelId, largest)) { break; }
+            ++docked;
+        }
+        return docked;
+    }
+
     std::vector<StudioMenuEntry> StudioShell::tabContextMenu(std::string_view panelId) const
     {
         std::vector<StudioMenuEntry> rows;
         rows.emplace_back(closePanelActionId(panelId));
+        // Named as well as draggable. The drag is the gesture people use once they know it; the
+        // menu is how they find out it exists, and a feature reachable only by discovering a
+        // gesture is a feature most users never have.
+        rows.emplace_back(floatPanelActionId(panelId));
+        rows.emplace_back(std::string{kStudioDockAllActionId});
         rows.emplace_back(std::string{kStudioMenuSeparatorId});
 
         // The whole panel list, not just this one. A user who has just closed a panel is exactly
@@ -168,6 +231,19 @@ namespace CNA::Studio
         };
         close.run = [this, panelId] { closePanel(panelId); };
         actions_.add(std::move(close));
+
+        StudioAction undock;
+        undock.id = floatPanelActionId(panelId);
+        undock.label = "Float";
+        undock.description = "Undock the " + descriptor->title + " panel into its own window.";
+        undock.category = StudioActionCategory::Window;
+        undock.isEnabled = [this, panelId] {
+            // Not while it already is one: a command that would move a window somewhere the user
+            // did not ask for reads as broken rather than as a no-op.
+            return dock_.findPanel(panelId) != kInvalidDockNode;
+        };
+        undock.run = [this, panelId] { (void)floatPanel(panelId); };
+        actions_.add(std::move(undock));
 
         StudioAction action;
         action.id = panelActionId(panelId);
@@ -270,7 +346,11 @@ namespace CNA::Studio
 
     bool StudioShell::isPanelOpen(std::string_view id) const
     {
-        return dock_.findPanel(id) != kInvalidDockNode;
+        // Floating counts as open, and has to: the Window menu's check marks read this, and a
+        // panel the user has just dragged out into its own window showing as closed would be the
+        // menu contradicting what is on the screen in front of them.
+        return dock_.findPanel(id) != kInvalidDockNode
+            || dock_.findFloatingPanel(id) != kInvalidFloatingDock;
     }
 
     bool StudioShell::openPanel(std::string_view id)
@@ -611,7 +691,19 @@ namespace CNA::Studio
         // The blocking layer is decided before anything is described, from state that already
         // exists. Inferring it from description order would leak one frame of input to the panels
         // underneath an open menu.
-        frame_.beginFrame(input, isPopupOpen() ? kMenuLayer : 0);
+        // The floating layer is opened only while the pointer is over a float, or while a gesture
+        // that began on one is still running. Read from the *previous* frame's resolved geometry,
+        // which is what an immediate-mode frame has before it has laid itself out -- and which is
+        // right, because a float that moved this frame is one the pointer is already holding.
+        const bool overFloat =
+            dock_.floatingAt(input.mouseX, input.mouseY) != kInvalidFloatingDock;
+        if (!input.isMouseDown(UiMouseButton::Left)) { floatGesture_ = false; }
+        else if (overFloat) { floatGesture_ = true; }
+
+        const int blocking = isPopupOpen() ? kMenuLayer
+                           : (overFloat || floatGesture_) ? kFloatingLayer
+                                                           : 0;
+        frame_.beginFrame(input, blocking);
         buildContent();
 
         frame_.beginLayout();
@@ -900,6 +992,12 @@ namespace CNA::Studio
         describeToolbar();
         describeDocks();
         describeSplitters();
+
+        // After the docked workspace, so a float draws over it and its widgets win hover against
+        // anything they overlap -- the router's hover is last-writer-wins, so description order is
+        // what puts the window in front rather than a depth the panels beneath would have to know.
+        describeFloating();
+
         describeStatusBar();
 
         // After the docks, because it needs the tab strips to have declared themselves, and before
@@ -1360,108 +1458,337 @@ namespace CNA::Studio
             }
 
             frame_.ids().pushIndex(static_cast<std::int64_t>(leaf));
-            frame_.pushClip(geometry.tabStrip);
-
-            UiRect cursor = geometry.tabStrip;
-            for (std::size_t i = 0; i < node.panels.size(); ++i)
-            {
-                if (cursor.width <= 0.0f) { break; }
-
-                const std::string& panelId = node.panels[i];
-                const StudioPanelDescriptor* descriptor = panel(panelId);
-                const std::string_view title = descriptor != nullptr
-                    ? std::string_view{descriptor->title} : std::string_view{panelId};
-
-                const float width = std::min(
-                    std::ceil(studioLabelWidth(frame_, title)
-                              + metricOf(theme, StudioMetric::SpacingMedium)),
-                    cursor.width);
-
-                StudioTabOptions options;
-                options.active = node.activePanel == i;
-                options.modified = descriptor != nullptr && descriptor->modified;
-
-                const UiRect tab = cursor.splitLeft(width);
-                const StudioWidgetResult result =
-                    studioTab(frame_, frame_.ids().make(panelId), tab, title, options);
-
-                if (frame_.isInputPass()) { tabBounds_.emplace_back(panelId, tab); }
-                if (result.activated) { node.activePanel = i; }
-
-                // Right-click opens the tab's context menu. Routed from the tab's own rectangle
-                // rather than from a hit test over the strip, so a right-click in the empty space
-                // beside the last tab does nothing rather than acting on whichever panel happened
-                // to be nearest.
-                if (frame_.isInputPass()
-                    && frame_.router().mousePressed(UiMouseButton::Right)
-                    && tab.contains(frame_.input().mouseX, frame_.input().mouseY))
-                {
-                    // Selected first: a context menu that acted on a tab the user could not see
-                    // was chosen would be acting behind their back.
-                    node.activePanel = i;
-                    openContextMenu(tabContextMenu(panelId), frame_.input().mouseX,
-                                    frame_.input().mouseY);
-                }
-
-                // A tab held and dragged beyond a threshold starts a dock drag. The threshold is
-                // what keeps a click that wobbled by a pixel from becoming a rearrangement --
-                // without it, selecting a tab on a trackpad would move panels around.
-                if (frame_.isInputPass() && result.interaction.held && !drag_.active())
-                {
-                    const float dx = frame_.input().mouseX - tab.centerX();
-                    const float dy = frame_.input().mouseY - tab.centerY();
-                    const float threshold = metricOf(theme, StudioMetric::SpacingLarge);
-                    if (dx * dx + dy * dy > threshold * threshold) { drag_.panelId = panelId; }
-                }
-            }
-
-            frame_.popClip();
-            frame_.ids().pop();
-
-            if (frame_.isDrawPass())
-            {
-                frame_.drawList().drawHorizontalSeparator(
-                    UiRect{geometry.tabStrip.left(), geometry.tabStrip.bottom(),
-                           geometry.tabStrip.width, 0.0f},
-                    theme.color(StudioColorRole::Separator),
-                    metricOf(theme, StudioMetric::SeparatorThickness));
-            }
-
-            const std::string& active = node.panels[std::min(node.activePanel,
-                                                             node.panels.size() - 1)];
-            const StudioPanelDescriptor* descriptor = panel(active);
-            // The viewport's surface is drawn by the shell rather than by its content, because
-            // the scene is a texture somebody else rendered and the placeholder is the shell's
-            // own. Its content still runs, underneath nothing and over that surface: navigating
-            // and picking are ordinary panel behaviour and belong with the other panels' content
-            // rather than in a second seam of their own.
-            const bool isViewport = descriptor != nullptr && descriptor->isViewport;
-            if (isViewport)
-            {
-                if (frame_.isDrawPass()) { describeViewportBody(geometry.body); }
-            }
-            else if (frame_.isDrawPass())
-            {
-                frame_.drawList().fillRect(geometry.body,
-                                           theme.color(StudioColorRole::PanelBackground));
-            }
-
-            // The strangler seam. A panel with content described here is ported; one without is
-            // the empty surface every panel starts as, and the ImGui implementation keeps drawing
-            // it until it is deleted (Phase 7).
-            const auto content = std::find_if(panelContent_.begin(), panelContent_.end(),
-                [&](const auto& entry) { return entry.first == active; });
-            if (content == panelContent_.end() || !content->second) { continue; }
-
-            // The panel's own id scope, so two panels can each have a widget called "clear"
-            // without the two sharing retained state, focus or capture.
-            frame_.ids().push(active);
-            frame_.pushClip(geometry.body);
-            content->second(frame_, geometry.body);
-            frame_.popClip();
+            describePanelGroup(node.panels, node.activePanel, geometry, /*inFloat=*/false);
             frame_.ids().pop();
         }
         frame_.ids().pop();
+    }
+
+    void StudioShell::describePanelGroup(std::vector<std::string>& panels,
+                                         std::size_t& activePanel,
+                                         const StudioDockLeafGeometry& geometry, bool inFloat)
+    {
+        const StudioTheme& theme = frame_.theme();
+
+        frame_.pushClip(geometry.tabStrip);
+
+        UiRect cursor = geometry.tabStrip;
+        for (std::size_t i = 0; i < panels.size(); ++i)
+        {
+            if (cursor.width <= 0.0f) { break; }
+
+            const std::string& panelId = panels[i];
+            const StudioPanelDescriptor* descriptor = panel(panelId);
+            const std::string_view title = descriptor != nullptr
+                ? std::string_view{descriptor->title} : std::string_view{panelId};
+
+            const float width = std::min(
+                std::ceil(studioLabelWidth(frame_, title)
+                          + metricOf(theme, StudioMetric::SpacingMedium)),
+                cursor.width);
+
+            StudioTabOptions options;
+            options.active = activePanel == i;
+            options.modified = descriptor != nullptr && descriptor->modified;
+
+            const UiRect tab = cursor.splitLeft(width);
+            const StudioWidgetResult result =
+                studioTab(frame_, frame_.ids().make(panelId), tab, title, options);
+
+            if (frame_.isInputPass()) { tabBounds_.emplace_back(panelId, tab); }
+            if (result.activated) { activePanel = i; }
+
+            // Right-click opens the tab's context menu. Routed from the tab's own rectangle
+            // rather than from a hit test over the strip, so a right-click in the empty space
+            // beside the last tab does nothing rather than acting on whichever panel happened
+            // to be nearest.
+            if (frame_.isInputPass()
+                && frame_.router().mousePressed(UiMouseButton::Right)
+                && tab.contains(frame_.input().mouseX, frame_.input().mouseY))
+            {
+                // Selected first: a context menu that acted on a tab the user could not see
+                // was chosen would be acting behind their back.
+                activePanel = i;
+                openContextMenu(tabContextMenu(panelId), frame_.input().mouseX,
+                                frame_.input().mouseY);
+            }
+
+            // A tab held and dragged beyond a threshold starts a dock drag. The threshold is
+            // what keeps a click that wobbled by a pixel from becoming a rearrangement --
+            // without it, selecting a tab on a trackpad would move panels around.
+            if (frame_.isInputPass() && result.interaction.held && !drag_.active())
+            {
+                const float dx = frame_.input().mouseX - tab.centerX();
+                const float dy = frame_.input().mouseY - tab.centerY();
+                const float threshold = metricOf(theme, StudioMetric::SpacingLarge);
+                if (dx * dx + dy * dy > threshold * threshold) { drag_.panelId = panelId; }
+            }
+        }
+
+        frame_.popClip();
+
+        if (frame_.isDrawPass())
+        {
+            frame_.drawList().drawHorizontalSeparator(
+                UiRect{geometry.tabStrip.left(), geometry.tabStrip.bottom(),
+                       geometry.tabStrip.width, 0.0f},
+                theme.color(StudioColorRole::Separator),
+                metricOf(theme, StudioMetric::SeparatorThickness));
+        }
+
+        if (panels.empty()) { return; }
+
+        const std::string& active = panels[std::min(activePanel, panels.size() - 1)];
+        const StudioPanelDescriptor* descriptor = panel(active);
+        // The viewport's surface is drawn by the shell rather than by its content, because
+        // the scene is a texture somebody else rendered and the placeholder is the shell's
+        // own. Its content still runs, underneath nothing and over that surface: navigating
+        // and picking are ordinary panel behaviour and belong with the other panels' content
+        // rather than in a second seam of their own.
+        //
+        // Not in a float, though: the viewport surface is composited from a texture the host
+        // rendered at the docked viewport's size, and stretching it into a floating window would
+        // photograph the scene at the wrong aspect. A floated viewport draws as an ordinary panel
+        // until the host can be asked for a second surface.
+        const bool isViewport = !inFloat && descriptor != nullptr && descriptor->isViewport;
+        if (isViewport)
+        {
+            if (frame_.isDrawPass()) { describeViewportBody(geometry.body); }
+        }
+        else if (frame_.isDrawPass())
+        {
+            frame_.drawList().fillRect(geometry.body,
+                                       theme.color(StudioColorRole::PanelBackground));
+        }
+
+        // The strangler seam. A panel with content described here is ported; one without is
+        // the empty surface every panel starts as, and the ImGui implementation keeps drawing
+        // it until it is deleted (Phase 7).
+        const auto content = std::find_if(panelContent_.begin(), panelContent_.end(),
+            [&](const auto& entry) { return entry.first == active; });
+        if (content == panelContent_.end() || !content->second) { return; }
+
+        // The panel's own id scope, so two panels can each have a widget called "clear"
+        // without the two sharing retained state, focus or capture.
+        frame_.ids().push(active);
+        frame_.pushClip(geometry.body);
+        content->second(frame_, geometry.body);
+        frame_.popClip();
+        frame_.ids().pop();
+    }
+
+    void StudioShell::describeFloating()
+    {
+        if (dock_.floating().empty()) { return; }
+
+        const StudioTheme& theme = frame_.theme();
+        const float tabHeight = tabStripHeight();
+        const float border = metricOf(theme, StudioMetric::SeparatorThickness);
+
+        // Raised so floats draw over the docked workspace. The *input* side of this layer is
+        // opened by renderFrame only while the pointer is over a float, because the router's
+        // layers are modal rather than a z-order -- see kFloatingLayer.
+        frame_.pushLayer(kFloatingLayer);
+        frame_.ids().push("floating");
+
+        // Back to front: the last float is the one on top, so it is described last and wins hover
+        // against the ones it overlaps.
+        for (std::size_t i = 0; i < dock_.floating().size(); ++i)
+        {
+            StudioFloatingDock& window = dock_.floatingAt(i);
+            if (window.bounds.isEmpty() || window.panels.empty()) { continue; }
+
+            frame_.ids().pushIndex(static_cast<std::int64_t>(i));
+
+            if (frame_.isDrawPass())
+            {
+                // An outline, because a float over a panel of the same colour is otherwise
+                // indistinguishable from a rectangle of that panel -- the border is the only thing
+                // that says "this is a window".
+                frame_.drawList().fillRect(window.bounds,
+                                           theme.color(StudioColorRole::PanelBackground));
+                // The front-most window is outlined in the accent colour and the rest in the
+                // ordinary border. Which window a keystroke or a close command would reach is not
+                // something a user should have to remember having clicked.
+                const bool front = i + 1 == dock_.floating().size();
+                frame_.drawList().strokeRect(
+                    window.bounds,
+                    theme.color(front ? StudioColorRole::Accent : StudioColorRole::Separator),
+                    border * (front ? 2.0f : 1.0f));
+            }
+
+            UiRect inner = window.bounds.inset(UiEdges{border, border});
+            StudioDockLeafGeometry geometry;
+            geometry.tabStrip = inner.splitTop(std::min(tabHeight, inner.height));
+            geometry.body = inner;
+
+            if (frame_.isDrawPass())
+            {
+                frame_.drawList().fillRect(geometry.tabStrip,
+                                           theme.color(StudioColorRole::PanelHeader));
+            }
+
+            // The close button first, so the strip the window is dragged by excludes it: a title
+            // bar that also closes the window when grabbed at one end is a trap.
+            UiRect strip = geometry.tabStrip;
+            const UiRect closeBox =
+                strip.splitRight(std::min(strip.width, tabHeight))
+                     .inset(UiEdges{metricOf(theme, StudioMetric::SpacingXSmall),
+                                    metricOf(theme, StudioMetric::SpacingXSmall)});
+            {
+                StudioButtonOptions options;
+                options.icon = StudioIcon::Close;
+                options.iconOnly = true;
+                options.tooltip = "Close this window";
+                if (studioButton(frame_, frame_.ids().make("close"), closeBox, "Close", options)
+                        .activated)
+                {
+                    // Every panel in the group, not only the showing tab: the button closes the
+                    // window, and leaving its other tabs open somewhere invisible would be a
+                    // workspace the user cannot account for.
+                    const std::vector<std::string> closing = window.panels;
+                    for (const std::string& panelId : closing) { (void)closePanel(panelId); }
+                    frame_.ids().pop();
+                    continue;
+                }
+            }
+
+            describePanelGroup(window.panels, window.activePanel,
+                               StudioDockLeafGeometry{strip, geometry.body}, /*inFloat=*/true);
+
+            // With this window rather than after every window: the handles are part of its chrome,
+            // and describing all of them at the end would draw a window behind's resize grip on
+            // top of the window in front of it.
+            describeFloatingHandles(i);
+
+            frame_.ids().pop();
+        }
+
+        applyFloatingGesture();
+
+        frame_.ids().pop();
+        frame_.popLayer();
+    }
+
+    void StudioShell::describeFloatingHandles(std::size_t index)
+    {
+        const StudioTheme& theme = frame_.theme();
+        const float tabHeight = tabStripHeight();
+        const float grip = metricOf(theme, StudioMetric::SpacingLarge);
+
+        StudioFloatingDock& window = dock_.floatingAt(index);
+        if (window.bounds.isEmpty()) { return; }
+
+        // What is left of the strip once the tabs and the close button have taken their share is
+        // the title bar. Dragging a *tab* moves the panel; dragging the space beside them moves the
+        // window -- which is the distinction every editor with floating panels makes, and the
+        // reason a float does not need a second bar above its tabs.
+        UiRect strip = window.bounds;
+        strip.height = std::min(tabHeight, window.bounds.height);
+        float tabsEnd = strip.left();
+        for (const std::string& panelId : window.panels)
+        {
+            const UiRect tab = panelTabBounds(panelId);
+            if (!tab.isEmpty()) { tabsEnd = std::max(tabsEnd, tab.right()); }
+        }
+        const UiRect title{tabsEnd, strip.top(),
+                           std::max(0.0f, strip.right() - tabHeight - tabsEnd), strip.height};
+
+        const StudioInteraction moved =
+            frame_.router().interact(frame_.ids().make("title"), title, /*enabled=*/true);
+        if (frame_.isInputPass() && moved.held && movingFloat_ == kInvalidFloatingDock)
+        {
+            // The window's own origin at the press, so every later frame measures from the press
+            // point rather than accumulating a per-frame delta that rounds away.
+            movingFloatX_ = window.x;
+            movingFloatY_ = window.y;
+            movingFloat_ = dock_.raiseFloating(index);
+        }
+        if (moved.hovered || movingFloat_ == index)
+        {
+            (void)frame_.requestCursor(frame_.ids().make("title"), StudioCursor::Move);
+        }
+
+        const UiRect gripBox{window.bounds.right() - grip, window.bounds.bottom() - grip,
+                             grip, grip};
+        const StudioInteraction resized =
+            frame_.router().interact(frame_.ids().make("grip"), gripBox, /*enabled=*/true);
+        if (frame_.isInputPass() && resized.held && resizingFloat_ == kInvalidFloatingDock)
+        {
+            resizingFloat_ = index;
+            resizingFloatWidth_ = window.width;
+            resizingFloatHeight_ = window.height;
+        }
+        if (resized.hovered || resizingFloat_ == index)
+        {
+            (void)frame_.requestCursor(frame_.ids().make("grip"), StudioCursor::ResizeNwSe);
+        }
+        if (frame_.isDrawPass())
+        {
+            // Two short rules stepping in from the corner, which is what a resize grip looks like
+            // everywhere -- a box around the corner reads as a button that does nothing.
+            const float thickness = metricOf(theme, StudioMetric::SeparatorThickness);
+            const StudioColor line = theme.color(resized.hovered ? StudioColorRole::Accent
+                                                                 : StudioColorRole::TextSecondary);
+
+            // Inside the window's own border, not under it. The front-most float draws its outline
+            // at double thickness, which is exactly enough to swallow a grip flush with the edge --
+            // and a grip nobody can see is a window nobody can resize.
+            const float edge = thickness * 3.0f;
+            const float right = gripBox.right() - edge;
+            const float bottom = gripBox.bottom() - edge;
+
+            // Two corners nested inside each other rather than two rules along the same edge:
+            // collinear ones merge into a single thicker line, which reads as a border that has
+            // gone wrong rather than as something to pull.
+            for (int step = 0; step < 2; ++step)
+            {
+                const float offset = static_cast<float>(step) * thickness * 3.0f;
+                const float length = grip * 0.6f - offset;
+                if (length <= thickness) { continue; }
+                frame_.drawList().fillRect(
+                    UiRect{right - length, bottom - thickness - offset, length, thickness}, line);
+                frame_.drawList().fillRect(
+                    UiRect{right - thickness - offset, bottom - length, thickness, length}, line);
+            }
+        }
+    }
+
+    void StudioShell::applyFloatingGesture()
+    {
+        if (!frame_.isInputPass()) { return; }
+
+        const bool down = frame_.input().isMouseDown(UiMouseButton::Left);
+        const float dx = frame_.input().mouseX - frame_.router().pressX();
+        const float dy = frame_.input().mouseY - frame_.router().pressY();
+
+        if (movingFloat_ != kInvalidFloatingDock)
+        {
+            if (!down || movingFloat_ >= dock_.floating().size())
+            {
+                movingFloat_ = kInvalidFloatingDock;
+            }
+            else
+            {
+                StudioFloatingDock& window = dock_.floatingAt(movingFloat_);
+                window.x = movingFloatX_ + dx;
+                window.y = movingFloatY_ + dy;
+            }
+        }
+
+        if (resizingFloat_ != kInvalidFloatingDock)
+        {
+            if (!down || resizingFloat_ >= dock_.floating().size())
+            {
+                resizingFloat_ = kInvalidFloatingDock;
+            }
+            else
+            {
+                StudioFloatingDock& window = dock_.floatingAt(resizingFloat_);
+                window.width = std::max(kMinimumFloatingExtent, resizingFloatWidth_ + dx);
+                window.height = std::max(kMinimumFloatingExtent, resizingFloatHeight_ + dy);
+            }
+        }
     }
 
     void StudioShell::describeDockDrag()
@@ -1502,6 +1829,7 @@ namespace CNA::Studio
     void StudioShell::resolveDropTarget()
     {
         drag_.target = kInvalidDockNode;
+        drag_.targetFloat = kInvalidFloatingDock;
         drag_.zone = StudioDropZone::None;
         drag_.tabIndex = 0;
         drag_.preview = UiRect{};
@@ -1509,8 +1837,51 @@ namespace CNA::Studio
         const float x = frame_.input().mouseX;
         const float y = frame_.input().mouseY;
 
+        // Floats first, because they are over the workspace: a leaf under a floating window is not
+        // the thing the user is aiming at, however much the hit test on the tree agrees it is there.
+        const std::size_t window = dock_.floatingAt(x, y);
+        if (window != kInvalidFloatingDock)
+        {
+            const StudioFloatingDock& target = dock_.floating()[window];
+            drag_.targetFloat = window;
+            drag_.zone = StudioDropZone::Tabs;
+            drag_.preview = UiRect{target.bounds.left(), target.bounds.top(), target.bounds.width,
+                                   std::min(tabStripHeight(), target.bounds.height)};
+
+            drag_.tabIndex = target.panels.size();
+            for (std::size_t i = 0; i < target.panels.size(); ++i)
+            {
+                const UiRect tab = panelTabBounds(target.panels[i]);
+                if (tab.isEmpty()) { continue; }
+                if (x < tab.centerX()) { drag_.tabIndex = i; break; }
+            }
+            return;
+        }
+
         const StudioDockNodeId leaf = dock_.leafAt(x, y);
-        if (leaf == kInvalidDockNode) { return; }
+        if (leaf == kInvalidDockNode)
+        {
+            // Nowhere to dock: the menu bar, the status bar, the toolbar, or off the window
+            // entirely. That is the undock gesture, and it is the whole reason it needs no command
+            // of its own -- a user who has dragged a tab across the workspace already knows it.
+            drag_.zone = StudioDropZone::Float;
+            const float width = std::min(kStudioFloatDropWidth * frame_.theme().scale(),
+                                         layout_.dockArea.width);
+            const float height = std::min(kStudioFloatDropHeight * frame_.theme().scale(),
+                                          layout_.dockArea.height);
+
+            // Clamped into the workspace here rather than only when the window is placed, because
+            // the preview is a promise: releasing over the menu bar puts the window at the top of
+            // the workspace, and a preview drawn over the menu bar would have promised otherwise.
+            const float left = std::clamp(x - width * 0.5f, layout_.dockArea.left(),
+                                          std::max(layout_.dockArea.left(),
+                                                   layout_.dockArea.right() - width));
+            const float top = std::clamp(y - tabStripHeight() * 0.5f, layout_.dockArea.top(),
+                                         std::max(layout_.dockArea.top(),
+                                                  layout_.dockArea.bottom() - height));
+            drag_.preview = UiRect{std::round(left), std::round(top), width, height};
+            return;
+        }
 
         drag_.target = leaf;
 
@@ -1573,7 +1944,28 @@ namespace CNA::Studio
 
     void StudioShell::applyDrop()
     {
-        if (drag_.zone == StudioDropZone::None || drag_.target == kInvalidDockNode) { return; }
+        if (drag_.zone == StudioDropZone::None) { return; }
+
+        if (drag_.zone == StudioDropZone::Float)
+        {
+            // Relative to the workspace, because that is what a float's geometry is measured
+            // against -- the preview is already in window coordinates, so the difference is the
+            // workspace's own origin and forgetting it would drop the window under the menu bar.
+            (void)dock_.floatPanel(drag_.panelId, drag_.preview.left() - layout_.dockArea.left(),
+                                   drag_.preview.top() - layout_.dockArea.top(),
+                                   drag_.preview.width, drag_.preview.height);
+            (void)activatePanel(drag_.panelId);
+            return;
+        }
+
+        if (drag_.targetFloat != kInvalidFloatingDock)
+        {
+            (void)dock_.movePanelToFloating(drag_.panelId, drag_.targetFloat, drag_.tabIndex);
+            (void)activatePanel(drag_.panelId);
+            return;
+        }
+
+        if (drag_.target == kInvalidDockNode) { return; }
 
         if (drag_.zone == StudioDropZone::Tabs)
         {

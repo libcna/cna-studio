@@ -215,6 +215,22 @@ namespace
             context.select(wanted->getId());
         }
 
+        // `--shell-float=IDS` undocks panels, because a floating window is arranged by dragging
+        // and a still capture cannot drag. Before --panel, so a floated panel can also be raised.
+        for (std::size_t start = 0; start < options.shellPreviewFloat.size();)
+        {
+            const std::size_t comma = options.shellPreviewFloat.find(',', start);
+            const std::string id = options.shellPreviewFloat.substr(
+                start, comma == std::string::npos ? std::string::npos : comma - start);
+            start = comma == std::string::npos ? options.shellPreviewFloat.size() : comma + 1;
+            if (id.empty()) { continue; }
+            if (!shell.floatPanel(id))
+            {
+                std::cerr << "cna-studio: no panel called '" << id << "' is open.\n";
+                return 2;
+            }
+        }
+
         // `--panel=ID` raises a panel, so a capture can show one that shares a tab bar. The same
         // flag the real editor uses, rather than a preview-only spelling nobody would remember.
         if (!options.focusPanel.empty() && !shell.activatePanel(options.focusPanel))
