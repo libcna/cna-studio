@@ -330,6 +330,12 @@ namespace CNA::Studio
         /** @brief Sets the right-aligned status bar text. */
         void setStatusRight(std::string text) { statusRight_ = std::move(text); }
 
+        /** @brief What the status bar says on the left: what the user is working on. */
+        [[nodiscard]] const std::string& statusLeft() const { return statusLeft_; }
+
+        /** @brief What the status bar says on the right: what the build is running on. */
+        [[nodiscard]] const std::string& statusRight() const { return statusRight_; }
+
         /** @brief The theme in use. */
         [[nodiscard]] const StudioTheme& theme() const { return frame_.theme(); }
 

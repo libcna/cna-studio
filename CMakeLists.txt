@@ -397,11 +397,11 @@ if(CNA_STUDIO_WITH_CNA)
     # the UI, and the host is only the window it lives in.
     target_link_libraries(cna-studio-viewport
         PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-ui-core
-               cna-studio-project cna-studio-player PRIVATE CNA)
+               cna-studio-context cna-studio-project cna-studio-player PRIVATE CNA)
     target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_CNA=1)
 
     if(CNA_STUDIO_WITH_IMGUI)
-        target_link_libraries(cna-studio-viewport PUBLIC cna-studio-context cna-studio-ui-imgui)
+        target_link_libraries(cna-studio-viewport PUBLIC cna-studio-ui-imgui)
         target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_HOST=1)
     endif()
 endif()

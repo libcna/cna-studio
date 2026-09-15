@@ -414,6 +414,7 @@ int main(int argc, char** argv)
         // mistake and defaulting it to the user's real file would be the wrong guess: a test that
         // meant to isolate itself would silently write over the developer's layout.
         hostOptions.focusPanel = options.focusPanel;
+        hostOptions.projectPath = options.projectPath;
         if (options.workspacePath == "none") { hostOptions.workspacePath.clear(); }
         else if (!options.workspacePath.empty()) { hostOptions.workspacePath = options.workspacePath; }
         else { hostOptions.workspacePath = CNA::Studio::StudioWorkspaceStore::defaultPath(); }
@@ -444,6 +445,10 @@ int main(int argc, char** argv)
                       << " frames, " << result.displayWidth << "x" << result.displayHeight
                       << " display, " << result.drawCalls << " draw calls, " << result.triangles
                       << " triangles";
+            if (!result.statusLeft.empty())
+            {
+                std::cout << ", status '" << result.statusLeft << "'";
+            }
             if (result.logRowsMatching > 0 || result.logRowsDrawn > 0)
             {
                 std::cout << ", output log showing " << result.logRowsDrawn << " of "

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 9 of 21 complete `█████░░░░░░░`
+**Progress:** 10 of 22 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,6 +31,7 @@
 | `STUDIO-06019` | Capture the shell's interaction states from the preview entry point | ✅ | `STUDIO-06016`, `STUDIO-06018` |
 | `STUDIO-06020` | `--ui=studio`: the native shell in a real window, on a real CNA device | ✅ | `STUDIO-06018`, `STUDIO-02021` |
 | `STUDIO-06021` | Window smoke tests for the native shell, on a real renderer | ✅ | `STUDIO-06020` |
+| `STUDIO-06022` | The native shell opens a project, on the editor's own context | ✅ | `STUDIO-06020` |
 
 ## Acceptance and verification
 
@@ -168,3 +169,23 @@ case proving `--ui=studio` fails with an explanation rather than silently fallin
 **Verification.** `CnaStudioNativeShellWindowSmoke`, `…LightTheme`, `…HiDpi`,
 `CnaStudioNativeShellScreenshotNeedsFrameLimit`, `CnaStudioNativeShellNeedsCna`
 
+### `STUDIO-06022` — The native shell opens a project, on the editor's own context
+
+**Acceptance.** `cna-studio --ui=studio --project=P` opens the project on a real `StudioContext` --
+the same object the ImGui editor uses, not a second one shaped like it -- and the shell shows what
+it opened: the project and scene in the status bar, and everything opening had to say in the Output
+Log
+
+**Order matters.** The log sink is installed before the project is opened, so an importer fact
+applied or an asset that would not parse lands in the Output Log rather than being lost before
+anything was listening. And the project is opened before the window, so the first frame already
+shows it: a shell that opened empty and then filled in reads as a shell that failed and recovered
+
+**A project that will not open is reported, not fatal.** An editor that refused to start because one
+project would not load leaves the user with no way to open a different one
+
+**Verification.** `CnaStudioNativeShellWithAProject` asserts on the status bar, because a row count
+says the Output Log drew something and only the status bar says the context opened what it was
+given. `CnaStudioNativeShellDoesNotModifyTheProject` hashes every file under the example project
+before and after: applying an importer fact on first open is intended, doing it on every open fills
+a repository with diffs nobody made

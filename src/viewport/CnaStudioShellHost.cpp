@@ -22,6 +22,7 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 #include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
@@ -79,6 +80,35 @@ namespace CNA::Studio
                     }
                 }
 
+                // A real editor context, not a demonstration of one. Opened before the window so
+                // the first frame already shows the project: a shell that opened empty and then
+                // filled in would read as a shell that failed and recovered.
+                //
+                // The log sink is installed first, so whatever opening the project has to say --
+                // an importer fact applied, an asset that would not parse -- lands in the Output
+                // Log rather than being lost before anything was listening.
+                context_ = std::make_unique<StudioContext>();
+                context_->setLogSink([this](LogSeverity severity, const std::string& message) {
+                    log_.append(severity, message);
+                });
+
+                if (!options.projectPath.empty())
+                {
+                    if (context_->openProject(options.projectPath))
+                    {
+                        shell_->setStatusLeft(context_->getProject().getName() + "  --  "
+                                              + context_->getScene().getName());
+                    }
+                    else
+                    {
+                        // Reported, not fatal. An editor that refused to open because one project
+                        // would not load leaves the user with no way to open a different one.
+                        log_.append(LogSeverity::Error,
+                                    "Could not open '" + options.projectPath + "'.");
+                        shell_->setStatusLeft("Could not open " + options.projectPath);
+                    }
+                }
+
                 // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI
                 // owns -- which is the whole shape of the strangler migration: the ImGui Console
                 // reads the same model and keeps working until it is deleted.
@@ -128,6 +158,7 @@ namespace CNA::Studio
             [[nodiscard]] bool screenshotWritten() const { return screenshotWritten_; }
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
+            [[nodiscard]] const std::string& statusLeft() const { return shell_->statusLeft(); }
             [[nodiscard]] std::size_t logRowsDrawn() const { return logRowsDrawn_; }
             [[nodiscard]] std::size_t logRowsMatching() const { return logRowsMatching_; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
@@ -338,6 +369,7 @@ namespace CNA::Studio
             bool contentLoaded_ = false;
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
+            std::unique_ptr<StudioContext> context_;
             StudioLog log_;
             std::size_t logRowsDrawn_ = 0;
             std::size_t logRowsMatching_ = 0;
@@ -368,6 +400,7 @@ namespace CNA::Studio
         result.capabilityReport = game.capabilities().report();
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();
+        result.statusLeft = game.statusLeft();
         result.logRowsDrawn = game.logRowsDrawn();
         result.logRowsMatching = game.logRowsMatching();
         result.layoutRestored = game.layoutRestored();

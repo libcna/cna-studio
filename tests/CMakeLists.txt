@@ -302,6 +302,36 @@ if(CNA_STUDIO_WITH_CNA)
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
     endif()
 
+    # The native shell with a real editor behind it. The assertion is the status bar: a row count
+    # says the Output Log drew something, and only this says the StudioContext opened the project
+    # the shell was given and the shell is showing what it opened.
+    add_test(NAME CnaStudioNativeShellWithAProject
+        COMMAND cna-studio --ui=studio --workspace=none --panel=output
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-project.png)
+    set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
+        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level01'.*output log showing [1-9][0-9]* of [1-9][0-9]* messages")
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+    else()
+        set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # Opening a project through the native shell must not rewrite it, for the same reason the
+    # headless path must not: a sidecar rewritten on every open fills a repository with diffs
+    # nobody made.
+    add_test(NAME CnaStudioNativeShellDoesNotModifyTheProject
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTUDIO=$<TARGET_FILE:cna-studio>"
+            "-DEXAMPLES=${CMAKE_CURRENT_SOURCE_DIR}/../examples"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/NativeShellProjectTest.cmake")
+    set_tests_properties(CnaStudioNativeShellDoesNotModifyTheProject PROPERTIES
+        ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+
     # The workspace layout survives a real process exit. Two processes rather than one, because
     # that is the thing being tested: a unit test proves the store round-trips in memory, and only
     # a second process proves Studio writes on the way out and reads on the way in. The failure it

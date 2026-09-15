@@ -65,6 +65,16 @@ namespace CNA::Studio
         std::string workspacePath;
 
         /**
+         * @brief A `.cnaproject` to open at start-up. Empty starts with no project.
+         *
+         * The native shell without one is a shell with nothing in it, which is fine for a
+         * screenshot and useless as an editor. With one it has a real `StudioContext` behind it --
+         * the same object the ImGui editor uses -- so the panels ported into it are reading the
+         * editor's own state rather than a demonstration of it.
+         */
+        std::string projectPath;
+
+        /**
          * @brief Bring this panel to the front of its tab group before drawing.
          *
          * A panel sharing a tab strip with five others cannot be photographed at all otherwise,
@@ -93,6 +103,14 @@ namespace CNA::Studio
 
         /** @brief How many log entries the panel's filter was showing. */
         std::size_t logRowsMatching = 0;
+
+        /**
+         * @brief What the status bar ended up saying on the left: the project and scene.
+         *
+         * Reported so a smoke test can assert that the shell opened what it was given. A count of
+         * log rows says the panel drew; only this says the editor behind it has a project.
+         */
+        std::string statusLeft;
 
         /** @brief Whether a stored workspace arrangement was found and applied at start-up. */
         bool layoutRestored = false;
