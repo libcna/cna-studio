@@ -136,6 +136,20 @@ namespace CNA::Studio
         }
 
         /** @brief Draws a right-pointing submenu arrow inside a box. */
+        /** @brief Draws a down-pointing chevron inside a box, as two strokes. */
+        void drawDropdownArrow(StudioFrame& frame, const UiRect& box, StudioColor color)
+        {
+            const float thickness = std::max(1.0f, box.height * 0.10f);
+            const float left = box.centerX() - box.width * 0.22f;
+            const float right = box.centerX() + box.width * 0.22f;
+            const float top = box.centerY() - box.height * 0.09f;
+            const float bottom = box.centerY() + box.height * 0.13f;
+
+            StudioDrawList& list = frame.drawList();
+            list.drawLine(left, top, box.centerX(), bottom, color, thickness);
+            list.drawLine(box.centerX(), bottom, right, top, color, thickness);
+        }
+
         void drawSubmenuArrow(StudioFrame& frame, const UiRect& box, StudioColor color)
         {
             const float w = box.width * 0.34f;
@@ -1078,4 +1092,267 @@ namespace CNA::Studio
 
         return result;
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Drop-down
+    // ---------------------------------------------------------------------------------------
+
+    namespace
+    {
+        /**
+         * @brief A drop-down's pending choice, stored as index + 1.
+         *
+         * Zero has to mean "nothing pending", because zero is what retained state holds the first
+         * time a widget is seen -- and a sentinel that collides with the default is a control that
+         * silently selects its first item the moment it is described.
+         */
+        constexpr float kNoPendingChoice = 0.0f;
+
+        // A drop-down's retained state, in one place so the meanings are readable together:
+        //
+        //   integer  the highlighted row of the open list
+        //   scalar   the pending choice, as index + 1, or kNoPendingChoice
+        //   checked  a pending dismissal
+        //   active   the list opened on this very frame
+        //   text     the index wearing the check mark, as decimal
+        //
+        // Four of the five exist because the list is described *after* the control and can only
+        // answer it through something that outlives the call.
+    }
+
+    StudioDropdownResult studioDropdown(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                        const std::vector<std::string>& items, int& selected,
+                                        const StudioDropdownOptions& options)
+    {
+        const StudioTheme& theme = frame.theme();
+        StudioDropdownResult result;
+
+        // A control with nothing to choose from is disabled rather than one that opens on an empty
+        // list: an empty popup is a rectangle the user has to click away.
+        const bool enabled = options.enabled && !items.empty();
+
+        WidgetState& state = frame.state().get(id);
+
+        // The list is described *after* this function has returned -- that is what lets it escape
+        // the panel it sits in -- so its answer cannot come back through the return value. It is
+        // left in the control's own retained state and collected here, on the next pass that
+        // routes input. One frame of latency, and the alternative was a reference into a stack
+        // frame that has already gone.
+        if (frame.isInputPass())
+        {
+            if (state.scalar != kNoPendingChoice)
+            {
+                const auto chosen = static_cast<int>(state.scalar) - 1;
+                state.scalar = kNoPendingChoice;
+                if (chosen >= 0 && static_cast<std::size_t>(chosen) < items.size()
+                    && chosen != selected)
+                {
+                    selected = chosen;
+                    result.changed = true;
+                }
+                if (frame.isPopupOpen(id)) { frame.closePopup(); }
+            }
+            if (state.checked)
+            {
+                state.checked = false;
+                if (frame.isPopupOpen(id)) { frame.closePopup(); }
+            }
+        }
+
+        result.selected = selected;
+        const bool wasOpen = frame.isPopupOpen(id);
+
+        StudioWidgetResult control =
+            interactControl(frame, id, bounds, enabled, /*focusable=*/true, StudioCursor::Arrow);
+        result.interaction = control.interaction;
+
+        if (frame.isInputPass() && enabled)
+        {
+            if (wasOpen)
+            {
+                // Only the pointer closes it from here. While the list is open the keyboard
+                // belongs to the list: `activated` includes Enter on the focused control, and
+                // honouring that would shut the list on the keystroke meant to choose from it.
+                if (control.interaction.clicked) { frame.closePopup(); }
+            }
+            else if (control.activated
+                     || (control.interaction.focused
+                         && frame.router().keyPressed(UiKey::DownArrow)))
+            {
+                frame.openPopup(id);
+                // Opened on what is already selected, so the first Down moves off it rather than
+                // jumping to the top of a list the user is part-way through.
+                state.integer = selected;
+                state.scalar = kNoPendingChoice;
+                state.checked = false;
+                // The same Down that opened the list must not also move within it: a keystroke
+                // that opens a list on the current value and immediately steps off it means the
+                // user can never choose the value they started on without going back up.
+                state.active = true;
+            }
+        }
+
+        result.open = frame.isPopupOpen(id);
+
+        // --- The closed control --------------------------------------------------------------
+        if (frame.isDrawPass())
+        {
+            const StudioControlState visual = !enabled
+                ? StudioControlState::Disabled
+                : resolveState(control.interaction, result.open);
+
+            const float radius = metricOf(theme, StudioMetric::CornerRadius);
+            frame.drawList().fillRoundedRect(bounds, theme.controlBackground(visual), radius);
+            if (visual != StudioControlState::Disabled)
+            {
+                frame.drawList().strokeRect(bounds, theme.color(StudioColorRole::Border),
+                                            metricOf(theme, StudioMetric::BorderWidth));
+            }
+
+            UiRect inner = bounds.inset(
+                UiEdges{metricOf(theme, StudioMetric::ControlPaddingHorizontal), 0.0f});
+            const UiRect arrow = inner.splitRight(metricOf(theme, StudioMetric::IconSize));
+            drawDropdownArrow(frame, arrow, theme.controlText(visual));
+
+            const bool inRange = selected >= 0 && static_cast<std::size_t>(selected) < items.size();
+            const std::string_view shown = inRange
+                ? std::string_view{items[static_cast<std::size_t>(selected)]}
+                : options.placeholder;
+            studioDrawText(frame, inner,
+                           studioTruncateText(frame, theme.font(StudioFontRole::Body), shown,
+                                              inner.width),
+                           StudioFontRole::Body,
+                           inRange ? theme.controlText(visual)
+                                   : theme.color(StudioColorRole::TextDisabled));
+        }
+
+        if (!options.tooltip.empty()) { (void)frame.requestTooltip(id, options.tooltip, bounds); }
+        if (!result.open) { return result; }
+
+        // --- The list, deferred so it escapes whatever panel this control is in ----------------
+        //
+        // Items are captured by value. A caller that builds its list inline -- every renderer, or
+        // every enum case -- hands this a vector that is gone by the time the body runs, and a
+        // reference would be the kind of dangling capture that works in every test and fails on
+        // the one panel that does it.
+        const float rowHeight = studioMenuItemHeight(theme);
+        const float padding = metricOf(theme, StudioMetric::SpacingSmall);
+        const auto visibleRows = static_cast<float>(std::max(1, options.visibleRows));
+        const float listHeight =
+            std::min(static_cast<float>(items.size()), visibleRows) * rowHeight + padding * 2.0f;
+
+        float listTop = bounds.bottom();
+        // Flipped above rather than clipped: a list whose last rows fall off the bottom of the
+        // window is a list whose last options do not exist as far as the user is concerned.
+        if (listTop + listHeight > frame.input().displayHeight)
+        {
+            listTop = std::max(0.0f, bounds.top() - listHeight);
+        }
+        const UiRect list{bounds.left(), std::round(listTop), bounds.width, std::round(listHeight)};
+
+        frame.deferPopup([id, list, items, rowHeight, padding](StudioFrame& f) {
+            const StudioTheme& popupTheme = f.theme();
+            if (f.isDrawPass())
+            {
+                f.drawList().fillRect(list, popupTheme.color(StudioColorRole::PopupBackground));
+                f.drawList().strokeRect(list, popupTheme.color(StudioColorRole::BorderStrong),
+                                        metricOf(popupTheme, StudioMetric::BorderWidth));
+            }
+
+            WidgetState& popupState = f.state().get(id);
+            f.ids().push("dropdown");
+            f.ids().pushIndex(static_cast<std::int64_t>(id.value()));
+
+            StudioScrollOptions scrollOptions;
+            scrollOptions.contentHeight = static_cast<float>(items.size()) * rowHeight;
+
+            const StudioScrollResult scroll = studioBeginScroll(
+                f, f.ids().make("scroll"), list.inset(UiEdges{0.0f, padding}), scrollOptions);
+
+            std::size_t first = 0;
+            std::size_t last = 0;
+            scroll.visibleRows(rowHeight, items.size(), first, last);
+
+            for (std::size_t i = first; i < last; ++i)
+            {
+                const UiRect row{scroll.viewport.left(),
+                                 std::round(scroll.viewport.top() - scroll.offsetY
+                                            + static_cast<float>(i) * rowHeight),
+                                 scroll.viewport.width, rowHeight};
+
+                StudioMenuItemOptions rowOptions;
+                rowOptions.highlighted = popupState.integer == static_cast<std::int64_t>(i);
+                // The current value carries a check rather than only a highlight: the highlight
+                // follows the pointer, so on its own it says where the user is, never where they
+                // are coming from.
+                rowOptions.checkable = true;
+                rowOptions.checked = popupState.text == std::to_string(i);
+
+                const StudioWidgetResult rowResult = studioMenuItem(
+                    f, f.ids().makeIndex(static_cast<std::int64_t>(i)), row, items[i], rowOptions);
+
+                if (!f.isInputPass()) { continue; }
+                if (rowResult.interaction.hovered)
+                {
+                    popupState.integer = static_cast<std::int64_t>(i);
+                }
+                if (rowResult.activated)
+                {
+                    popupState.scalar = static_cast<float>(i) + 1.0f;
+                }
+            }
+
+            studioEndScroll(f);
+            f.ids().pop();
+            f.ids().pop();
+
+            if (!f.isInputPass()) { return; }
+
+            if (popupState.active)
+            {
+                // Opened this frame: the keystroke that opened it is still down, and it belongs to
+                // the control rather than to the list.
+                popupState.active = false;
+                return;
+            }
+
+            StudioInputRouter& router = f.router();
+            const auto count = static_cast<std::int64_t>(items.size());
+            if (router.keyPressed(UiKey::DownArrow))
+            {
+                popupState.integer =
+                    popupState.integer < 0 ? 0 : (popupState.integer + 1) % count;
+            }
+            if (router.keyPressed(UiKey::UpArrow))
+            {
+                popupState.integer =
+                    popupState.integer < 0 ? count - 1 : (popupState.integer - 1 + count) % count;
+            }
+            if (router.keyPressed(UiKey::Home)) { popupState.integer = 0; }
+            if (router.keyPressed(UiKey::End)) { popupState.integer = count - 1; }
+            if (router.keyPressed(UiKey::Enter) && popupState.integer >= 0)
+            {
+                popupState.scalar = static_cast<float>(popupState.integer) + 1.0f;
+            }
+            if (router.keyPressed(UiKey::Escape)) { popupState.checked = true; }
+
+            // A press outside the list dismisses it without choosing anything, which is the other
+            // half of "click elsewhere to cancel".
+            if (router.mousePressed(UiMouseButton::Left)
+                && !list.contains(router.mouseX(), router.mouseY()))
+            {
+                popupState.checked = true;
+            }
+        });
+
+        // Which row wears the check. Kept as text rather than as another number because `integer`
+        // is the highlight and `scalar` is the pending choice, and a third meaning crammed into
+        // one of those is how retained state stops being readable.
+        if (frame.isInputPass())
+        {
+            state.text = selected >= 0 ? std::to_string(selected) : std::string{};
+        }
+        return result;
+    }
+
 } // namespace CNA::Studio

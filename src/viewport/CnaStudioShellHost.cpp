@@ -22,7 +22,7 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
-#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
@@ -117,99 +117,15 @@ namespace CNA::Studio
 
                 (void)bindStudioShellActions(*shell_, *context_, log_);
 
-                // The World Outliner (STUDIO-07006), the second ported panel and the first that
-                // reads the document model rather than a log.
-                shell_->setPanelContent("outliner",
-                    [this](StudioFrame& frame, const UiRect& bounds) {
-                        const StudioOutlinerResult outliner =
-                            studioOutlinerPanel(frame, bounds, *context_, outlinerState_);
-                        if (frame.isDrawPass())
-                        {
-                            outlinerRowsDrawn_ = outliner.rowsDrawn;
-                            outlinerRowsTotal_ = outliner.rowsTotal;
-                        }
-                        if (outliner.selectionChanged)
-                        {
-                            const std::vector<Uuid>& selection = context_->getSelection();
-                            if (selection.empty())
-                            {
-                                log_.append(LogSeverity::Trace, "Selection cleared.");
-                            }
-                            else if (const StudioEntity* entity =
-                                         context_->getScene().findEntity(selection.back()))
-                            {
-                                log_.append(LogSeverity::Trace, "Selected '" + entity->getName()
-                                                                + "' (" + std::to_string(selection.size())
-                                                                + " selected).");
-                            }
-                        }
-                    });
-
-                // The Content Browser (STUDIO-07008), the fourth ported panel.
-                shell_->setPanelContent("content",
-                    [this](StudioFrame& frame, const UiRect& bounds) {
-                        const StudioContentBrowserResult content = studioContentBrowser(
-                            frame, bounds, *context_, contentState_, selectedAsset_);
-                        if (frame.isDrawPass())
-                        {
-                            contentRowsDrawn_ = content.rowsDrawn;
-                            contentRowsTotal_ = content.rowsTotal;
-                        }
-                        if (content.selectedAsset.isValid())
-                        {
-                            const AssetRecord* record = context_->getAssets().find(
-                                content.selectedAsset);
-                            if (record != nullptr)
-                            {
-                                log_.append(LogSeverity::Trace,
-                                            "Selected asset '" + record->sourcePath + "'.");
-                            }
-                        }
-                    });
-
-                // The Details panel (STUDIO-07007), the third ported and the first that writes to
-                // the document. Every edit goes through the command history, so Ctrl+Z reaches it.
-                shell_->setPanelContent("details",
-                    [this](StudioFrame& frame, const UiRect& bounds) {
-                        const StudioDetailsResult details =
-                            studioDetailsPanel(frame, bounds, *context_);
-                        if (frame.isDrawPass()) { detailsRowsDrawn_ = details.rowsDrawn; }
-                        if (details.edited)
-                        {
-                            log_.append(LogSeverity::Info, "Changed " + details.editedProperty
-                                                           + ".  Undo with Ctrl+Z.");
-                        }
-                    });
-
-                // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI
-                // owns -- which is the whole shape of the strangler migration: the ImGui Console
-                // reads the same model and keeps working until it is deleted.
-                shell_->setPanelContent("output",
-                    [this](StudioFrame& frame, const UiRect& bounds) {
-                        const StudioLogPanelResult panelResult = studioLogPanel(frame, bounds, log_);
-                        if (frame.isDrawPass())
-                        {
-                            logRowsDrawn_ = panelResult.rowsDrawn;
-                            logRowsMatching_ = panelResult.rowsMatching;
-                        }
-                        if (panelResult.cleared) { log_.clear(); }
-                        if (panelResult.copyRequested)
-                        {
-                            // CNA gap G-02: the clipboard is behind a default-off CNA option, so
-                            // this degrades visibly rather than silently doing nothing.
-                            if (CnaUiPlatform::hasClipboard())
-                            {
-                                CnaUiPlatform::setClipboardText(panelResult.copyText);
-                                log_.append(LogSeverity::Info, "Copied the log to the clipboard.");
-                            }
-                            else
-                            {
-                                log_.append(LogSeverity::Warning,
-                                            "This build has no clipboard: CNA's Devices module is "
-                                            "off (CNA gap G-02). Rebuild CNA with CNA_DEVICES=ON.");
-                            }
-                        }
-                    });
+                // Every ported panel, bound in one place that does not need CNA -- so the
+                // headless preview shows the same panels this window does (STUDIO-07001).
+                panels_ = std::make_unique<StudioShellPanels>(
+                    *shell_, *context_, log_,
+                    StudioShellPanelServices{[](const std::string& text) {
+                        if (!CnaUiPlatform::hasClipboard()) { return false; }
+                        CnaUiPlatform::setClipboardText(text);
+                        return true;
+                    }});
 
                 if (!options.selectEntity.empty())
                 {
@@ -253,13 +169,18 @@ namespace CNA::Studio
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
             [[nodiscard]] const std::string& statusLeft() const { return shell_->statusLeft(); }
-            [[nodiscard]] std::size_t outlinerRowsDrawn() const { return outlinerRowsDrawn_; }
-            [[nodiscard]] std::size_t outlinerRowsTotal() const { return outlinerRowsTotal_; }
-            [[nodiscard]] std::size_t detailsRowsDrawn() const { return detailsRowsDrawn_; }
-            [[nodiscard]] std::size_t contentRowsDrawn() const { return contentRowsDrawn_; }
-            [[nodiscard]] std::size_t contentRowsTotal() const { return contentRowsTotal_; }
-            [[nodiscard]] std::size_t logRowsDrawn() const { return logRowsDrawn_; }
-            [[nodiscard]] std::size_t logRowsMatching() const { return logRowsMatching_; }
+            /** @brief What the panels reported last frame, or zeroes before they were bound. */
+            [[nodiscard]] StudioShellPanelCounts panelCounts() const
+            {
+                return panels_ != nullptr ? panels_->counts() : StudioShellPanelCounts{};
+            }
+            [[nodiscard]] std::size_t outlinerRowsDrawn() const { return panelCounts().outlinerRowsDrawn; }
+            [[nodiscard]] std::size_t outlinerRowsTotal() const { return panelCounts().outlinerRowsTotal; }
+            [[nodiscard]] std::size_t detailsRowsDrawn() const { return panelCounts().detailsRowsDrawn; }
+            [[nodiscard]] std::size_t contentRowsDrawn() const { return panelCounts().contentRowsDrawn; }
+            [[nodiscard]] std::size_t contentRowsTotal() const { return panelCounts().contentRowsTotal; }
+            [[nodiscard]] std::size_t logRowsDrawn() const { return panelCounts().logRowsDrawn; }
+            [[nodiscard]] std::size_t logRowsMatching() const { return panelCounts().logRowsMatching; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
             [[nodiscard]] bool layoutRestored() const { return layoutRestored_; }
 
@@ -365,6 +286,11 @@ namespace CNA::Studio
                 displayWidth_ = input.displayWidth;
                 displayHeight_ = input.displayHeight;
 
+                // Once per frame, before the panel that reports on it: a build that advanced only
+                // when its panel happened to be the visible tab would stall whenever the user
+                // looked at something else.
+                panels_->poll();
+
                 shell_->renderFrame(input);
                 ++frames_;
 
@@ -469,17 +395,15 @@ namespace CNA::Studio
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
             std::unique_ptr<StudioContext> context_;
-            StudioTreeState outlinerState_;
-            std::size_t outlinerRowsDrawn_ = 0;
-            std::size_t outlinerRowsTotal_ = 0;
-            std::size_t detailsRowsDrawn_ = 0;
-            StudioTreeState contentState_;
-            Uuid selectedAsset_;
-            std::size_t contentRowsDrawn_ = 0;
-            std::size_t contentRowsTotal_ = 0;
             StudioLog log_;
-            std::size_t logRowsDrawn_ = 0;
-            std::size_t logRowsMatching_ = 0;
+
+            /**
+             * @brief Declared after the log and the context it borrows, so it is destroyed first.
+             *
+             * The panels hold references to both and the shell holds callables that capture them,
+             * and members are destroyed in reverse declaration order.
+             */
+            std::unique_ptr<StudioShellPanels> panels_;
             std::string layoutProblem_;
             bool layoutRestored_ = false;
             std::uint64_t frames_ = 0;

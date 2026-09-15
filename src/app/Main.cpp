@@ -18,7 +18,9 @@
 #include "CNA/Studio/Project/ProjectExport.hpp"
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
+#include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
@@ -148,6 +150,43 @@ namespace
         theme.setScale(static_cast<float>(options.shellPreviewScale));
 
         CNA::Studio::StudioShell shell{theme};
+
+        // The ported panels, bound exactly as the real editor binds them. Without this the
+        // preview photographs five empty rectangles where the panels are -- and the preview is
+        // the only visual test the project has on a machine with no GPU and no display.
+        CNA::Studio::StudioContext context;
+        CNA::Studio::StudioLog log;
+        context.setLogSink([&log](CNA::Studio::LogSeverity severity, const std::string& message) {
+            log.append(severity, message);
+        });
+
+        if (!options.projectPath.empty() && !context.openProject(options.projectPath))
+        {
+            std::cerr << "cna-studio: could not open '" << options.projectPath << "'.\n";
+            return 2;
+        }
+
+        CNA::Studio::StudioShellPanels panels{shell, context, log};
+        if (context.hasProject())
+        {
+            shell.setStatusLeft(context.getProject().getName() + "  --  "
+                                + context.getScene().getName());
+        }
+        if (options.projectPath.empty())
+        {
+            // Said once, so a capture of the empty shell is legible rather than looking like the
+            // panels failed to draw.
+            log.append(CNA::Studio::LogSeverity::Info,
+                       "Shell preview. Pass --project=PATH to fill the panels from a real project.");
+        }
+
+        // `--panel=ID` raises a panel, so a capture can show one that shares a tab bar. The same
+        // flag the real editor uses, rather than a preview-only spelling nobody would remember.
+        if (!options.focusPanel.empty() && !shell.activatePanel(options.focusPanel))
+        {
+            std::cerr << "cna-studio: no panel called '" << options.focusPanel << "' is open.\n";
+            return 2;
+        }
 
         // "Window>Panels" rather than just "Window": a submenu is reached by hovering, and a
         // capture harness that could only open a top-level menu could never photograph one.

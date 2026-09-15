@@ -249,6 +249,62 @@ namespace CNA::Studio
         [[nodiscard]] StudioTextMetrics measureText(const StudioFontStyle& style,
                                                     std::string_view utf8) const;
 
+        // --- Deferred popups -------------------------------------------------------------------
+        //
+        // A drop-down's list, and anything else that must escape the rectangle it was opened from.
+        // A widget cannot simply draw one where it stands: it would be clipped by whatever panel
+        // it is in, and painted under whatever is described after it. So the body is *deferred* --
+        // handed to the frame and run at the end of both passes, against the window's own clip and
+        // in a raised input layer.
+
+        /** @brief What a deferred popup draws. */
+        using StudioPopupBody = std::function<void(StudioFrame&)>;
+
+        /**
+         * @brief Opens a popup owned by a widget, closing any other.
+         *
+         * One at a time, deliberately. Two drop-downs open at once is a state with no correct
+         * keyboard behaviour, so it is made unreachable rather than handled.
+         *
+         * @param owner The widget the popup belongs to.
+         */
+        void openPopup(WidgetId owner);
+
+        /** @brief Closes the open popup, whichever widget owns it. */
+        void closePopup();
+
+        /**
+         * @brief Whether a widget's popup is open.
+         * @param owner The widget to ask about.
+         */
+        [[nodiscard]] bool isPopupOpen(WidgetId owner) const
+        {
+            return owner.isValid() && openPopup_ == owner;
+        }
+
+        /** @brief Whether any deferred popup is open. */
+        [[nodiscard]] bool isAnyPopupOpen() const { return openPopup_.isValid(); }
+
+        /** @brief The widget owning the open popup, or an invalid id. */
+        [[nodiscard]] WidgetId openPopupOwner() const { return openPopup_; }
+
+        /**
+         * @brief Queues a popup body to run at the end of this pass.
+         * @param body What to describe.
+         */
+        void deferPopup(StudioPopupBody body);
+
+        /**
+         * @brief Runs every deferred popup, against the window's clip and in the popup layer.
+         *
+         * Called once per pass by whatever drives the frame, after everything else has been
+         * described. Running it earlier would put the popup under something.
+         */
+        void flushPopups();
+
+        /** @brief The input layer a deferred popup routes in. */
+        static constexpr int kPopupLayer = 1;
+
         /** @brief The scope stack widget ids are derived from. */
         [[nodiscard]] WidgetIdStack& ids() { return ids_; }
 
@@ -464,6 +520,10 @@ namespace CNA::Studio
         StudioFontAtlas* atlas_ = nullptr;
 
         StudioCursor cursor_ = StudioCursor::Arrow;
+        WidgetId openPopup_;
+        std::vector<StudioPopupBody> popups_;
+        bool inPopup_ = false;
+
         StudioTooltipRequest tooltip_;
         WidgetId tooltipHovered_;
         float tooltipHoverSeconds_ = 0.0f;

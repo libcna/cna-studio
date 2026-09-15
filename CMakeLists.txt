@@ -420,8 +420,11 @@ add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioOutlinerPanel.cpp
     src/shell-panels/StudioDetailsPanel.cpp
     src/shell-panels/StudioShellActions.cpp
-    src/shell-panels/StudioContentBrowser.cpp)
-target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context)
+    src/shell-panels/StudioContentBrowser.cpp
+    src/shell-panels/StudioBuildPanel.cpp
+    src/shell-panels/StudioShellPanels.cpp)
+target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context
+                                                     cna-studio-project)
 
 # ---------------------------------------------------------------------------------------------
 # Application
@@ -450,6 +453,7 @@ add_executable(cna-studio
 target_link_libraries(cna-studio PRIVATE
     cna-studio-ui-core
     cna-studio-context
+    cna-studio-shell-panels
     cna-studio-plugins
     cna-studio-runtime-bridge)
 

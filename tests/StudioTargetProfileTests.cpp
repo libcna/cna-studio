@@ -637,3 +637,40 @@ CNA_STUDIO_TEST(TheBuildRequestComesFromTheActiveProfileAndSetsTheVariablesCnaHa
     std::error_code errorCode;
     std::filesystem::remove_all(root, errorCode);
 }
+
+CNA_STUDIO_TEST(ARendererWrittenInCnasOwnSpellingIsNormalisedWithoutComplaint)
+{
+    // Every project that predates target profiles carries CNA's upper-case identity in
+    // `defaultGraphicsBackend`, and that string becomes the migrated profile's renderer. Leaving
+    // it as written made every renderer comparison in Studio a case-insensitive one -- a rule that
+    // holds until the one place that forgets it, which is where it surfaced: a Build panel whose
+    // renderer control was blank, because "OPENGLES3" matched nothing in a list of lower-case
+    // names. Nothing about the target changes here, only how it is written down, so it is
+    // normalised silently rather than reported as a migration.
+    StudioTargetProfile profile = StudioTargetProfile::defaults();
+    profile.os = StudioTargetOs::Linux;
+    profile.renderer = "OPENGLES3";
+    profile.platform = "SDL3";
+
+    const StudioProfileValidation validation = validateStudioTargetProfile(profile);
+
+    CNA_STUDIO_EXPECT_EQ(profile.renderer, std::string{"opengles3"});
+    CNA_STUDIO_EXPECT_EQ(profile.platform, std::string{"sdl3"});
+    CNA_STUDIO_EXPECT(validation.isClean());
+}
+
+CNA_STUDIO_TEST(AMigratedLegacyRendererComesBackInTheCatalogueSpelling)
+{
+    // Migration and normalisation compose: the alias table names its replacement in whatever case
+    // it was written, and what lands on the profile has to be the one spelling everything else
+    // compares against.
+    StudioTargetProfile profile = StudioTargetProfile::defaults();
+    profile.renderer = "EASYGL";
+
+    const StudioProfileValidation validation = validateStudioTargetProfile(profile);
+
+    CNA_STUDIO_EXPECT(!validation.isClean());
+    CNA_STUDIO_EXPECT(findRenderer(profile.renderer) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(profile.renderer,
+                         std::string{findRenderer(profile.renderer)->commandLineName});
+}

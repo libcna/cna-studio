@@ -330,6 +330,14 @@ namespace CNA::Studio
         }
         else
         {
+            // Normalised to the catalogue's own lower-case spelling, silently and without a
+            // warning: nothing about the target changed, only how it is written down. A project
+            // that predates profiles carries CNA's upper-case identity in
+            // `defaultGraphicsBackend`, and leaving it as written made every renderer comparison
+            // in Studio a case-insensitive one -- which is the kind of rule that holds until the
+            // one place that forgets it, where it shows up as a Build panel with a blank renderer.
+            profile.renderer = std::string{renderer->commandLineName};
+
             std::string reason;
             if (!isRendererAvailableOn(profile.renderer, profile.os, &reason))
             {
@@ -352,7 +360,8 @@ namespace CNA::Studio
             add(validation, StudioProfileSeverity::Error, "platform",
                 "CNA has no platform called '" + profile.platform + "'.");
         }
-        else if (platform->status == PlatformStatus::Reserved)
+        else if (profile.platform = std::string{platform->commandLineName};  // normalised, as above
+                 platform->status == PlatformStatus::Reserved)
         {
             add(validation, StudioProfileSeverity::Error, "platform",
                 "CNA reserves the name '" + std::string{platform->cnaIdentity}

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 7 of 26 complete `███░░░░░░░░░`
+**Progress:** 8 of 26 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,7 +19,7 @@
 | `STUDIO-07007` | Port the Inspector panel (Details) | ✅ | `STUDIO-07001`, `STUDIO-03035` |
 | `STUDIO-07008` | Port the Content Browser | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
-| `STUDIO-07010` | Port the Build panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07010` | Port the Build panel | ✅ | `STUDIO-07001`, `STUDIO-02040`, `STUDIO-03036` |
 | `STUDIO-07011` | Port the Diagnostics panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07012` | Port the Validation panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07013` | Port the History panel | ⬜ | `STUDIO-07001` |
@@ -45,12 +45,20 @@ Tasks whose completion condition is not obvious from the title.
 
 **Acceptance.** Both UIs coexist in one running Studio; the strangler migration proceeds panel by panel with tests green throughout
 
-**What holds today.** The seam exists and one panel has gone through it: `StudioShell::setPanelContent`
-hosts a ported panel's content, an unported panel is the empty surface it always was, and both
-consoles read one `StudioLog`. What does not hold yet is the words *one running Studio*: the two
-presentations are still two entry points, `--ui=imgui` and `--ui=studio`, rather than one process
-showing ported and unported panels side by side. That is the remaining half, and it is what
-`STUDIO-06015` is waiting on
+**What holds today.** The seam exists and five panels have gone through it:
+`StudioShell::setPanelContent` hosts a ported panel's content, an unported panel is the empty
+surface it always was, and both consoles read one `StudioLog`.
+
+**The binding moved out of the CNA-linked module** (`StudioShellPanels`), and that was not
+housekeeping. There is exactly one place a running Studio is created — behind a CNA checkout — so
+the ported panels could only be *seen* in a build with CNA, and the headless shell preview, which
+is the only visual test this project has on a machine with no GPU or display, photographed five
+empty rectangles where the panels are. Nothing about binding a panel needs CNA. The same binding
+now serves the editor and the preview, so what CI photographs is what a user sees.
+
+What does not hold yet is the words *one running Studio*: the two presentations are still two entry
+points, `--ui=imgui` and `--ui=studio`, rather than one process showing ported and unported panels
+side by side. That is the remaining half, and it is what `STUDIO-06015` is waiting on
 
 ### `STUDIO-07005` — Port the Console / Output Log
 
@@ -201,3 +209,42 @@ be touched" stopped being the same thing
 **Verification.** `tests/StudioContentBrowserTests.cpp` — folders derived and ordered, collapsing
 hiding subfolders as well as files, a missing source listed and marked and still clickable, types
 and counts, a click selecting a file and not a folder, and an empty project saying so
+
+### `STUDIO-07010` — Port the Build panel
+
+**Acceptance.** The Build panel on the Studio UI, at parity with the ImGui one: what will be built,
+the exact commands, a Build button, progress and the log tail
+
+**It is not a straight port, and could not have been.** The ImGui panel offers two axes — a platform
+triple and a graphics backend — because that is all the prototype's model had. Studio's model is the
+six-axis `StudioTargetProfile` (`STUDIO-02040`): operating system, architecture, CNA platform, CNA
+renderer, configuration and the optional subsystems, with validation that knows which combinations
+CNA will actually configure. **That model had no user interface at all**, and a project could only
+change what it ships on by editing its `.cnaproject` in a text editor. This is that interface.
+
+**A profile belongs to the project, not to the panel.** The legacy panel kept its chosen platform
+and backend in its own members, so what the user chose was forgotten when the panel closed and was
+never saved — and the Build button could therefore build something the Play button would not. Here
+the profile list *is* the project's, edited in place.
+
+**The lists offer only what CNA will configure.** Renderers are filtered by the chosen operating
+system, and reserved platform names — ones CNA's build recognises and refuses — are left out.
+Offering Direct3D on a Linux target and then failing validation would be the tool asking the user to
+discover a rule it already knows, at the cost of a full configure. The profile's *own* renderer is
+always listed even when this system cannot build it, because a blank control reads as "Studio lost
+your setting" rather than "this combination does not exist", and validation can only explain a value
+the user can still see.
+
+**It found a real defect.** Every project that predates profiles carries CNA's upper-case identity
+in `defaultGraphicsBackend`, and that string became the migrated profile's renderer verbatim — so
+`StudioTargetProfile::renderer`, documented as lower case, was sometimes `"OPENGLES3"`. Every
+renderer comparison in Studio was therefore a case-insensitive one, a rule that holds until the
+place that forgets it: this panel, whose renderer control was blank against a list of lower-case
+names. Validation now normalises the spelling in place, silently, because nothing about the target
+changed — only how it is written down.
+
+**Verification.** `tests/StudioBuildPanelTests.cpp`: no project, a project that always has a target,
+the filtered renderer list, an axis edit reaching the *project* rather than the panel, the request
+matching the project's active profile, a subsystem reaching the CMake arguments, no phase violations
+across repeated frames, and the Build button refused on an unbuildable profile. Plus
+`CnaStudioShellPreviewBuildPanel`, which photographs it through the rasterizer

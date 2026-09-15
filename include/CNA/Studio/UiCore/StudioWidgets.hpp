@@ -527,4 +527,64 @@ namespace CNA::Studio
     StudioTextFieldResult studioTextField(StudioFrame& frame, WidgetId id, const UiRect& bounds,
                                           std::string& value,
                                           const StudioTextFieldOptions& options = {});
+
+    // ---------------------------------------------------------------------------------------
+    // Drop-down
+    // ---------------------------------------------------------------------------------------
+
+    /** @brief How a drop-down behaves. */
+    struct StudioDropdownOptions
+    {
+        /** @brief False to draw it dimmed and refuse interaction. */
+        bool enabled = true;
+
+        /** @brief Shown when the selection is out of range, e.g. `"(none)"`. */
+        std::string_view placeholder = "";
+
+        /** @brief Hover help, offered after the pointer rests. */
+        std::string_view tooltip = "";
+
+        /**
+         * @brief How many rows the list shows before it scrolls.
+         *
+         * A list of every renderer or every font on the machine must not become a popup taller
+         * than the window.
+         */
+        int visibleRows = 10;
+    };
+
+    /** @brief What a drop-down did this frame. */
+    struct StudioDropdownResult
+    {
+        /** @brief Hover, press and focus of the closed control. */
+        StudioInteraction interaction;
+
+        /** @brief The selection changed. Input pass only. */
+        bool changed = false;
+
+        /** @brief The index now selected, or -1. */
+        int selected = -1;
+
+        /** @brief The list is showing. Both passes. */
+        bool open = false;
+    };
+
+    /**
+     * @brief A drop-down selection.
+     *
+     * Click or press Enter/Space/Down to open, arrows to move, Enter to choose, Escape or a press
+     * elsewhere to dismiss. The list is a *deferred* popup, so it escapes the panel it sits in
+     * rather than being clipped by it, and it flips above the control when there is no room below.
+     *
+     * @param frame The frame.
+     * @param id Identity of the control.
+     * @param bounds Area the closed control occupies.
+     * @param items What can be chosen.
+     * @param selected Index of the current selection, or -1. Written when the user chooses.
+     * @param options Behaviour.
+     * @return What happened.
+     */
+    StudioDropdownResult studioDropdown(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                        const std::vector<std::string>& items, int& selected,
+                                        const StudioDropdownOptions& options = {});
 } // namespace CNA::Studio

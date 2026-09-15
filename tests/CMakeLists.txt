@@ -34,6 +34,8 @@ add_executable(cna-studio-tests
     StudioTooltipTests.cpp
     StudioSubmenuTests.cpp
     StudioContextMenuTests.cpp
+    StudioDropdownTests.cpp
+    StudioBuildPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -203,6 +205,30 @@ add_test(NAME CnaStudioShellPreviewDockDrag
                        --shell-size=1280x720 --shell-drag=layers
                        --shell-pointer=1000,400 --shell-mouse-down)
 set_tests_properties(CnaStudioShellPreviewDockDrag PROPERTIES TIMEOUT 60)
+
+# The ported panels with real content in them. Until the preview could bind them, every screenshot
+# in this suite showed five empty rectangles where the panels are -- so nothing visual covered the
+# panels at all, which is most of what a user looks at.
+add_test(NAME CnaStudioShellPreviewPortedPanels
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-panels.png
+                       --shell-size=1400x900
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewPortedPanels PROPERTIES TIMEOUT 60)
+
+# The Build panel, which shares a tab bar and is therefore only capturable by raising it.
+add_test(NAME CnaStudioShellPreviewBuildPanel
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-build.png
+                       --shell-size=1400x900 --panel=build
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewBuildPanel PROPERTIES TIMEOUT 60)
+
+add_test(NAME CnaStudioRejectsRaisingAPanelThatIsNotOpen
+    COMMAND cna-studio --shell-preview=never.png --panel=nosuchpanel)
+set_tests_properties(CnaStudioRejectsRaisingAPanelThatIsNotOpen PROPERTIES WILL_FAIL TRUE)
+
+add_test(NAME CnaStudioPreviewRejectsAProjectItCannotOpen
+    COMMAND cna-studio --shell-preview=never.png --project=/definitely/not/here/Missing.cnaproject)
+set_tests_properties(CnaStudioPreviewRejectsAProjectItCannotOpen PROPERTIES WILL_FAIL TRUE)
 
 # A context menu on a panel tab, which is the shell's own first user of the mechanism.
 add_test(NAME CnaStudioShellPreviewContextMenu

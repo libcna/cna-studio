@@ -83,8 +83,47 @@ namespace CNA::Studio
 
         interactions_.clear();
         cursor_ = StudioCursor::Arrow;
+        popups_.clear();
 
         tooltip_ = StudioTooltipRequest{};
+    }
+
+    void StudioFrame::openPopup(WidgetId owner)
+    {
+        if (!owner.isValid()) { return; }
+        openPopup_ = owner;
+    }
+
+    void StudioFrame::closePopup() { openPopup_ = WidgetId{}; }
+
+    void StudioFrame::deferPopup(StudioPopupBody body)
+    {
+        if (body) { popups_.push_back(std::move(body)); }
+    }
+
+    void StudioFrame::flushPopups()
+    {
+        if (popups_.empty()) { return; }
+
+        // Against the window's own clip, not whatever clip happened to be in force when the popup
+        // was queued: a drop-down list longer than the panel it sits in is the ordinary case, and
+        // clipping it to that panel would cut it off halfway down.
+        std::vector<StudioPopupBody> running;
+        running.swap(popups_);
+
+        inPopup_ = true;
+        pushLayer(kPopupLayer);
+        pushClip(UiRect{0.0f, 0.0f, pendingInput_.displayWidth, pendingInput_.displayHeight});
+        ids_.push("popup");
+        for (const StudioPopupBody& body : running) { body(*this); }
+        ids_.pop();
+        popClip();
+        popLayer();
+        inPopup_ = false;
+
+        // Anything a popup queued itself is dropped rather than run: a popup that opened a popup
+        // every frame would grow this list without bound, and nothing in the UI needs it.
+        popups_.clear();
     }
 
     void StudioFrame::beginLayout() { enter(StudioFramePhase::Layout, StudioFramePhase::Build); }
@@ -96,7 +135,10 @@ namespace CNA::Studio
         // The router's frame starts here rather than in beginFrame(), because it computes edges by
         // diffing against the previous snapshot: starting it twice per frame would make the second
         // diff empty and every press and release would vanish.
-        router_.beginFrame(pendingInput_, blockingLayer_);
+        // Raised by the frame itself while a deferred popup is open, because the caller cannot
+        // know: a drop-down opened inside a panel is not something the shell was told about, and a
+        // list whose rows can be clicked *through* is worse than one that does not open at all.
+        router_.beginFrame(pendingInput_, std::max(blockingLayer_, isAnyPopupOpen() ? kPopupLayer : 0));
         ids_.beginFrame();
     }
 
@@ -293,8 +335,10 @@ namespace CNA::Studio
         frame.beginLayout();
         frame.beginInput();
         if (describe) { describe(frame); }
+        frame.flushPopups();
         frame.beginDraw();
         if (describe) { describe(frame); }
+        frame.flushPopups();
         frame.endFrame();
     }
 

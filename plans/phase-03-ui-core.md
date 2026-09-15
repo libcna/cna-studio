@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 25 of 31 complete `██████████░░`
+**Progress:** 27 of 32 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -27,7 +27,7 @@
 | `STUDIO-03015` | Frame lifecycle: build, layout, input, draw, retain | ✅ | `STUDIO-03003` |
 | `STUDIO-03020` | Cursor shape requests from widgets | ✅ | `STUDIO-03009` |
 | `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ✅ | `STUDIO-03009` |
-| `STUDIO-03022` | Popup and modal layering with correct input blocking | 🔄 | `STUDIO-03009` |
+| `STUDIO-03022` | Popup and modal layering with correct input blocking | ✅ | `STUDIO-03009` |
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
 | `STUDIO-03024` | Text selection model for text fields | ✅ | `STUDIO-03007` |
 | `STUDIO-03025` | Clipboard integration through the platform seam | ✅ | `STUDIO-03024` |
@@ -41,6 +41,7 @@
 | `STUDIO-03033` | Scrollable regions: wheel, draggable thumb, and row virtualisation | ✅ | `STUDIO-03031`, `STUDIO-03018` |
 | `STUDIO-03034` | Tree view: flattened rows, disclosure, indentation and selection | ✅ | `STUDIO-03033` |
 | `STUDIO-03035` | Editable single-line text field over the selection model | ✅ | `STUDIO-03024`, `STUDIO-03025` |
+| `STUDIO-03036` | Drop-down selection over a deferred popup | ✅ | `STUDIO-03022`, `STUDIO-03033` |
 
 ## Acceptance and verification
 
@@ -157,6 +158,24 @@ not bytes, and truncation cuts on code-point boundaries
 ### `STUDIO-03022` — Popup and modal layering with correct input blocking
 
 **Acceptance.** A modal blocks input beneath it; popups stack and dismiss in order; Escape closes the topmost
+
+**How it was met, in two pieces.** The *stacking* half came with nested submenus (`STUDIO-06017`):
+popups are a chain, Escape closes the topmost, a press outside closes the lot, and a row is
+highlighted only in the deepest popup holding the pointer — which is what stops two rows lighting up
+where a flipped submenu overlaps its parent.
+
+The *blocking* half came with the drop-down (`STUDIO-03036`), and it needed something the shell's
+own menus did not: a popup opened inside a panel is not something the shell was told about, so the
+frame raises its own blocking layer while one is open rather than being handed the answer by its
+caller. Without it a click meant for a list row would also reach the control underneath — in a
+property grid, that means editing the wrong property, which is the one failure a screenshot of a
+drop-down can never show.
+
+A *modal* window does not exist yet and has nothing to block; the layering it will use is here.
+
+**Verification.** `tests/StudioSubmenuTests.cpp` for the chain, `tests/StudioDropdownTests.cpp`
+for the blocking (`AnOpenListBlocksWhatItCovers` clicks a button under an open list, having first
+proved that the same click works while it is closed)
 
 ### `STUDIO-03023` — Drag and drop: sources, targets, payload typing, visual feedback
 
@@ -356,3 +375,37 @@ during a drag, the shell's toolbar carrying its shortcut, and staying inside the
 `CnaStudioShellPreviewTooltip`, which captures a real one through the rasterizer and fails the run
 if none appeared, and `CnaStudioRejectsATooltipThatNeverAppears`, so resting somewhere that offers
 none is an error rather than a picture of the shell at rest passing for a picture of a tooltip
+
+### `STUDIO-03036` — Drop-down selection over a deferred popup
+
+**Acceptance.** Click or Down to open, arrows to move, Enter to choose, Escape or a press elsewhere
+to dismiss; the list escapes the panel it sits in, scrolls when it is long, and blocks what it
+covers
+
+**The hard part is not the list; it is where the list is allowed to be.** A widget cannot draw a
+popup where it stands: it would be clipped by whatever panel it is in — a list clipped to a property
+row shows one option — and painted under whatever is described after it. So the frame gained
+*deferred popups*: a body handed to the frame and run at the end of both passes, against the
+window's own clip and in a raised input layer. That facility is the reusable part; the drop-down is
+its first user.
+
+**A deferred body cannot answer the widget that queued it.** It runs after that call returned, so a
+reference into the caller's stack frame would dangle — the kind of capture that works in every test
+and fails on the one panel that builds its items inline. The answer goes through the control's own
+retained state instead and is collected on the next pass that routes input: one frame of latency,
+and the list closes on the same frame the user clicked.
+
+**Two bugs the tests were written to catch, both found.** The pending-choice sentinel was `-1`,
+and retained state holds *zero* the first time a widget is seen — so every drop-down selected its
+first item the moment it was described. And the control consumed Enter as a keyboard activation
+while its list was open, so Enter closed the list instead of choosing from it; while a list is open
+the keyboard belongs to the list. A third was caught by a test that proved *itself* wrong first:
+the keystroke that opens a list must not also move within it, or Down-then-Enter — the fastest way
+to accept what is already selected — lands on the item after it.
+
+**Verification.** `tests/StudioDropdownTests.cpp`: opening and closing, choosing, the change
+reported exactly once (a control that reported it per frame would put one entry per frame in an
+undo stack), dismissal by press and by Escape, flipping upwards near the bottom edge, an empty list
+being disabled rather than opening on nothing, keyboard open/move/choose, the opening keystroke not
+also moving, a two-hundred-item list bounded by its row limit, and no phase violations across
+repeated frames
