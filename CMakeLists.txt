@@ -421,6 +421,8 @@ endif()
 # knows nothing about widgets, and keeping it that way is what lets each be tested without the
 # other. Every panel ported in Phase 7 belongs here.
 add_library(cna-studio-shell-panels STATIC
+    src/shell-panels/StudioBuildService.cpp
+    src/shell-panels/StudioPlayService.cpp
     src/shell-panels/StudioOutlinerPanel.cpp
     src/shell-panels/StudioDetailsPanel.cpp
     src/shell-panels/StudioShellActions.cpp

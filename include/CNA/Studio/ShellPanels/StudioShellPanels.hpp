@@ -34,6 +34,8 @@
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioBuildService.hpp"
+#include "CNA/Studio/ShellPanels/StudioPlayService.hpp"
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
@@ -50,21 +52,6 @@
 
 namespace CNA::Studio
 {
-    /**
-     * @brief Whether a game launched from the editor is running, paused, or not running.
-     *
-     * Declared here rather than reusing the prototype's `PlayMode`, which lives in the Dear ImGui
-     * panel headers that `STUDIO-07030` deletes. The native module must not depend on them, and the
-     * alternative -- moving the prototype's enum somewhere shared -- would be rearranging code that
-     * is on its way out.
-     */
-    enum class StudioPlayState
-    {
-        Stopped,
-        Playing,
-        Paused
-    };
-
     class StudioContext;
 
     /** @brief What a host can offer the panels that the panels cannot do themselves. */
@@ -226,12 +213,15 @@ namespace CNA::Studio
          * @param snapshot What the pointer and the forwarded keys are doing.
          * @return True when a message went on the wire.
          */
-        bool forwardInputToPlayer(const PlayerInputSnapshot& snapshot);
+        bool forwardInputToPlayer(const PlayerInputSnapshot& snapshot)
+        {
+            return play_.forwardInput(snapshot);
+        }
 
         /** @brief The last snapshot actually sent, for tests and for the deduplication above. */
         [[nodiscard]] const PlayerInputSnapshot& lastForwardedInput() const
         {
-            return lastForwardedInput_;
+            return play_.lastForwardedInput();
         }
 
         /** @brief Which projection the viewport is showing, so the host renders the same one. */
@@ -254,8 +244,22 @@ namespace CNA::Studio
          */
         void setPlayerBuilds(std::vector<PlayerBuild> builds);
 
+        /**
+         * @brief The game this Studio plays: the process, its state and its rules.
+         *
+         * `STUDIO-02054`. Handed out rather than wrapped method by method — a wrapper per operation
+         * would be six functions that do nothing, which is the failure mode of a decomposition
+         * rather than the point of one. The few members still forwarded below are the ones with a
+         * second responsibility here: `setPlayerBuilds` also feeds the Diagnostics panel, and
+         * `isPlaying`, `playState` and the three commands are what the bound actions and the
+         * existing tests already call.
+         */
+        [[nodiscard]] StudioPlayService& play() { return play_; }
+        /** @brief The game this Studio plays. */
+        [[nodiscard]] const StudioPlayService& play() const { return play_; }
+
         /** @brief Whether a player is running right now. */
-        [[nodiscard]] bool isPlaying() const;
+        [[nodiscard]] bool isPlaying() const { return play_.isRunning(); }
 
         /**
          * @brief Chooses the renderer Play launches on, for this session.
@@ -264,16 +268,16 @@ namespace CNA::Studio
          *        project's target profile names.
          * @return True when the choice was applied; false when no such build is installed.
          */
-        bool selectPlayerBuild(const std::string& backend);
+        bool selectPlayerBuild(const std::string& backend) { return play_.selectBuild(backend); }
 
         /** @brief The session's renderer override, or empty when the project decides. */
-        [[nodiscard]] const std::string& playerBuildOverride() const { return playerBuildOverride_; }
+        [[nodiscard]] const std::string& playerBuildOverride() const { return play_.buildOverride(); }
 
         /** @brief The player builds installed beside this Studio. */
-        [[nodiscard]] const std::vector<PlayerBuild>& playerBuilds() const { return playerBuilds_; }
+        [[nodiscard]] const std::vector<PlayerBuild>& playerBuilds() const { return play_.builds(); }
 
         /** @brief Whether a player is running and paused. */
-        [[nodiscard]] StudioPlayState playState() const { return playState_; }
+        [[nodiscard]] StudioPlayState playState() const { return play_.state(); }
 
         /**
          * @brief Asks the running game to pause or resume.
@@ -284,7 +288,7 @@ namespace CNA::Studio
          * @param paused True to pause.
          * @return True when the request was sent.
          */
-        bool setPlayPaused(bool paused);
+        bool setPlayPaused(bool paused) { return play_.setPaused(paused); }
 
         /**
          * @brief Asks a paused game to advance one frame.
@@ -294,10 +298,10 @@ namespace CNA::Studio
          *
          * @return True when the request was sent.
          */
-        bool stepPlayFrame();
+        bool stepPlayFrame() { return play_.stepFrame(); }
 
         /** @brief Stops the running game and starts it again from the scene as it now stands. */
-        void restartPlaying();
+        void restartPlaying() { play_.restart(); }
 
         /** @brief The backend comparison this Studio would run, for a caller to report on. */
         [[nodiscard]] const BackendComparison& comparison() const { return comparison_; }
@@ -348,7 +352,18 @@ namespace CNA::Studio
         void applyPreferences();
 
         /** @brief The build this Studio would run. */
-        [[nodiscard]] BuildProcess& build() { return build_; }
+        [[nodiscard]] BuildProcess& build() { return build_.process(); }
+
+        /**
+         * @brief Building the user's game and packaging it. `STUDIO-02055`.
+         *
+         * Handed out for the same reason the play service is: a forwarder per operation would be
+         * code that does nothing. `build()` stays as it was because every panel and test already
+         * spells it that way and it names the process rather than the service.
+         */
+        [[nodiscard]] StudioBuildService& builds() { return build_; }
+        /** @brief Building the user's game and packaging it. */
+        [[nodiscard]] const StudioBuildService& builds() const { return build_; }
 
         /**
          * @brief What the Diagnostics panel reports, for the host to fill in each frame.
@@ -374,13 +389,9 @@ namespace CNA::Studio
                                        std::string_view headline, std::string_view hint);
 
         /** @brief Writes the project out as a standalone CNA game and says where. */
-        void packageProject();
 
         /** @brief The player binary Play would launch, or nullptr when none was found. */
-        [[nodiscard]] const PlayerBuild* choosePlayerBuild() const;
 
-        void startPlaying();
-        void stopPlaying();
 
         /** @brief Runs the open scene on every discovered player build. */
         void startComparison();
@@ -389,7 +400,6 @@ namespace CNA::Studio
         [[nodiscard]] ComparisonRequest makeComparisonRequest() const;
 
         /** @brief Pumps the bridge once a frame and reports what the player said. */
-        void pollPlayer();
 
         /**
          * @brief Raises @p notification, or logs it when there is no shell to raise it on.
@@ -420,7 +430,6 @@ namespace CNA::Studio
         void pollPlugins();
 
         /** @brief Announces a build that has just finished, either way. */
-        void pollBuild();
 
         /**
          * @brief Announces a comparison that has just finished.
@@ -452,9 +461,6 @@ namespace CNA::Studio
          */
         bool framedIn3D_ = false;
 
-        /** @brief The last snapshot sent to the player, so identical ones are not re-sent. */
-        PlayerInputSnapshot lastForwardedInput_;
-
         StudioTreeState outlinerState_;
         StudioTreeState contentState_;
         StudioProblemsState problemsState_;
@@ -464,21 +470,6 @@ namespace CNA::Studio
         StudioTreeState comparisonState_;
         StudioPreferences preferences_;
         StudioShortcutEditorState shortcutEditor_;
-
-        /** @brief The build's state last poll, so a finish is noticed as a transition. */
-        BuildState buildWasState_ = BuildState::Idle;
-
-        /** @brief Whether the running game is playing or paused. */
-        StudioPlayState playState_ = StudioPlayState::Stopped;
-
-        /**
-         * @brief The renderer the user chose for this session, or empty.
-         *
-         * Not persisted, deliberately. The project's renderer is what the game ships on; this is a
-         * thing somebody did to one session to look at something, and a Studio that remembered it
-         * across restarts would quietly ship a different answer from the one in the project.
-         */
-        std::string playerBuildOverride_;
 
         /** @brief Snapshots of the open scene, and whatever a previous session left behind. */
         StudioRecoverySession recovery_{context_};
@@ -502,21 +493,17 @@ namespace CNA::Studio
         StudioViewportState viewportState_;
         Uuid selectedAsset_;
 
-        BuildProcess build_;
+        StudioBuildService build_;
         std::unique_ptr<StudioBuildPanel> buildPanel_;
 
         /**
-         * @brief The player this Studio launches, and the builds it can choose from.
+         * @brief The game this Studio plays.
          *
          * Owned here for the same reason the build process is: two of either would be two
          * processes racing for one project, and the panel that reports on it must be reporting on
          * the one Play actually started.
          */
-        PlayerProcess player_;
-        std::vector<PlayerBuild> playerBuilds_;
-
-        /** @brief Whether the player was running when it was last polled. See pollPlayer(). */
-        bool playerWasRunning_ = false;
+        StudioPlayService play_;
 
         /**
          * @brief The renderer comparison, and the tolerance the next run uses.

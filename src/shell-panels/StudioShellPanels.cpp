@@ -37,9 +37,17 @@ namespace CNA::Studio
 {
     StudioShellPanels::StudioShellPanels(StudioShell& shell, StudioContext& context, StudioLog& log,
                                          StudioShellPanelServices services)
-        : shell_(&shell), context_(context), log_(log), services_(std::move(services))
+        : shell_(&shell), context_(context), log_(log), services_(std::move(services)),
+          build_(context, log, [this](StudioNotification notification) {
+              notify(std::move(notification));
+          }),
+          // The sink rather than a direct call on the shell, so the service needs no shell to be
+          // constructed and a test can read what it raised without one.
+          play_(context, log, [this](StudioNotification notification) {
+              notify(std::move(notification));
+          })
     {
-        buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_);
+        buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_.process());
 
         // A toast is ephemeral by design, which makes it the wrong place to keep anything. Wired
         // here because this is where the shell and the log meet: the shell is CNA-free and knows
@@ -50,13 +58,22 @@ namespace CNA::Studio
         bind(shell);
     }
 
+    void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
+    {
+        play_.setBuilds(std::move(builds));
+        // The Diagnostics panel reports the same list. One setter, so the two cannot disagree
+        // about what this Studio can run -- and this is the half that is not the play service's,
+        // which is why setting the builds is still a method here rather than only on it.
+        diagnostics_.players = play_.builds();
+    }
+
     void StudioShellPanels::poll(double nowSeconds)
     {
         pollPlugins();
         pollRecovery(nowSeconds);
         build_.poll();
-        pollBuild();
-        pollPlayer();
+        (void)build_.poll();
+        counts_.playerMessages += play_.poll();
         const bool wasComparing = comparison_.getState() == ComparisonState::Launching
                                || comparison_.getState() == ComparisonState::Capturing;
         comparison_.poll(nowSeconds);
@@ -192,30 +209,6 @@ namespace CNA::Studio
         recovery_.update(delta);
     }
 
-    void StudioShellPanels::pollBuild()
-    {
-        // The transition, not the state. A build that has failed stays failed until the next one
-        // starts, and a toast raised from the state would be re-raised every frame for ever.
-        const BuildState state = build_.getState();
-        if (state == buildWasState_) { return; }
-        buildWasState_ = state;
-
-        if (shell_ == nullptr) { return; }
-        if (state != BuildState::Succeeded && state != BuildState::Failed) { return; }
-
-        // The case notifications exist for. A build takes minutes and the user goes to read
-        // something else, so the result has to find them rather than waiting in a panel.
-        StudioNotification notification;
-        notification.id = "studio.build";
-        notification.severity = state == BuildState::Succeeded
-            ? StudioNotificationSeverity::Success
-            : StudioNotificationSeverity::Error;
-        notification.title = state == BuildState::Succeeded ? "Build succeeded" : "Build failed";
-        notification.detail = "Log: " + build_.getLogPath();
-        notification.actionId = StudioShell::showPanelActionId("build");
-        notify(std::move(notification));
-    }
-
     void StudioShellPanels::reportComparison(bool wasRunning)
     {
         if (shell_ == nullptr || !wasRunning) { return; }
@@ -298,11 +291,11 @@ namespace CNA::Studio
         // the status bar reports what is running now, and "now" is what a poll is for.
         status.jobs.clear();
 
-        if (build_.getState() == BuildState::Running)
+        if (build_.process().getState() == BuildState::Running)
         {
             StudioStatusJob job;
-            const std::size_t steps = build_.getSteps().size();
-            const std::size_t done = build_.getStepNumber();
+            const std::size_t steps = build_.process().getSteps().size();
+            const std::size_t done = build_.process().getStepNumber();
             job.label = steps > 0
                 ? "Building, step " + std::to_string(std::min(done + 1, steps)) + " of "
                       + std::to_string(steps)
@@ -323,205 +316,16 @@ namespace CNA::Studio
             status.jobs.push_back(std::move(job));
         }
 
-        if (player_.isRunning())
+        if (play_.isRunning())
         {
             StudioStatusJob job;
             // Which of the two, because a paused game and a running one look identical from the
             // editor -- the window is there either way -- and the difference is the whole point of
             // having paused it.
-            job.label = playState_ == StudioPlayState::Paused ? "Paused" : "Playing";
+            job.label = play_.state() == StudioPlayState::Paused ? "Paused" : "Playing";
             job.stopActionId = "studio.play.stop";
             status.jobs.push_back(std::move(job));
         }
-    }
-
-    void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
-    {
-        playerBuilds_ = std::move(builds);
-
-        // An override naming a build that is no longer installed is an override that would make
-        // Play fall back silently to something else. Dropped rather than kept, so what the panel
-        // shows is what Play will do.
-        if (!playerBuildOverride_.empty()
-            && std::none_of(playerBuilds_.begin(), playerBuilds_.end(),
-                            [this](const PlayerBuild& build) {
-                                return build.backend == playerBuildOverride_;
-                            }))
-        {
-            playerBuildOverride_.clear();
-        }
-
-        // The Diagnostics panel reports the same list. One setter, so the two cannot disagree
-        // about what this Studio can run.
-        diagnostics_.players = playerBuilds_;
-    }
-
-    bool StudioShellPanels::isPlaying() const { return player_.isRunning(); }
-
-    bool StudioShellPanels::selectPlayerBuild(const std::string& backend)
-    {
-        if (backend.empty())
-        {
-            const bool had = !playerBuildOverride_.empty();
-            playerBuildOverride_.clear();
-            if (had)
-            {
-                log_.append(LogSeverity::Info,
-                            "Play will use whatever the project's target profile names.");
-            }
-            return true;
-        }
-
-        for (const PlayerBuild& build : playerBuilds_)
-        {
-            if (build.backend != backend) { continue; }
-            if (playerBuildOverride_ != backend)
-            {
-                playerBuildOverride_ = backend;
-                // Said, because it is a promise that now differs from the project's. A user who
-                // has forgotten they set it would otherwise see the editor disagree with the
-                // project for no visible reason.
-                log_.append(LogSeverity::Info,
-                            "Play will use " + backend + " for this session, whatever the project "
-                            "ships on.");
-            }
-            return true;
-        }
-        return false;
-    }
-
-    const PlayerBuild* StudioShellPanels::choosePlayerBuild() const
-    {
-        if (playerBuilds_.empty()) { return nullptr; }
-
-        // What the user said, if they said anything. An override outranks the project because it
-        // is the more recent and more specific decision, and because the only reason to set one is
-        // to see this scene on that renderer now.
-        if (!playerBuildOverride_.empty())
-        {
-            for (const PlayerBuild& build : playerBuilds_)
-            {
-                if (build.backend == playerBuildOverride_) { return &build; }
-            }
-        }
-
-        // The renderer the project says it ships on, when a player for it was built. Otherwise
-        // whatever is there: a user pressing Play wants to see their game, and refusing because
-        // the preferred renderer is missing helps nobody.
-        const std::string preferred = context_.getProject().getActiveTargetProfile().renderer;
-        for (const PlayerBuild& build : playerBuilds_)
-        {
-            if (build.backend == preferred) { return &build; }
-        }
-        return &playerBuilds_.front();
-    }
-
-    void StudioShellPanels::startPlaying()
-    {
-        const PlayerBuild* build = choosePlayerBuild();
-        if (build == nullptr)
-        {
-            log_.append(LogSeverity::Error,
-                        "No player build was found beside this executable. CNA fixes its renderer "
-                        "at compile time, so Play needs a cna-player-<renderer> binary to launch.");
-            return;
-        }
-
-        // The player is a separate process and reads the scene from disk, so what is on screen has
-        // to be *there* first. Saving silently would be worse than refusing: a user who has not
-        // saved deliberately would find their file overwritten by pressing Play.
-        if (context_.getScenePath().empty())
-        {
-            log_.append(LogSeverity::Warning,
-                        "Save the scene before playing: the player is a separate process and "
-                        "reads it from disk.");
-            return;
-        }
-        if (context_.getHistory().isDirty() && !context_.saveScene())
-        {
-            log_.append(LogSeverity::Error, "Could not save the scene; not starting the player.");
-            return;
-        }
-
-        // Relative to the project, like the build's paths: two processes need not agree on a
-        // working directory, and the project root is the one anchor both already have.
-        std::error_code relativeError;
-        const std::filesystem::path relative = std::filesystem::relative(
-            std::filesystem::path{context_.getScenePath()},
-            std::filesystem::path{context_.getProject().getFilePath()}.parent_path(),
-            relativeError);
-
-        if (!player_.start(*build, context_.getProject().getFilePath(),
-                           relativeError ? std::string{} : relative.generic_string()))
-        {
-            log_.append(LogSeverity::Error, "Could not start the player: " + player_.getError());
-            return;
-        }
-
-        playerWasRunning_ = true;
-        log_.append(LogSeverity::Info,
-                    "Playing on " + build->backend + " (" + build->executablePath + ").");
-        playState_ = StudioPlayState::Playing;
-    }
-
-    bool StudioShellPanels::setPlayPaused(bool paused)
-    {
-        if (playState_ == StudioPlayState::Stopped) { return false; }
-        if ((playState_ == StudioPlayState::Paused) == paused) { return false; }
-
-        StudioMessage message;
-        message.type = paused ? StudioMessageType::Pause : StudioMessageType::Resume;
-        message.payload = JsonValue::makeObject();
-
-        // Only follow the player's state once the request is actually on the wire.
-        if (!player_.send(message)) { return false; }
-
-        playState_ = paused ? StudioPlayState::Paused : StudioPlayState::Playing;
-        log_.append(LogSeverity::Info, paused ? "Paused the player." : "Resumed the player.");
-        return true;
-    }
-
-    bool StudioShellPanels::forwardInputToPlayer(const PlayerInputSnapshot& snapshot)
-    {
-        if (!player_.isRunning() || playState_ == StudioPlayState::Stopped) { return false; }
-
-        // Only on a change, and a wheel notch always counts as one. Sixty identical snapshots a
-        // second would be sixty round trips that told the player nothing -- and the player answers
-        // every one of them, so the waste would be doubled.
-        if (snapshot == lastForwardedInput_ && snapshot.wheel == 0.0f) { return false; }
-
-        lastForwardedInput_ = snapshot;
-        return player_.send(StudioMessage::makeInput(snapshot));
-    }
-
-    bool StudioShellPanels::stepPlayFrame()
-    {
-        if (playState_ != StudioPlayState::Paused) { return false; }
-
-        StudioMessage message;
-        message.type = StudioMessageType::StepFrame;
-        message.payload = JsonValue::makeObject();
-        return player_.send(message);
-    }
-
-    void StudioShellPanels::restartPlaying()
-    {
-        // Stop and start, rather than a message asking the game to reload itself. The player reads
-        // the scene from disk when it starts, so a restart is how the user sees the edits they have
-        // made since -- which is what they mean by it.
-        if (player_.isRunning()) { stopPlaying(); }
-        startPlaying();
-    }
-
-    void StudioShellPanels::stopPlaying()
-    {
-        if (!player_.isRunning()) { return; }
-        player_.stop();
-        playState_ = StudioPlayState::Stopped;
-        // Said here, so the poll that follows does not report the same ending a second time as an
-        // exit the editor did not expect.
-        playerWasRunning_ = false;
-        log_.append(LogSeverity::Info, "Stopped the player.");
     }
 
     void StudioShellPanels::startComparison()
@@ -577,69 +381,10 @@ namespace CNA::Studio
             request.outputDirectory = getDefaultComparisonDirectory(request.projectPath);
         }
         // The same list Play chooses from, so the panel cannot offer a renderer Play will not use.
-        request.builds = playerBuilds_;
+        request.builds = play_.builds();
         request.tolerance = comparisonTolerance_;
         return request;
     }
-
-    void StudioShellPanels::pollPlayer()
-    {
-        for (const StudioMessage& message : player_.poll())
-        {
-            ++counts_.playerMessages;
-            switch (message.type)
-            {
-                case StudioMessageType::Ready:
-                    // What the player *actually* got, not what Studio asked for. CNA fixes its
-                    // renderer at compile time and a player can be built for one and report
-                    // another; hearing it from the player is the only way to know.
-                    log_.append(LogSeverity::Info,
-                                "Player ready on " + player_.getReportedBackend() + ".");
-                    break;
-                case StudioMessageType::ReportException:
-                    log_.append(LogSeverity::Error,
-                                "Player: " + message.payload["message"].asString("an exception"));
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        // Compared against what was remembered rather than against a fresh query taken a moment
-        // ago: anything at all may have asked whether the player is running in between -- the
-        // toolbar does, every frame, to decide whether Stop is available -- and the first such
-        // question is what notices the exit. Reading the transition from a local `wasRunning`
-        // would therefore miss it exactly when the editor was doing its job.
-        const bool running = player_.isRunning();
-        if (running == playerWasRunning_) { return; }
-        playerWasRunning_ = running;
-        if (running) { return; }
-
-        // A game that exited while paused leaves nothing paused. Without this the Pause command
-        // stays checked over a game that is not there, and Step offers to advance it.
-        playState_ = StudioPlayState::Stopped;
-
-        // Said either way. A game that exited because it finished and one that crashed look
-        // identical from the editor unless the reason is reported.
-        const PlayerExitReason reason = player_.getExitReason();
-        if (reason != PlayerExitReason::Crashed)
-        {
-            // A game the user closed is a game the user was looking at. Announcing that would be
-            // telling them what they just did.
-            log_.append(LogSeverity::Info, std::string{"Player exited: "} + toString(reason) + ".");
-            return;
-        }
-
-        StudioNotification notification;
-        notification.id = "studio.play";
-        notification.severity = StudioNotificationSeverity::Error;
-        notification.title = "The game crashed";
-        notification.detail = std::string{"Player exited: "} + toString(reason) + ".";
-        notification.actionId = StudioShell::showPanelActionId("output");
-        notify(std::move(notification));
-    }
-
-
 
     void StudioShellPanels::setViewportServices(StudioCamera2D& camera, StudioCamera3D& camera3D,
                                                 SpriteSizeProvider spriteSize)
@@ -651,50 +396,6 @@ namespace CNA::Studio
         // the services through it, so the only thing that has to happen here is that the viewport
         // gains content it did not have when there was no camera to drive.
         bindViewport(*shell_);
-    }
-
-    void StudioShellPanels::packageProject()
-    {
-        const Project& project = context_.getProject();
-
-        // Beside the project, in a directory named for it. A file dialog would be the better
-        // answer and there is no modal yet (STUDIO-03022 covers the layering, not the window), so
-        // the export goes somewhere predictable and the log says exactly where -- which is more
-        // useful than a command that refuses until a dialog exists.
-        StudioExportRequest request;
-        request.outputDirectory =
-            (std::filesystem::path{project.getRootPath()} / "Exported").generic_string();
-        request.overwrite = true;
-
-        const StudioExportResult result = exportStandaloneProject(project, request);
-
-        StudioNotification notification;
-        notification.id = "studio.package";
-        if (!result.succeeded())
-        {
-            notification.severity = StudioNotificationSeverity::Error;
-            notification.title = "Could not package the project";
-            notification.detail = result.errorMessage;
-            notify(std::move(notification));
-            return;
-        }
-
-        // The warnings stay in the log rather than becoming toasts of their own. There may be many
-        // and they are about the package that was written; the one thing the user has to be told
-        // is that it was written, and where.
-        for (const std::string& warning : result.warnings)
-        {
-            log_.append(LogSeverity::Warning, "Packaging: " + warning);
-        }
-
-        notification.severity = result.warnings.empty() ? StudioNotificationSeverity::Success
-                                                        : StudioNotificationSeverity::Warning;
-        notification.title = "Packaged " + std::to_string(result.writtenFiles.size()) + " files";
-        notification.detail = result.warnings.empty()
-            ? request.outputDirectory + " -- builds with CMake and a CNA checkout, without Studio"
-            : request.outputDirectory + " -- with " + std::to_string(result.warnings.size())
-                  + " warning(s) in the Output Log";
-        notify(std::move(notification));
     }
 
     void StudioShellPanels::sayViewportIsEmpty(StudioFrame& frame, const UiRect& bounds,
@@ -918,7 +619,7 @@ namespace CNA::Studio
             // over a camera and a document, and giving it a process to talk to would give it a
             // reason to need one.
             const auto forwardToPlayer = [&](bool pointerInside) {
-                if (!frame.isInputPass() || playState_ == StudioPlayState::Stopped) { return; }
+                if (!frame.isInputPass() || play_.state() == StudioPlayState::Stopped) { return; }
                 forwardInputToPlayer(studioPlayerInputFrom(frame, bounds, pointerInside));
             };
 
@@ -1046,9 +747,9 @@ namespace CNA::Studio
             if (panel.buildRequested)
             {
                 std::string problem;
-                if (build_.start(buildPanel_->makeRequest(), &problem))
+                if (build_.process().start(buildPanel_->makeRequest(), &problem))
                 {
-                    log_.append(LogSeverity::Info, "Build started; log at " + build_.getLogPath());
+                    log_.append(LogSeverity::Info, "Build started; log at " + build_.process().getLogPath());
                 }
                 else
                 {
@@ -1057,7 +758,7 @@ namespace CNA::Studio
             }
             if (panel.cancelRequested)
             {
-                build_.cancel();
+                build_.process().cancel();
                 log_.append(LogSeverity::Warning, "Build cancelled.");
             }
         });
@@ -1091,13 +792,13 @@ namespace CNA::Studio
         {
             StudioAction build = *found;
             build.isEnabled = [this] {
-                return context_.hasProject() && build_.getState() != BuildState::Running;
+                return context_.hasProject() && build_.process().getState() != BuildState::Running;
             };
             build.run = [this] {
                 std::string problem;
-                if (build_.start(buildPanel_->makeRequest(), &problem))
+                if (build_.process().start(buildPanel_->makeRequest(), &problem))
                 {
-                    log_.append(LogSeverity::Info, "Build started; log at " + build_.getLogPath());
+                    log_.append(LogSeverity::Info, "Build started; log at " + build_.process().getLogPath());
                 }
                 else
                 {
@@ -1112,9 +813,9 @@ namespace CNA::Studio
         if (const StudioAction* found = shell.actions().find("studio.build.cancel"))
         {
             StudioAction cancel = *found;
-            cancel.isEnabled = [this] { return build_.getState() == BuildState::Running; };
+            cancel.isEnabled = [this] { return build_.process().getState() == BuildState::Running; };
             cancel.run = [this] {
-                build_.cancel();
+                build_.process().cancel();
                 log_.append(LogSeverity::Warning, "Build cancelled.");
             };
             shell.actions().add(std::move(cancel));
@@ -1124,17 +825,17 @@ namespace CNA::Studio
         {
             StudioAction play = *found;
             play.isEnabled = [this] {
-                return context_.hasProject() && !playerBuilds_.empty() && !player_.isRunning();
+                return context_.hasProject() && !play_.builds().empty() && !play_.isRunning();
             };
-            play.run = [this] { startPlaying(); };
+            play.run = [this] { play_.start(); };
             shell.actions().add(std::move(play));
         }
 
         if (const StudioAction* found = shell.actions().find("studio.play.stop"))
         {
             StudioAction stop = *found;
-            stop.isEnabled = [this] { return player_.isRunning(); };
-            stop.run = [this] { stopPlaying(); };
+            stop.isEnabled = [this] { return play_.isRunning(); };
+            stop.run = [this] { play_.stop(); };
             shell.actions().add(std::move(stop));
         }
 
@@ -1168,9 +869,9 @@ namespace CNA::Studio
         if (const StudioAction* found = shell.actions().find("studio.play.pause"))
         {
             StudioAction pause = *found;
-            pause.isEnabled = [this] { return playState_ != StudioPlayState::Stopped; };
-            pause.isChecked = [this] { return playState_ == StudioPlayState::Paused; };
-            pause.run = [this] { (void)setPlayPaused(playState_ != StudioPlayState::Paused); };
+            pause.isEnabled = [this] { return play_.state() != StudioPlayState::Stopped; };
+            pause.isChecked = [this] { return play_.state() == StudioPlayState::Paused; };
+            pause.run = [this] { (void)setPlayPaused(play_.state() != StudioPlayState::Paused); };
             shell.actions().add(std::move(pause));
         }
 
@@ -1179,7 +880,7 @@ namespace CNA::Studio
             // Enabled only while paused, because that is the only time it does anything. A control
             // that is live and does nothing is one the user stops believing.
             StudioAction step = *found;
-            step.isEnabled = [this] { return playState_ == StudioPlayState::Paused; };
+            step.isEnabled = [this] { return play_.state() == StudioPlayState::Paused; };
             step.run = [this] { (void)stepPlayFrame(); };
             shell.actions().add(std::move(step));
         }
@@ -1188,9 +889,9 @@ namespace CNA::Studio
         {
             StudioAction restart = *found;
             restart.isEnabled = [this] {
-                return context_.hasProject() && !playerBuilds_.empty();
+                return context_.hasProject() && !play_.builds().empty();
             };
-            restart.run = [this] { restartPlaying(); };
+            restart.run = [this] { play_.restart(); };
             shell.actions().add(std::move(restart));
         }
 
@@ -1198,7 +899,7 @@ namespace CNA::Studio
         {
             StudioAction package = *found;
             package.isEnabled = [this] { return context_.hasProject(); };
-            package.run = [this] { packageProject(); };
+            package.run = [this] { (void)build_.packageProject(); };
             shell.actions().add(std::move(package));
         }
 
@@ -1315,9 +1016,9 @@ namespace CNA::Studio
             view.entries = &comparison_.getEntries();
             view.error = comparison_.getError();
             view.allAgree = comparison_.allBackendsAgree();
-            view.builds = &playerBuilds_;
-            view.playBackendIsOverride = !playerBuildOverride_.empty();
-            if (const PlayerBuild* build = choosePlayerBuild()) { view.playBackend = build->backend; }
+            view.builds = &play_.builds();
+            view.playBackendIsOverride = !play_.buildOverride().empty();
+            if (const PlayerBuild* build = play_.chooseBuild()) { view.playBackend = build->backend; }
             if (view.hasProject)
             {
                 const ComparisonRequest probe = makeComparisonRequest();

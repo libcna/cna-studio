@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 26 of 32 complete `████████░░░░`
+**Progress:** 29 of 38 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,7 +31,13 @@
 | `STUDIO-02039` | Guard test: no two public headers define the same type in one namespace | ✅ | — |
 | `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ✅ | `STUDIO-02020` |
 | `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | ✅ | `STUDIO-02040` |
-| `STUDIO-02050` | Define the service decomposition of the application shell | ⬜ | — |
+| `STUDIO-02050` | Define the service decomposition of the application shell | ✅ | — |
+| `STUDIO-02054` | Extract `StudioPlayService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
+| `STUDIO-02055` | Extract `StudioBuildService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
+| `STUDIO-02056` | Extract `StudioComparisonService` | ⬜ | `STUDIO-02050` |
+| `STUDIO-02057` | Extract `StudioPreferencesService` | ⬜ | `STUDIO-02050` |
+| `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | ⬜ | `STUDIO-02050` |
+| `STUDIO-02059` | Guard test: no service reaches another through a locator or a singleton | ⬜ | `STUDIO-02055` |
 | `STUDIO-02060` | Restore the CNA-backed build against current CNA | ✅ | `STUDIO-02001` |
 | `STUDIO-02061` | Screenshot success is reported honestly | ✅ | `STUDIO-02060` |
 | `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ✅ | `STUDIO-02040` |
@@ -370,3 +376,83 @@ scripts, and a host that cannot run the modern UI renderer refuses to start.
 **Deliberately not now.** It cannot be done before `STUDIO-04026`, and it should not be done before
 CI can build a renderer that meets the modern profile (gap G-10). Doing it earlier would mean
 deleting the only configuration this project has automated coverage in.
+
+### `STUDIO-02050` — Define the service decomposition of the application shell
+
+**Acceptance.** The boundaries are written down with a stated rule for what earns its own type, and
+the first of them exists so that the shape is checked against real code rather than proposed.
+
+**The rule.** A service earns its own type by owning **state with a lifetime**, **operations with
+rules**, and a **failure mode of its own**. All three, not one. That rule is what keeps this from
+becoming twenty wrapper classes: a responsibility with no state is a free function, and a
+responsibility with no failures of its own belongs to whatever owns its failures.
+
+**Three things it explicitly forbids.** No service locator and no registry — dependencies are
+constructor arguments, so the set of things a service can reach is the set visible in its
+constructor. No forwarder-per-operation — `StudioShellPanels` hands out `play()` and `builds()`
+rather than growing six methods that do nothing; the few forwarders that stayed are the ones with a
+*second* responsibility here, and `setPlayerBuilds` is the example: it also feeds the Diagnostics
+panel. And no splitting a rule across two services — building and packaging are one service because
+both answer "turn this project into something that runs elsewhere" and both carry the invariant
+this product is held to, and a rule in two places is a rule that gets weakened in one of them.
+
+**What `StudioShellPanels` had become.** Play control, build control, packaging, preferences,
+recovery, the renderer comparison, plugin polling, notifications, viewport state and the binding of
+every panel — 1421 lines, and growing by one reasonable addition at a time. That is the shape an
+application object takes just before it stops being reviewable.
+
+**The decomposition, in the order it is being done:**
+
+| Service | Owns | Status |
+|---------|------|--------|
+| `StudioPlayService` | The player process, play state, installed builds, the session override, input forwarding | `STUDIO-02054` ✅ |
+| `StudioBuildService` | The build process, the finish transition, standalone packaging | `STUDIO-02055` ✅ |
+| `StudioComparisonService` | The renderer comparison run, its request and its report | `STUDIO-02056` |
+| `StudioPreferencesService` | The preferences model, its sink, and applying it to a live shell | `STUDIO-02057` |
+| per-panel binders | The 440-line `bind()` | `STUDIO-02058` |
+
+`StudioRecoverySession` already exists and already has this shape, which is part of why the shape
+is the one chosen.
+
+**Deliberately not services.** Selection, documents and the asset database are `StudioContext`'s and
+already are. A `WorkspaceService` would own nothing `StudioDockTree` and `StudioWorkspaceStore` do
+not already own between them. An `ActionService` would be a second name for `StudioActionRegistry`.
+Each of those would be a wrapper, which is the failure mode this task exists to avoid.
+
+### `STUDIO-02054` — Extract `StudioPlayService` from `StudioShellPanels`
+
+**Acceptance.** Play's rules can be exercised without a shell, without panels and without a device;
+no caller of the old spelling breaks.
+
+**What it proves, and it is the point of the whole decomposition.** Every rule in
+`ThePlayServiceRunsWithNoShellAndNoPanels`,
+`TheSessionOverrideOutranksTheProjectAndIsDroppedWhenItsBuildGoesAway` and
+`ThePlayServiceRaisesItsCrashNotificationThroughASinkRatherThanAShell` used to need a
+`StudioShell`, a `StudioShellPanels` and therefore a binding of every panel in Studio to reach.
+They need a context, a log and a lambda now. A decomposition whose parts still cannot be used apart
+has moved code rather than separated concerns.
+
+**The notification sink is what made it possible.** The crash notification was
+`shell.notifications().raise(...)`, so testing play's one user-visible failure needed a shell. It is
+a `std::function` argument now, and the test reads what was raised.
+
+**Verification.** The four cases above, plus `TheShellStillSpeaksForThePlayServiceItOwns`, which
+checks the forwarding half — including that `playerBuilds()` returns the *service's* vector rather
+than a copy, because a forwarder returning a snapshot would let the panel and the service drift
+apart within one frame.
+
+### `STUDIO-02055` — Extract `StudioBuildService` from `StudioShellPanels`
+
+**Acceptance.** The build's finish transition and the standalone package are one type with one
+owner; `StudioShellPanels::build()` still names the process every panel and test already spells.
+
+**Building and packaging together**, for the reason on the type: they are the same question asked
+twice, and both carry "CNA Studio produces CNA games, not CNA Studio games". `poll()` and
+`packageProject()` return whether they did anything, which they previously did not — a package that
+failed and a package that was written looked identical to the caller.
+
+### `STUDIO-02059` — Guard test: no service reaches another through a locator or a singleton
+
+**Acceptance.** A test fails the build on a static instance accessor or a global registry lookup in
+any service, naming the file and line. The rule is only worth stating if it is enforced: a locator
+added later would look exactly like the code around it.

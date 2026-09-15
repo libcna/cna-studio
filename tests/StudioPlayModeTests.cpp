@@ -12,6 +12,7 @@
 
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/ShellPanels/StudioPlayService.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -428,4 +429,110 @@ CNA_STUDIO_TEST(PausingARealPlayerFollowsItRatherThanAnnouncingIt)
     CNA_STUDIO_EXPECT(!harness.panels.setPlayPaused(false));
 
     harness.shell.invoke("studio.play.stop");
+}
+
+// ------------------------------------------------------------------------------------------------
+// The play service on its own (STUDIO-02054)
+//
+// The reason the decomposition is worth its churn, stated as tests: every rule below used to need
+// a StudioShell, a StudioShellPanels and therefore a binding of every panel in Studio to reach.
+// They need a context, a log and a lambda now. A decomposition whose parts still cannot be used
+// apart has moved code rather than separated concerns, so these construct the service directly and
+// never mention a shell.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(ThePlayServiceRunsWithNoShellAndNoPanels)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioPlayService play{context, log, nullptr};
+
+    CNA_STUDIO_EXPECT(!play.isRunning());
+    CNA_STUDIO_EXPECT(play.state() == StudioPlayState::Stopped);
+    CNA_STUDIO_EXPECT(play.builds().empty());
+    CNA_STUDIO_EXPECT(play.chooseBuild() == nullptr);
+
+    // Every operation refuses rather than crashing on a service with nothing to play.
+    CNA_STUDIO_EXPECT(!play.setPaused(true));
+    CNA_STUDIO_EXPECT(!play.stepFrame());
+    CNA_STUDIO_EXPECT(!play.forwardInput(PlayerInputSnapshot{}));
+    play.stop();
+    CNA_STUDIO_EXPECT(play.state() == StudioPlayState::Stopped);
+
+    play.start();
+    CNA_STUDIO_EXPECT(!play.isRunning());
+    CNA_STUDIO_EXPECT(contains(log.entries().back().message, "No player build was found"));
+}
+
+CNA_STUDIO_TEST(TheSessionOverrideOutranksTheProjectAndIsDroppedWhenItsBuildGoesAway)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioPlayService play{context, log, nullptr};
+
+    play.setBuilds({PlayerBuild{"software", "/nowhere/cna-player-software"},
+                    PlayerBuild{"opengl4", "/nowhere/cna-player-opengl4"}});
+
+    // No override: whatever the project names, or the first installed build when it names none.
+    CNA_STUDIO_EXPECT(play.buildOverride().empty());
+    CNA_STUDIO_EXPECT(play.chooseBuild() != nullptr);
+
+    CNA_STUDIO_EXPECT(play.selectBuild("opengl4"));
+    CNA_STUDIO_EXPECT_EQ(play.buildOverride(), std::string{"opengl4"});
+    CNA_STUDIO_EXPECT_EQ(play.chooseBuild()->backend, std::string{"opengl4"});
+
+    // A renderer nobody built for is refused rather than silently accepted, so the panel's row and
+    // what Play does cannot disagree.
+    CNA_STUDIO_EXPECT(!play.selectBuild("vulkan"));
+    CNA_STUDIO_EXPECT_EQ(play.buildOverride(), std::string{"opengl4"});
+
+    // And an override whose build is uninstalled between two scans is dropped, not kept: keeping it
+    // would make Play fall back to something else without saying so.
+    play.setBuilds({PlayerBuild{"software", "/nowhere/cna-player-software"}});
+    CNA_STUDIO_EXPECT(play.buildOverride().empty());
+    CNA_STUDIO_EXPECT_EQ(play.chooseBuild()->backend, std::string{"software"});
+
+    CNA_STUDIO_EXPECT(play.selectBuild(""));
+    CNA_STUDIO_EXPECT(play.buildOverride().empty());
+}
+
+CNA_STUDIO_TEST(ThePlayServiceRaisesItsCrashNotificationThroughASinkRatherThanAShell)
+{
+    // The sink is what lets this be asserted at all. A service that called
+    // shell.notifications().raise() directly would need a shell to test its one user-visible
+    // failure, which is exactly the coupling the extraction removes.
+    std::vector<StudioNotification> raised;
+    StudioContext context;
+    StudioLog log;
+    StudioPlayService play{context, log,
+                           [&raised](StudioNotification note) { raised.push_back(std::move(note)); }};
+
+    // Nothing is running, so a poll reads nothing and raises nothing -- the transition, not the
+    // state, is what reports an ending.
+    CNA_STUDIO_EXPECT_EQ(play.poll(), std::size_t{0});
+    CNA_STUDIO_EXPECT(raised.empty());
+}
+
+CNA_STUDIO_TEST(TheShellStillSpeaksForThePlayServiceItOwns)
+{
+    // The forwarding half: a decomposition that broke every existing caller would have been a
+    // rewrite. What the shell's actions, panels and tests call is unchanged, and answers from the
+    // service.
+    Harness harness;
+    harness.panels.setPlayerBuilds({PlayerBuild{"software", "/nowhere/cna-player-software"}});
+
+    CNA_STUDIO_EXPECT_EQ(harness.panels.playerBuilds().size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Stopped);
+    CNA_STUDIO_EXPECT(!harness.panels.isPlaying());
+    CNA_STUDIO_EXPECT(harness.panels.selectPlayerBuild("software"));
+    CNA_STUDIO_EXPECT_EQ(harness.panels.playerBuildOverride(), std::string{"software"});
+
+    // Same object, not a copy: a forwarder that returned a snapshot would let the panel and the
+    // service drift apart within one frame.
+    CNA_STUDIO_EXPECT_EQ(harness.panels.play().buildOverride(), std::string{"software"});
+    CNA_STUDIO_EXPECT(&harness.panels.play().builds() == &harness.panels.playerBuilds());
+
+    // And the Diagnostics panel's copy is still fed, which is the second responsibility that kept
+    // setPlayerBuilds a method here rather than only on the service.
+    CNA_STUDIO_EXPECT_EQ(harness.panels.diagnostics().players.size(), std::size_t{1});
 }
