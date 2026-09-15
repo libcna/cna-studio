@@ -2,11 +2,12 @@
 
 `plan.md` STUDIO-00014.
 
-Every panel, menu item and keyboard shortcut the Dear ImGui prototype offers, with the source file
-that owns it and what the native Studio shell does about it. Phase 7 proves parity **against this
-list**, item by item, rather than by impression — and the list is checked by the test suite
-(`STUDIO-00014`), so an item that quietly loses its native counterpart fails the build rather than
-being noticed by somebody a year later.
+Every panel, menu item, toolbar control and keyboard shortcut the Dear ImGui prototype offers, with
+the source file that owns it and what the native Studio shell does about it. Phase 7 proves parity
+**against this list**, item by item, rather than by impression — and the list is checked by the test
+suite in both directions (`STUDIO-00014`, `STUDIO-07020`), so neither an item that quietly loses its
+native counterpart nor a piece of the prototype nobody wrote down can survive to be noticed by
+somebody a year later.
 
 ## How to read it
 
@@ -19,6 +20,15 @@ An item with status ✅ **must** resolve: a panel id must be registered and have
 action id must exist in the registry. That is what makes this a checklist rather than a record of
 intentions. An item with ⬜ carries the reason it has none, in the same discipline as the
 unimplemented-command and empty-panel guards.
+
+The other direction matters more and is easier to forget. The tests read the prototype's own source
+— its panel files, its menu bar, its two toolbars and its shortcut dispatcher — and require every
+item they find to appear here. Without that, a control nobody listed passes every check above, for
+the reason that the list is what those checks read. That is how the tile-index control was found:
+drawn a hundred lines below the rest of the toolbar, under a condition, and in no list at all.
+
+What none of it can check is whether the two *behave* the same. That is `STUDIO-07021` for input,
+`STUDIO-07022` for docking and `STUDIO-07023` against the reference screenshots.
 
 The prototype is `src/panels/*.cpp` and `src/app/StudioApplication.cpp`; it is a *temporary*
 compatibility fallback and is deleted by `STUDIO-07030`, at which point this file becomes the record
@@ -65,12 +75,12 @@ Panels the native shell adds, which the prototype has no equivalent for: `layers
 | Edit | Duplicate | `Ctrl+D` | `studio.edit.duplicate` | ✅ |
 | Edit | Delete | `Delete` | `studio.edit.delete` | ✅ |
 | View | Frame Selected | `F` | `studio.view.focusSelected` | ✅ |
-| View | 2D / 3D View | `2` / `3` | — | ⬜ |
-| View | Grid on Scene / Ground Plane | — | — | ⬜ |
+| View | 2D View / 3D View | `2` / `3` | — | ⬜ |
+| View | Grid on Scene Plane / Grid on Ground Plane | — | — | ⬜ |
 | View | Translate Gizmo | `W` | `studio.view.translate` | ✅ |
 | View | Rotate Gizmo | `E` | `studio.view.rotate` | ✅ |
 | View | Scale Gizmo | `R` | `studio.view.scale` | ✅ |
-| View | Use Local / World Space | `X` | `studio.view.toggleGizmoSpace` | ✅ |
+| View | Use Local Space / Use World Space | `X` | `studio.view.toggleGizmoSpace` | ✅ |
 | *plugin* | Plugin menus and commands | — | — | ⬜ |
 
 **Recover / Discard Unsaved Scene** are ⬜ because crash recovery has no native surface yet; the
@@ -83,6 +93,55 @@ close, which is what `STUDIO-06015` needs anyway.
 lets a plugin add a top-level menu and commands under it; the native shell's menus are built from
 action ids, so a plugin would register actions and a menu definition rather than draw rows. That is
 Phase 28 work.
+
+---
+
+## Toolbar controls
+
+`ViewportPanel` draws two toolbars above the image: the play controls and the tool controls. They are
+the prototype's only toolbars, and they hold four things the menus do not — Pause, Step, the backend
+to launch on, and the tilemap tool — so a parity claim that looked only at panels, menus and
+shortcuts would miss them.
+
+The Widget column is the literal the prototype passes to the widget, `##` suffix and all, because
+that is what the test extracts from the two functions. It is ugly on purpose: matching on a prettier
+name would be matching on something nobody can check.
+
+| Toolbar | Control | Widget | Native | Status |
+|---------|---------|--------|--------|--------|
+| Play | Start the game | `Play` | `studio.play.play` | ✅ |
+| Play | Stop the running game | `Stop` | `studio.play.stop` | ✅ |
+| Play | Pause the running game | `Pause` | — | ⬜ |
+| Play | Resume a paused game | `Resume` | — | ⬜ |
+| Play | Advance one frame | `Step` | — | ⬜ |
+| Play | Which backend to launch on | `Backend` | — | 🔄 |
+| Tools | Tilemap tool | `##tool` | — | ⬜ |
+| Tools | Tile to paint | `Tile` | — | ⬜ |
+| Tools | Manipulator | `##gizmo` | `studio.view.translate` | ✅ |
+| Tools | Gizmo space | `##space` | `studio.view.toggleGizmoSpace` | 🔄 |
+| Tools | 2D view | `2D##view` | — | ⬜ |
+| Tools | 3D view | `3D##view` | — | ⬜ |
+
+**The tilemap tool and the tile index** are ⬜ together: the index only appears beside the paint
+and fill tools, so it arrives with them. Finding it is what this table was for — it is drawn a
+hundred lines below the rest of the toolbar, under a condition, and it had been in no list at all.
+
+**Pause, Resume and Step** are ⬜ because the native player is started and stopped as a process and
+has no protocol to pause it. That is `STUDIO-16015`, and it is a player feature rather than a UI one.
+
+**The backend** is 🔄 rather than ⬜: the native Play launches the renderer the project's active
+target profile names, falling back to whatever player build is installed, so the common case is
+answered and is answered *better* — the choice is a project decision rather than a control the user
+has to get right each time. What is missing is overriding it for one run.
+
+**The manipulator** is ✅ although the shapes differ: the prototype has one dropdown, the native
+toolbar has three checkable buttons, so it shows which mode is on without being opened.
+
+**The gizmo space** is 🔄 because the command exists and is on the same `X` as the prototype, but
+nothing native *shows* which space is active. The prototype's button is labelled with the space it
+is in for exactly that reason, and a toolbar that cannot be read is half a control.
+
+**2D and 3D** are ⬜ for the same reason the Viewport is 🔄: there is no native 3D view yet.
 
 ---
 

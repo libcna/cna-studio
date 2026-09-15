@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 15 of 27 complete `███████░░░░░`
+**Progress:** 16 of 27 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -29,7 +29,7 @@
 | `STUDIO-07017` | A module for the ported panels, above widgets and document alike | ✅ | `STUDIO-07016` |
 | `STUDIO-07018` | Editors for the property kinds the Details panel shows read-only | ✅ | `STUDIO-07007`, `STUDIO-03036` |
 | `STUDIO-07019` | An undoable command for an entity's enabled flag | ✅ | `STUDIO-07007` |
-| `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ⬜ | `STUDIO-00014`, `STUDIO-07014` |
+| `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ✅ | `STUDIO-00014`, `STUDIO-07014` |
 | `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ⬜ | `STUDIO-07020` |
 | `STUDIO-07022` | Prove docking parity | ⬜ | `STUDIO-07020` |
 | `STUDIO-07023` | Visual acceptance review against the Phase 0 reference screenshots | ⬜ | `STUDIO-00013`, `STUDIO-07020` |
@@ -112,6 +112,30 @@ of a leaf is called: a panel behind another is not drawn and not described, so i
 ### `STUDIO-07020` — Prove parity against the Phase 0 panel and shortcut inventory
 
 **Acceptance.** Every inventoried panel, menu item, toolbar control and shortcut ticked off item by item, not by impression
+
+**Done, and what "ticked off" turned out to mean.** `STUDIO-00014` already checked the inventory in
+one direction: an item the list calls answered must resolve to a registered panel with content or to
+a command that exists on the same chord. That direction cannot catch the failure this task is about.
+A piece of the prototype the list never mentioned passes every one of those checks, for the plain
+reason that the list is what they read.
+
+So the tests now read the prototype's own source — every `src/panels/*Panel.cpp`, every `menuItem`
+in `MainMenuBar`, every `button` and `propertyField` in `ViewportPanel`'s two toolbars, and every
+`isShortcutPressed` in `StudioApplication::handleShortcuts` — and require each item they find to
+appear in `docs/MIGRATION-INVENTORY.md` with a decided status. The toolbar table is checked in both
+directions, because it is new and a table claiming parity for controls the prototype does not have
+would be a claim about an editor nobody is shipping.
+
+**What it found.** The toolbars had never been inventoried at all: the panels, menus and shortcuts
+had been, and four things live only on a toolbar — Pause, Step, which backend to launch on, and the
+tilemap tool. The tile-index control was the one nothing else would have caught, drawn a hundred
+lines below the rest of the toolbar and only when the paint or fill tool is active.
+
+**What this does not establish.** That the answered items *behave* the same. Coverage is what this
+task proves: every item accounted for, with a reason attached to each that is not. Behaviour is
+`STUDIO-07021` for input, `STUDIO-07022` for docking and `STUDIO-07023` against the reference
+screenshots, and the ⬜ rows — the 3D view, tilemap painting, Pause and Step, crash recovery, plugin
+menus, rename in place — are what keeps `STUDIO-06015` and `STUDIO-07030` from being true.
 
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 

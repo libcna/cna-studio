@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **163 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **164 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -198,13 +198,17 @@ where a row takes the next chord rather than typed text, a chord another command
 with the holder named before the binding is accepted, and the result is stored as an override so it
 survives a restart.
 
-**Phase 7 — Panel migration** (15 of 27, 2 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (16 of 27, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
 the Build panel, the Problems panel, the Diagnostics panel and the Backends comparison — plus the
 History panel and the Layers panel, which are new to the native shell. Binding them moved out of the
-CNA-linked module, so the headless preview shows the same panels the editor does.
+CNA-linked module, so the headless preview shows the same panels the editor does. **Coverage parity
+is now proven both ways**: the tests read the prototype's own panels, menu bar, toolbars and
+shortcut dispatcher and require every item to be accounted for in the inventory, which is how the
+toolbars — never inventoried at all, and the only home of Pause, Step, the backend chooser and the
+tilemap tools — were found.
 
 **Phase 16 — Play in editor** (3 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a
