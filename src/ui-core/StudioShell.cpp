@@ -1615,6 +1615,15 @@ namespace CNA::Studio
         const StudioTheme& theme = frame_.theme();
         StudioDrawList& list = frame_.drawList();
 
+        // The scene, when somebody has rendered one. Whoever owns the graphics device draws it
+        // into a target and hands the texture over; the shell composites it and knows nothing else
+        // about it -- not the renderer, not the camera, not what is in it.
+        if (viewportImage_ != kUiTextureNone)
+        {
+            list.drawImage(body, viewportImage_, viewportImageFlipped_);
+            return;
+        }
+
         // Darker than the panels, so the viewport reads as a window into the scene rather than as
         // another panel. The grid is shell furniture; the real scene arrives with STUDIO-07009.
         list.fillRect(body, theme.color(StudioColorRole::ViewportBackground));

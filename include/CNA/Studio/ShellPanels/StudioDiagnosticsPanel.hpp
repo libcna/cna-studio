@@ -41,6 +41,14 @@ namespace CNA::Studio
         /** @brief The CNA renderer this process is built against, or empty with no device. */
         std::string renderer;
 
+        /**
+         * @brief What is drawing the scene, e.g. `"cna-software"`, or empty when nothing is.
+         *
+         * Separate from @ref renderer because they can differ in principle and because "the UI
+         * draws but the viewport does not" is a real state worth being able to see.
+         */
+        std::string viewportBackend;
+
         /** @brief The CNA platform implementation, or empty with no device. */
         std::string platform;
 

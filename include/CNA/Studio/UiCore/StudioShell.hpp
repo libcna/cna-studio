@@ -428,6 +428,26 @@ namespace CNA::Studio
         [[nodiscard]] UiRect panelTabBounds(std::string_view id) const;
 
         /**
+         * @brief Hands the shell the scene, already rendered, to composite into the viewport panel.
+         *
+         * The shell is CNA-free and cannot render a scene; whoever owns the device does it and
+         * passes the result in. Set it every frame the scene is drawn, and clear it with
+         * @ref kUiTextureNone when there is nothing to show — the viewport then draws the
+         * placeholder grid, which is what a build with no device has always shown.
+         *
+         * @param texture The rendered scene, or @ref kUiTextureNone for none.
+         * @param flipVertically Whether this renderer presents a sampled render target bottom-up
+         *        (CNA gap G-03). The shell does not and must not know which renderer it is on.
+         */
+        void setViewportImage(UiTextureId texture, bool flipVertically = false)
+        {
+            viewportImage_ = texture;
+            viewportImageFlipped_ = flipVertically;
+        }
+
+        /** @brief The scene texture the viewport is compositing, or @ref kUiTextureNone. */
+        [[nodiscard]] UiTextureId viewportImage() const { return viewportImage_; }
+        /**
          * @brief Declares that something in the shell is taking typed input this frame.
          *
          * Studio has no text fields of its own yet, and a hosted panel that does -- the Dear ImGui
@@ -852,6 +872,9 @@ namespace CNA::Studio
         std::vector<MenuTitleGeometry> menuTitles_;
         std::vector<MenuLevel> menuLevels_;
         std::vector<ToolbarEntryGeometry> toolbarEntries_;
+
+        UiTextureId viewportImage_ = kUiTextureNone;
+        bool viewportImageFlipped_ = false;
 
         int openMenu_ = -1;
 

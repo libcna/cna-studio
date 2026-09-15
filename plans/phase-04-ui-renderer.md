@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 10 of 19 complete `██████░░░░░░`
+**Progress:** 11 of 19 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,7 +21,7 @@
 | `STUDIO-04009` | Select and document legally redistributable fonts and icons | ✅ | — |
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss | ⬜ | `STUDIO-04002` |
 | `STUDIO-04011` | Window resize handling without artefacts | ⬜ | `STUDIO-04010` |
-| `STUDIO-04012` | Render-target composition for the viewport panel | ⬜ | `STUDIO-04004` |
+| `STUDIO-04012` | Render-target composition for the viewport panel | ✅ | `STUDIO-04004` |
 | `STUDIO-04013` | Screenshot and readback support for visual testing | ⬜ | `STUDIO-04001` |
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | ⬜ | `STUDIO-04013` |
@@ -146,6 +146,31 @@ hidden" becomes a question a headless test can answer
 ### `STUDIO-04012` — Render-target composition for the viewport panel
 
 **Acceptance.** Accounts for CNA gap G-03's sampling origin in exactly one place
+
+**The scene appears in the native shell.** Until this, the viewport panel drew a grid and nothing
+else — the shell links no CNA and cannot render a scene. Whoever owns the graphics device renders it
+into an offscreen target and hands the shell the texture id; the shell composites it across the
+viewport body and knows nothing else about it — not the renderer, not the camera, not what is in it.
+That is the same `UiTextureId` seam the font atlas already used, so the CNA renderer needed no new
+concept at all.
+
+**The flip is one parameter, passed by the one thing that knows.** CNA does not normalise the
+sampling origin of a render target or publish the convention (gap G-03), so the viewport says which
+it is on and `drawImage` swaps the texture coordinates rather than the geometry — which keeps the
+rectangle's layout, hit-testing and clipping untouched. The shell does not and must not know which
+renderer it is running on.
+
+**Sized from the previous frame's rectangle.** The shell decides the viewport's rectangle while it
+describes a frame, and the render has to happen before that — so a resize shows the scene stretched
+for one frame rather than anything a user would name. Docking the viewport away clears the texture
+rather than leaving the last picture up: a stale viewport is worse than an empty one, because it
+looks live.
+
+**Verification.** `TheViewportCompositesASceneWhenOneIsHandedToItAndTheGridWhenNot` covers the
+CNA-free half — the texture reaching the draw data, and the placeholder returning when it is taken
+away. On a real device, `CnaStudioNativeShellCompositesTheScene` asserts on the words *compositing
+the scene* rather than on a screenshot, because a viewport drawing its grid and one drawing the
+scene produce the same draw-call count and the same perfectly valid picture
 
 ### `STUDIO-04020` — Guard test: every key Studio can ask about is one the host reports
 

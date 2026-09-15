@@ -122,6 +122,15 @@ namespace CNA::Studio
         std::size_t logRowsMatching = 0;
 
         /**
+         * @brief Whether the viewport was compositing a rendered scene when the run ended.
+         *
+         * The smoke test's assertion. A shell that drew the placeholder grid and one that drew the
+         * scene produce the same draw-call count and the same valid screenshot, so only this
+         * separates "the viewport works" from "the viewport is a rectangle".
+         */
+        bool viewportComposited = false;
+
+        /**
          * @brief What the status bar ended up saying on the left: the project and scene.
          *
          * Reported so a smoke test can assert that the shell opened what it was given. A count of

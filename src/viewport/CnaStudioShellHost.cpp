@@ -24,6 +24,7 @@
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
+#include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
@@ -129,23 +130,6 @@ namespace CNA::Studio
                         return true;
                     }});
 
-                // What the Diagnostics panel reports. Filled in here because this is the only
-                // place with a device to ask; the panel itself needs no CNA and is testable
-                // without one. After the panels exist, obviously -- the first version of this read
-                // through a null unique_ptr and the CNA window test segfaulted on start-up.
-                StudioDiagnosticsInfo& diagnostics = panels_->diagnostics();
-                diagnostics.uiBackend = "Studio native";
-                diagnostics.renderer = capabilities_.rendererName;
-                diagnostics.platform = capabilities_.platformName;
-                diagnostics.modernApi = capabilities_.modernApiAvailable;
-                diagnostics.host = capabilities_;
-                if (!options.executablePath.empty())
-                {
-                    diagnostics.players = discoverPlayerBuilds(
-                        std::filesystem::path{options.executablePath}.parent_path()
-                            .generic_string());
-                }
-
                 if (!options.selectEntity.empty())
                 {
                     // By name, because that is what a person types. SceneDocument looks entities
@@ -185,6 +169,7 @@ namespace CNA::Studio
             [[nodiscard]] float displayWidth() const { return displayWidth_; }
             [[nodiscard]] float displayHeight() const { return displayHeight_; }
             [[nodiscard]] bool screenshotWritten() const { return screenshotWritten_; }
+            [[nodiscard]] bool viewportComposited() const { return viewportComposited_; }
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
             [[nodiscard]] const std::string& statusLeft() const { return shell_->statusLeft(); }
@@ -275,6 +260,29 @@ namespace CNA::Studio
                                 "Clipboard unavailable: CNA's Devices module is off in this build "
                                 "(CNA gap G-02).");
                 }
+                // The scene renderer, and what the Diagnostics panel reports. Both here rather
+                // than in the constructor: there is no graphics device until LoadContent, and the
+                // capability evaluation above is what the diagnostics are made of. The first
+                // version of this ran in the constructor and segfaulted on the null device.
+                sceneViewport_ = createCnaStudioViewport(getGraphicsDeviceProperty(),
+                                                         context_->getAssets(),
+                                                         context_->getComponentRegistry(),
+                                                         *renderer_);
+
+                StudioDiagnosticsInfo& diagnostics = panels_->diagnostics();
+                diagnostics.uiBackend = "Studio native";
+                diagnostics.renderer = capabilities_.rendererName;
+                diagnostics.platform = capabilities_.platformName;
+                diagnostics.modernApi = capabilities_.modernApiAvailable;
+                diagnostics.host = capabilities_;
+                diagnostics.viewportBackend = sceneViewport_->getBackendName();
+                if (!options_.executablePath.empty())
+                {
+                    diagnostics.players = discoverPlayerBuilds(
+                        std::filesystem::path{options_.executablePath}.parent_path()
+                            .generic_string());
+                }
+
                 contentLoaded_ = true;
                 Game::LoadContent();
             }
@@ -309,6 +317,8 @@ namespace CNA::Studio
                 // when its panel happened to be the visible tab would stall whenever the user
                 // looked at something else.
                 panels_->poll();
+
+                renderSceneIntoViewport();
 
                 shell_->renderFrame(input);
                 ++frames_;
@@ -374,6 +384,40 @@ namespace CNA::Studio
             }
 
         private:
+            /**
+             * @brief Renders the scene into an offscreen target and hands it to the shell.
+             *
+             * Sized from the viewport panel's rectangle *as of the last frame*, because the shell
+             * decides that rectangle while it describes the frame and the render has to happen
+             * before it. One frame of latency after a resize, which shows as the scene stretching
+             * for a frame rather than as anything a user would name.
+             */
+            void renderSceneIntoViewport()
+            {
+                if (sceneViewport_ == nullptr || context_ == nullptr) { return; }
+
+                const UiRect body = shell_->panelBounds("viewport");
+                const int width = static_cast<int>(body.width);
+                const int height = static_cast<int>(body.height);
+                if (width <= 0 || height <= 0)
+                {
+                    // Not open, or not the active tab. Cleared rather than left stale: a viewport
+                    // showing last frame's picture while docked away is worse than one showing the
+                    // grid, because it looks live.
+                    shell_->setViewportImage(kUiTextureNone);
+                    viewportComposited_ = false;
+                    return;
+                }
+
+                const UiTextureId texture = sceneViewport_->render(
+                    context_->getScene(), width, height, context_->getSelection(),
+                    GizmoMode::Translate);
+
+                shell_->setViewportImage(texture,
+                                         sceneViewport_->isRenderTextureFlippedVertically());
+                viewportComposited_ = texture != kUiTextureNone;
+            }
+
             void captureScreenshotIfRequested()
             {
                 if (options_.screenshotPath.empty() || screenshotAttempted_) { return; }
@@ -423,6 +467,7 @@ namespace CNA::Studio
             bool contentLoaded_ = false;
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
+            bool viewportComposited_ = false;
             std::unique_ptr<StudioContext> context_;
             StudioLog log_;
 
@@ -433,6 +478,14 @@ namespace CNA::Studio
              * and members are destroyed in reverse declaration order.
              */
             std::unique_ptr<StudioShellPanels> panels_;
+
+            /**
+             * @brief Declared after the context it reads and the UI renderer it shares through.
+             *
+             * Members are destroyed in reverse declaration order, and this one hands textures to
+             * the UI renderer and reads the context's assets for the whole of its life.
+             */
+            std::unique_ptr<StudioViewport> sceneViewport_;
             std::string layoutProblem_;
             bool layoutRestored_ = false;
             std::uint64_t frames_ = 0;
@@ -468,6 +521,7 @@ namespace CNA::Studio
         result.contentRowsTotal = game.contentRowsTotal();
         result.logRowsDrawn = game.logRowsDrawn();
         result.logRowsMatching = game.logRowsMatching();
+        result.viewportComposited = game.viewportComposited();
         result.layoutRestored = game.layoutRestored();
         result.layoutProblem = game.layoutProblem();
 

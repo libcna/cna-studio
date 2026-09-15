@@ -411,6 +411,24 @@ if(CNA_STUDIO_WITH_CNA)
     set_tests_properties(CnaStudioNativeShellWindowSmokeHiDpi PROPERTIES
         PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames, [0-9]+x[0-9]+ display, [1-9][0-9]* draw calls, [1-9][0-9]* triangles")
 
+    # The scene itself, composited into the native shell's viewport (STUDIO-04012). The assertion
+    # is the words "compositing the scene", not the screenshot: a viewport drawing its placeholder
+    # grid and one drawing the scene produce the same draw-call count and the same valid picture.
+    add_test(NAME CnaStudioNativeShellCompositesTheScene
+        COMMAND cna-studio --ui=studio --workspace=none --frames=20
+            --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-viewport.png)
+    set_tests_properties(CnaStudioNativeShellCompositesTheScene PROPERTIES
+        PASS_REGULAR_EXPRESSION "viewport compositing the scene")
+
+    # And with the viewport docked away, where it must say so rather than leaving last frame's
+    # picture up: a stale viewport is worse than an empty one, because it looks live.
+    add_test(NAME CnaStudioNativeShellSaysWhenTheViewportIsNotShowing
+        COMMAND cna-studio --ui=studio --workspace=none --frames=20 --panel=output
+            --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+    set_tests_properties(CnaStudioNativeShellSaysWhenTheViewportIsNotShowing PROPERTIES
+        PASS_REGULAR_EXPRESSION "viewport (compositing the scene|showing the placeholder)")
+
     # Same reasoning as the ImGui smoke tests: SOFTWARE and HEADLESS need no window system, every
     # other renderer needs a real context, and forcing the dummy driver there fails for reasons
     # that have nothing to do with the shell.
@@ -418,11 +436,15 @@ if(CNA_STUDIO_WITH_CNA)
         set_tests_properties(CnaStudioNativeShellWindowSmoke
                              CnaStudioNativeShellWindowSmokeLightTheme
                              CnaStudioNativeShellWindowSmokeHiDpi
+                             CnaStudioNativeShellCompositesTheScene
+                             CnaStudioNativeShellSaysWhenTheViewportIsNotShowing
             PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
     else()
         set_tests_properties(CnaStudioNativeShellWindowSmoke
                              CnaStudioNativeShellWindowSmokeLightTheme
                              CnaStudioNativeShellWindowSmokeHiDpi
+                             CnaStudioNativeShellCompositesTheScene
+                             CnaStudioNativeShellSaysWhenTheViewportIsNotShowing
             PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
                        LABELS "needs-display" TIMEOUT 180)
     endif()

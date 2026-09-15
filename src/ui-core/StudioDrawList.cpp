@@ -181,6 +181,13 @@ namespace CNA::Studio
                         texture, color);
     }
 
+    void StudioDrawList::drawImage(const UiRect& rect, UiTextureId texture, bool flipVertically,
+                                   StudioColor tint)
+    {
+        drawGlyph(rect, 0.0f, flipVertically ? 1.0f : 0.0f, 1.0f, flipVertically ? 0.0f : 1.0f,
+                  texture, tint);
+    }
+
     void StudioDrawList::addTextureRequest(const UiTextureRequest& request)
     {
         data_.textureRequests.push_back(request);

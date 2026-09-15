@@ -817,3 +817,48 @@ CNA_STUDIO_TEST(TheToolbarsCommandsHaveIconsAndTheMappingNamesRealActions)
     CNA_STUDIO_EXPECT(studioIconForAction("studio.no.such.action") == StudioIcon::None);
     CNA_STUDIO_EXPECT(studioIconForAction("") == StudioIcon::None);
 }
+
+CNA_STUDIO_TEST(TheViewportCompositesASceneWhenOneIsHandedToItAndTheGridWhenNot)
+{
+    // The CNA-free half of STUDIO-04012. The shell cannot render a scene and must not try; what it
+    // must do is draw whatever texture it is given across the viewport body, and fall back to the
+    // placeholder when there is none -- because a build with no device has to show *something*.
+    StudioShell shell;
+    shell.resetLayout();
+
+    UiInputState input;
+    input.displayWidth = 1600.0f;
+    input.displayHeight = 900.0f;
+    shell.renderFrame(input);
+
+    const UiRect body = shell.panelBounds("viewport");
+    CNA_STUDIO_EXPECT(!body.isEmpty());
+    CNA_STUDIO_EXPECT_EQ(shell.viewportImage(), kUiTextureNone);
+
+    const std::size_t placeholderIndices = shell.drawData().getTotalIndexCount();
+    CNA_STUDIO_EXPECT(placeholderIndices > 0);
+
+    // A texture the shell knows nothing about, which is the point: it composites an id.
+    constexpr UiTextureId kScene = 4242;
+    shell.setViewportImage(kScene, /*flipVertically=*/true);
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT_EQ(shell.viewportImage(), kScene);
+
+    // The scene's texture is in the frame, and the grid it replaced is not: the placeholder is a
+    // fallback, not a backdrop drawn underneath every scene.
+    bool sawScene = false;
+    for (const UiDrawList& list : shell.drawData().lists)
+    {
+        for (const UiDrawCommand& command : list.commands)
+        {
+            if (command.texture == kScene) { sawScene = true; }
+        }
+    }
+    CNA_STUDIO_EXPECT(sawScene);
+    CNA_STUDIO_EXPECT(shell.drawData().getTotalIndexCount() < placeholderIndices);
+
+    shell.setViewportImage(kUiTextureNone);
+    shell.renderFrame(input);
+    CNA_STUDIO_EXPECT_EQ(shell.drawData().getTotalIndexCount(), placeholderIndices);
+}

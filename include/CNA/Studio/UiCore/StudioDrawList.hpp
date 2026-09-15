@@ -186,6 +186,24 @@ namespace CNA::Studio
                        UiTextureId texture, StudioColor color);
 
         /**
+         * @brief Draws a whole texture into a rectangle.
+         *
+         * The same primitive as @ref drawGlyph, named for what it is used for: compositing an
+         * offscreen render — the 3D viewport, an asset thumbnail — into the UI.
+         *
+         * @param rect Where it goes.
+         * @param texture Texture to sample.
+         * @param flipVertically Sample bottom-up. Some CNA renderers present a sampled render
+         *        target flipped relative to others and CNA does not normalise it or publish the
+         *        convention (CNA gap G-03), so the caller that knows which renderer it is on says
+         *        so here. Swapping the coordinates rather than the geometry keeps the rectangle's
+         *        own layout, hit-testing and clipping untouched.
+         * @param tint Multiplied into the sampled colour. White leaves it alone.
+         */
+        void drawImage(const UiRect& rect, UiTextureId texture, bool flipVertically = false,
+                       StudioColor tint = StudioColor{255, 255, 255, 255});
+
+        /**
          * @brief Queues a texture creation or update for the renderer to perform before drawing.
          *
          * Requests are applied ahead of every draw command in the frame, so a glyph rasterised at

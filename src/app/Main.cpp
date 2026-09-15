@@ -666,6 +666,11 @@ int main(int argc, char** argv)
             {
                 std::cout << ", details showing " << result.detailsRowsDrawn << " rows";
             }
+            // Said either way, because "the viewport drew the grid" and "the viewport drew the
+            // scene" produce the same draw-call count and the same valid screenshot.
+            std::cout << ", viewport "
+                      << (result.viewportComposited ? "compositing the scene"
+                                                    : "showing the placeholder");
             if (result.logRowsMatching > 0 || result.logRowsDrawn > 0)
             {
                 std::cout << ", output log showing " << result.logRowsDrawn << " of "
