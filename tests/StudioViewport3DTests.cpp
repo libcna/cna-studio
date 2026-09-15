@@ -388,3 +388,123 @@ CNA_STUDIO_TEST(TheCameraSpeedAndInvertZoomPreferencesActuallyReachTheCamera)
     inverted.run(wheel);
     CNA_STUDIO_EXPECT(inverted.camera.getDistance() > before);
 }
+
+// ------------------------------------------------------------------------------------------------
+// Navigation schemes (STUDIO-11015)
+//
+// Three schemes were stored, loaded, given a row in the Preferences panel and read by nothing: the
+// viewport's gestures were hard-coded. A preference that changes nothing is worse than no
+// preference -- a user who sets it and finds the viewport unchanged concludes the editor is broken,
+// which is a fair reading.
+//
+// The mapping is a pure function of six booleans and an enumeration, which is what lets every
+// combination that matters be stated here rather than performed with a mouse.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief Builds a chord, so the cases below read as what a hand is doing. */
+    StudioViewportChord chordOf(bool left, bool middle, bool right,
+                                bool alt = false, bool shift = false, bool control = false)
+    {
+        StudioViewportChord chord;
+        chord.left = left;
+        chord.middle = middle;
+        chord.right = right;
+        chord.alt = alt;
+        chord.shift = shift;
+        chord.control = control;
+        return chord;
+    }
+}
+
+CNA_STUDIO_TEST(StudiosOwnSchemeIsUnchanged)
+{
+    // The one this editor shipped with, asserted so that adding two more did not quietly alter it.
+    const auto studio = [](const StudioViewportChord& chord) {
+        return studioViewportGestureFor(StudioNavigationStyle::Studio, chord);
+    };
+
+    CNA_STUDIO_EXPECT(studio(chordOf(true, false, false)) == StudioViewportGesture::Orbit);
+    CNA_STUDIO_EXPECT(studio(chordOf(false, true, false)) == StudioViewportGesture::Pan);
+    CNA_STUDIO_EXPECT(studio(chordOf(false, false, true)) == StudioViewportGesture::Look);
+    CNA_STUDIO_EXPECT(studio(chordOf(true, false, false, false, /*shift=*/true))
+                      == StudioViewportGesture::Pan);
+    CNA_STUDIO_EXPECT(studio(chordOf(false, false, false)) == StudioViewportGesture::None);
+}
+
+CNA_STUDIO_TEST(MayaPutsEveryCameraGestureBehindAltAndNothingElse)
+{
+    const auto maya = [](const StudioViewportChord& chord) {
+        return studioViewportGestureFor(StudioNavigationStyle::Maya, chord);
+    };
+
+    CNA_STUDIO_EXPECT(maya(chordOf(true, false, false, /*alt=*/true)) == StudioViewportGesture::Orbit);
+    CNA_STUDIO_EXPECT(maya(chordOf(false, true, false, /*alt=*/true)) == StudioViewportGesture::Pan);
+    CNA_STUDIO_EXPECT(maya(chordOf(false, false, true, /*alt=*/true)) == StudioViewportGesture::Dolly);
+
+    // The whole of Maya's arrangement, and the half a nearly-Maya scheme gets wrong: an unmodified
+    // drag is *always* a selection. A scheme that let one unmodified button navigate is the thing a
+    // Maya user finds by moving the camera when they meant to pick something.
+    CNA_STUDIO_EXPECT(maya(chordOf(true, false, false)) == StudioViewportGesture::None);
+    CNA_STUDIO_EXPECT(maya(chordOf(false, true, false)) == StudioViewportGesture::None);
+    CNA_STUDIO_EXPECT(maya(chordOf(false, false, true)) == StudioViewportGesture::None);
+}
+
+CNA_STUDIO_TEST(BlenderPutsEveryCameraGestureOnTheMiddleButton)
+{
+    const auto blender = [](const StudioViewportChord& chord) {
+        return studioViewportGestureFor(StudioNavigationStyle::Blender, chord);
+    };
+
+    CNA_STUDIO_EXPECT(blender(chordOf(false, true, false)) == StudioViewportGesture::Orbit);
+    CNA_STUDIO_EXPECT(blender(chordOf(false, true, false, false, /*shift=*/true))
+                      == StudioViewportGesture::Pan);
+    CNA_STUDIO_EXPECT(blender(chordOf(false, true, false, false, false, /*control=*/true))
+                      == StudioViewportGesture::Dolly);
+
+    // Control wins over Shift, because Shift+Control+middle is a zoom in Blender. Tested because
+    // the obvious ordering -- Shift first, it is the commoner modifier -- is the wrong one.
+    CNA_STUDIO_EXPECT(blender(chordOf(false, true, false, false, true, true))
+                      == StudioViewportGesture::Dolly);
+
+    // Left is free, for the same reason Maya's unmodified buttons are.
+    CNA_STUDIO_EXPECT(blender(chordOf(true, false, false)) == StudioViewportGesture::None);
+    CNA_STUDIO_EXPECT(blender(chordOf(false, false, true)) == StudioViewportGesture::None);
+}
+
+CNA_STUDIO_TEST(TheSchemesDisagreeAboutSomethingOrTheyWouldNotBeThreeSchemes)
+{
+    // The assertion that makes the other three worth having. Three enumerators that resolved to
+    // one mapping would pass every case above and would be exactly the defect this task closes,
+    // one level further in: a preference that is read and changes nothing.
+    std::size_t disagreements = 0;
+    for (const StudioViewportChord& chord : {chordOf(true, false, false),
+                                             chordOf(false, true, false),
+                                             chordOf(false, false, true),
+                                             chordOf(true, false, false, true),
+                                             chordOf(false, true, false, false, true)})
+    {
+        const StudioViewportGesture studio =
+            studioViewportGestureFor(StudioNavigationStyle::Studio, chord);
+        const StudioViewportGesture maya =
+            studioViewportGestureFor(StudioNavigationStyle::Maya, chord);
+        const StudioViewportGesture blender =
+            studioViewportGestureFor(StudioNavigationStyle::Blender, chord);
+
+        if (studio != maya || maya != blender || studio != blender) { ++disagreements; }
+    }
+    CNA_STUDIO_EXPECT(disagreements >= 4);
+}
+
+CNA_STUDIO_TEST(EveryGestureHasAName)
+{
+    for (const StudioViewportGesture gesture : {StudioViewportGesture::None,
+                                                StudioViewportGesture::Orbit,
+                                                StudioViewportGesture::Pan,
+                                                StudioViewportGesture::Dolly,
+                                                StudioViewportGesture::Look})
+    {
+        CNA_STUDIO_EXPECT(!studioViewportGestureName(gesture).empty());
+    }
+}

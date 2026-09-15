@@ -28,6 +28,7 @@
 #include "CNA/Studio/Scene/Tilemap.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
+#include "CNA/Studio/UiCore/StudioPreferences.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
@@ -97,6 +98,61 @@ namespace CNA::Studio
     /** @brief The display name of @p tool, e.g. `"Paint Tiles"`. */
     [[nodiscard]] std::string_view studioViewportToolName(StudioViewportTool tool);
 
+    /** @brief What a viewport drag is doing right now. */
+    enum class StudioViewportGesture : std::uint8_t
+    {
+        /** @brief Nothing: the buttons and modifiers held do not name a camera gesture. */
+        None,
+        /** @brief Turn the eye around the pivot. */
+        Orbit,
+        /** @brief Slide the eye and the pivot together. */
+        Pan,
+        /** @brief Move the eye towards or away from the pivot. */
+        Dolly,
+        /** @brief Turn the eye in place, leaving it where it is. */
+        Look
+    };
+
+    /** @brief Returns a stable English name for a gesture, for diagnostics and tests. */
+    [[nodiscard]] std::string_view studioViewportGestureName(StudioViewportGesture gesture);
+
+    /** @brief The buttons and modifiers a viewport drag is being made with. */
+    struct StudioViewportChord
+    {
+        bool left = false;
+        bool middle = false;
+        bool right = false;
+        bool alt = false;
+        bool shift = false;
+        bool control = false;
+    };
+
+    /**
+     * @brief Maps a button-and-modifier chord onto a camera gesture, under one navigation scheme.
+     *
+     * `plan.md` STUDIO-11015. Three schemes were stored, loaded, given a row in the Preferences
+     * panel and **read by nothing** — the viewport's gestures were hard-coded. A preference that
+     * changes nothing is worse than no preference: a user who sets it and finds the viewport
+     * unchanged concludes the editor is broken, which is a fair reading.
+     *
+     * **A pure function**, deliberately. It is the whole of what the three schemes disagree about,
+     * it takes six booleans and an enumeration and returns an enumeration, and every one of the
+     * combinations that matter can therefore be stated as a test rather than performed with a
+     * mouse. The viewport keeps the arithmetic; this keeps the vocabulary.
+     *
+     * **The schemes are what their tools do, not an interpretation of them.** Maya puts every
+     * camera gesture behind Alt so an unmodified drag is always a selection; Blender puts them on
+     * the middle button with Shift and Control as the modifiers, leaving left free for the same
+     * reason. Studio's own is the one this editor shipped with. A user who asks for Maya and gets
+     * nearly-Maya is worse served than one who was told the scheme is not implemented.
+     *
+     * @param style Which scheme to answer under.
+     * @param chord What is held.
+     * @return The gesture, or @ref StudioViewportGesture::None.
+     */
+    [[nodiscard]] StudioViewportGesture studioViewportGestureFor(StudioNavigationStyle style,
+                                                                 const StudioViewportChord& chord);
+
     /** @brief Whether @p tool writes into a tilemap rather than selecting. */
     [[nodiscard]] bool studioViewportToolPaints(StudioViewportTool tool);
 
@@ -139,6 +195,19 @@ namespace CNA::Studio
         /** @brief Where the pointer was last frame, in panel coordinates. */
         float navigationX = 0.0f;
         float navigationY = 0.0f;
+
+        /**
+         * @brief Which navigation scheme the viewport follows.
+         *
+         * Read every frame from the preferences by whoever owns them, like `cameraSpeed` and
+         * `invertZoom` beside it — and for the same reason: a preference also arrives by being
+         * *assigned* when the host loads it from disk, so a setting applied only when the
+         * Preferences panel changes it works when you change it and not when you restart.
+         */
+        StudioNavigationStyle navigation = StudioNavigationStyle::Studio;
+
+        /** @brief The gesture the current drag resolved to, kept for the length of the drag. */
+        StudioViewportGesture navigationGesture = StudioViewportGesture::None;
 
         /** @brief The tile the paint and fill tools write. */
         std::int64_t paintTile = 0;

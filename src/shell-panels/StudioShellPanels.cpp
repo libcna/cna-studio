@@ -630,6 +630,7 @@ namespace CNA::Studio
             // you restart.
             viewportState_.cameraSpeed = preferences_.cameraSpeed;
             viewportState_.invertZoom = preferences_.invertZoom;
+            viewportState_.navigation = preferences_.navigation;
 
             // The two views branch here, at the top, rather than inside one function that would
             // then be about both. They share the document and nothing below it: a press in 3D

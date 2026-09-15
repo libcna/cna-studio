@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 4 of 15 complete `███░░░░░░░░░`
+**Progress:** 5 of 15 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,7 @@
 | `STUDIO-11012` | Camera preview and game view | ⬜ | `STUDIO-11001` |
 | `STUDIO-11013` | Preserve the existing 2D viewport workflow without regression | ✅ | `STUDIO-07009` |
 | `STUDIO-11014` | A new CNA-native project opens directly into a 3D world viewport | ⬜ | `STUDIO-11001`, `STUDIO-08006` |
-| `STUDIO-11015` | Maya and Blender navigation schemes, not only Studio's own | ⬜ | `STUDIO-11002` |
+| `STUDIO-11015` | Maya and Blender navigation schemes, not only Studio's own | ✅ | `STUDIO-11002` |
 
 ## Acceptance and verification
 
@@ -104,3 +104,42 @@ middle and right) and Blender's (middle orbits, Shift-middle pans), in both view
 the Preferences panel; nothing reads it. Speed and inverted zoom were a multiplier and a sign and
 are answered; three schemes across two viewports is a piece of work, and pretending otherwise would
 have made `STUDIO-11002` a task that closed over a control that still does nothing.
+
+### `STUDIO-11015` — Maya and Blender navigation schemes
+
+**Acceptance.** Setting the navigation preference changes what a drag does in both viewports, and
+the three schemes genuinely differ.
+
+**The defect.** Three schemes were stored, loaded, given a row in the Preferences panel — and read
+by nothing. The viewport's gestures were hard-coded to Studio's own, so a user who chose Maya got
+Studio's bindings and no indication that anything had failed. A preference that changes nothing is
+worse than no preference: a user who sets it and finds the viewport unchanged concludes the editor
+is broken, which is a fair reading.
+
+**A pure function**, and that is most of the value. `studioViewportGestureFor` takes six booleans
+and an enumeration and returns an enumeration. It is the whole of what the three schemes disagree
+about, so every combination that matters is a test rather than something performed with a mouse. The
+viewport keeps the arithmetic; this keeps the vocabulary.
+
+**The schemes are what their tools do, not an interpretation.** Maya puts every camera gesture
+behind Alt so an unmodified drag is *always* a selection — a scheme that let one unmodified button
+navigate is the thing a Maya user finds by moving the camera when they meant to pick something.
+Blender puts them on the middle button with Shift and Control, leaving left free for the same
+reason, and Control wins over Shift because Shift+Control+middle is a zoom there. A user who asks
+for Maya and gets nearly-Maya is worse served than one who was told the scheme is not implemented.
+
+**The gesture is resolved once, at the press, and kept for the drag.** Asked every frame, a user who
+released Shift halfway through a pan would find the camera orbiting from wherever the pan had got
+to. The gesture a drag *started* as is the one the user is still making.
+
+**Two details that only appear when you use it.** Flying on W/A/S/D stays on Studio's scheme alone:
+Maya puts a dolly on Alt with the right button and Blender puts nothing there, so binding the keys
+to a right-drag under either would be this editor's habit leaking into somebody else's vocabulary.
+And the 2D viewport follows the scheme too, resolving an Orbit to a pan — a 2D view has no orbit,
+and a user who set the scheme for the 3D view and found the 2D one unchanged would have half a
+preference, which is the defect this task exists to close.
+
+**Verification.** `StudiosOwnSchemeIsUnchanged`, `MayaPutsEveryCameraGestureBehindAltAndNothingElse`,
+`BlenderPutsEveryCameraGestureOnTheMiddleButton`, and — the one that makes the others worth having —
+`TheSchemesDisagreeAboutSomethingOrTheyWouldNotBeThreeSchemes`. Three enumerators that resolved to
+one mapping would pass every other case and would be this same defect one level further in.

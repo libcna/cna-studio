@@ -252,6 +252,56 @@ namespace CNA::Studio
         return "Select";
     }
 
+    std::string_view studioViewportGestureName(StudioViewportGesture gesture)
+    {
+        switch (gesture)
+        {
+            case StudioViewportGesture::None:  return "none";
+            case StudioViewportGesture::Orbit: return "orbit";
+            case StudioViewportGesture::Pan:   return "pan";
+            case StudioViewportGesture::Dolly: return "dolly";
+            case StudioViewportGesture::Look:  return "look";
+        }
+        return "";
+    }
+
+    StudioViewportGesture studioViewportGestureFor(StudioNavigationStyle style,
+                                                   const StudioViewportChord& chord)
+    {
+        switch (style)
+        {
+            case StudioNavigationStyle::Maya:
+                // Everything behind Alt, which is the whole of Maya's arrangement: an unmodified
+                // drag is *always* a selection, in every viewport, whatever else is going on. A
+                // scheme that let one unmodified button navigate would be the thing a Maya user
+                // finds by moving the camera when they meant to pick something.
+                if (!chord.alt) { return StudioViewportGesture::None; }
+                if (chord.left)   { return StudioViewportGesture::Orbit; }
+                if (chord.middle) { return StudioViewportGesture::Pan; }
+                if (chord.right)  { return StudioViewportGesture::Dolly; }
+                return StudioViewportGesture::None;
+
+            case StudioNavigationStyle::Blender:
+                // Everything on the middle button, with Shift and Control as the modifiers, which
+                // leaves left free for selection for the same reason Maya's Alt does. Order
+                // matters: Shift+Control+middle is a zoom in Blender, so Control is tested first.
+                if (!chord.middle) { return StudioViewportGesture::None; }
+                if (chord.control) { return StudioViewportGesture::Dolly; }
+                if (chord.shift)   { return StudioViewportGesture::Pan; }
+                return StudioViewportGesture::Orbit;
+
+            case StudioNavigationStyle::Studio:
+                break;
+        }
+
+        // Studio's own, which is what this editor shipped with and is deliberately unchanged:
+        // middle or Shift pans, right turns the eye in place and flies, left orbits.
+        if (chord.middle || chord.shift) { return StudioViewportGesture::Pan; }
+        if (chord.right) { return StudioViewportGesture::Look; }
+        if (chord.left) { return StudioViewportGesture::Orbit; }
+        return StudioViewportGesture::None;
+    }
+
     bool studioViewportToolPaints(StudioViewportTool tool)
     {
         return tool != StudioViewportTool::Select;
@@ -509,10 +559,27 @@ namespace CNA::Studio
 
         // --- Pan --------------------------------------------------------------------------------
         //
-        // Middle or right. A trackpad has no middle button, and a viewport a laptop cannot pan is a
-        // viewport half the users cannot use.
-        const bool panning = router.mouseDown(UiMouseButton::Middle)
-                          || router.mouseDown(UiMouseButton::Right);
+        // Under Studio's own scheme: middle or right. A trackpad has no middle button, and a
+        // viewport a laptop cannot pan is a viewport half the users cannot use.
+        //
+        // Under Maya and Blender, whatever their schemes call a pan -- which for a 2D view is the
+        // only camera gesture there is beside the wheel, so an Orbit resolves to a pan here. A user
+        // who set the scheme for the 3D view and found the 2D one unchanged would have half a
+        // preference, which is the defect this whole task exists to fix.
+        StudioViewportChord chord;
+        chord.left = router.mouseDown(UiMouseButton::Left);
+        chord.middle = router.mouseDown(UiMouseButton::Middle);
+        chord.right = router.mouseDown(UiMouseButton::Right);
+        chord.alt = frame.input().modifiers.alt;
+        chord.shift = frame.input().modifiers.shift;
+        chord.control = frame.input().modifiers.control;
+
+        const StudioViewportGesture gesture =
+            studioViewportGestureFor(state.navigation, chord);
+        const bool panning = state.navigation == StudioNavigationStyle::Studio
+            ? (chord.middle || chord.right)
+            : (gesture == StudioViewportGesture::Pan
+               || gesture == StudioViewportGesture::Orbit);
         WidgetState& panState = frame.state().get(id);
         if (panning && (surface.hovered || panState.active))
         {
@@ -609,14 +676,20 @@ namespace CNA::Studio
             result.cameraChanged = true;
         }
 
-        const bool left = router.mouseDown(UiMouseButton::Left);
-        const bool middle = router.mouseDown(UiMouseButton::Middle);
-        const bool right = router.mouseDown(UiMouseButton::Right);
-        const bool anyButton = left || middle || right;
+        StudioViewportChord chord;
+        chord.left = router.mouseDown(UiMouseButton::Left);
+        chord.middle = router.mouseDown(UiMouseButton::Middle);
+        chord.right = router.mouseDown(UiMouseButton::Right);
+        chord.alt = input.modifiers.alt;
+        chord.shift = input.modifiers.shift;
+        chord.control = input.modifiers.control;
+
+        const bool anyButton = chord.left || chord.middle || chord.right;
 
         if (state.navigating && !anyButton)
         {
             state.navigating = false;
+            state.navigationGesture = StudioViewportGesture::None;
             // A release that moved nothing is a click, and a click selects. Tracked rather than
             // read from the interaction because a drag that left the panel and came back must not
             // count as one -- the same rule the 2D viewport applies to its gizmo.
@@ -624,10 +697,31 @@ namespace CNA::Studio
         }
         else if (!state.navigating && anyButton && surface.pressed)
         {
-            state.navigating = true;
-            state.navigationMoved = false;
-            state.navigationX = pointer.x;
-            state.navigationY = pointer.y;
+            // Resolved once, at the press, and kept for the length of the drag. Asked every frame,
+            // a user who released Shift halfway through a pan would find the camera orbiting from
+            // wherever the pan had got to -- and the gesture a drag *started* as is the one the
+            // user is still making.
+            const StudioViewportGesture gesture =
+                studioViewportGestureFor(state.navigation, chord);
+            if (gesture != StudioViewportGesture::None)
+            {
+                state.navigating = true;
+                state.navigationGesture = gesture;
+                state.navigationMoved = false;
+                state.navigationX = pointer.x;
+                state.navigationY = pointer.y;
+            }
+            else if (chord.left)
+            {
+                // Under Maya and Blender an unmodified left drag is a selection rather than a
+                // gesture, and the release below has to report it as one. Tracked through the same
+                // state so a press that wanders off the panel still does not select.
+                state.navigating = true;
+                state.navigationGesture = StudioViewportGesture::None;
+                state.navigationMoved = false;
+                state.navigationX = pointer.x;
+                state.navigationY = pointer.y;
+            }
         }
 
         if (state.navigating)
@@ -646,27 +740,46 @@ namespace CNA::Studio
                 // one, which is the kind of thing nobody reports and everybody notices.
                 const float radiansPerPixel = 0.007f * state.cameraSpeed;
 
-                if (middle || input.modifiers.shift)
+                switch (state.navigationGesture)
                 {
-                    camera.panByScreenDelta(StudioVector2{delta.x * state.cameraSpeed, delta.y * state.cameraSpeed});
+                    case StudioViewportGesture::Pan:
+                        camera.panByScreenDelta(StudioVector2{delta.x * state.cameraSpeed,
+                                                             delta.y * state.cameraSpeed});
+                        result.cameraChanged = true;
+                        break;
+                    case StudioViewportGesture::Look:
+                        // Turning in place rather than about the pivot: the gesture that goes with
+                        // flying, and the reason `look()` exists beside `orbit()`.
+                        camera.look(-delta.x * radiansPerPixel, delta.y * radiansPerPixel);
+                        result.cameraChanged = true;
+                        break;
+                    case StudioViewportGesture::Orbit:
+                        camera.orbit(-delta.x * radiansPerPixel, delta.y * radiansPerPixel);
+                        result.cameraChanged = true;
+                        break;
+                    case StudioViewportGesture::Dolly:
+                        // Vertical drag, as Maya does it: a horizontal one would fight the pan
+                        // that shares the same hand. Geometric like the wheel, so one inch of
+                        // travel feels the same close up and far away.
+                        camera.dolly(std::pow(1.01f, -delta.y * state.cameraSpeed));
+                        result.cameraChanged = true;
+                        break;
+                    case StudioViewportGesture::None:
+                        // A drag that is a selection rather than a gesture. It still counts as
+                        // movement, so the release does not select whatever the pointer stopped
+                        // over -- a drag is not a click in any scheme.
+                        break;
                 }
-                else if (right)
-                {
-                    // Turning in place rather than about the pivot: the gesture that goes with
-                    // flying, and the reason `look()` exists beside `orbit()`.
-                    camera.look(-delta.x * radiansPerPixel, delta.y * radiansPerPixel);
-                }
-                else if (left)
-                {
-                    camera.orbit(-delta.x * radiansPerPixel, delta.y * radiansPerPixel);
-                }
-                result.cameraChanged = true;
             }
         }
 
-        // Flying, while the right button is held. The modifier is what keeps W, A, S and D from
+        // Flying, while the right button is held. The button is what keeps W, A, S and D from
         // meaning two things at once: they are the gizmo shortcuts everywhere else.
-        if (right)
+        //
+        // Only under Studio's own scheme. Maya puts a dolly on Alt with the right button and
+        // Blender puts nothing there, so a right-drag under either is not a fly and binding the
+        // keys to it would be this editor's habit leaking into somebody else's vocabulary.
+        if (chord.right && state.navigation == StudioNavigationStyle::Studio)
         {
             // Proportional to the orbit distance, so one press crosses the same fraction of what
             // is on screen whether the camera is inside a room or above a level.
