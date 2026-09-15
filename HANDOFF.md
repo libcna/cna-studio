@@ -6,15 +6,35 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 
 ---
 
+## The milestone this branch was working towards
+
+**Reached, and verified rather than asserted.** `cna-studio`, with no flags, opens the native Studio
+shell in a real window on a current CNA renderer. Its menus, toolbar and shortcuts all invoke the
+same `StudioAction`; its docking layout is dragged, split, floated and restored across runs from a
+serialized workspace; its text is real IBM Plex with kerning and correct baselines; and the Dear
+ImGui editor remains reachable as `--ui=imgui` and nothing else.
+
+Checked by running it, not by reading the code: the screenshots in `docs/reference/`, the sixty-three
+CTest cases that open real windows through CNA and assert on what was drawn, and — since
+`STUDIO-04015` — a threshold on the distinct colours in every capture, so a run whose geometry
+rendered to nothing fails instead of writing a blank PNG and exiting zero.
+
+**One honest qualification.** "Professional text" means Latin, Greek and Cyrillic. The shipped faces
+carry no CJK, Hangul or emoji outlines, so a scene named in Chinese still draws as replacement
+boxes. The caret steps over those correctly (`STUDIO-03026`) — the model is right and the glyph is
+absent, which are different failures. That is `STUDIO-04019`.
+
+---
+
 ## Where things are
 
 | | |
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **79** — `docs: bring the handoff up to the state it describes` |
+| HEAD | commit **84** — `docs: the handoff at the end of the session that switched the default` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits on this branch | 79, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits on this branch | 84, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -122,15 +142,15 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **1222 test cases, 45 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **1222 test cases, 45 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **1222 test cases, 45 CTest suites, 0 failures, no sanitizer reports** |
-| GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **1224 test cases, 61 CTest suites, 0 failures** |
+| GCC 13.3 Debug, no CNA | **1241 test cases, 45 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **1241 test cases, 45 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **1241 test cases, 45 CTest suites, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **1243 test cases, 63 CTest suites, 0 failures** |
 
 The two extra *cases* in the CNA-backed run are `STUDIO-29007`, which reads CNA's own
 `RendererSelection.cmake`, and `STUDIO-04020`, which checks the host key map — both need a CNA
-checkout to exist at all. The sixteen extra CTest *suites* are the window, screenshot, play-mode and
-standalone-export runs, which need a real device.
+checkout to exist at all. The eighteen extra CTest *suites* are the window, screenshot, play-mode
+and standalone-export runs, which need a real device.
 
 The CNA-backed suite now includes the native shell on a real device in both themes and at 2x, the
 shell with a project open, the workspace surviving a real process exit, and
@@ -346,6 +366,17 @@ empty rectangles. Nothing about binding a panel needs CNA.
 ---
 
 ## Things found that were not expected
+
+**A default nobody had switched was hiding a flag only the prototype answered.** `--host-capabilities`
+prints the host contract and exits, and that lived on the Dear ImGui host alone. Switching the
+default made the query open a window and run until CTest killed it — and left as it was, the flag
+would have broken the day `STUDIO-07030` deleted the path answering it, where the failure would have
+looked like the deletion rather than like the switch.
+
+**Three viewport preferences were stored, loaded, given rows in the Preferences panel, and read by
+nothing.** Camera speed, inverted zoom and the navigation style, in both viewports. Two were a
+multiplier and a sign and now reach the camera; the three navigation schemes are `STUDIO-11015`,
+because calling them done would have closed a task over a control that still did nothing.
 
 **A command that exists is not a command that does anything.** Half the action registry is declared
 with no handler and given one by whatever binds it, so `shell.invoke(id)` on an unbound command
