@@ -1731,6 +1731,24 @@ namespace CNA::Studio
         frame_.ids().pop();
     }
 
+    bool StudioShell::describePanelContent(std::string_view id, StudioFrame& frame,
+                                           const UiRect& bounds)
+    {
+        const auto content = std::find_if(panelContent_.begin(), panelContent_.end(),
+            [&](const auto& entry) { return entry.first == id; });
+        if (content == panelContent_.end() || !content->second) { return false; }
+
+        // The same scope and clip the dock gives it, so a panel described on its own is the same
+        // panel: two widgets called "clear" in two panels must not share retained state here any
+        // more than they do there.
+        frame.ids().push(id);
+        frame.pushClip(bounds);
+        content->second(frame, bounds);
+        frame.popClip();
+        frame.ids().pop();
+        return true;
+    }
+
     void StudioShell::describeDocks()
     {
         const StudioTheme& theme = frame_.theme();

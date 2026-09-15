@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 20 of 24 complete `██████████░░`
+**Progress:** 21 of 24 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-06010` | Preferences persistence, versioning and migration | ✅ | `STUDIO-06009` |
 | `STUDIO-06011` | Preferences UI | ✅ | `STUDIO-06009`, `STUDIO-03036` |
 | `STUDIO-06012` | Shortcut rebinding UI with conflict detection | 🔄 | `STUDIO-06008`, `STUDIO-06010` |
-| `STUDIO-06013` | Empty states for every panel | ⬜ | `STUDIO-06003` |
+| `STUDIO-06013` | Empty states for every panel | ✅ | `STUDIO-06003` |
 | `STUDIO-06014` | Notification and toast system for background results | ⬜ | `STUDIO-06007` |
 | `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
 | `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | 🔄 | `STUDIO-06003`, `STUDIO-05009` |
@@ -236,6 +236,32 @@ shell's layouts rather than a copy
 ### `STUDIO-06013` — Empty states for every panel
 
 **Acceptance.** A panel with nothing in it explains what it is for and what to do next, rather than showing blank space
+
+**It is the state a user meets first.** A fresh Studio is nothing but empty panels, and a blank
+rectangle is indistinguishable from one whose content failed to draw — which is the reading a new
+user will actually take.
+
+**Checked by counting *words*, not geometry.** Text and fills batch into the same draw command
+against the same atlas texture, which is what makes them fast and what makes "did this panel say
+anything, or is it a coloured rectangle?" unanswerable from the draw data. `StudioDrawList` counts
+glyphs now, as a diagnostic beside the frame's phase-violation count, and the guard asserts every
+panel with content draws some with nothing open. It fails in both directions, like the other guards.
+
+**`StudioShell::describePanelContent`** is what made it writable: one panel described on its own,
+with the same id scope and clip the dock gives it. It is not test scaffolding — a capture of one
+panel at full size and a preview of what a panel would show both want exactly this.
+
+**What it found.** Every ported panel already had an empty state — they were written that way, one
+at a time — except the viewport, which had no *content* at all without a graphics device. A build
+with no device therefore showed a bare grid with no hint that the grid was a viewport rather than a
+panel that had failed. The content is bound with or without a camera now: it still takes no input
+without one, but it says which of the two things is missing, and the headless preview — the only
+visual test this project has without a GPU — shows it.
+
+**Verification.** `tests/StudioEmptyStateTests.cpp`: every panel with content draws text with
+nothing open, and every panel survives being described at 0x0, 12x8 and 40x400 with no phase
+violation and valid draw data — a panel dragged very narrow is ordinary, and an empty state that
+broke there would break in the one arrangement nobody photographs
 
 ### `STUDIO-06016` — Shell preview entry point on the real executable
 

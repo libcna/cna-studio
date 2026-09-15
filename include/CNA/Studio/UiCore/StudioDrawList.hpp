@@ -186,6 +186,17 @@ namespace CNA::Studio
                        UiTextureId texture, StudioColor color);
 
         /**
+         * @brief How many glyphs have been drawn since @ref begin.
+         *
+         * A diagnostic, like the frame's phase-violation count. Text and fills batch into the same
+         * draw command against the same atlas texture — which is what makes them fast and what
+         * makes "did this panel say anything, or is it a coloured rectangle?" unanswerable from the
+         * draw data. A panel with an empty state is supposed to *explain itself*, and this is how a
+         * test can tell that it did.
+         */
+        [[nodiscard]] std::size_t glyphCount() const { return glyphCount_; }
+
+        /**
          * @brief Draws a whole texture into a rectangle.
          *
          * The same primitive as @ref drawGlyph, named for what it is used for: compositing an
@@ -257,6 +268,7 @@ namespace CNA::Studio
         std::vector<UiRect> clipStack_;
         bool commandOpen_ = false;
 
+        std::size_t glyphCount_ = 0;
         UiTextureId defaultTexture_ = kUiTextureNone;
         float defaultU_ = 0.0f;
         float defaultV_ = 0.0f;

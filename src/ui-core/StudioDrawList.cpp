@@ -38,6 +38,7 @@ namespace CNA::Studio
 
     void StudioDrawList::begin(float displayWidth, float displayHeight, float framebufferScale)
     {
+        glyphCount_ = 0;
         data_.clearGeometry();
         if (data_.lists.empty()) { data_.lists.emplace_back(); }
 
@@ -177,6 +178,7 @@ namespace CNA::Studio
     void StudioDrawList::drawGlyph(const UiRect& rect, float u0, float v0, float u1, float v1,
                                    UiTextureId texture, StudioColor color)
     {
+        ++glyphCount_;
         addTexturedQuad(rect.left(), rect.top(), rect.right(), rect.bottom(), u0, v0, u1, v1,
                         texture, color);
     }

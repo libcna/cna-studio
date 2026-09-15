@@ -23,6 +23,7 @@
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
+#include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -371,13 +372,44 @@ namespace CNA::Studio
                         + ".  It builds with CMake and a CNA checkout, and needs no Studio.");
     }
 
+    void StudioShellPanels::sayViewportIsEmpty(StudioFrame& frame, const UiRect& bounds,
+                                               std::string_view headline, std::string_view hint)
+    {
+        if (!frame.isDrawPass() || bounds.isEmpty()) { return; }
+
+        const StudioTheme& theme = frame.theme();
+        const float line = std::ceil(frame.measureText(StudioFontRole::Body, "Ag").height()
+                                     + static_cast<float>(theme.metric(StudioMetric::SpacingSmall)));
+
+        // Centred, because a message in the corner of an otherwise empty rectangle reads as a
+        // stray label rather than as the thing the rectangle is saying.
+        UiRect box{bounds.left(), bounds.centerY() - line, bounds.width, line};
+        studioDrawText(frame, box, headline, StudioFontRole::Body,
+                       theme.color(StudioColorRole::TextSecondary), StudioTextAlign::Center);
+        box.y += line;
+        studioDrawText(frame, box, hint, StudioFontRole::BodySmall,
+                       theme.color(StudioColorRole::TextSecondary), StudioTextAlign::Center);
+    }
+
     void StudioShellPanels::bindViewport(StudioShell& shell)
     {
         // The viewport (STUDIO-07009) draws nothing: the scene is a texture the shell composites,
-        // and this is the camera the pointer moves and what a click in it selects. Bound only once
-        // there is a camera, because a viewport that swallowed clicks and moved nothing would be
-        // worse than one that plainly does not respond.
-        if (services_.camera == nullptr) { return; }
+        // and this is the camera the pointer moves and what a click in it selects.
+        //
+        // The *content* is bound whether or not there is a camera. It used to be bound only with
+        // one, on the reasoning that a viewport swallowing clicks and moving nothing is worse than
+        // one that plainly does not respond -- which is right about the clicks and wrong about the
+        // words: a build with no graphics device then showed a bare grid and no hint that the grid
+        // was a viewport rather than a panel that had failed (STUDIO-06013). It says so now, and
+        // still takes no input.
+        if (services_.camera == nullptr)
+        {
+            shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {
+                sayViewportIsEmpty(frame, bounds, "This build has no graphics device.",
+                                   "The viewport cannot draw the scene without one.");
+            });
+            return;
+        }
 
         // X, which the prototype has and the native shell did not (docs/MIGRATION-INVENTORY.md).
         // A toggle rather than two commands, as it is there: there are two spaces, and a toggle
@@ -438,6 +470,16 @@ namespace CNA::Studio
         }
 
         shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {
+            // The first thing a user sees, and with no project it was a grid and nothing else --
+            // no hint that a project is what is missing, and none that the grid is a viewport
+            // rather than a panel that failed to draw (STUDIO-06013).
+            if (!context_.hasProject())
+            {
+                sayViewportIsEmpty(frame, bounds, "No project open.",
+                                   "Open one with File > Open Project, or --project.");
+                return;
+            }
+
             const StudioViewportResult viewport = studioViewportPanel(
                 frame, bounds, context_, *services_.camera, viewportState_, services_.spriteSize);
 

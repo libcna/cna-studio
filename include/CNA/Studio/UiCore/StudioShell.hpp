@@ -385,6 +385,23 @@ namespace CNA::Studio
          */
         [[nodiscard]] bool hasPanelContent(std::string_view id) const;
 
+        /**
+         * @brief Describes one panel's content into @p frame at @p bounds.
+         *
+         * The panel on its own, without the shell around it: a capture of one panel at full size,
+         * a preview of what a panel would show, and the empty-state guard all want exactly this,
+         * and each would otherwise have had to drive a whole shell and crop.
+         *
+         * The panel's own id scope and clip are pushed, as they are when the shell draws it, so a
+         * panel described this way behaves identically to one in a dock.
+         *
+         * @param id Panel to describe.
+         * @param frame The frame; must be in a describe pass.
+         * @param bounds Where the content goes.
+         * @return False when no panel of that id has content.
+         */
+        bool describePanelContent(std::string_view id, StudioFrame& frame, const UiRect& bounds);
+
         /** @brief Arranges the registered panels into Studio's default workspace. */
         void resetLayout();
 

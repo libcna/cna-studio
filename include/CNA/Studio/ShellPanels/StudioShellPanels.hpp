@@ -233,6 +233,17 @@ namespace CNA::Studio
         void bind(StudioShell& shell);
         void bindViewport(StudioShell& shell);
 
+        /**
+         * @brief Draws the viewport's empty state: what is missing, and what to do about it.
+         *
+         * @param frame The frame.
+         * @param bounds The viewport's body.
+         * @param headline What is missing.
+         * @param hint What to do next.
+         */
+        static void sayViewportIsEmpty(StudioFrame& frame, const UiRect& bounds,
+                                       std::string_view headline, std::string_view hint);
+
         /** @brief Writes the project out as a standalone CNA game and says where. */
         void packageProject();
 

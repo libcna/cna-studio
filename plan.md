@@ -48,13 +48,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**161 of 488 tasks complete** `████████░░░░░░░░░░░░░░░░░`  33.0%
+**162 of 488 tasks complete** `████████░░░░░░░░░░░░░░░░░`  33.2%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 161 |
+| ✅ Complete | 162 |
 | 🔄 In progress | 10 |
-| ⬜ Not started | 311 |
+| ⬜ Not started | 310 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 4 |
 | **Total** | **488** |
@@ -75,7 +75,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 33 | 29 | `█████████░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 19 | 11 | `██████░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 15 | 14 | `█████████░` |
-| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 24 | 20 | `████████░░` |
+| 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 24 | 21 | `█████████░` |
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | 🔄 | 27 | 15 | `██████░░░░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |
