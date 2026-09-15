@@ -195,6 +195,15 @@ namespace CNA::Studio
         std::string shellPreviewInvoke;
 
         /**
+         * @brief Capture one panel filling the window, rather than the whole shell.
+         *
+         * A panel taller than the dock it lives in — the Preferences page, a long Details list —
+         * is unreviewable in a shell capture: the strip at the bottom of the window shows four
+         * rows of it. This draws that panel and nothing else, at whatever size was asked for.
+         */
+        std::string shellPreviewPanelOnly;
+
+        /**
          * @brief Report the Studio host capability contract and exit.
          *
          * Prints what Studio requires of a host renderer, and -- on a build with a window host --

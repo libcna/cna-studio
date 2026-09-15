@@ -14,6 +14,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "CNA/Studio/StudioApplication.hpp"
 #include "CNA/Studio/Plugins/Plugin.hpp"
@@ -95,6 +98,51 @@ CNA_STUDIO_TEST(OptionsRejectUnknownFlags)
     const char* argv[] = {"cna-studio", "--nonsense"};
     const StudioOptions options = StudioOptions::parse(2, argv);
     CNA_STUDIO_EXPECT(options.hasError);
+}
+
+CNA_STUDIO_TEST(ThePanelOnlyPreviewTakesThePanelToCapture)
+{
+    const char* argv[] = {"cna-studio", "--shell-panel-only=preferences"};
+    const StudioOptions options = StudioOptions::parse(2, argv);
+    CNA_STUDIO_EXPECT(!options.hasError);
+    CNA_STUDIO_EXPECT(options.shellPreviewPanelOnly == "preferences");
+}
+
+CNA_STUDIO_TEST(EveryShellPreviewFlagIsInTheUsageText)
+{
+    // The preview flags are the only way to look at the native shell on a machine with no display,
+    // and one that exists but is written down nowhere is one nobody will find. Checked against the
+    // parser rather than a list kept here, which would be a second thing to forget.
+    const std::string usage = StudioOptions::getUsage();
+
+    // Spelt the way each is actually passed: three of them are bare switches, and probing those
+    // with a value would report the parser as broken for refusing something it should refuse.
+    const std::vector<std::pair<std::string, bool>> flags = {
+        {"--shell-preview", true},   {"--shell-pointer", true},  {"--shell-mouse-down", false},
+        {"--shell-right-click", false}, {"--shell-open-menu", true}, {"--shell-float", true},
+        {"--shell-invoke", true},    {"--shell-panel-only", true}, {"--shell-drag", true},
+        {"--shell-tooltip", false},  {"--shell-size", true},     {"--shell-scale", true},
+        {"--shell-theme", true}};
+
+    for (const auto& [flag, takesValue] : flags)
+    {
+        if (usage.find(flag) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                flag + " is accepted but is not in --help, so nobody will find it.");
+        }
+
+        // A value that is wrong for every one of them, so a flag reaching the unknown-option
+        // branch is distinguishable from one that parsed and then complained about the value.
+        const std::string argument = takesValue ? flag + "=1" : flag;
+        const char* argv[] = {"cna-studio", argument.c_str()};
+        const StudioOptions parsed = StudioOptions::parse(2, argv);
+        if (parsed.hasError && parsed.errorMessage.find("unknown option") != std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                flag + " is in --help but the parser does not know it.");
+        }
+    }
 }
 
 CNA_STUDIO_TEST(UsageTextExplainsTheBackendConstraint)

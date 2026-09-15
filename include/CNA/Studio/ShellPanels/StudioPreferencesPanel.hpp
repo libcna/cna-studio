@@ -23,6 +23,7 @@
 #pragma once
 
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
+#include "CNA/Studio/ShellPanels/StudioShortcutEditor.hpp"
 #include "CNA/Studio/UiCore/StudioPreferences.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
@@ -57,6 +58,14 @@ namespace CNA::Studio
     {
         /** @brief The saved layouts the default-layout row offers. */
         std::vector<std::string> layoutNames;
+
+        /**
+         * @brief The commands the Shortcuts section lists and rebinds. Null lists none.
+         *
+         * A pointer rather than a copy: rebinding writes through it, and a registry copied into the
+         * panel would rebind a registry nothing dispatches from.
+         */
+        StudioActionRegistry* actions = nullptr;
     };
 
     /**
@@ -66,9 +75,11 @@ namespace CNA::Studio
      * @param body Where the panel's content goes.
      * @param preferences Edited in place; already clamped on return.
      * @param context What the host knows that preferences do not.
+     * @param shortcuts What the Shortcuts section is in the middle of.
      * @return What the user changed and asked for.
      */
     StudioPreferencesPanelResult studioPreferencesPanel(StudioFrame& frame, const UiRect& body,
                                                         StudioPreferences& preferences,
-                                                        const StudioPreferencesPanelContext& context);
+                                                        const StudioPreferencesPanelContext& context,
+                                                        StudioShortcutEditorState& shortcuts);
 }

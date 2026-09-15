@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 21 of 24 complete `██████████░░`
+**Progress:** 22 of 24 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,7 +22,7 @@
 | `STUDIO-06009` | Preferences model, separate from project settings | ✅ | `STUDIO-06001` |
 | `STUDIO-06010` | Preferences persistence, versioning and migration | ✅ | `STUDIO-06009` |
 | `STUDIO-06011` | Preferences UI | ✅ | `STUDIO-06009`, `STUDIO-03036` |
-| `STUDIO-06012` | Shortcut rebinding UI with conflict detection | 🔄 | `STUDIO-06008`, `STUDIO-06010` |
+| `STUDIO-06012` | Shortcut rebinding UI with conflict detection | ✅ | `STUDIO-06008`, `STUDIO-06010` |
 | `STUDIO-06013` | Empty states for every panel | ✅ | `STUDIO-06003` |
 | `STUDIO-06014` | Notification and toast system for background results | ⬜ | `STUDIO-06007` |
 | `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
@@ -197,13 +197,24 @@ a problem to report: doing so would train them to ignore the channel that report
 **Acceptance.** A user can rebind a command from the UI, a chord already bound is refused with the
 command that holds it named, and the binding survives a restart.
 
-**In progress.** Two of the three are done and neither is the UI. `StudioActionRegistry::rebind`
-already refuses a chord bound to a different command — two commands on one chord means one of them
-has stopped working and the user who bound the second has no way to discover which — and
-`STUDIO-06010` stores the rebindings and applies them on start-up, as the chord text the menus show.
-What is missing is the editor: a list of every command with its chord, a row that takes the next
-keystroke, and the conflict shown before it is accepted rather than after. The Preferences panel says
-how many are rebound so the state is at least visible.
+**Done.** The Shortcuts section of the Preferences panel lists every command with its chord and a
+Change button; the armed row takes the next *chord* rather than the next key, so holding Ctrl before
+pressing the letter does not bind the command to Ctrl-and-nothing. A chord another command holds is
+refused with the holder named, and the row stays armed, because the user's next act is to try a
+different chord rather than to find the button again. The accepted binding is written into the
+preferences as an override, replacing any earlier one for that command, so it survives a restart —
+`STUDIO-06010` applies them on start-up and the menus show the new chord text.
+
+Escape and Tab cannot be bound. They are the two keys that get a user *out* of an armed row, and a
+rebinding screen is the one place where losing them cannot be undone.
+
+**What writing the editor found.** Listing every command in one flat list showed something the menus
+hide: twelve rows read `Close` or `Float`, one pair per panel, because a label is written for the
+menu it sits in and the surrounding menu says what it is about. So the editor draws each command's
+description beside its label, and the refusal message adds the description when — and only when —
+another command shares the label. `studioShortcutConflictMessage` is a function rather than a string
+composed inside the draw pass, because the draw list holds glyphs and "the conflict is named" is
+precisely what this task has to prove.
 
 ### `STUDIO-06011` — Preferences UI
 

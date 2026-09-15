@@ -431,6 +431,7 @@ add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioPreferencesPanel.cpp
     src/shell-panels/StudioProblemsPanel.cpp
     src/shell-panels/StudioShellPanels.cpp
+    src/shell-panels/StudioShortcutEditor.cpp
     src/shell-panels/StudioViewportPanel.cpp)
 target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context
                                                      cna-studio-project

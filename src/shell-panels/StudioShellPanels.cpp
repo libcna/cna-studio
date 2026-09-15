@@ -770,8 +770,12 @@ namespace CNA::Studio
                 context.layoutNames.push_back(saved.name);
             }
 
+            // The registry rather than a copy of it: rebinding writes through, and a copy would
+            // rebind something nothing dispatches from.
+            context.actions = &shell.actions();
+
             const StudioPreferencesPanelResult panel =
-                studioPreferencesPanel(frame, bounds, preferences_, context);
+                studioPreferencesPanel(frame, bounds, preferences_, context, shortcutEditor_);
 
             if (panel.resetRequested)
             {

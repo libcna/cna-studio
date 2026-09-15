@@ -377,10 +377,11 @@ CNA_STUDIO_TEST(ResettingPreferencesAsksFirst)
     harness.panels.preferences().cameraSpeed = 3.0f;
 
     StudioPreferencesPanelContext context;
+    StudioShortcutEditorState shortcuts;
     StudioFrame probe{StudioTheme::dark()};
     runStudioFrame(probe, at(-1.0f, -1.0f), [&](StudioFrame& frame) {
         (void)studioPreferencesPanel(frame, UiRect{0.0f, 0.0f, 400.0f, 600.0f},
-                                     harness.panels.preferences(), context);
+                                     harness.panels.preferences(), context, shortcuts);
     });
 
     // The panel reports the request rather than acting on it.

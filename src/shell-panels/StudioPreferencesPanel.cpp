@@ -133,7 +133,7 @@ namespace CNA::Studio
 
     StudioPreferencesPanelResult studioPreferencesPanel(
         StudioFrame& frame, const UiRect& body, StudioPreferences& preferences,
-        const StudioPreferencesPanelContext& context)
+        const StudioPreferencesPanelContext& context, StudioShortcutEditorState& shortcuts)
     {
         StudioPreferencesPanelResult result;
 
@@ -302,17 +302,14 @@ namespace CNA::Studio
             }
         }
 
-        if (!preferences.shortcuts.empty() && frame.isDrawPass())
+        // --- Shortcuts ---------------------------------------------------------------------------
+        if (context.actions != nullptr)
         {
-            const UiRect box = content.splitTop(rowHeight);
-            studioDrawText(frame, box,
-                           std::to_string(preferences.shortcuts.size())
-                               + " shortcut(s) rebound (STUDIO-06012 gives them an editor)",
-                           StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
-        }
-        else if (!preferences.shortcuts.empty())
-        {
-            content.splitTop(rowHeight);
+            heading(frame, content, "Shortcuts");
+            const StudioShortcutEditorResult edited =
+                studioShortcutEditor(frame, content, *context.actions, preferences, shortcuts);
+            content.splitTop(edited.contentHeight);
+            if (edited.changed) { result.changed = true; }
         }
 
         // --- Reset -----------------------------------------------------------------------------

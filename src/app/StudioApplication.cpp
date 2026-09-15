@@ -159,6 +159,11 @@ namespace CNA::Studio
                     }
                     continue;
                 }
+                if (name == "--shell-panel-only")
+                {
+                    options.shellPreviewPanelOnly = value;
+                    continue;
+                }
                 if (name == "--shell-invoke")
                 {
                     options.shellPreviewInvoke = value;
@@ -302,9 +307,11 @@ namespace CNA::Studio
             "  --shell-open-menu=T  Open the menu titled T, e.g. File or Window>Panels.\n"
             "  --shell-float=IDS    Undock these panels into floating windows, comma separated.\n"
             "  --shell-invoke=ID    Invoke this command before capturing, e.g. studio.help.about.\n"
+            "  --shell-panel-only=ID  Capture just this panel, filling the window, so a page\n"
+            "                       taller than its dock can be reviewed.\n"
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
-            "  --shell-tooltip    Rest the pointer until a tooltip appears.\n"
             "                       preview. Needs --shell-pointer.\n"
+            "  --shell-tooltip      Rest the pointer until a tooltip appears.\n"
             "  --ui=studio        Run the native Studio UI in a window (needs a CNA build).\n"
             "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"
             "  --select=NAME      Select this entity at start-up, for --ui=studio.\n"

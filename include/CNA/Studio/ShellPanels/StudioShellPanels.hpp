@@ -286,6 +286,7 @@ namespace CNA::Studio
         StudioTreeState diagnosticsState_;
         StudioTreeState comparisonState_;
         StudioPreferences preferences_;
+        StudioShortcutEditorState shortcutEditor_;
         std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
 
         /** @brief Whether the open dialog is this object's Reset confirmation. */

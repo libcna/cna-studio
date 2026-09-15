@@ -135,6 +135,72 @@ namespace
 #endif
 
     /**
+     * @brief Rasterises whatever the shell last described, writes the PNG, and reports it.
+     *
+     * Shared by the whole-shell capture and by `--shell-panel-only`, which describe different
+     * things and then finish identically: by the time either arrives here the geometry is already
+     * in the draw data, so the only difference between them is what was described into it.
+     *
+     * @param options Parsed command line, for the output path and the size to report.
+     * @param theme The theme the shell was built with, for the background and the report line.
+     * @param shell The shell holding the described frame.
+     * @param textures Atlas uploads gathered across the frames, which the rasteriser samples.
+     * @return Process exit code: 0 written; 4 there was nothing to write or the write failed;
+     *         5 the frame refused an operation somewhere, which is a Studio defect rather than a
+     *         bad command line and must not produce a picture that looks fine.
+     */
+    int writeShellPreview(const CNA::Studio::StudioOptions& options,
+                          const CNA::Studio::StudioTheme& theme,
+                          CNA::Studio::StudioShell& shell,
+                          CNA::Studio::UiTextureTable& textures)
+    {
+        const CNA::Studio::ImageBuffer image =
+            CNA::Studio::rasterizeUiDrawData(shell.drawData(),
+                                             theme.color(CNA::Studio::StudioColorRole::AppBackground),
+                                             textures);
+        if (!image.isWellFormed())
+        {
+            std::cerr << "cna-studio: the shell produced no image at "
+                      << options.shellPreviewWidth << "x" << options.shellPreviewHeight << "\n";
+            return 4;
+        }
+
+        if (!CNA::Studio::writeImageAsPng(image, options.shellPreviewPath))
+        {
+            std::cerr << "cna-studio: could not write '" << options.shellPreviewPath << "'\n";
+            return 4;
+        }
+
+        const CNA::Studio::UiDrawData& data = shell.drawData();
+        std::size_t vertices = 0;
+        std::size_t commands = 0;
+        for (const CNA::Studio::UiDrawList& list : data.lists)
+        {
+            vertices += list.vertices.size();
+            commands += list.commands.size();
+        }
+
+        std::cout << "cna-studio: shell preview " << image.width << "x" << image.height
+                  << ", theme '" << theme.name() << "', scale " << theme.scale()
+                  << ", " << commands << " draw calls, " << vertices << " vertices, "
+                  << shell.frame().interactionCount() << " interactive widgets, cursor "
+                  << CNA::Studio::studioCursorName(shell.cursor())
+                  << " -> " << options.shellPreviewPath << "\n";
+
+        if (shell.frame().phaseViolations() > 0)
+        {
+            // The frame refused an operation somewhere. That is a Studio defect rather than a bad
+            // command line, and it must not produce a picture that looks fine.
+            for (const std::string& violation : shell.frame().phaseViolationLog())
+            {
+                std::cerr << "cna-studio: frame phase violation: " << violation << "\n";
+            }
+            return 5;
+        }
+        return 0;
+    }
+
+    /**
      * @brief Renders the native Studio shell to a PNG and reports what it produced.
      *
      * Headless by construction: the shell's geometry is CNA-free and is rasterised on the CPU, so
@@ -310,6 +376,36 @@ namespace
         // rectangle. Kept across the frames instead, the way a real renderer keeps an upload.
         CNA::Studio::UiTextureTable textures;
 
+        // `--shell-panel-only=ID` draws that panel and nothing else, filling the window. A panel
+        // taller than the dock it lives in is unreviewable in a shell capture -- the strip at the
+        // bottom shows four rows of the Preferences page -- and this is what
+        // `StudioShell::describePanelContent` exists for.
+        if (!options.shellPreviewPanelOnly.empty())
+        {
+            if (!shell.hasPanelContent(options.shellPreviewPanelOnly))
+            {
+                std::cerr << "cna-studio: no panel called '" << options.shellPreviewPanelOnly
+                          << "' has content to draw.\n";
+                return 2;
+            }
+
+            const CNA::Studio::UiRect whole{0.0f, 0.0f, input.displayWidth, input.displayHeight};
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                CNA::Studio::runStudioFrame(shell.frame(), input, [&](CNA::Studio::StudioFrame& f) {
+                    if (f.isDrawPass())
+                    {
+                        f.drawList().fillRect(
+                            whole, f.theme().color(CNA::Studio::StudioColorRole::PanelBackground));
+                    }
+                    (void)shell.describePanelContent(options.shellPreviewPanelOnly, f, whole);
+                });
+                textures.apply(shell.drawData());
+            }
+
+            return writeShellPreview(options, theme, shell, textures);
+        }
+
         shell.renderFrame(input);
         textures.apply(shell.drawData());
         shell.renderFrame(input);
@@ -438,50 +534,7 @@ namespace
             }
         }
 
-        const CNA::Studio::ImageBuffer image =
-            CNA::Studio::rasterizeUiDrawData(shell.drawData(),
-                                             theme.color(CNA::Studio::StudioColorRole::AppBackground),
-                                             textures);
-        if (!image.isWellFormed())
-        {
-            std::cerr << "cna-studio: the shell produced no image at "
-                      << options.shellPreviewWidth << "x" << options.shellPreviewHeight << "\n";
-            return 4;
-        }
-
-        if (!CNA::Studio::writeImageAsPng(image, options.shellPreviewPath))
-        {
-            std::cerr << "cna-studio: could not write '" << options.shellPreviewPath << "'\n";
-            return 4;
-        }
-
-        const CNA::Studio::UiDrawData& data = shell.drawData();
-        std::size_t vertices = 0;
-        std::size_t commands = 0;
-        for (const CNA::Studio::UiDrawList& list : data.lists)
-        {
-            vertices += list.vertices.size();
-            commands += list.commands.size();
-        }
-
-        std::cout << "cna-studio: shell preview " << image.width << "x" << image.height
-                  << ", theme '" << theme.name() << "', scale " << theme.scale()
-                  << ", " << commands << " draw calls, " << vertices << " vertices, "
-                  << shell.frame().interactionCount() << " interactive widgets, cursor "
-                  << CNA::Studio::studioCursorName(shell.cursor())
-                  << " -> " << options.shellPreviewPath << "\n";
-
-        if (shell.frame().phaseViolations() > 0)
-        {
-            // The frame refused an operation somewhere. That is a Studio defect rather than a bad
-            // command line, and it must not produce a picture that looks fine.
-            for (const std::string& violation : shell.frame().phaseViolationLog())
-            {
-                std::cerr << "cna-studio: frame phase violation: " << violation << "\n";
-            }
-            return 5;
-        }
-        return 0;
+        return writeShellPreview(options, theme, shell, textures);
     }
 
     /**
