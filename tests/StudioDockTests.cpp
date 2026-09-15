@@ -505,3 +505,67 @@ CNA_STUDIO_TEST(AWorkspaceThatIsNotSoundIsReplacedRatherThanDrawn)
     CNA_STUDIO_EXPECT(shell.isPanelOpen("viewport"));
     CNA_STUDIO_EXPECT(!shell.refusedActions().empty());
 }
+
+// ------------------------------------------------------------------------------------------------
+// Resizing the window without losing the arrangement (STUDIO-04011)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AFloatSurvivesAWindowThatShrinksAndGrowsBackAgain)
+{
+    // The clamp that keeps a float reachable used to overwrite the position it was clamping, so a
+    // window briefly made small carried its floats into the corner and left them there. Resizing
+    // is not an edit: the user did not move that palette, and finding it moved after restoring the
+    // window is the kind of thing people stop trusting a layout over.
+    StudioDockNodeId left = kInvalidDockNode;
+    StudioDockNodeId bottom = kInvalidDockNode;
+    StudioDockNodeId centre = kInvalidDockNode;
+    StudioDockTree tree = buildWorkspace(left, bottom, centre);
+
+    const std::size_t index = tree.floatPanel("outliner", 760.0f, 520.0f, 360.0f, 240.0f);
+    CNA_STUDIO_EXPECT(index != kInvalidFloatingDock);
+    if (index == kInvalidFloatingDock) { return; }
+
+    tree.layout(kArea, kSplitter, kTabStrip);
+    const UiRect placed = tree.floating()[index].bounds;
+    CNA_STUDIO_EXPECT(placed.width > 0.0f);
+
+    // Small enough that the float cannot fit where it was put.
+    tree.layout(UiRect{0.0f, 0.0f, 500.0f, 400.0f}, kSplitter, kTabStrip);
+    const UiRect squeezed = tree.floating()[index].bounds;
+
+    // Still wholly inside the smaller window, which is the point of the clamp.
+    CNA_STUDIO_EXPECT(squeezed.left() >= -0.5f);
+    CNA_STUDIO_EXPECT(squeezed.top() >= -0.5f);
+    CNA_STUDIO_EXPECT(squeezed.right() <= 500.5f);
+    CNA_STUDIO_EXPECT(squeezed.bottom() <= 400.5f);
+
+    // And back. This is the assertion the clamp used to fail.
+    tree.layout(kArea, kSplitter, kTabStrip);
+    const UiRect restored = tree.floating()[index].bounds;
+    CNA_STUDIO_EXPECT_EQ(restored.x, placed.x);
+    CNA_STUDIO_EXPECT_EQ(restored.y, placed.y);
+    CNA_STUDIO_EXPECT_EQ(restored.width, placed.width);
+    CNA_STUDIO_EXPECT_EQ(restored.height, placed.height);
+}
+
+CNA_STUDIO_TEST(MovingAFloatInASmallWindowIsAnEditAndSticks)
+{
+    // The other half: a clamp that never wrote back would make the *user's own* drag in a small
+    // window snap away the moment the window grew. Resizing is not an edit; dragging is.
+    StudioDockNodeId left = kInvalidDockNode;
+    StudioDockNodeId bottom = kInvalidDockNode;
+    StudioDockNodeId centre = kInvalidDockNode;
+    StudioDockTree tree = buildWorkspace(left, bottom, centre);
+
+    const std::size_t index = tree.floatPanel("outliner", 760.0f, 520.0f, 360.0f, 240.0f);
+    if (index == kInvalidFloatingDock) { return; }
+
+    tree.layout(UiRect{0.0f, 0.0f, 500.0f, 400.0f}, kSplitter, kTabStrip);
+    tree.floatingAt(index).x = 20.0f;
+    tree.floatingAt(index).y = 30.0f;
+    tree.layout(UiRect{0.0f, 0.0f, 500.0f, 400.0f}, kSplitter, kTabStrip);
+
+    tree.layout(kArea, kSplitter, kTabStrip);
+    CNA_STUDIO_EXPECT_EQ(tree.floating()[index].bounds.x, 20.0f);
+    CNA_STUDIO_EXPECT_EQ(tree.floating()[index].bounds.y, 30.0f);
+}

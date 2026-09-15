@@ -2119,8 +2119,15 @@ namespace CNA::Studio
             frame_.router().interact(frame_.ids().make("title"), title, /*enabled=*/true);
         if (frame_.isInputPass() && moved.held && movingFloat_ == kInvalidFloatingDock)
         {
-            // The window's own origin at the press, so every later frame measures from the press
-            // point rather than accumulating a per-frame delta that rounds away.
+            // Where the window *is*, not where it asked to be. Those differ when the workspace is
+            // too small to honour the request, and anchoring on the request would make grabbing a
+            // clamped window throw it off-screen on the first pixel of movement. Grabbing a window
+            // means "it is here now", so the press also adopts the visible position as the intent.
+            //
+            // Measured once at the press so every later frame measures from the press point rather
+            // than accumulating a per-frame delta that rounds away.
+            window.x = window.bounds.left() - layout_.dockArea.left();
+            window.y = window.bounds.top() - layout_.dockArea.top();
             movingFloatX_ = window.x;
             movingFloatY_ = window.y;
             movingFloat_ = dock_.raiseFloating(index);
@@ -2136,7 +2143,11 @@ namespace CNA::Studio
             frame_.router().interact(frame_.ids().make("grip"), gripBox, /*enabled=*/true);
         if (frame_.isInputPass() && resized.held && resizingFloat_ == kInvalidFloatingDock)
         {
+            // The visible size, for the same reason the move above takes the visible position:
+            // grabbing the grip of a window the workspace had to shrink means "this size now".
             resizingFloat_ = index;
+            window.width = window.bounds.width;
+            window.height = window.bounds.height;
             resizingFloatWidth_ = window.width;
             resizingFloatHeight_ = window.height;
         }

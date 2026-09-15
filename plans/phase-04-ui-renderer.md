@@ -20,7 +20,7 @@
 | `STUDIO-04008` | Icons, drawn as vector paths rather than sampled | ✅ | — |
 | `STUDIO-04009` | Select and document legally redistributable fonts and icons | ✅ | — |
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss | ⬜ | `STUDIO-04002` |
-| `STUDIO-04011` | Window resize handling without artefacts | ⬜ | `STUDIO-04010` |
+| `STUDIO-04011` | Window resize handling without artefacts | 🔄 | `STUDIO-04010` |
 | `STUDIO-04012` | Render-target composition for the viewport panel | ✅ | `STUDIO-04004` |
 | `STUDIO-04013` | Screenshot and readback support for visual testing | ✅ | `STUDIO-04001` |
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
@@ -220,6 +220,38 @@ CNA-free half — the texture reaching the draw data, and the placeholder return
 away. On a real device, `CnaStudioNativeShellCompositesTheScene` asserts on the words *compositing
 the scene* rather than on a screenshot, because a viewport drawing its grid and one drawing the
 scene produce the same draw-call count and the same perfectly valid picture
+
+### `STUDIO-04011` — Window resize handling without artefacts
+
+**Acceptance.** Resizing the window changes what is on screen and nothing else. No stretched frame,
+no stale geometry, and no silent edit to the arrangement.
+
+**The arrangement half is done; the device half waits on `STUDIO-04010`.**
+
+*The arrangement.* Docked panels resize proportionally because a split stores a fraction rather than
+a pixel width, which was right from the start. Floats store units, because a palette that grew with
+the window would be a palette nobody could keep the size of — and they are clamped into the
+workspace so that a window saved at (3000, 1800) on a large display is still reachable on a laptop.
+
+The clamp wrote itself back into the position it was clamping. So a window briefly dragged small —
+or a laptop lid opened beside a large display — carried every float into the corner and **left them
+there** when it grew again. The user did not move those palettes, and finding them moved is the kind
+of thing people stop trusting a saved layout over. Resizing is not an edit; dragging is. The clamp
+now resolves into `bounds` and leaves the window's own fields alone, so they hold the *intent* and
+what is drawn is the intent clamped.
+
+That needed a matching change at the other end. While the workspace is small, what the user grabs is
+the clamped rectangle, and a drag anchored on the un-clamped request would throw the window
+off-screen on the first pixel of movement. So a press on a float's title bar or corner grip adopts
+its visible position and size as the new intent first: grabbing a window means "it is here now".
+
+Tested at both levels, because they fail differently — the tree, where the round-trip is arithmetic,
+and the shell, where the drag is a gesture. Both were checked by restoring the destructive clamp.
+
+*The device.* A back buffer recreated under the renderer, and the render targets the viewport panel
+holds, are `STUDIO-04010`. The scene target is already re-created on every panel resize, one frame
+behind the layout that decides its size — which shows as the scene stretching for a single frame
+rather than as anything a user would name, and is recorded here rather than left to be rediscovered.
 
 ### `STUDIO-04013` — Screenshot and readback support for visual testing
 

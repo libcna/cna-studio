@@ -540,3 +540,87 @@ CNA_STUDIO_TEST(AFloatSurvivesSavingAndRestoringTheWorkspace)
     CNA_STUDIO_EXPECT_EQ(shell->dockTree().floating().size(), std::size_t{1});
     CNA_STUDIO_EXPECT(shell->isPanelOpen("details"));
 }
+
+// ------------------------------------------------------------------------------------------------
+// Resizing the window is not an edit to the arrangement (STUDIO-04011)
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief The same pointer state, in a window of a given size. */
+    UiInputState atSized(float x, float y, float width, float height, bool leftDown = false)
+    {
+        UiInputState input = at(x, y, leftDown);
+        input.displayWidth = width;
+        input.displayHeight = height;
+        return input;
+    }
+}
+
+CNA_STUDIO_TEST(ShrinkingTheWindowAndGrowingItBackLeavesTheFloatsWhereTheyWere)
+{
+    // A window dragged small -- or a laptop lid opened beside a large display -- used to carry
+    // every float into the corner and leave them there. The clamp that keeps a float reachable was
+    // writing itself back into the position it was clamping, so the arrangement was destroyed by
+    // the act of looking at it in a smaller window.
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+    CNA_STUDIO_EXPECT(shell->floatPanel("details"));
+
+    // Put it somewhere a small window cannot hold.
+    shell->dockTree().floatingAt(0).x = 700.0f;
+    shell->dockTree().floatingAt(0).y = 430.0f;
+    shell->renderFrame(at(-1.0f, -1.0f));
+    const UiRect placed = shell->dockTree().floating()[0].bounds;
+
+    shell->renderFrame(atSized(-1.0f, -1.0f, 480.0f, 360.0f));
+    const UiRect squeezed = shell->dockTree().floating()[0].bounds;
+    CNA_STUDIO_EXPECT(squeezed.right() <= 480.5f);
+    CNA_STUDIO_EXPECT(squeezed.bottom() <= 360.5f);
+    CNA_STUDIO_EXPECT(squeezed.left() >= -0.5f);
+
+    shell->renderFrame(at(-1.0f, -1.0f));
+    const UiRect restored = shell->dockTree().floating()[0].bounds;
+    CNA_STUDIO_EXPECT_EQ(restored.x, placed.x);
+    CNA_STUDIO_EXPECT_EQ(restored.y, placed.y);
+    CNA_STUDIO_EXPECT_EQ(restored.width, placed.width);
+    CNA_STUDIO_EXPECT_EQ(restored.height, placed.height);
+}
+
+CNA_STUDIO_TEST(GrabbingAClampedFloatMovesItFromWhereItLooksRatherThanWhereItAskedToBe)
+{
+    // The other half of keeping the request un-clamped: while the window is small, what the user
+    // grabs is the clamped rectangle, and anchoring the drag on the request would throw the window
+    // off-screen on the first pixel of movement. Grabbing a window means "it is here now".
+    const std::unique_ptr<StudioShell> shell = defaultShell();
+    CNA_STUDIO_EXPECT(shell->floatPanel("details"));
+
+    shell->dockTree().floatingAt(0).x = 700.0f;
+    shell->dockTree().floatingAt(0).y = 430.0f;
+
+    // Big enough that the clamped float has slack to move in both directions, and small enough
+    // that it cannot sit where it was asked to. A window where the clamp pins it flush to an edge
+    // would assert nothing about the direction it is pinned in.
+    const float width = 700.0f;
+    const float height = 560.0f;
+    shell->renderFrame(atSized(-1.0f, -1.0f, width, height));
+    const UiRect clamped = shell->dockTree().floating()[0].bounds;
+    CNA_STUDIO_EXPECT(clamped.left() > 40.0f);
+    CNA_STUDIO_EXPECT(clamped.top() > 30.0f);
+
+    const UiRect title = titleBarOf(*shell, 0);
+    CNA_STUDIO_EXPECT(!title.isEmpty());
+    shell->renderFrame(atSized(title.centerX(), title.centerY(), width, height));
+    shell->renderFrame(atSized(title.centerX(), title.centerY(), width, height, true));
+    shell->renderFrame(atSized(title.centerX() - 40.0f, title.centerY() - 30.0f, width, height,
+                               true));
+
+    const UiRect moved = shell->dockTree().floating()[0].bounds;
+    CNA_STUDIO_EXPECT(std::abs((moved.left() - clamped.left()) + 40.0f) <= 1.0f);
+    CNA_STUDIO_EXPECT(std::abs((moved.top() - clamped.top()) + 30.0f) <= 1.0f);
+
+    // And the move stuck: growing the window back does not undo what the user did in the small one.
+    shell->renderFrame(atSized(title.centerX() - 40.0f, title.centerY() - 30.0f, width, height));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT_EQ(shell->dockTree().floating()[0].bounds.left(), moved.left());
+    CNA_STUDIO_EXPECT_EQ(shell->dockTree().floating()[0].bounds.top(), moved.top());
+}

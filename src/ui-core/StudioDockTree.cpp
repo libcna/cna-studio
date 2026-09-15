@@ -531,20 +531,24 @@ namespace CNA::Studio
         // a window saved at (3000, 1800) on a large display is still reachable on a laptop. The
         // clamp keeps the whole window in view where it fits, and where it does not it keeps the
         // top-left corner in: a title bar that cannot be grabbed is a window that cannot be moved.
+        //
+        // Clamped into `bounds` and *not* back into the window's own fields, which is the whole
+        // difference between a resize and an edit. Writing the clamp back -- which this did -- made
+        // a window briefly dragged small carry every float into the corner and leave them there
+        // when it grew again. The user did not move those palettes.
         const float strip = std::max(0.0f, tabStripHeight);
         for (StudioFloatingDock& window : floating_)
         {
-            window.width = std::clamp(window.width, kMinimumFloatingExtent,
-                                      std::max(kMinimumFloatingExtent, area.width));
-            window.height = std::clamp(window.height, strip + kMinimumFloatingExtent,
-                                       std::max(strip + kMinimumFloatingExtent, area.height));
+            const float width = std::clamp(window.width, kMinimumFloatingExtent,
+                                           std::max(kMinimumFloatingExtent, area.width));
+            const float height = std::clamp(window.height, strip + kMinimumFloatingExtent,
+                                            std::max(strip + kMinimumFloatingExtent, area.height));
 
-            window.x = std::clamp(window.x, 0.0f, std::max(0.0f, area.width - window.width));
-            window.y = std::clamp(window.y, 0.0f, std::max(0.0f, area.height - window.height));
+            const float x = std::clamp(window.x, 0.0f, std::max(0.0f, area.width - width));
+            const float y = std::clamp(window.y, 0.0f, std::max(0.0f, area.height - height));
 
-            window.bounds = UiRect{std::round(area.left() + window.x),
-                                   std::round(area.top() + window.y),
-                                   std::round(window.width), std::round(window.height)};
+            window.bounds = UiRect{std::round(area.left() + x), std::round(area.top() + y),
+                                   std::round(width), std::round(height)};
         }
     }
 

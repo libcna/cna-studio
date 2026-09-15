@@ -160,16 +160,32 @@ namespace CNA::Studio
         /** @brief Index into @ref panels of the tab that is showing. */
         std::size_t activePanel = 0;
 
-        /** @brief Position relative to the workspace area's top-left, in logical units. */
+        /**
+         * @brief Where the user put this window, relative to the workspace area's top-left.
+         *
+         * The *intent*, not the result. @ref StudioDockTree::layout clamps a float into the
+         * workspace when it will not fit, and writes the clamped rectangle to @ref bounds while
+         * leaving these alone — so a window briefly made small does not carry every float into
+         * the corner and leave them there when it grows back. Resizing a window is not an edit to
+         * the arrangement, and a layout that treated it as one would be one nobody trusts.
+         *
+         * Dragging a float *is* an edit, and writes here. A drag that begins on a clamped window
+         * adopts its visible position first, because "here" is where the user grabbed it.
+         */
         float x = 0.0f;
-        /** @brief Position relative to the workspace area's top-left, in logical units. */
+        /** @brief Where the user put this window. @see x */
         float y = 0.0f;
-        /** @brief Width in logical units. */
+        /** @brief The size the user gave this window, in logical units. @see x */
         float width = 360.0f;
-        /** @brief Height in logical units. */
+        /** @brief The size the user gave this window, in logical units. @see x */
         float height = 280.0f;
 
-        /** @brief Resolved rectangle, filled by @ref StudioDockTree::layout. */
+        /**
+         * @brief Resolved rectangle, filled by @ref StudioDockTree::layout.
+         *
+         * The intent above, clamped into the workspace. This is what is drawn and hit-tested; the
+         * fields above are what is saved and restored.
+         */
         UiRect bounds;
     };
 
