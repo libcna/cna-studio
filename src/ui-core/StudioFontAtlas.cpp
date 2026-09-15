@@ -200,7 +200,32 @@ namespace CNA::Studio
             whiteV_ = (static_cast<float>(whiteY) + kWhiteBlock * 0.5f) * inverse;
         }
 
+        // A new texture rather than a region of the old one, whatever was pending.
+        needsCreate_ = true;
+        dirtyMinX_ = 0;
+        dirtyMinY_ = 0;
+        dirtyMaxX_ = 0;
+        dirtyMaxY_ = 0;
         dirty_ = true;
+    }
+
+    void StudioFontAtlas::touch(int x, int y, int width, int height) const
+    {
+        if (width <= 0 || height <= 0) { return; }
+
+        if (dirtyMaxX_ <= dirtyMinX_ || dirtyMaxY_ <= dirtyMinY_)
+        {
+            dirtyMinX_ = x;
+            dirtyMinY_ = y;
+            dirtyMaxX_ = x + width;
+            dirtyMaxY_ = y + height;
+            return;
+        }
+
+        dirtyMinX_ = std::min(dirtyMinX_, x);
+        dirtyMinY_ = std::min(dirtyMinY_, y);
+        dirtyMaxX_ = std::max(dirtyMaxX_, x + width);
+        dirtyMaxY_ = std::max(dirtyMaxY_, y + height);
     }
 
     StudioFontAtlas::StudioFontAtlas() : impl_(std::make_unique<Impl>())
@@ -347,6 +372,7 @@ namespace CNA::Studio
             glyph.v0 = static_cast<float>(atlasY) * inverse;
             glyph.u1 = static_cast<float>(atlasX + glyph.width) * inverse;
             glyph.v1 = static_cast<float>(atlasY + glyph.height) * inverse;
+            touch(atlasX, atlasY, glyph.width, glyph.height);
             dirty_ = true;
         }
 
@@ -472,16 +498,42 @@ namespace CNA::Studio
     UiTextureRequest StudioFontAtlas::takeUploadRequest()
     {
         UiTextureRequest request;
-        request.action = UiTextureAction::Create;
         request.texture = kTextureId;
         request.width = size_;
         request.height = size_;
-        request.updateX = 0;
-        request.updateY = 0;
-        request.updateWidth = size_;
-        request.updateHeight = size_;
-        request.pixels = pixels_.data();
         request.pitch = size_ * 4;
+
+        if (needsCreate_ || dirtyMaxX_ <= dirtyMinX_ || dirtyMaxY_ <= dirtyMinY_)
+        {
+            // The first upload, the one after a growth, and the degenerate case of a dirty flag
+            // with no rectangle behind it -- which should not happen and, if it does, costs a
+            // whole upload rather than an upload of the wrong pixels.
+            request.action = UiTextureAction::Create;
+            request.updateX = 0;
+            request.updateY = 0;
+            request.updateWidth = size_;
+            request.updateHeight = size_;
+            request.pixels = pixels_.data();
+        }
+        else
+        {
+            request.action = UiTextureAction::Update;
+            request.updateX = dirtyMinX_;
+            request.updateY = dirtyMinY_;
+            request.updateWidth = dirtyMaxX_ - dirtyMinX_;
+            request.updateHeight = dirtyMaxY_ - dirtyMinY_;
+            // The top-left of the *region*, with the pitch still striding a whole atlas row, which
+            // is what `UiTextureRequest` means by those two fields together.
+            request.pixels = pixels_.data()
+                + (static_cast<std::size_t>(dirtyMinY_) * static_cast<std::size_t>(size_)
+                   + static_cast<std::size_t>(dirtyMinX_)) * 4;
+        }
+
+        needsCreate_ = false;
+        dirtyMinX_ = 0;
+        dirtyMinY_ = 0;
+        dirtyMaxX_ = 0;
+        dirtyMaxY_ = 0;
         dirty_ = false;
         return request;
     }

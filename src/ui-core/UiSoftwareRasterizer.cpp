@@ -68,7 +68,7 @@ namespace CNA::Studio
          */
         Rgba sampleTexture(const UiTextureTable::Entry& texture, float u, float v)
         {
-            if (texture.pixels == nullptr || texture.width <= 0 || texture.height <= 0)
+            if (texture.pixels() == nullptr || texture.width <= 0 || texture.height <= 0)
             {
                 return Rgba{255, 255, 255, 255};
             }
@@ -77,7 +77,7 @@ namespace CNA::Studio
             const int y = std::clamp(static_cast<int>(v * static_cast<float>(texture.height)),
                                      0, texture.height - 1);
             const std::uint8_t* texel =
-                texture.pixels + static_cast<std::size_t>(y) * texture.pitch
+                texture.pixels() + static_cast<std::size_t>(y) * texture.pitch
                 + static_cast<std::size_t>(x) * 4;
             return Rgba{texel[0], texel[1], texel[2], texel[3]};
         }
@@ -213,12 +213,51 @@ namespace CNA::Studio
             }
             if (request.pixels == nullptr || request.width <= 0 || request.height <= 0) { continue; }
 
-            Entry entry;
-            entry.width = request.width;
-            entry.height = request.height;
-            entry.pitch = request.pitch > 0 ? request.pitch : request.width * 4;
-            entry.pixels = request.pixels;
-            entries_[request.texture] = entry;
+            const int sourcePitch = request.pitch > 0 ? request.pitch : request.width * 4;
+
+            Entry& entry = entries_[request.texture];
+            if (request.action == UiTextureAction::Create
+                || entry.width != request.width || entry.height != request.height)
+            {
+                // A Create, or an Update for a texture this table has never seen at this size --
+                // which is what a grown font atlas looks like if its Create were ever missed.
+                // Either way the old storage describes a different texture.
+                entry.width = request.width;
+                entry.height = request.height;
+                entry.pitch = request.width * 4;
+                entry.storage.assign(
+                    static_cast<std::size_t>(entry.pitch) * static_cast<std::size_t>(entry.height),
+                    0);
+            }
+
+            // Copied row by row into the region the request names. An Update's `pixels` is the
+            // top-left of that region rather than of the texture, and its `pitch` still strides a
+            // whole source row -- so the source walks by `sourcePitch` and the destination by the
+            // texture's own.
+            const int updateWidth = request.updateWidth > 0 ? request.updateWidth : request.width;
+            const int updateHeight = request.updateHeight > 0 ? request.updateHeight : request.height;
+
+            // A region starting outside the texture is refused rather than clamped: the row offset
+            // below is unsigned, so a negative left edge would not draw in the wrong place, it
+            // would write before the buffer.
+            if (request.updateX < 0 || request.updateX >= entry.width) { continue; }
+
+            for (int row = 0; row < updateHeight; ++row)
+            {
+                const int y = request.updateY + row;
+                if (y < 0 || y >= entry.height) { continue; }
+
+                const std::uint8_t* source =
+                    request.pixels + static_cast<std::ptrdiff_t>(row) * sourcePitch;
+                const std::size_t destination =
+                    static_cast<std::size_t>(y) * static_cast<std::size_t>(entry.pitch)
+                    + static_cast<std::size_t>(request.updateX) * 4;
+
+                const int columns = std::min(updateWidth, entry.width - request.updateX);
+                if (columns <= 0) { continue; }
+                std::memcpy(entry.storage.data() + destination, source,
+                            static_cast<std::size_t>(columns) * 4);
+            }
         }
     }
 

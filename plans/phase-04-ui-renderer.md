@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 12 of 19 complete `████████░░░░`
+**Progress:** 14 of 19 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,7 +16,7 @@
 | `STUDIO-04004` | Scissor-based clipping, including nested clip stacks | ✅ | `STUDIO-04002` |
 | `STUDIO-04005` | Font atlas construction and glyph rasterization | ✅ | `STUDIO-04001` |
 | `STUDIO-04006` | Text rendering with kerning, and correct baseline and line metrics | ✅ | `STUDIO-04005` |
-| `STUDIO-04007` | Dynamic glyph upload without frame stalls or dropped glyphs | 🔄 | `STUDIO-04005` |
+| `STUDIO-04007` | Dynamic glyph upload without frame stalls or dropped glyphs | ✅ | `STUDIO-04005` |
 | `STUDIO-04008` | Icons, drawn as vector paths rather than sampled | ✅ | — |
 | `STUDIO-04009` | Select and document legally redistributable fonts and icons | ✅ | — |
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss | ⬜ | `STUDIO-04002` |
@@ -26,7 +26,7 @@
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | ⬜ | `STUDIO-04013` |
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
-| `STUDIO-04017` | Upload only the changed region of the atlas | ⬜ | `STUDIO-04005` |
+| `STUDIO-04017` | Upload only the changed region of the atlas | ✅ | `STUDIO-04005` |
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
 | `STUDIO-04020` | Guard test: every key Studio can ask about is one the host reports | ✅ | — |
 
@@ -89,13 +89,12 @@ with the upload riding in the same frame
 
 **Acceptance.** Glyphs first needed on a frame that does not draw are still uploaded — the prototype shipped this bug once (legacy ED-119) and it must not return
 
-**In progress.** The **dropped-glyph** half is done and tested: the upload request is emitted at
-*end of frame* rather than at the start of the draw pass, so a glyph rasterised at any point in the
-frame — by a measurement during layout, or by a widget that draws text nothing measured — still
-reaches the renderer before the quad that samples it, because texture requests are applied ahead of
-every draw command. The **stall** half is not: a dirty atlas re-uploads all four megabytes rather
-than the changed region (`STUDIO-04017`), and a full atlas drops glyphs and counts them rather than
-growing (`STUDIO-04018`)
+**Done, in both halves.** The **dropped-glyph** half: the upload request is emitted at *end of
+frame* rather than at the start of the draw pass, so a glyph rasterised at any point in the frame —
+by a measurement during layout, or by a widget that draws text nothing measured — still reaches the
+renderer before the quad that samples it, because texture requests are applied ahead of every draw
+command. The **stall** half followed in `STUDIO-04017` (a dirty atlas uploads the changed rectangle
+rather than all four megabytes) and `STUDIO-04018` (a full atlas doubles rather than dropping)
 
 **Verification.** A regression test for the update/draw phase split
 
@@ -104,6 +103,30 @@ growing (`STUDIO-04018`)
 **Acceptance.** A frame that rasterised one new glyph uploads that glyph's rectangle, not the whole
 texture. The atlas settles within a few frames of start-up, so this is a start-up cost rather than a
 steady-state one — which is why it is a follow-up rather than part of `STUDIO-04005`
+
+**Done, and it is not only a start-up cost.** A user typing into a text field rasterises a glyph
+they have not used before, and a UI re-uploading four megabytes on a keystroke is a stutter in the
+one place a stutter is most visible. The atlas now tracks the smallest rectangle covering everything
+rasterised since the last request: a `Create` of the whole texture the first time and after a growth,
+because the texture itself has to be allocated, and an `Update` of that rectangle otherwise.
+
+**A union rather than a list of rectangles.** Two glyphs on opposite shelves upload the rows between
+them too. A list would send fewer bytes and would need the requests to stay in order across a frame
+boundary — a correctness problem in exchange for bytes, on a texture that settles within a few
+frames.
+
+**And it found a contract violation underneath.** `UiTextureTable`, the software rasterizer's
+texture store, kept the request's *pointer* rather than copying — which `UiTextureRequest` forbids
+in as many words, and which worked anyway because the only texture anybody uploads is a font atlas
+that outlives the frame. It stops working the moment an `Update` arrives, because an Update's
+pointer is the top-left of a *region*: read as a whole texture it draws every glyph from somewhere
+else in the atlas, which looks like a corrupt font rather than a wrong pointer. The table owns its
+pixels now and blits each region into them.
+
+**The test is a byte-for-byte comparison** of the table's copy against the atlas after an upload
+that sent only part of it, driven at three different sizes so the regions land on different shelves.
+Both halves of the arithmetic were checked by breaking them: the request's pointer, and the table's
+placement of it.
 
 ### `STUDIO-04018` — Grow or evict when the glyph atlas fills
 

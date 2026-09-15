@@ -262,8 +262,19 @@ namespace CNA::Studio
         /**
          * @brief Produces the texture request that uploads the atlas, and clears the dirty flag.
          *
-         * The whole atlas, not the changed region: a partial update is a correctness liability for
-         * a handful of kilobytes on a texture that settles within a few frames of start-up.
+         * A `Create` of the whole texture the first time, and after a growth, because the texture
+         * itself has to be allocated. Afterwards an `Update` of the smallest rectangle covering
+         * every glyph rasterised since the last request -- which is what makes a new glyph cost
+         * its own few kilobytes rather than the atlas's four megabytes (`STUDIO-04017`).
+         *
+         * That is not only a start-up saving. A user typing into a text field rasterises a glyph
+         * they have not used before, and a UI re-uploading four megabytes on a keystroke is a
+         * stutter in the one place a stutter is most visible.
+         *
+         * The rectangle is a union rather than a list: two glyphs on opposite shelves upload the
+         * rows between them too. A list would upload less and would need the requests to stay in
+         * order across a frame boundary, which is a correctness problem in exchange for bytes on
+         * a texture that settles within a few frames.
          *
          * @return The request. Its pixels are owned by the atlas and valid until the next
          *         rasterization.
@@ -341,5 +352,17 @@ namespace CNA::Studio
         mutable std::size_t dropped_ = 0;
         mutable bool growthWanted_ = false;
         std::size_t growths_ = 0;
+
+        /** @brief Whether the next request must allocate the texture rather than update it. */
+        bool needsCreate_ = true;
+
+        /** @brief Smallest rectangle covering every glyph written since the last request. */
+        mutable int dirtyMinX_ = 0;
+        mutable int dirtyMinY_ = 0;
+        mutable int dirtyMaxX_ = 0;
+        mutable int dirtyMaxY_ = 0;
+
+        /** @brief Widens the dirty rectangle to cover @p width by @p height at (@p x, @p y). */
+        void touch(int x, int y, int width, int height) const;
     };
 } // namespace CNA::Studio

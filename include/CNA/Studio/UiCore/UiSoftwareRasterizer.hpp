@@ -36,6 +36,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <vector>
 
 namespace CNA::Studio
 {
@@ -58,8 +59,12 @@ namespace CNA::Studio
         /**
          * @brief Applies @p drawData's texture requests: uploads, updates and destroys.
          *
-         * The pixel data is *referenced*, not copied — as `UiTextureRequest` documents. Whatever
-         * owns the pixels must outlive every rasterise that uses them.
+         * The pixels are **copied**, as `UiTextureRequest` requires: its pointer is valid only for
+         * the frame that produced it. This table used to keep the pointer instead, which worked
+         * only because the one texture anybody uploads is a font atlas that outlives the frame
+         * anyway — and stopped working the moment an Update arrived, because an Update's pointer
+         * is the top-left of a *region* and reading it as a whole texture draws every glyph from
+         * the wrong place (`STUDIO-04017`).
          *
          * @param drawData A frame whose requests should be applied.
          */
@@ -71,13 +76,19 @@ namespace CNA::Studio
         /** @brief Whether @p id has been uploaded. */
         [[nodiscard]] bool contains(UiTextureId id) const { return entries_.count(id) != 0; }
 
-        /** @brief One texture's referenced pixels and shape. */
+        /** @brief One texture's pixels and shape. The pixels are this table's own copy. */
         struct Entry
         {
             int width = 0;
             int height = 0;
             int pitch = 0;
-            const std::uint8_t* pixels = nullptr;
+            std::vector<std::uint8_t> storage;
+
+            /** @brief The top-left pixel, or nullptr when this entry holds nothing. */
+            [[nodiscard]] const std::uint8_t* pixels() const
+            {
+                return storage.empty() ? nullptr : storage.data();
+            }
         };
 
         /** @brief The texture for @p id, or nullptr. */

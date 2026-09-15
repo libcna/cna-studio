@@ -14,9 +14,11 @@
 #include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
+#include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -669,4 +671,225 @@ CNA_STUDIO_TEST(TheAtlasStopsGrowingAtItsCapAndGoesBackToCountingWhatItDrops)
     // Still counted, and not reset by a growth that did not happen: this is the state in which
     // `droppedGlyphs()` means text really is being lost.
     CNA_STUDIO_EXPECT(atlas.droppedGlyphs() > 0);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Uploading only what changed (STUDIO-04017)
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief A draw data carrying one texture request, so a table can be fed by hand. */
+    UiDrawData withRequest(const UiTextureRequest& request)
+    {
+        UiDrawData data;
+        data.textureRequests.push_back(request);
+        return data;
+    }
+
+    /** @brief Whether @p table's copy of the atlas is the atlas, pixel for pixel. */
+    bool tableMatchesAtlas(const UiTextureTable& table, const StudioFontAtlas& atlas)
+    {
+        const UiTextureTable::Entry* entry = table.find(StudioFontAtlas::kTextureId);
+        if (entry == nullptr || entry->pixels() == nullptr) { return false; }
+        if (entry->width != atlas.size() || entry->height != atlas.size()) { return false; }
+
+        for (int y = 0; y < atlas.size(); ++y)
+        {
+            const std::uint8_t* mine = entry->pixels() + static_cast<std::size_t>(y) * entry->pitch;
+            const std::uint8_t* theirs = atlas.pixels().data()
+                + static_cast<std::size_t>(y) * static_cast<std::size_t>(atlas.size()) * 4;
+            if (std::memcmp(mine, theirs, static_cast<std::size_t>(atlas.size()) * 4) != 0)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+CNA_STUDIO_TEST(AGlyphRasterisedAfterTheFirstUploadCostsItsOwnRectangle)
+{
+    // Not only a start-up saving. A user typing into a text field rasterises a glyph they have not
+    // used before, and a UI re-uploading four megabytes on a keystroke is a stutter in the one
+    // place a stutter is most visible.
+    StudioFontAtlas atlas;
+    atlas.prepare(bodyStyle(), "Open Recent");
+
+    const UiTextureRequest first = atlas.takeUploadRequest();
+    CNA_STUDIO_EXPECT(first.action == UiTextureAction::Create);
+    CNA_STUDIO_EXPECT_EQ(first.updateWidth, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(first.updateHeight, atlas.size());
+
+    atlas.prepare(bodyStyle(), "xyzXYZ");
+    CNA_STUDIO_EXPECT(atlas.hasPendingUpload());
+
+    const UiTextureRequest second = atlas.takeUploadRequest();
+    CNA_STUDIO_EXPECT(second.action == UiTextureAction::Update);
+    CNA_STUDIO_EXPECT(second.updateWidth > 0 && second.updateHeight > 0);
+    CNA_STUDIO_EXPECT(second.updateWidth < atlas.size());
+    CNA_STUDIO_EXPECT(second.updateHeight < atlas.size());
+
+    // The region's top-left, with the pitch still striding a whole atlas row. Reading those two
+    // fields the other way -- a tightly packed region -- is the mistake this asserts against.
+    CNA_STUDIO_EXPECT_EQ(second.pitch, atlas.size() * 4);
+    CNA_STUDIO_EXPECT(second.pixels == atlas.pixels().data()
+                      + (static_cast<std::size_t>(second.updateY)
+                             * static_cast<std::size_t>(atlas.size())
+                         + static_cast<std::size_t>(second.updateX)) * 4);
+}
+
+CNA_STUDIO_TEST(APartialUploadLandsExactlyWhereTheAtlasHasIt)
+{
+    // The assertion that matters, because getting the region wrong does not fail loudly: it draws
+    // every glyph from somewhere else in the atlas, which reads as a corrupt font. So the whole
+    // texture is compared, byte for byte, after an upload that only sent part of it.
+    StudioFontAtlas atlas;
+    UiTextureTable table;
+
+    atlas.prepare(bodyStyle(), "File Edit View");
+    table.apply(withRequest(atlas.takeUploadRequest()));
+    CNA_STUDIO_EXPECT(tableMatchesAtlas(table, atlas));
+
+    // Bigger, so the new glyphs land on a shelf of their own rather than beside the old ones --
+    // a region that happened to start at the origin would pass whatever the arithmetic did.
+    atlas.prepare(bodyStyle(31.0f), "Qgjpy");
+    const UiTextureRequest update = atlas.takeUploadRequest();
+    CNA_STUDIO_EXPECT(update.action == UiTextureAction::Update);
+    CNA_STUDIO_EXPECT(update.updateY > 0);
+
+    table.apply(withRequest(update));
+    CNA_STUDIO_EXPECT(tableMatchesAtlas(table, atlas));
+
+    // And again, so the second update is applied over a texture that already carries the first.
+    atlas.prepare(bodyStyle(47.0f), "Wm@");
+    table.apply(withRequest(atlas.takeUploadRequest()));
+    CNA_STUDIO_EXPECT(tableMatchesAtlas(table, atlas));
+}
+
+CNA_STUDIO_TEST(AGrownAtlasUploadsWholeRatherThanAsARegionOfATextureThatNoLongerExists)
+{
+    // An Update names a rectangle inside a texture of a given size. After a growth there is no
+    // such texture until a Create has made one, and an Update against the old one would write the
+    // new glyphs into a quarter of it.
+    StudioFontAtlas atlas;
+    UiTextureTable table;
+    atlas.prepare(bodyStyle(), "Hello");
+    table.apply(withRequest(atlas.takeUploadRequest()));
+
+    CNA_STUDIO_EXPECT(fillUntilFull(atlas));
+    (void)atlas.takeUploadRequest();
+    CNA_STUDIO_EXPECT(atlas.growIfNeeded());
+
+    const UiTextureRequest request = atlas.takeUploadRequest();
+    CNA_STUDIO_EXPECT(request.action == UiTextureAction::Create);
+    CNA_STUDIO_EXPECT_EQ(request.width, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(request.updateWidth, atlas.size());
+    CNA_STUDIO_EXPECT(request.pixels == atlas.pixels().data());
+
+    table.apply(withRequest(request));
+    CNA_STUDIO_EXPECT(tableMatchesAtlas(table, atlas));
+}
+
+CNA_STUDIO_TEST(TheTableKeepsItsOwnCopyRatherThanTheAtlasPointer)
+{
+    // `UiTextureRequest` says the pointer is valid only for the frame that produced it, and the
+    // table kept it anyway -- which worked only because the one texture anybody uploads outlives
+    // the frame. A growth reallocates those pixels, so "worked anyway" stopped being true.
+    UiTextureTable table;
+    {
+        StudioFontAtlas atlas;
+        atlas.prepare(bodyStyle(), "Transient");
+        table.apply(withRequest(atlas.takeUploadRequest()));
+    }
+
+    const UiTextureTable::Entry* entry = table.find(StudioFontAtlas::kTextureId);
+    CNA_STUDIO_EXPECT(entry != nullptr);
+    if (entry == nullptr) { return; }
+
+    // Readable after the atlas that produced it is gone, which is the whole claim.
+    CNA_STUDIO_EXPECT(entry->pixels() != nullptr);
+    CNA_STUDIO_EXPECT_EQ(entry->width, StudioFontAtlas::kInitialAtlasSize);
+    CNA_STUDIO_EXPECT_EQ(static_cast<int>(entry->pixels()[0]), 255);
+}
+
+CNA_STUDIO_TEST(ASettledAtlasUploadsNothingAndAKeystrokeUploadsKilobytesNotMegabytes)
+{
+    // The number this task exists for, asserted rather than assumed. A shell frame's worth of text
+    // is uploaded once; the next frame of the same text uploads nothing at all; and a glyph the
+    // user has just typed costs its own rectangle.
+    StudioFontAtlas atlas;
+
+    const std::string shellText =
+        "File Edit View Project Build Play Tools Window Help World Outliner Details Content "
+        "Browser Output Log Problems Backends Preferences Diagnostics Viewport Material History";
+    atlas.prepare(bodyStyle(), shellText);
+
+    const UiTextureRequest settling = atlas.takeUploadRequest();
+    const std::size_t whole = static_cast<std::size_t>(settling.updateWidth)
+                            * static_cast<std::size_t>(settling.updateHeight) * 4;
+
+    // Settled: the same text again rasterises nothing, so there is nothing to upload.
+    atlas.prepare(bodyStyle(), shellText);
+    CNA_STUDIO_EXPECT(!atlas.hasPendingUpload());
+
+    // A keystroke: one glyph this UI has not drawn before.
+    atlas.prepare(bodyStyle(), "ß");
+    CNA_STUDIO_EXPECT(atlas.hasPendingUpload());
+
+    const UiTextureRequest keystroke = atlas.takeUploadRequest();
+    const std::size_t region = static_cast<std::size_t>(keystroke.updateWidth)
+                             * static_cast<std::size_t>(keystroke.updateHeight) * 4;
+
+    // Two orders of magnitude, not a few percent. Before this task the keystroke cost `whole`.
+    CNA_STUDIO_EXPECT(region * 100 < whole);
+}
+
+CNA_STUDIO_TEST(ATextureRegionOutsideTheTextureIsRefusedRatherThanWrittenAnyway)
+{
+    // Nothing in Studio emits one. But the row offset is unsigned arithmetic, so a negative left
+    // edge does not draw in the wrong place -- it writes before the buffer, and under ASan that is
+    // a crash in a screenshot test with no hint of where it came from.
+    UiTextureTable table;
+    std::vector<std::uint8_t> pixels(16 * 16 * 4, 0x40);
+
+    UiTextureRequest create;
+    create.action = UiTextureAction::Create;
+    create.texture = 77;
+    create.width = 16;
+    create.height = 16;
+    create.updateWidth = 16;
+    create.updateHeight = 16;
+    create.pixels = pixels.data();
+    create.pitch = 16 * 4;
+    table.apply(withRequest(create));
+
+    const UiTextureTable::Entry* entry = table.find(77);
+    CNA_STUDIO_EXPECT(entry != nullptr);
+    if (entry == nullptr) { return; }
+    CNA_STUDIO_EXPECT_EQ(static_cast<int>(entry->pixels()[0]), 0x40);
+
+    for (const std::pair<int, int>& corner : {std::pair{-4, 0}, std::pair{0, -4}, std::pair{20, 0}})
+    {
+        UiTextureRequest bad = create;
+        bad.action = UiTextureAction::Update;
+        bad.updateX = corner.first;
+        bad.updateY = corner.second;
+        bad.updateWidth = 4;
+        bad.updateHeight = 4;
+        table.apply(withRequest(bad));
+    }
+
+    // Unchanged, and still the size it was: a refused region is not a resize either.
+    CNA_STUDIO_EXPECT_EQ(entry->width, 16);
+    CNA_STUDIO_EXPECT_EQ(entry->height, 16);
+    for (std::size_t i = 0; i < entry->storage.size(); ++i)
+    {
+        if (entry->storage[i] != 0x40)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "a texture region outside the texture changed byte " + std::to_string(i) + ".");
+            break;
+        }
+    }
 }
