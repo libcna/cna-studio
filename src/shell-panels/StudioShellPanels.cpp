@@ -11,6 +11,7 @@
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
@@ -157,6 +158,26 @@ namespace CNA::Studio
             const std::string summary = command->getDescription();
             context_.execute(std::move(command));
             log_.append(LogSeverity::Info, summary + ".  Undo with Ctrl+Z.");
+        });
+
+        // The Diagnostics panel (STUDIO-07011): what this Studio is running on, as a report
+        // somebody can paste into a bug report rather than a screen somebody has to transcribe.
+        shell.setPanelContent("diagnostics", [this](StudioFrame& frame, const UiRect& bounds) {
+            const StudioDiagnosticsResult panel =
+                studioDiagnosticsPanel(frame, bounds, diagnostics_, diagnosticsState_);
+            if (frame.isDrawPass()) { counts_.diagnosticRowsDrawn = panel.rowsDrawn; }
+            if (!panel.copyRequested) { return; }
+
+            if (services_.setClipboardText && services_.setClipboardText(panel.copyText))
+            {
+                log_.append(LogSeverity::Info, "Copied the diagnostics report to the clipboard.");
+            }
+            else
+            {
+                log_.append(LogSeverity::Warning,
+                            "This build has no clipboard: CNA's Devices module is off "
+                            "(CNA gap G-02). Rebuild CNA with CNA_DEVICES=ON.");
+            }
         });
 
         // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI owns --

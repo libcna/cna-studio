@@ -57,6 +57,7 @@ namespace CNA::Studio
         registerPanel({"output", "Output Log"});
         registerPanel({"build", "Build"});
         registerPanel({"problems", "Problems"});
+        registerPanel({"diagnostics", "Diagnostics"});
         resetLayout();
 
         // The one core action the shell itself owns, attached here rather than left for a service
@@ -256,6 +257,7 @@ namespace CNA::Studio
         dock_.addPanel(bottom, "output");
         dock_.addPanel(bottom, "build");
         dock_.addPanel(bottom, "problems");
+        dock_.addPanel(bottom, "diagnostics");
         dock_.addPanel(centre, "viewport");
 
         for (const StudioDockNodeId leaf : dock_.leaves())

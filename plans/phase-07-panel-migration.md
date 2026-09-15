@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 12 of 26 complete `██████░░░░░░`
+**Progress:** 13 of 26 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -20,7 +20,7 @@
 | `STUDIO-07008` | Port the Content Browser | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
 | `STUDIO-07010` | Port the Build panel | ✅ | `STUDIO-07001`, `STUDIO-02040`, `STUDIO-03036` |
-| `STUDIO-07011` | Port the Diagnostics panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07011` | Port the Diagnostics panel | ✅ | `STUDIO-07001`, `STUDIO-02022` |
 | `STUDIO-07012` | Port the Validation panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07013` | Port the History panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07014` | Port the Comparison panel | ⬜ | `STUDIO-07001` |
@@ -274,10 +274,10 @@ broken asset: that reads fine with three and badly with thirty, and it has no ke
 Here the action sits above the list — the ordinary editor shape, reachable by Tab, and drawn
 disabled until a broken asset is selected rather than drawn enabled and then doing nothing.
 
-**What is not ported.** The legacy panel's *other* repair path is dragging the right asset from the
-browser onto the broken row. That waits on drag and drop (`STUDIO-03023`); the ImGui panel keeps
-working until `STUDIO-07030` deletes it, so nothing is lost meanwhile. Clearing — the destructive
-half — is here, and it goes through the command history like any other change to the scene.
+**Both repair paths are here.** Clearing goes through the command history like any other change to
+the scene, and dragging the right asset from the Content Browser onto the broken row relinks it —
+the same command either way, because clearing is relinking to nothing. The drag arrived with
+`STUDIO-03023`; the row declares `dropType` and the panel reports what landed on it.
 
 **Verification.** `tests/StudioProblemsPanelTests.cpp`: a clean scene saying so, a broken reference
 grouped with everything that refers to it, severity carried as a colour, clicking a finding asking
@@ -376,3 +376,33 @@ checkbox back and forth is one step rather than twenty.
 **Verification.** `tests/StudioDetailsPanelTests.cpp`: the flag reaching the document and undo
 returning it, a no-op refused, a missing entity refused, and repeated flips merging into one step
 that undoes to where it started rather than to the intermediate state
+
+### `STUDIO-07011` — Port the Diagnostics panel
+
+**Acceptance.** What this Studio is running on, including what Studio's host contract made of the
+renderer, and a way to get it out of the window
+
+**It takes a snapshot, not a device.** The ImGui panel reaches through the application object into
+the viewport and asks the live graphics device what it can do — which is why it could never be
+tested without one, and why it could not exist in the CNA-free build at all. Here the *host* fills
+in a plain struct once a frame and the panel draws it. A build with no device fills in the honest
+empty answer and the panel says `unknown` rather than leaving cells blank: a blank reads as a panel
+that failed to draw.
+
+**It reports the host capability contract**, which the ImGui panel never could — `STUDIO-02022`
+landed after it. Each requirement's outcome is shown with its severity in colour, and the renderer's
+own words survive into the text report, because that is the part that answers *why*.
+
+**It exists to be pasted.** "Why does a model look different on that machine" is the first question
+of every graphics bug report, and a panel somebody has to transcribe by hand is a panel nobody puts
+in one. `Copy report` hands back exactly the text the rows show, through the same clipboard seam the
+Output Log uses, and degrades visibly where CNA's Devices module is off (gap G-02).
+
+**What is not carried over**: the live player input snapshot, which belongs with play mode in the
+native shell and has nothing to report until it exists there.
+
+**Verification.** `tests/StudioDiagnosticsPanelTests.cpp` — the cases a live device would have made
+untestable: no device at all, a renderer that fails the contract, no player builds, every known
+renderer listed with its host tier, the text report carrying the renderer's own reason, `Copy
+report` handing back that same text, and no phase violations across repeated frames. Plus
+`CnaStudioShellPreviewDiagnosticsPanel`

@@ -39,6 +39,7 @@ add_executable(cna-studio-tests
     StudioBuildPanelTests.cpp
     StudioProblemsPanelTests.cpp
     StudioHistoryPanelTests.cpp
+    StudioDiagnosticsPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -230,6 +231,14 @@ add_test(NAME CnaStudioRejectsSelectingAnEntityThatIsNotThere
     COMMAND cna-studio --shell-preview=never.png --select=Nonexistent
                        --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioRejectsSelectingAnEntityThatIsNotThere PROPERTIES WILL_FAIL TRUE)
+
+# The Diagnostics panel, whose whole value is what it says -- and which on a CNA-free build has to
+# say "unknown" rather than leaving cells blank.
+add_test(NAME CnaStudioShellPreviewDiagnosticsPanel
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-diagnostics.png
+                       --shell-size=1400x900 --panel=diagnostics
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewDiagnosticsPanel PROPERTIES TIMEOUT 60)
 
 # The History panel, which is a third tab beside Details and therefore only capturable by raising
 # it -- and whose one row on a freshly opened project is itself the thing worth photographing.

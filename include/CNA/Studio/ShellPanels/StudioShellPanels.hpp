@@ -29,6 +29,7 @@
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Project/BuildRunner.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -70,6 +71,7 @@ namespace CNA::Studio
         std::size_t problemRowsDrawn = 0;
         std::size_t historyRowsDrawn = 0;
         std::size_t historyPositions = 0;
+        std::size_t diagnosticRowsDrawn = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
         std::size_t sceneWarnings = 0;
@@ -112,6 +114,14 @@ namespace CNA::Studio
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_; }
 
+        /**
+         * @brief What the Diagnostics panel reports, for the host to fill in each frame.
+         *
+         * A snapshot rather than a live device: the panel is CNA-free and testable because it
+         * reads this, and a build with no device leaves it at its honest empty defaults.
+         */
+        [[nodiscard]] StudioDiagnosticsInfo& diagnostics() { return diagnostics_; }
+
     private:
         void bind(StudioShell& shell);
 
@@ -123,11 +133,13 @@ namespace CNA::Studio
         StudioTreeState contentState_;
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;
+        StudioTreeState diagnosticsState_;
         Uuid selectedAsset_;
 
         BuildProcess build_;
         std::unique_ptr<StudioBuildPanel> buildPanel_;
 
+        StudioDiagnosticsInfo diagnostics_;
         StudioShellPanelCounts counts_;
     };
 }

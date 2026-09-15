@@ -617,6 +617,7 @@ int main(int argc, char** argv)
         hostOptions.focusPanel = options.focusPanel;
         hostOptions.projectPath = options.projectPath;
         hostOptions.selectEntity = options.selectEntity;
+        hostOptions.executablePath = options.executablePath;
         if (options.workspacePath == "none") { hostOptions.workspacePath.clear(); }
         else if (!options.workspacePath.empty()) { hostOptions.workspacePath = options.workspacePath; }
         else { hostOptions.workspacePath = CNA::Studio::StudioWorkspaceStore::defaultPath(); }

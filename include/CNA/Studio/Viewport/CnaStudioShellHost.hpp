@@ -75,6 +75,15 @@ namespace CNA::Studio
         std::string projectPath;
 
         /**
+         * @brief This executable's own path, so the player builds beside it can be found.
+         *
+         * "Run this on Vulkan" means "launch cna-player-vulkan", and whether that binary exists is
+         * a question with a real answer — one the Diagnostics panel reports. Empty means "do not
+         * look", which is what a test wants.
+         */
+        std::string executablePath;
+
+        /**
          * @brief Select the entity with this name at start-up, so the Details panel has content.
          *
          * A screenshot of an inspector with nothing selected is a screenshot of its empty state,

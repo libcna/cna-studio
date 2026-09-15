@@ -416,9 +416,6 @@ Nothing is failing. What is **not** done, and should not be mistaken for done:
   toolbar and status bar as *ports* (`STUDIO-07002`–`07004`), which exist natively but have not
   been checked against the prototype's inventory. Each remaining one is a day's work rather than a
   research project, because the seam and the widgets they need exist.
-- **The Problems panel cannot repair by drag.** The legacy Validation panel lets a user drag the
-  right asset from the browser onto a broken row. That waits on drag and drop (`STUDIO-03023`);
-  clearing a reference — the destructive half — is ported and goes through the command history.
 - **The Details panel cannot edit every kind.** Colours, rotations, rectangles, references, lists
   and structures are *shown* with what they hold and labelled as not editable. `STUDIO-07018` wants
   pickers rather than more text fields; the drop-down that landed with the Build panel

@@ -7,6 +7,7 @@
 #include "CNA/Studio/Viewport/CnaStudioShellHost.hpp"
 
 #include <iostream>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
@@ -22,6 +23,7 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
@@ -126,6 +128,23 @@ namespace CNA::Studio
                         CnaUiPlatform::setClipboardText(text);
                         return true;
                     }});
+
+                // What the Diagnostics panel reports. Filled in here because this is the only
+                // place with a device to ask; the panel itself needs no CNA and is testable
+                // without one. After the panels exist, obviously -- the first version of this read
+                // through a null unique_ptr and the CNA window test segfaulted on start-up.
+                StudioDiagnosticsInfo& diagnostics = panels_->diagnostics();
+                diagnostics.uiBackend = "Studio native";
+                diagnostics.renderer = capabilities_.rendererName;
+                diagnostics.platform = capabilities_.platformName;
+                diagnostics.modernApi = capabilities_.modernApiAvailable;
+                diagnostics.host = capabilities_;
+                if (!options.executablePath.empty())
+                {
+                    diagnostics.players = discoverPlayerBuilds(
+                        std::filesystem::path{options.executablePath}.parent_path()
+                            .generic_string());
+                }
 
                 if (!options.selectEntity.empty())
                 {
@@ -338,6 +357,16 @@ namespace CNA::Studio
                     const UiRenderStats stats = renderer_->renderGeometry(shell_->drawData());
                     drawCalls_ += stats.drawCalls;
                     triangles_ += stats.triangles;
+
+                    // Reported to the Diagnostics panel per frame rather than accumulated there:
+                    // "how heavy is a frame" is the question, and a running total answers a
+                    // different one.
+                    if (panels_ != nullptr)
+                    {
+                        panels_->diagnostics().drawCalls = stats.drawCalls;
+                        panels_->diagnostics().triangles = stats.triangles;
+                        panels_->diagnostics().frames = frames_;
+                    }
                 }
 
                 captureScreenshotIfRequested();
