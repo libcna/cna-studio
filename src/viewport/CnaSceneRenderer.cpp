@@ -31,7 +31,7 @@
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/Viewport/CnaModelPass.hpp"
-#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
@@ -608,7 +608,7 @@ namespace CNA::Studio
         return [this](const Uuid& assetId) { return getSpriteSize(assetId); };
     }
 
-    UiTextureId CnaSceneRenderer::shareWithUi(CnaUiRenderer& uiRenderer)
+    UiTextureId CnaSceneRenderer::shareWithUi(StudioUiRenderBackend& uiRenderer)
     {
         if (impl_->target == nullptr) { return kUiTextureNone; }
         return uiRenderer.adoptTexture(*impl_->target);

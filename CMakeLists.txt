@@ -375,16 +375,34 @@ if(CNA_STUDIO_WITH_CNA)
                    "binary will be fixed to whatever CNA_GRAPHICS_RENDERER is set to")
     add_subdirectory("${CNA_STUDIO_CNA_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/cna")
 
-    # The only module that links CNA. It holds three things: the scene viewport, the UI renderer
-    # that draws UiDrawData through CNA's public graphics API, and the platform layer that fills
-    # UiInputState from CNA's public input API. See docs/SPIKE-IMGUI-CNA.md for the full mapping.
+    # cna-studio-ui-renderer -- layer 2 of docs/UI-RENDER-PATH.md: the UI GPU renderer.
+    #
+    # Its own module rather than three files inside cna-studio-viewport, because the two answer
+    # different questions and were only together by history. The viewport draws a *scene* with a
+    # camera and a model pass; this draws the *UI*, which has no camera and no depth and is the
+    # thing the host capability contract is about. Separating them is also what lets the A/B
+    # comparison of STUDIO-04025 link one and not the other.
+    #
+    # Both backends live here: the classic CnaUiRenderer and the modern StudioModernUiRenderer,
+    # behind StudioUiRenderBackend. A module created by adding only the new one would have one
+    # backend in it and one somewhere else, which is the arrangement that makes an A/B comparison
+    # impossible to write.
+    add_library(cna-studio-ui-renderer STATIC
+        src/ui-renderer/CnaUiRenderer.cpp
+        src/ui-renderer/StudioModernUiRenderer.cpp
+        src/ui-renderer/StudioUiShaderSource.cpp)
+    target_include_directories(cna-studio-ui-renderer PUBLIC include)
+    target_link_libraries(cna-studio-ui-renderer PUBLIC cna-studio-ui PRIVATE CNA)
+    target_compile_definitions(cna-studio-ui-renderer PUBLIC CNA_STUDIO_HAS_CNA=1)
+
+    # The module that links CNA for everything else: the scene viewport, the platform layer that
+    # fills UiInputState from CNA's public input API, and the window hosts.
     set(_cna_studio_viewport_sources
         src/viewport/CnaStudioViewport.cpp
         src/viewport/CnaStudioAudio.cpp
         src/viewport/CnaPlayerHost.cpp
         src/viewport/CnaModelPass.cpp
         src/viewport/CnaSceneRenderer.cpp
-        src/viewport/CnaUiRenderer.cpp
         src/viewport/CnaUiPlatform.cpp
         src/viewport/CnaCapabilityBridge.cpp
         src/viewport/CnaStudioShellHost.cpp)
@@ -405,6 +423,7 @@ if(CNA_STUDIO_WITH_CNA)
     target_link_libraries(cna-studio-viewport
         PUBLIC cna-studio-scene cna-studio-assets cna-studio-ui cna-studio-ui-core
                cna-studio-shell-panels cna-studio-context cna-studio-project cna-studio-player
+               cna-studio-ui-renderer
         PRIVATE CNA)
     target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_CNA=1)
 

@@ -10,11 +10,11 @@
 > that section before reading the table: several tasks were ✅ against a classic XNA implementation
 > in a phase named for the modern one, and the corrections are recorded rather than quietly applied.
 
-**Progress:** 17 of 28 complete `██████░░░░░░`
+**Progress:** 22 of 29 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-04001` | Create the `cna-studio-ui-renderer` module inside the CNA-linking boundary | ⬜ | `STUDIO-03014`, `STUDIO-02020` |
+| `STUDIO-04001` | Create the `cna-studio-ui-renderer` module inside the CNA-linking boundary | ✅ | `STUDIO-02020` |
 | `STUDIO-04002` | CPU-side vertex and index assembly for UI geometry | ✅ | — |
 | `STUDIO-04003` | Draw-call batching by texture, clip rectangle and blend state | ✅ | `STUDIO-04002` |
 | `STUDIO-04004` | Scissor-based clipping, including nested clip stacks | ✅ | `STUDIO-04002` |
@@ -29,6 +29,7 @@
 | `STUDIO-04013` | Screenshot and readback support for visual testing | ✅ | — |
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | 🔄 | `STUDIO-04013` |
+| `STUDIO-04029` | Make `OPENGL4` under Xvfb a second tested configuration in CI | ⬜ | `STUDIO-04026` |
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
 | `STUDIO-04017` | Upload only the changed region of the atlas | ✅ | `STUDIO-04005` |
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
@@ -36,10 +37,10 @@
 | `STUDIO-04020` | Guard test: every key Studio can ask about is one the host reports | ✅ | — |
 | `STUDIO-04021` | Audit which CNA graphics API the UI actually reaches the GPU through | ✅ | — |
 | `STUDIO-04022` | Reconcile this phase's ledger with what was actually implemented | ✅ | `STUDIO-04021` |
-| `STUDIO-04023` | GPU vertex and index buffers for UI geometry | ⬜ | `STUDIO-04001` |
-| `STUDIO-04024` | `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect` | ⬜ | `STUDIO-04023` |
-| `STUDIO-04025` | A/B verification: both backends draw the same frame | ⬜ | `STUDIO-04024` |
-| `STUDIO-04026` | Default the native host to the modern backend | ⬜ | `STUDIO-04025` |
+| `STUDIO-04023` | GPU vertex and index buffers for UI geometry | ✅ | `STUDIO-04001` |
+| `STUDIO-04024` | `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect` | ✅ | `STUDIO-04023` |
+| `STUDIO-04025` | A/B verification: both backends draw the same frame | ✅ | `STUDIO-04024` |
+| `STUDIO-04026` | Default the native host to the modern backend | ✅ | `STUDIO-04025` |
 | `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04026` |
 | `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ⬜ | `STUDIO-04001` |
 
@@ -491,3 +492,97 @@ emits: one that draws nothing is a blank button nothing else would notice, and t
 same shape are worse than that, because the user learns to trust a picture that lies about which
 command it runs. Plus the name round-trip, and a check that every toolbar command has an icon — one
 without would be an empty square once the labels came off
+
+### `STUDIO-04023` — GPU vertex and index buffers for UI geometry
+
+**Acceptance.** A UI frame's geometry reaches the device through `DynamicVertexBuffer` and
+`DynamicIndexBuffer`, reused across frames rather than reallocated.
+
+**Done.** Written once per draw list with `SetDataOptions::Discard`, which is the half that matters:
+the driver hands back fresh memory rather than waiting for the previous frame's draws to finish
+reading the old, so the upload does not stall. `DrawUserIndexedPrimitives` — what the compatibility
+backend does — hands the renderer a CPU pointer on every call and the renderer copies it into a
+staging buffer it owns, every frame, for every command, whether or not the geometry changed.
+
+**The buffers grow and never shrink**, to the next power of two. A UI's geometry is bounded by the
+window and settles within a few frames of a resize; exact fits would reallocate on alternate frames
+for a UI oscillating by one quad, and shrinking would reallocate on the next large frame — which is
+the one thing this arrangement exists to avoid. `bufferGrowths()` is the count a benchmark asserts
+on.
+
+### `STUDIO-04024` — `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect`
+
+**Acceptance.** The UI's pixels come from a shader Studio compiled, not from `BasicEffect`; the
+shader is renderer-neutral; nothing in Studio names a graphics backend.
+
+**Done, through a `ShaderPackageEXT` rather than through `ShaderEffect(device, vert, frag)`.** That
+constructor takes one GLSL string and would make the Studio UI undrawable on any renderer whose
+shading language is not GLSL — the renderer-specific coupling `STUDIO-02033` exists to prevent,
+arrived at by writing *less* code rather than more. The package holds every dialect Studio has and
+CNA's `selectFor(device)` chooses, asking the live renderer what it implements and producing a
+deterministic diagnostic naming every candidate when none is usable. Adding HLSL, MSL or WGSL is one
+entry in `studioUiShaderVariants()` and changes nothing else.
+
+**Three defects found by running it**, each of which produced the same symptom — a completely empty
+frame — and each of which the `--screenshot-min-colors` assertion caught rather than a count:
+
+- **Uniforms were set before the program was bound.** CNA's uniform setters write to whatever
+  program is currently bound, and binding is what `Apply()` does. Setting the projection first sent
+  it to whatever program the previous caller left bound — on a frame that drew a scene first, a real
+  program, silently taking a matrix meant for this one.
+- **The projection was passed row-major.** CNA hands the array straight to the graphics API with no
+  transpose and XNA's `Matrix` is row-major; `Matrix::ToColumnMajor` is what every CNA renderer
+  uses. The wrong order is not a wrong-looking UI: every vertex lands outside the clip volume.
+- **`DynamicVertexBuffer::SetData`'s options overload takes no byte offset.** A compile error rather
+  than a defect, but it is the third way the same afternoon produced a black window.
+
+### `STUDIO-04025` — A/B verification: both backends draw the same frame
+
+**Acceptance.** The same frame rendered through both backends is compared by a test rather than by
+somebody looking at two screenshots.
+
+**Byte-identical, and the exactness is a finding rather than an assumption.** The task was written
+expecting a tolerance — "a fixed-function path and a fragment shader resolve the same triangle's
+edge pixels differently" — and that is true across *renderers*. Within one renderer it is not: both
+backends submit the same geometry, in the same order, with the same blend, sampler and scissor
+state, and only the program and the buffer route differ. Neither changes where a triangle lands or
+what colour it is. So the test asserts equality, which is a far stronger contract than any threshold
+would have been, and it holds: 1280x720, 126 draw calls, 12664 triangles, identical md5.
+
+**`--ui-renderer=compat`** exists for this, and for the first question anybody asks about something
+that draws wrong: does it happen on the other renderer. Without the flag the only way to ask is to
+rebuild.
+
+**The test refuses to become a tautology.** Before comparing anything it asserts that each run
+actually used the backend it asked for, because the single most likely failure of an A/B comparison
+is a host that quietly ran the same backend twice. Confirmed by breaking it: a one-line tint in the
+vertex shader fails the comparison with both md5s and both paths named.
+
+### `STUDIO-04026` — Default the native host to the modern backend
+
+**Acceptance.** A host meeting the modern profile draws with the modern renderer, with no flag.
+
+**Done, and the fallback has a second trigger the contract cannot see.** The capability profile says
+whether a renderer *can* execute a shader; it cannot say whether it accepted *this* shader. A modern
+backend whose program CNA refused would draw a black window on a host the report called capable —
+which reads as Studio being broken rather than as one shader being rejected. So `isUsable()` is
+checked after `initialize`, and a refusal falls back with CNA's own compile error in the reason.
+
+Verified on `OPENGL4` under Xvfb on Mesa's llvmpipe: the log reads `Modern graphics API: CNA engine
+layer 18` and `UI renderer: modern`, and the whole shell — text, icons, the composited scene, the
+tinted log rows — is drawn through `ShaderEffect` and GPU buffers.
+
+### `STUDIO-04029` — Make `OPENGL4` under Xvfb a second tested configuration in CI
+
+**Acceptance.** CI builds and tests `OPENGL4` alongside `SOFTWARE`, so the modern UI renderer, the
+`needs-display` cases and `CnaStudioUiRenderBackendsAgree` are covered by machinery rather than by
+somebody running them.
+
+**Newly possible**, and it was not when the previous session concluded otherwise: `docs/CNA-GAPS.md`
+G-10 recorded "there is simply no renderer available that both satisfies Studio's capability
+contract and needs a display", and that search stopped at the GL *family*. `OPENGL2`, `OPENGL33` and
+`OPENGLES3` are EasyGL and want sibling checkouts nothing names; `OPENGL4` is a separate renderer
+and configures from a plain CNA checkout with `libgl1-mesa-dev` alone.
+
+**Why this is the most valuable test task in the phase.** Until now Studio's only automated renderer
+was the one renderer its intended UI path cannot run on at all.

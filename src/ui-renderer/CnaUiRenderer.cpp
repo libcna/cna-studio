@@ -8,7 +8,7 @@
  * whole file would compile unchanged against any CNA build.
  */
 
-#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -124,6 +124,7 @@ namespace CNA::Studio
                 texture->SetData(pixelScratch.data(), static_cast<int>(pixelCount));
                 textures[request.texture] = std::move(texture);
                 ++stats.texturesCreated;
+                stats.textureBytesUploaded += pixelCount * 4;
                 return;
             }
 
@@ -134,6 +135,7 @@ namespace CNA::Studio
                                         request.updateWidth, request.updateHeight};
             found->second->SetData(0, &region, pixelScratch.data(), 0, static_cast<int>(pixelCount));
             ++stats.texturesUpdated;
+            stats.textureBytesUploaded += pixelCount * 4;
         }
     };
 
@@ -210,19 +212,6 @@ namespace CNA::Studio
         return std::string{CNA::getCurrentGraphicsRendererName()};
     }
 
-    UiRenderStats CnaUiRenderer::render(const UiDrawData& drawData)
-    {
-        UiRenderStats stats = applyTextureRequests(drawData);
-        const UiRenderStats geometry = renderGeometry(drawData);
-
-        stats.drawCalls = geometry.drawCalls;
-        stats.triangles = geometry.triangles;
-        stats.clippedAway = geometry.clippedAway;
-
-        lastStats_ = stats;
-        return stats;
-    }
-
     UiRenderStats CnaUiRenderer::applyTextureRequests(const UiDrawData& drawData)
     {
         UiRenderStats stats;
@@ -270,9 +259,14 @@ namespace CNA::Studio
             drawData.displayY + drawData.displayHeight, drawData.displayY,
             0.0f, 1.0f));
 
+        UiTextureId boundTexture = kUiTextureNone;
+        Xna::Rectangle appliedScissor{-1, -1, -1, -1};
+
         for (const UiDrawList& list : drawData.lists)
         {
             if (list.commands.empty() || list.vertices.empty()) { continue; }
+
+            stats.vertices += list.vertices.size();
 
             impl_->vertexScratch.clear();
             impl_->vertexScratch.reserve(list.vertices.size());
@@ -299,11 +293,23 @@ namespace CNA::Studio
                     continue;
                 }
 
-                device.setScissorRectangleProperty(Xna::Rectangle{
+                const Xna::Rectangle scissor{
                     static_cast<int>(clip.left * drawData.framebufferScaleX),
                     static_cast<int>(clip.top * drawData.framebufferScaleY),
                     static_cast<int>(std::ceil((clip.right - clip.left) * drawData.framebufferScaleX)),
-                    static_cast<int>(std::ceil((clip.bottom - clip.top) * drawData.framebufferScaleY))});
+                    static_cast<int>(std::ceil((clip.bottom - clip.top) * drawData.framebufferScaleY))};
+                // Counted rather than measured at the driver: a state change avoided is a state
+                // change this backend did not make, and comparing the two backends on what they
+                // *asked the device to do* is the only comparison that means the same thing on a
+                // renderer that batches and one that does not.
+                if (scissor.X != appliedScissor.X || scissor.Y != appliedScissor.Y
+                    || scissor.Width != appliedScissor.Width
+                    || scissor.Height != appliedScissor.Height)
+                {
+                    ++stats.clipChanges;
+                    appliedScissor = scissor;
+                }
+                device.setScissorRectangleProperty(scissor);
 
                 XnaGraphics::Texture2D* texture = nullptr;
                 if (const auto owned = impl_->textures.find(command.texture); owned != impl_->textures.end())
@@ -322,6 +328,11 @@ namespace CNA::Studio
                     // whatever happens to be bound. Skipping loses that one command; drawing it
                     // would show garbage across the whole UI.
                     continue;
+                }
+                if (command.texture != boundTexture)
+                {
+                    ++stats.textureChanges;
+                    boundTexture = command.texture;
                 }
                 impl_->effect->setTextureProperty(texture);
                 impl_->effect->Apply();
@@ -342,6 +353,7 @@ namespace CNA::Studio
 
                 ++stats.drawCalls;
                 stats.triangles += command.indexCount / 3;
+                stats.indices += command.indexCount;
             }
         }
 
@@ -350,6 +362,7 @@ namespace CNA::Studio
         device.setDepthStencilStateProperty(previousDepth);
         device.setBlendStateProperty(previousBlend);
 
+        lastStats_ = stats;
         return stats;
     }
 }

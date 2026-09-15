@@ -12,7 +12,11 @@
 statement in this repository since Phase 2. This document is the result of checking whether it is
 true, by reading the calls rather than the names.
 
-**It was not true.** The native Studio UI reaches the GPU through the classic XNA-compatible
+**It was not true when this was written, and it is true now.** The audit's finding and the
+migration that answered it are both recorded here; §"Where it stands" has the current state. What
+follows describes what the audit found.
+
+The native Studio UI reached the GPU through the classic XNA-compatible
 pipeline it inherited from the Dear ImGui prototype. Nothing was mis-stated deliberately: the seam
 between the UI and the renderer is genuinely toolkit-independent, the native UI genuinely inherited
 a working renderer across it, and the phase named "CNAEXT UI renderer" genuinely contains fifteen
@@ -133,17 +137,63 @@ a shader-graph node, a post-process or anything else Phases 19–23 exist for.
 
 Deleting a working renderer to install an unproven one is how a tool loses a week. The sequence is:
 
-| Stage | State | Task |
-|-------|-------|------|
-| 0 | `CnaUiRenderer` draws every frame. | — (where the audit found things) |
-| 1 | The contract enforces the modern requirement; availability is read from the build. | `STUDIO-02070`, `STUDIO-02071` |
-| 2 | `cna-studio-ui-renderer` exists as a module with `CnaUiRenderer` moved into it unchanged, behind a `StudioUiRenderBackend` interface. | `STUDIO-04001` |
-| 3 | `StudioModernUiRenderer` implements the same interface over `ShaderEffect` + vertex/index buffers. | `STUDIO-04023` |
-| 4 | A/B verification: both backends draw the same frame and the captures are compared. | `STUDIO-04024` |
-| 5 | The native host defaults to the modern backend. | `STUDIO-04025` |
-| 6 | The classic backend is removed, or retained only where a justification is written down. | `STUDIO-04026` |
+| Stage | State | Task | |
+|-------|-------|------|---|
+| 0 | `CnaUiRenderer` draws every frame. | — | where the audit found things |
+| 1 | The contract enforces the modern requirement; availability is read from the build. | `STUDIO-02070`, `STUDIO-02071` | ✅ |
+| 2 | `cna-studio-ui-renderer` exists as a module with `CnaUiRenderer` moved into it unchanged, behind `StudioUiRenderBackend`. | `STUDIO-04001` | ✅ |
+| 3 | `StudioModernUiRenderer` implements the same interface over `ShaderEffect` and GPU buffers. | `STUDIO-04023`, `STUDIO-04024` | ✅ |
+| 4 | A/B verification: both backends draw the same frame and the captures are compared. | `STUDIO-04025` | ✅ |
+| 5 | The native host defaults to the modern backend. | `STUDIO-04026` | ✅ |
+| 6 | The classic backend is removed, or retained only where a justification is written down. | `STUDIO-04027` | |
 
-No stage removes a working path before the one after it has passed.
+No stage removed a working path before the one after it had passed.
+
+### Where it stands
+
+**Stages 1 to 5 are done.** On a host that meets the modern profile, `cna-studio` with no flags
+draws its entire UI through a `ShaderEffect` Studio compiled from a `ShaderPackageEXT`, over a
+`DynamicVertexBuffer` and a `DynamicIndexBuffer` written once per draw list with
+`SetDataOptions::Discard`. Verified on `OPENGL4` under Xvfb on Mesa's llvmpipe: `Modern graphics
+API: CNA engine layer 18`, `UI renderer: modern`, 1920x1080, 90 draw calls, 16140 triangles, with
+text, icons, the composited scene and tinted log rows all drawn by it.
+
+**Stage 6 is deliberately not done**, and the reason is stage 6's own acceptance condition: the
+classic backend is retained *with the justification written down*. CNA's `SOFTWARE` renderer cannot
+execute a shader, and it is the renderer that needs no display and no GPU. Deleting the
+compatibility backend today would leave Studio unable to start in the configuration all of its
+dependency-free automation runs in. `STUDIO-04029` makes `OPENGL4` a second CI configuration;
+`STUDIO-04027` and `STUDIO-02074` come after that, not before.
+
+### The A/B result, which was not the expected one
+
+The task was written expecting a tolerance: a fixed-function path and a fragment shader resolve the
+same triangle's edge pixels differently. That is true *across renderers*. Within one renderer it is
+not — both backends submit the same geometry, in the same order, with the same blend, sampler and
+scissor state, and only the program and the buffer route differ. Neither changes where a triangle
+lands or what colour it is.
+
+So `CnaStudioUiRenderBackendsAgree` asserts **byte equality**, which is a far stronger contract than
+any threshold would have been, and it holds. It also refuses to become a tautology: before comparing
+anything it checks that each run used the backend it asked for, because a host that quietly ran the
+same backend twice is the single most likely way for an A/B comparison to pass while proving
+nothing.
+
+### Three defects the migration produced, and the one assertion that caught all three
+
+Each produced exactly the same symptom — a completely blank frame with every draw call reported —
+and none would have been caught by a counts assertion. `--screenshot-min-colors`, added by
+`STUDIO-04015` for precisely this class of failure, caught all three:
+
+1. **Uniforms set before the program was bound.** CNA's uniform setters write to the currently bound
+   program, and binding is what `Apply()` does. The projection went to whatever program the previous
+   caller had left bound.
+2. **The projection passed row-major.** CNA hands the array to the graphics API untransposed and
+   XNA's `Matrix` is row-major. Every vertex landed outside the clip volume.
+3. **A `SetData` overload that takes no byte offset**, which was at least a compile error.
+
+The first two are worth stating plainly: a UI renderer that is *completely* wrong looks exactly like
+a UI renderer that was never called.
 
 **No backend-specific code at any stage.** Studio calls Vulkan, D3D, GL, Metal and WebGPU through
 exactly zero lines of its own; `STUDIO-02033`'s guard test fails the build on a direct backend call

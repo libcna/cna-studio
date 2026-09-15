@@ -94,6 +94,14 @@ namespace CNA::Studio
         bool allowCompatibilityUiRenderer = true;
 
         /**
+         * @brief Use the classic UI renderer even on a host that meets the modern profile.
+         *
+         * `--ui-renderer=compat`. For `STUDIO-04025`'s A/B comparison, and for the first question
+         * anybody asks about something that draws wrong: does it happen on the other renderer.
+         */
+        bool forceCompatibilityUiRenderer = false;
+
+        /**
          * @brief Where to remember the workspace arrangement between runs. Empty disables it.
          *
          * A path rather than a flag, so the tests can point it at a temporary file and a developer

@@ -20,7 +20,7 @@
 
 #include "CNA/Studio/Scene/GameCamera.hpp"
 #include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
-#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;

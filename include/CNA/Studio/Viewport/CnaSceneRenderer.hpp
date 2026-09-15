@@ -41,7 +41,7 @@ namespace Microsoft::Xna::Framework::Graphics
 namespace CNA::Studio
 {
     class SceneDocument;
-    class CnaUiRenderer;
+    class StudioUiRenderBackend;
 
     /** @brief Per-frame counters for the scene pass. */
     struct SceneRenderStats
@@ -181,7 +181,7 @@ namespace CNA::Studio
          * The id is what the viewport panel passes to `StudioUi::image()`. Zero when nothing has
          * been rendered yet.
          */
-        UiTextureId shareWithUi(CnaUiRenderer& uiRenderer);
+        UiTextureId shareWithUi(StudioUiRenderBackend& uiRenderer);
 
         /**
          * @brief Drops the cached texture for @p assetId, or every texture when @p assetId is nil.
@@ -249,5 +249,5 @@ namespace CNA::Studio
         Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
         const AssetDatabase& assets,
         const ComponentRegistry& components,
-        CnaUiRenderer& uiRenderer);
+        StudioUiRenderBackend& uiRenderer);
 }

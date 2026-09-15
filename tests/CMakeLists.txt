@@ -134,7 +134,10 @@ target_sources(cna-studio-tests PRIVATE
 # capability bridge -- has unit coverage rather than only being exercised through the window smoke
 # tests, where a wrong mapping shows up as a shortcut that quietly does nothing.
 if(CNA_STUDIO_WITH_CNA)
-    target_link_libraries(cna-studio-tests PRIVATE cna-studio-viewport)
+    target_link_libraries(cna-studio-tests PRIVATE cna-studio-viewport cna-studio-ui-renderer)
+    # The shader package's text is checkable anywhere; only the behaviour needs a device. So the
+    # source lives with the renderer module and its test is added only where that module exists.
+    target_sources(cna-studio-tests PRIVATE StudioUiRendererTests.cpp)
 endif()
 
 # The renderer/operating-system gate transcription (STUDIO-29007) can only be *checked* against CNA
@@ -775,6 +778,27 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
             LABELS "needs-display"
             TIMEOUT 180)
+    endif()
+
+    # STUDIO-04025 -- the two UI render backends drawing the same frame.
+    #
+    # Only on a host that can run both, which today means a renderer that executes a shader. On
+    # SOFTWARE the modern backend cannot run at all, so the comparison would either be skipped or
+    # be the classic backend against itself; the script refuses rather than passing, and the test
+    # is declared only where it can mean something.
+    if(NOT CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE"
+       AND NOT CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS"
+       AND NOT CNA_GRAPHICS_RENDERER STREQUAL "STUB")
+        add_test(NAME CnaStudioUiRenderBackendsAgree
+            COMMAND ${CMAKE_COMMAND}
+                -DCNA_STUDIO_EXE=$<TARGET_FILE:cna-studio>
+                -DCNA_STUDIO_PROJECT=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+                -DCNA_STUDIO_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DCNA_STUDIO_SIZE=1280x720
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/UiRendererAbTest.cmake)
+        set_tests_properties(CnaStudioUiRenderBackendsAgree PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
+            LABELS "needs-display" TIMEOUT 300)
     endif()
 
     # --screenshot without --frames has no final frame to capture, and silently writing nothing

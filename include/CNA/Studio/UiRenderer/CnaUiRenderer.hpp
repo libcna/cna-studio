@@ -2,15 +2,24 @@
 #pragma once
 
 /**
- * @file CNA/Studio/Viewport/CnaUiRenderer.hpp
- * @brief Draws UiDrawData through CNA's public graphics API.
+ * @file CNA/Studio/UiRenderer/CnaUiRenderer.hpp
+ * @brief The compatibility UI render backend: `UiDrawData` through CNA's classic XNA 4.0 surface.
  *
- * This is the answer to ANALYSIS.md question Q-01, and the proof of decision D-01: the editor's
- * own user interface is rendered using only the API a CNA *game* has. No `CNA::Internal::*`, no
- * per-backend code, no shader authored here. One implementation serves every backend CNA supports
- * for the Studio UI, because everything it uses is backend-independent by construction:
+ * `plan.md` STUDIO-04001. Architecture: `docs/UI-RENDER-PATH.md`, layer 2, stage 0.
  *
- * | ImGui needs                            | CNA public API used                                    |
+ * ### What it is, and what it is not
+ *
+ * This is the renderer the native Studio UI inherited from the Dear ImGui prototype, and it is
+ * correct, portable and complete: `BasicEffect`, `DrawUserIndexedPrimitives`, `Texture2D` and four
+ * render states, all XNA 4.0, all available on every CNA renderer with a 3D pipeline.
+ *
+ * It is **not** the modern CNAEXT path this phase is named after, and the header comment it used to
+ * carry — a table headed "ImGui needs" — is why that went unnoticed for six phases. The audit in
+ * `STUDIO-04021` traced the calls and `docs/UI-RENDER-PATH.md` records them. `StudioModernUiRenderer`
+ * is the intended implementation; this one is the fallback for hosts that cannot execute a shader,
+ * which is not a hypothetical class — CNA's `SOFTWARE` renderer is one.
+ *
+ * | The UI needs                           | CNA public API used                                    |
  * |----------------------------------------|--------------------------------------------------------|
  * | Textured, vertex-coloured triangles    | `GraphicsDevice::DrawUserIndexedPrimitives` with        |
  * |                                        | `VertexPositionColorTexture` and 16-bit indices         |
@@ -21,18 +30,16 @@
  * |                                        | `GraphicsDevice::ScissorRectangle`                      |
  * | Straight-alpha blending                | `BlendState::NonPremultiplied`                          |
  * | No depth testing                       | `DepthStencilState::None`                               |
- * | Bilinear clamped sampling              | `SamplerState::LinearClamp`                             |
+ * | Bilinear clamped sampling              | `SamplerState::LinearClamp`                            |
  *
- * The one thing that is *not* free is the vertex repack: ImGui's layout differs from
- * `VertexPositionColorTexture`. That conversion already happens on the UI side while filling
- * UiDrawData, so this class consumes a layout it can hand almost straight to CNA.
+ * Nothing here is renderer-specific and nothing here is `CNA::Internal`; the file would compile
+ * unchanged against any CNA build, including one with `-DCNA_CNAEXT=OFF`. That last property is
+ * exactly what distinguishes it from the modern backend.
  */
-
 #include <memory>
 #include <string>
 
-#include "CNA/Studio/Core/Uuid.hpp"
-#include "CNA/Studio/Ui/UiDrawData.hpp"
+#include "CNA/Studio/UiRenderer/StudioUiRenderBackend.hpp"
 
 namespace Microsoft::Xna::Framework::Graphics
 {
@@ -42,30 +49,17 @@ namespace Microsoft::Xna::Framework::Graphics
 
 namespace CNA::Studio
 {
-    /** @brief Per-frame counters, for the profiler panel and for tests. */
-    struct UiRenderStats
-    {
-        std::size_t drawCalls = 0;
-        std::size_t triangles = 0;
-        std::size_t texturesCreated = 0;
-        std::size_t texturesUpdated = 0;
-        std::size_t texturesDestroyed = 0;
-
-        /** @brief Commands skipped because their clip rectangle selected no pixels. */
-        std::size_t clippedAway = 0;
-    };
-
     /**
      * @brief Renders an immediate-mode UI with CNA.
      *
      * The GraphicsDevice is borrowed, never owned: the application owns the window and the device,
      * and this class only draws into whatever it is handed.
      */
-    class CnaUiRenderer
+    class CnaUiRenderer final : public StudioUiRenderBackend
     {
     public:
         CnaUiRenderer();
-        ~CnaUiRenderer();
+        ~CnaUiRenderer() override;
 
         CnaUiRenderer(const CnaUiRenderer&) = delete;
         CnaUiRenderer& operator=(const CnaUiRenderer&) = delete;
@@ -74,10 +68,10 @@ namespace CNA::Studio
          * @brief Binds the renderer to a device.
          * @param device The device to draw with; must outlive this renderer.
          */
-        void initialize(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device);
+        void initialize(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device) override;
 
         /** @brief Releases every texture. Safe to call more than once. */
-        void shutdown();
+        void shutdown() override;
 
         /**
          * @brief Honours @p drawData's texture requests, then draws its geometry.
@@ -91,8 +85,6 @@ namespace CNA::Studio
          *
          * @return Counters for the frame just drawn.
          */
-        UiRenderStats render(const UiDrawData& drawData);
-
         /**
          * @brief Uploads, updates and releases textures, drawing nothing.
          *
@@ -106,17 +98,20 @@ namespace CNA::Studio
          * That was a real bug: uppercase `V` and `I` were invisible in the editor's tab labels
          * because they happened to be the characters first needed on such a frame.
          */
-        UiRenderStats applyTextureRequests(const UiDrawData& drawData);
+        UiRenderStats applyTextureRequests(const UiDrawData& drawData) override;
 
         /**
          * @brief Draws @p drawData's geometry, touching no textures.
          *
          * Assumes applyTextureRequests() has already run for this frame's data.
          */
-        UiRenderStats renderGeometry(const UiDrawData& drawData);
+        UiRenderStats renderGeometry(const UiDrawData& drawData) override;
 
         /** @brief Returns the stats from the most recent render(). */
-        [[nodiscard]] const UiRenderStats& getLastStats() const { return lastStats_; }
+        [[nodiscard]] const UiRenderStats& lastStats() const override { return lastStats_; }
+
+        /** @brief `"compatibility"`, matching `studioUiBackendChoiceName`. */
+        [[nodiscard]] std::string_view name() const override { return "compatibility"; }
 
         /**
          * @brief Gives @p texture a UI texture id without taking ownership of it.
@@ -128,7 +123,7 @@ namespace CNA::Studio
          *
          * @return A stable id for this renderer's borrowed slot.
          */
-        UiTextureId adoptTexture(Microsoft::Xna::Framework::Graphics::Texture2D& texture);
+        UiTextureId adoptTexture(Microsoft::Xna::Framework::Graphics::Texture2D& texture) override;
 
         /**
          * @brief Borrows @p texture under @p key, returning an id stable for that key.
@@ -142,13 +137,13 @@ namespace CNA::Studio
          * releaseAdoptedTexture() before destroying it, or this map keeps a dangling pointer.
          */
         UiTextureId adoptTexture(const Uuid& key,
-                                 Microsoft::Xna::Framework::Graphics::Texture2D& texture);
+                                 Microsoft::Xna::Framework::Graphics::Texture2D& texture) override;
 
         /** @brief Drops the borrowed entry for @p key. Safe to call for a key never adopted. */
-        void releaseAdoptedTexture(const Uuid& key);
+        void releaseAdoptedTexture(const Uuid& key) override;
 
         /** @brief Returns the number of textures currently held. */
-        [[nodiscard]] std::size_t getTextureCount() const;
+        [[nodiscard]] std::size_t getTextureCount() const override;
 
         /** @brief Returns the name of the CNA backend this build was compiled against. */
         [[nodiscard]] static std::string getBackendName();

@@ -28,7 +28,7 @@
 // (ANALYSIS.md decision D-03) checkable by the build graph.
 #if defined(CNA_STUDIO_HAS_CNA)
 #    include "CNA/Studio/Viewport/CnaPlayerHost.hpp"
-#    include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
+#    include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 #endif
 
 namespace

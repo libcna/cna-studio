@@ -15,7 +15,7 @@
 
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
-#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 #include <iterator>
 #include <utility>
 #include <vector>
@@ -40,7 +40,7 @@ namespace CNA::Studio
         CnaStudioViewport(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
                           const AssetDatabase& assets,
                           const ComponentRegistry& components,
-                          CnaUiRenderer& uiRenderer)
+                          StudioUiRenderBackend& uiRenderer)
             : device_(&device), uiRenderer_(&uiRenderer)
         {
             renderer_.initialize(device, assets, components);
@@ -288,7 +288,7 @@ namespace CNA::Studio
     private:
         CnaSceneRenderer renderer_;
         Microsoft::Xna::Framework::Graphics::GraphicsDevice* device_;
-        CnaUiRenderer* uiRenderer_;
+        StudioUiRenderBackend* uiRenderer_;
         StudioCamera2D camera_;
         StudioCamera3D camera3D_;
         ViewportStats lastStats_;
@@ -298,7 +298,7 @@ namespace CNA::Studio
         Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
         const AssetDatabase& assets,
         const ComponentRegistry& components,
-        CnaUiRenderer& uiRenderer)
+        StudioUiRenderBackend& uiRenderer)
     {
         return std::make_unique<CnaStudioViewport>(device, assets, components, uiRenderer);
     }

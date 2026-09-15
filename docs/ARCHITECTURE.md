@@ -358,7 +358,7 @@ Important boundaries are enforced by machinery, not by comments. The guards, eac
 | Guard | What it prevents |
 |-------|------------------|
 | No `CNA::Internal::*` in Studio | Reaching into CNA's internals instead of reporting a gap |
-| Only `cna-studio-viewport` includes CNA headers | Losing the headless-testable core |
+| Only `cna-studio-viewport` and `cna-studio-ui-renderer` include CNA headers | Losing the headless-testable core |
 | No direct Vulkan/D3D/OpenGL/Metal/WebGPU calls | Renderer-specific code leaking into Studio |
 | Production UI has no Dear ImGui dependency *after* migration | Silent regression of the UI migration |
 | An unclassified CNA renderer identity fails a test | A hard-coded renderer list rotting silently |
@@ -367,6 +367,8 @@ Important boundaries are enforced by machinery, not by comments. The guards, eac
 | Every document mutation goes through a command | Undo silently not working |
 | Unknown components survive save/load | Losing a user's data when a plugin is missing |
 | Files are byte-deterministic across saves | Version-control churn |
+| `plan.md`'s status breakdown matches the phase files | A ledger that is quoted and wrong |
+| The two UI render backends draw the same frame | A rewritten GPU path drifting from the one it replaces |
 
 ---
 

@@ -96,6 +96,14 @@ namespace CNA::Studio
          * should ask for: the fallback then refuses rather than silently degrading.
          */
         bool allowCompatibilityUiRenderer = true;
+
+        /**
+         * @brief Use the classic UI renderer even on a host that meets the modern profile.
+         *
+         * `--ui-renderer=compat`. For `STUDIO-04025`'s A/B comparison, and for the first question
+         * anybody asks about something that draws wrong: does it happen on the other renderer.
+         */
+        bool forceCompatibilityUiRenderer = false;
     };
 
     /**

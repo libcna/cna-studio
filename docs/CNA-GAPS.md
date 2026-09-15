@@ -202,7 +202,7 @@ Both halves of this gap stopped that build, and neither is visible in the export
 
 ---
 
-## 🟡 G-10 — The renderers that can host Studio and need a display all need undocumented sibling checkouts
+## 🟢 G-10 — *Narrowed.* The GL family needs undocumented sibling checkouts; `OPENGL4` does not
 
 **New, filed by CNA Studio.**
 
@@ -211,8 +211,8 @@ Both halves of this gap stopped that build, and neither is visible in the export
 | Affected API | `CNA_GRAPHICS_RENDERER`; `cmake/RendererSelection.cmake` |
 | Current behaviour | Of the renderers that configure from a plain CNA + sharp-runtime checkout, `SOFTWARE` and `HEADLESS` need no display and are what CI uses; `SDL_RENDERER` needs one but cannot host Studio (it reports no `ThreeDimensionalPipeline` and no `DepthStencilBuffer`); `SDL_GPU` and `VULKAN` configure but need a Vulkan ICD, which a bare Linux runner does not have. Every OpenGL family — `OPENGL2`, `OPENGL33`, `OPENGLES3` — fails at configure time asking for an `easy-gl` sibling checkout, which in turn asks for a `meta-gl` sibling of its own. Neither is a submodule and neither is named anywhere a consumer would look before trying |
 | Expected behaviour | The renderer list in `CNA_GRAPHICS_RENDERER`'s cache docstring says which renderers a given checkout can actually build, or CNA documents the sibling checkouts each family needs where the option is declared. Failing at configure time with a clear message is already much better than most; what is missing is being able to find out *first* |
-| Studio impact | `STUDIO-33010` — graphical CI on a renderer that needs a real graphics context — is blocked on this rather than on Studio. With Xvfb running and `CNA_STUDIO_TEST_DISPLAY` pointed at it, the fourteen `needs-display` ctests appear and run; there is simply no renderer available to them that both satisfies Studio's capability contract and needs a display |
-| Workaround | None from Studio's side. The CI job for `STUDIO-33010` needs `easy-gl` and `meta-gl` checked out beside CNA, plus Mesa's software GL and Xvfb, and is a shopping list rather than a code change |
+| Studio impact | Was recorded as blocking `STUDIO-33010`, the per-renderer half of `STUDIO-04015`, and — unrecorded until `STUDIO-04021` — the modern UI renderer itself. **No longer blocking**: see below |
+| Workaround | `OPENGL4` plus `libgl1-mesa-dev` and Xvfb. Not a workaround for the documentation half of this gap, which stands |
 | Suggested fix | Extend `G-08`'s answer: whatever CNA grows to report which renderers a target can build should also report which of them this checkout has the sources for. The information exists at configure time — the message that refuses `OPENGLES3` proves it |
 | Test needed in CNA | A CI leg that configures each renderer the docstring advertises from a clean checkout and asserts that it either configures or refuses with a message naming what is missing |
 
@@ -220,6 +220,51 @@ Both halves of this gap stopped that build, and neither is visible in the export
 plumbing turned out to be the easy half: `CNA_STUDIO_TEST_DISPLAY` already exists, Xvfb works, and
 the fourteen labelled tests appear the moment a renderer that needs a display is configured. What
 does not exist is such a renderer.
+
+**Narrowed, by looking one renderer further down the list.** The conclusion above — "there is
+simply no renderer available that both satisfies Studio's capability contract and needs a display" —
+was wrong, and it was wrong because the search stopped at the GL *family*. `OPENGL2`, `OPENGL33` and
+`OPENGLES3` are all EasyGL, and EasyGL is what wants the `easy-gl` and `meta-gl` siblings.
+**`OPENGL4` is a separate renderer** — `modules/renderers/opengl4`, real desktop GL 4.x core profile,
+no EasyGL — and it configures from a plain CNA checkout with nothing but `libgl1-mesa-dev`
+installed.
+
+It runs under Xvfb on Mesa's llvmpipe, with no GPU:
+
+```bash
+apt-get install -y libgl1-mesa-dev xvfb
+cmake -S . -B build-gl -G Ninja -DCNA_STUDIO_WITH_CNA=ON \
+      -DCNA_STUDIO_CNA_ROOT=… -DCNA_SHARP_RUNTIME_ROOT=… \
+      -DCNA_GRAPHICS_RENDERER=OPENGL4 -DCNA_PLATFORM=SDL3 \
+      -DCNA_BUILD_TESTS=OFF -DCNA_BUILD_EXAMPLES=OFF \
+      -DCNA_ENABLE_NET=OFF -DCNA_ENABLE_DRACO=OFF -DCNA_CNAEXT=ON
+Xvfb :99 -screen 0 1920x1080x24 &
+DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 ./build-gl/cna-studio --host-capabilities
+```
+
+which reports `OpenGL4Renderer initialized with OpenGL 4.5 (Core Profile) Mesa`, and:
+
+```
+  Renderer:   OPENGL4
+  Profile:    modern
+  Can host:   yes
+  [required]    ShaderEffects: satisfied
+  [required]    ShaderEffectSourceExecution: satisfied
+  UI renderer: modern -- This renderer meets the modern host profile.
+```
+
+**What that unblocks.** Three things that were each recorded as blocked on this gap: `STUDIO-33010`
+(graphical CI on a renderer that needs a display), the per-renderer half of `STUDIO-04015`, and
+— the one nobody had connected to it — the whole modern CNAEXT UI renderer, which cannot be
+*executed* on `SOFTWARE` at all because `SOFTWARE` reports no shader support. Studio had the only
+automated renderer it could reach being the one renderer its intended UI path cannot run on, and
+nothing said so.
+
+**What remains a gap**, and is why this is 🟢 narrowed rather than closed: the GL family still asks
+for siblings nothing names, and `CNA_GRAPHICS_RENDERER`'s docstring still lists fifty renderers
+without saying which of them a given checkout can build. A consumer choosing `OPENGL33` because it
+sounds like the portable one gets a configure error; choosing `OPENGL4` gets a working editor. That
+is exactly the "being able to find out first" the row above asks for.
 
 **And one thing that worked.** `SDL_RENDERER` builds a complete Studio, and Studio refuses to start
 on it — naming `ThreeDimensionalPipeline` and `DepthStencilBuffer`, saying what each is for, and

@@ -44,7 +44,8 @@
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
-#include "CNA/Studio/Viewport/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/StudioModernUiRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
@@ -303,15 +304,54 @@ namespace CNA::Studio
 
             void LoadContent() override
             {
-                renderer_ = std::make_unique<CnaUiRenderer>();
-                renderer_->initialize(getGraphicsDeviceProperty());
-
                 // STUDIO-02071/02072: both profiles, from what the build actually carries. The
                 // literal `true` that used to sit here reported what this call site asserted
                 // rather than what CNA was configured with.
+                //
+                // Asked *before* a renderer is created, because it is what decides which one.
                 assessment_ = assessStudioHost(getGraphicsDeviceProperty(), getHostPlatformName(),
                                                options_.allowCompatibilityUiRenderer);
+                if (options_.forceCompatibilityUiRenderer
+                    && assessment_.compatibility.canHostStudio)
+                {
+                    // Recorded as a decision with a reason like every other, rather than as a flag
+                    // read at the switch: the status bar, the log and the report all describe the
+                    // backend in force, and a forced one they could not see would make them wrong.
+                    assessment_.decision.choice = StudioUiBackendChoice::Compatibility;
+                    assessment_.decision.reason =
+                        "The compatibility UI renderer was requested with --ui-renderer=compat.";
+                }
                 capabilities_ = assessment_.effective();
+
+                renderer_ = makeUiRenderBackend();
+                if (renderer_ != nullptr) { renderer_->initialize(getGraphicsDeviceProperty()); }
+
+                // The contract said this host can run a shader; the shader is the proof. A modern
+                // backend whose program CNA refused would otherwise draw a black window on a host
+                // the report called capable, which reads as Studio being broken rather than as one
+                // shader being rejected. Falling back here keeps the editor usable and says why.
+                if (auto* modern = dynamic_cast<StudioModernUiRenderer*>(renderer_.get());
+                    modern != nullptr && !modern->isUsable())
+                {
+                    modernShaderProblem_ = modern->shaderDiagnostic();
+                    if (options_.allowCompatibilityUiRenderer)
+                    {
+                        assessment_.decision.choice = StudioUiBackendChoice::Compatibility;
+                        assessment_.decision.reason =
+                            "Falling back to the compatibility UI renderer: this host meets the "
+                            "modern profile but refused Studio's UI shader. " + modernShaderProblem_;
+                        capabilities_ = assessment_.effective();
+                        renderer_ = std::make_unique<CnaUiRenderer>();
+                        renderer_->initialize(getGraphicsDeviceProperty());
+                    }
+                    else
+                    {
+                        assessment_.decision.choice = StudioUiBackendChoice::None;
+                        assessment_.decision.reason =
+                            "The modern UI renderer was required and this host refused Studio's UI "
+                            "shader. " + modernShaderProblem_;
+                    }
+                }
 
                 if (options_.reportCapabilities || !assessment_.canHostStudio())
                 {
@@ -357,6 +397,10 @@ namespace CNA::Studio
                             + " renderer, " + getHostPlatformName() + " platform.");
                 log_.append(LogSeverity::Info,
                             "Modern graphics API: " + assessment_.modernApi.detail + ".");
+                log_.append(LogSeverity::Info,
+                            std::string{"UI renderer: "}
+                            + std::string{studioUiBackendChoiceName(assessment_.decision.choice)}
+                            + ".");
                 if (assessment_.modernApi.versionMismatch)
                 {
                     log_.append(LogSeverity::Warning,
@@ -681,8 +725,31 @@ namespace CNA::Studio
             CnaStudioShellHostOptions options_;
             std::unique_ptr<Xna::GraphicsDeviceManager> graphics_;
             std::unique_ptr<CnaUiPlatform> platform_;
-            std::unique_ptr<CnaUiRenderer> renderer_;
+            /**
+             * @brief Creates the backend the assessment chose.
+             *
+             * A factory rather than a branch at the call site, because the fallback below needs to
+             * make the same decision a second time and two spellings of it would eventually differ.
+             */
+            [[nodiscard]] std::unique_ptr<StudioUiRenderBackend> makeUiRenderBackend() const
+            {
+                switch (assessment_.decision.choice)
+                {
+                    case StudioUiBackendChoice::Modern:
+                        return std::make_unique<StudioModernUiRenderer>();
+                    case StudioUiBackendChoice::Compatibility:
+                        return std::make_unique<CnaUiRenderer>();
+                    case StudioUiBackendChoice::None:
+                        break;
+                }
+                return nullptr;
+            }
+
+            std::unique_ptr<StudioUiRenderBackend> renderer_;
             StudioHostAssessment assessment_;
+
+            /** @brief CNA's account of a refused UI shader, or empty. */
+            std::string modernShaderProblem_;
             std::unique_ptr<StudioShell> shell_;
 
             StudioHostEvaluation capabilities_;

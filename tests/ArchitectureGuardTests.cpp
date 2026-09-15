@@ -268,17 +268,24 @@ CNA_STUDIO_TEST(NoStudioCodeIncludesABackendHeader)
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
 
-CNA_STUDIO_TEST(OnlyTheViewportModuleIncludesCnaHeaders)
+CNA_STUDIO_TEST(OnlyTheTwoCnaLinkedModulesIncludeCnaHeaders)
 {
     // Enforced by the build graph already -- a stray include elsewhere fails to link. Stated here
     // as a test so the property is asserted rather than inferred from a linker error, and so the
     // failure names the rule instead of naming a missing symbol.
+    //
+    // Two modules, since STUDIO-04001 split the UI GPU renderer out of the viewport: they answer
+    // different questions (docs/UI-RENDER-PATH.md layers 2 and 3) and were only together by
+    // history. Two is still a closed list -- adding a third means editing this line, which is
+    // exactly the review this guard is for.
     std::size_t violations = 0;
     for (const SourceFile& file : collectSources({"src", "include"}))
     {
-        const bool isViewport = file.relativePath.find("viewport") != std::string::npos
-                             || file.relativePath.find("Viewport") != std::string::npos;
-        if (isViewport) { continue; }
+        const bool isCnaLinked = file.relativePath.find("viewport") != std::string::npos
+                              || file.relativePath.find("Viewport") != std::string::npos
+                              || file.relativePath.find("ui-renderer") != std::string::npos
+                              || file.relativePath.find("UiRenderer") != std::string::npos;
+        if (isCnaLinked) { continue; }
 
         const std::string code = stripCommentsAndStrings(file.text);
         for (const char* cnaInclude : {"<Microsoft/Xna/", "\"Microsoft/Xna/",
@@ -290,8 +297,9 @@ CNA_STUDIO_TEST(OnlyTheViewportModuleIncludesCnaHeaders)
                 ++violations;
                 CnaStudioTest::reportFailure(__FILE__, __LINE__,
                     file.relativePath + ":" + std::to_string(lineOf(code, position))
-                    + " includes a CNA header. Only cna-studio-viewport may link CNA; everything "
-                      "else stays CNA-free so it can be tested with no GPU.");
+                    + " includes a CNA header. Only cna-studio-viewport and cna-studio-ui-renderer "
+                      "may link CNA; everything else stays CNA-free so it can be tested with no "
+                      "GPU.");
             }
         }
     }
