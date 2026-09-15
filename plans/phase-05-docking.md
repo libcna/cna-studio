@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can rearrange the whole workspace, restore defaults, and have their arrangement survive a restart and a Studio upgrade.
 
-**Progress:** 13 of 14 complete `███████████░`
+**Progress:** 14 of 14 complete `████████████`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,7 +19,7 @@
 | `STUDIO-05007` | Hide, show and close panels | ✅ | `STUDIO-05001` |
 | `STUDIO-05008` | Serialize the workspace layout | ✅ | `STUDIO-05001` |
 | `STUDIO-05009` | Restore the default layout | ✅ | `STUDIO-05008` |
-| `STUDIO-05010` | Named saved layouts | ⬜ | `STUDIO-05008` |
+| `STUDIO-05010` | Named saved layouts | ✅ | `STUDIO-05008`, `STUDIO-03040` |
 | `STUDIO-05011` | Layout migration across Studio versions | ✅ | `STUDIO-05008` |
 | `STUDIO-05012` | A corrupt layout file never prevents Studio from starting | ✅ | `STUDIO-05011` |
 | `STUDIO-05013` | Tab strips that switch the active panel on click | ✅ | `STUDIO-03031` |
@@ -211,3 +211,44 @@ with raise, the corner grip and its minimum, a float blocking the tab beneath it
 closing every tab in it, Dock All and its enablement, and a float surviving save and restore. Plus
 `ADragThatEndsOverNothingUndocksIntoAFloatingWindow` in `StudioDockDragTests.cpp`, which asserts the
 preview against the outcome
+
+### `STUDIO-05010` — Named saved layouts
+
+**Acceptance.** An arrangement can be saved under a name, applied from the Window menu, and deleted
+— and the names survive a restart, in the same file the current arrangement lives in.
+
+**The file is read before it is written, every time.** Saving the current arrangement runs on exit
+and saving a named one runs whenever the user asks, and a Studio that rewrote the whole document
+from what it happened to hold in memory would throw away a layout saved by a second Studio running
+beside it. The rename is still atomic, so an interrupted save leaves the previous file rather than
+half of a new one. The envelope went to version 2; a version 1 file — the current arrangement and
+nothing else — still opens, and saving into it upgrades it rather than refusing.
+
+**The shell keeps the documents, not just the names.** Applying a layout is then a call rather than
+a round trip through the file, so what is applied is exactly what the menu named, whatever has
+happened to the file since. Persisting is a seam (`StudioWorkspaceServices`), for the same reason
+the clipboard is: where a workspace lives is the application's question, and a shell that refused to
+arrange itself because nobody gave it a file would be worse than one that forgets on exit.
+
+**Persisted first, listed second.** A menu that listed a layout the file never received would offer
+it again after a restart and find nothing there — so a refused write leaves the menu unchanged and
+says so, rather than the command quietly doing nothing.
+
+**Deleting asks.** A workspace somebody spent ten minutes on is not undoable, and a menu row one
+place lower than expected is exactly how it would go. The commands naming a deleted layout are
+removed with it, or the Window menu keeps a row that names nothing and the shortcut table a chord
+that arranges the workspace as something that no longer exists — which is what
+`StudioActionRegistry::remove` is for.
+
+**One place decides what a name is.** A name the menu accepts and the file rejects is a save that
+appears to work and is gone at the next start, so `sanitizeName` is the single answer and is applied
+on the way in as well as on the way out: this is plain JSON in the user's configuration directory,
+so a name that never went through `saveNamed` is an ordinary thing to find.
+
+**Verification.** `tests/StudioSavedLayoutTests.cpp`: the round trip, a named save keeping the
+current arrangement and vice versa, a same-name save replacing rather than duplicating, name
+ordering, a version 1 file opening and upgrading, names refused once, a rubbish name read past, a
+removal taking only its own — then the menu half: every saved layout a command and a row, applying
+one rearranging the workspace, Save Layout As asking and saving through the seam, Cancel saving
+nothing, Delete asking first and a cancel keeping it, a shell with no file still working, and a
+refused write leaving the menu alone

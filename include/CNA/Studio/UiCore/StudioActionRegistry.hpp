@@ -144,6 +144,18 @@ namespace CNA::Studio
         bool add(StudioAction command);
 
         /**
+         * @brief Removes a command.
+         *
+         * For a command that names something the user deleted — a saved layout, a plugin's entry
+         * when the plugin unloads. Leaving it registered would put a row in a menu that names
+         * nothing and a chord in the shortcut table that does nothing, and neither reports itself.
+         *
+         * @param id Command id.
+         * @return True when one was removed.
+         */
+        bool remove(std::string_view id);
+
+        /**
          * @brief Finds a command by id.
          * @param id Command id.
          * @return The command, or nullptr.

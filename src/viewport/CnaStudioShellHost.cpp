@@ -87,6 +87,24 @@ namespace CNA::Studio
                         layoutRestored_ = shell_->loadLayout(stored.layout, &problem);
                         if (!problem.empty()) { layoutProblem_ = problem; }
                     }
+
+                    // The arrangements the user saved under names, and the seam that writes them
+                    // back. The shell keeps the documents so applying one is a call rather than a
+                    // round trip through the file, and these two persist what it decides.
+                    shell_->setSavedLayouts(stored.named);
+
+                    const std::string workspacePath = options.workspacePath;
+                    StudioWorkspaceServices services;
+                    services.saveNamed = [workspacePath](const std::string& name,
+                                                         const JsonValue& layout,
+                                                         std::string* problem) {
+                        return StudioWorkspaceStore{workspacePath}.saveNamed(name, layout, problem);
+                    };
+                    services.removeNamed = [workspacePath](const std::string& name,
+                                                           std::string* problem) {
+                        return StudioWorkspaceStore{workspacePath}.removeNamed(name, problem);
+                    };
+                    shell_->setWorkspaceServices(std::move(services));
                 }
 
                 // A real editor context, not a demonstration of one. Opened before the window so

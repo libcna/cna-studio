@@ -70,6 +70,23 @@ namespace CNA::Studio
             reset.run = [this]() { resetLayout(); };
             actions_.add(std::move(reset));
         }
+        if (const StudioAction* found = actions_.find(std::string{kStudioSaveLayoutAsActionId}))
+        {
+            StudioAction saveAs = *found;
+            saveAs.run = [this]() {
+                StudioDialogRequest request;
+                request.title = "Save Layout As";
+                request.lines = {"Name this arrangement so you can come back to it."};
+                request.hasTextField = true;
+                request.placeholder = "Layout name";
+                request.requireText = true;
+                request.buttons = {"Cancel", "Save"};
+                request.cancelButton = 0;
+                openDialog(std::move(request));
+                pending_ = PendingDialog::SaveLayoutAs;
+            };
+            actions_.add(std::move(saveAs));
+        }
         if (const StudioAction* found = actions_.find("studio.help.about"))
         {
             StudioAction about = *found;
@@ -120,6 +137,7 @@ namespace CNA::Studio
             // at run time by whoever assembles the shell. It ships empty rather than absent so the
             // row is in the same place in a shell with no panels as in one with ten.
             {"Window", {StudioMenuEntry::submenu(std::string{kStudioPanelMenuLabel}, {}),
+                        StudioMenuEntry::submenu(std::string{kStudioLayoutMenuLabel}, {}),
                         std::string{kStudioMenuSeparatorId},
                         // Before Reset Layout, and greyed out until there is something to recover.
                         // The two are the same kind of answer at different costs, and a user whose
@@ -580,6 +598,194 @@ namespace CNA::Studio
         contextRows_.clear();
     }
 
+    std::string StudioShell::applyLayoutActionId(std::string_view name)
+    {
+        return std::string{kStudioApplyLayoutActionPrefix} + std::string{name};
+    }
+
+    std::string StudioShell::deleteLayoutActionId(std::string_view name)
+    {
+        return std::string{kStudioDeleteLayoutActionPrefix} + std::string{name};
+    }
+
+    void StudioShell::setSavedLayouts(std::vector<StudioNamedLayout> layouts)
+    {
+        savedLayouts_ = std::move(layouts);
+        std::sort(savedLayouts_.begin(), savedLayouts_.end(),
+                  [](const StudioNamedLayout& lhs, const StudioNamedLayout& rhs) {
+                      return lhs.name < rhs.name;
+                  });
+        registerLayoutActions();
+        rebuildLayoutMenu();
+    }
+
+    void StudioShell::registerLayoutActions()
+    {
+        for (const StudioNamedLayout& saved : savedLayouts_)
+        {
+            const std::string name = saved.name;
+
+            StudioAction apply;
+            apply.id = applyLayoutActionId(name);
+            apply.label = name;
+            apply.description = "Arrange the workspace as '" + name + "'.";
+            apply.category = StudioActionCategory::Window;
+            apply.run = [this, name] { (void)applySavedLayout(name); };
+            actions_.add(std::move(apply));
+
+            StudioAction remove;
+            remove.id = deleteLayoutActionId(name);
+            remove.label = name;
+            remove.description = "Delete the saved layout '" + name + "'.";
+            remove.category = StudioActionCategory::Window;
+            remove.run = [this, name] {
+                // Asked first. Deleting an arrangement somebody spent ten minutes on, because a
+                // menu row was one place lower than they expected, is not undoable.
+                StudioDialogRequest request;
+                request.title = "Delete layout";
+                request.lines = {"Delete the saved layout '" + name + "'?",
+                                 "This cannot be undone."};
+                request.buttons = {"Cancel", "Delete"};
+                request.cancelButton = 0;
+                openDialog(std::move(request));
+                pending_ = PendingDialog::DeleteLayout;
+                pendingArgument_ = name;
+            };
+            actions_.add(std::move(remove));
+        }
+    }
+
+    void StudioShell::rebuildLayoutMenu()
+    {
+        std::vector<StudioMenuEntry> rows;
+        rows.emplace_back(std::string{kStudioSaveLayoutAsActionId});
+
+        if (!savedLayouts_.empty())
+        {
+            rows.emplace_back(std::string{kStudioMenuSeparatorId});
+            for (const StudioNamedLayout& saved : savedLayouts_)
+            {
+                rows.emplace_back(applyLayoutActionId(saved.name));
+            }
+
+            std::vector<StudioMenuEntry> removals;
+            removals.reserve(savedLayouts_.size());
+            for (const StudioNamedLayout& saved : savedLayouts_)
+            {
+                removals.emplace_back(deleteLayoutActionId(saved.name));
+            }
+            rows.emplace_back(std::string{kStudioMenuSeparatorId});
+            rows.push_back(StudioMenuEntry::submenu("Delete", std::move(removals)));
+        }
+
+        for (StudioMenuDefinition& menu : menus_)
+        {
+            for (StudioMenuEntry& entry : menu.entries)
+            {
+                if (entry.isSubmenu() && entry.label == kStudioLayoutMenuLabel)
+                {
+                    entry.rows = rows;
+                }
+            }
+        }
+    }
+
+    bool StudioShell::applySavedLayout(std::string_view name)
+    {
+        const auto found = std::find_if(savedLayouts_.begin(), savedLayouts_.end(),
+            [&](const StudioNamedLayout& saved) { return saved.name == name; });
+        if (found == savedLayouts_.end()) { return false; }
+
+        std::string problem;
+        if (!loadLayout(found->layout, &problem))
+        {
+            refused_.push_back("layout '" + std::string{name} + "': " + problem);
+            return false;
+        }
+        return true;
+    }
+
+    bool StudioShell::saveLayoutAs(std::string_view name)
+    {
+        const std::string clean = StudioWorkspaceStore::sanitizeName(name);
+        if (clean.empty())
+        {
+            refused_.push_back("a saved layout needs a name");
+            return false;
+        }
+
+        const JsonValue layout = saveLayout();
+
+        // Persisted first. A menu that listed a layout the file never received would offer it
+        // again after a restart and find nothing there.
+        if (workspace_.saveNamed)
+        {
+            std::string problem;
+            if (!workspace_.saveNamed(clean, layout, &problem))
+            {
+                refused_.push_back("could not save layout '" + clean + "': " + problem);
+                return false;
+            }
+        }
+
+        const auto found = std::find_if(savedLayouts_.begin(), savedLayouts_.end(),
+            [&](const StudioNamedLayout& saved) { return saved.name == clean; });
+        if (found != savedLayouts_.end()) { found->layout = layout; }
+        else { savedLayouts_.push_back(StudioNamedLayout{clean, layout}); }
+
+        setSavedLayouts(std::move(savedLayouts_));
+        return true;
+    }
+
+    bool StudioShell::deleteSavedLayout(std::string_view name)
+    {
+        const auto found = std::find_if(savedLayouts_.begin(), savedLayouts_.end(),
+            [&](const StudioNamedLayout& saved) { return saved.name == name; });
+        if (found == savedLayouts_.end()) { return false; }
+
+        if (workspace_.removeNamed)
+        {
+            std::string problem;
+            if (!workspace_.removeNamed(std::string{name}, &problem))
+            {
+                refused_.push_back("could not delete layout '" + std::string{name} + "': "
+                                   + problem);
+                return false;
+            }
+        }
+
+        // The commands go with it, or the Window menu would keep a row that names nothing and the
+        // shortcut table a chord that arranges the workspace as a layout that no longer exists.
+        actions_.remove(applyLayoutActionId(name));
+        actions_.remove(deleteLayoutActionId(name));
+
+        savedLayouts_.erase(found);
+        setSavedLayouts(std::move(savedLayouts_));
+        return true;
+    }
+
+    void StudioShell::handleDialogAnswer()
+    {
+        if (pending_ == PendingDialog::None || !dialogResult_.answered()) { return; }
+
+        const PendingDialog which = pending_;
+        const std::string argument = pendingArgument_;
+        pending_ = PendingDialog::None;
+        pendingArgument_.clear();
+
+        // Only the affirmative answer acts. Escape and Cancel are the same event as far as a
+        // destructive command is concerned, and treating a dismissal as a yes is the one mistake a
+        // confirmation exists to prevent.
+        if (dialogResult_.chosen != 1) { return; }
+
+        switch (which)
+        {
+            case PendingDialog::SaveLayoutAs: (void)saveLayoutAs(dialogResult_.text); break;
+            case PendingDialog::DeleteLayout: (void)deleteSavedLayout(argument); break;
+            case PendingDialog::None: break;
+        }
+    }
+
     void StudioShell::openDialog(StudioDialogRequest request)
     {
         // The menu that opened it goes with it. A dialog raised from a menu item while the menu
@@ -592,6 +798,11 @@ namespace CNA::Studio
         dialogState_ = StudioDialogState{};
         dialogResult_ = StudioDialogResult{};
         dialogOpen_ = true;
+
+        // Cleared here rather than by each caller: a dialog opened while another of the shell's
+        // own was pending would otherwise answer the wrong command.
+        pending_ = PendingDialog::None;
+        pendingArgument_.clear();
     }
 
     void StudioShell::closeDialog()
@@ -790,6 +1001,11 @@ namespace CNA::Studio
         frame_.beginDraw();
         describe();
         frame_.endFrame();
+
+        // After the frame, because acting on an answer can rearrange the whole workspace -- and
+        // doing that halfway through describing it would leave the draw pass describing a dock
+        // tree the input pass never saw.
+        handleDialogAnswer();
     }
 
     void StudioShell::buildContent()

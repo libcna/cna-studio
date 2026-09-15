@@ -115,6 +115,15 @@ namespace CNA::Studio
         return false;
     }
 
+    bool StudioActionRegistry::remove(std::string_view id)
+    {
+        const auto found = std::find_if(commands_.begin(), commands_.end(),
+            [&](const StudioAction& command) { return command.id == id; });
+        if (found == commands_.end()) { return false; }
+        commands_.erase(found);
+        return true;
+    }
+
     const StudioAction* StudioActionRegistry::find(std::string_view id) const
     {
         const auto found = std::find_if(commands_.begin(), commands_.end(),
@@ -270,6 +279,9 @@ namespace CNA::Studio
 
         command("studio.window.resetLayout", "Reset Layout",
                 "Restore the default panel arrangement.", C::Window, {});
+
+        command("studio.window.saveLayoutAs", "Save Layout As...",
+                "Save this arrangement under a name.", C::Window, {});
 
         command("studio.window.dockAll", "Dock All Windows",
                 "Return every floating panel to the workspace.", C::Window, {});

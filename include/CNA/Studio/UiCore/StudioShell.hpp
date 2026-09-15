@@ -55,6 +55,7 @@
 #include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
+#include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 
 #include <cstddef>
@@ -81,6 +82,37 @@ namespace CNA::Studio
 
     /** @brief The id of the command that docks every floating window again. */
     inline constexpr std::string_view kStudioDockAllActionId = "studio.window.dockAll";
+
+    /** @brief The label of the Layouts submenu the shell fills in with the saved arrangements. */
+    inline constexpr std::string_view kStudioLayoutMenuLabel = "Layouts";
+
+    /** @brief The id prefix of the command that applies one saved layout. */
+    inline constexpr std::string_view kStudioApplyLayoutActionPrefix = "studio.window.layout.";
+
+    /** @brief The id prefix of the command that deletes one saved layout. */
+    inline constexpr std::string_view kStudioDeleteLayoutActionPrefix = "studio.window.deleteLayout.";
+
+    /** @brief The id of the command that saves the current arrangement under a name. */
+    inline constexpr std::string_view kStudioSaveLayoutAsActionId = "studio.window.saveLayoutAs";
+
+    /**
+     * @brief What the shell asks of whoever owns the layout file.
+     *
+     * A seam rather than a direct call, for the same reason the clipboard is one: the shell is
+     * CNA-free and path-free, and where a workspace lives is the application's question. Unset
+     * means "nothing is persisted", which a preview wants and which still lets the Layouts menu
+     * work for the run it is in — a shell that refused to arrange itself because nobody gave it a
+     * file would be worse than one that forgets on exit.
+     */
+    struct StudioWorkspaceServices
+    {
+        /** @brief Persists @p layout under @p name. Receives the reason on failure. */
+        std::function<bool(const std::string& name, const JsonValue& layout,
+                           std::string* problem)> saveNamed;
+
+        /** @brief Removes the layout saved under @p name. Receives the reason on failure. */
+        std::function<bool(const std::string& name, std::string* problem)> removeNamed;
+    };
 
     /**
      * @brief A panel the shell knows about.
@@ -667,6 +699,66 @@ namespace CNA::Studio
          */
         [[nodiscard]] UiRect dialogBounds() const;
 
+        // --- Saved layouts (STUDIO-05010) ------------------------------------------------------
+
+        /**
+         * @brief Hands the shell the arrangements the user has saved.
+         *
+         * Name *and* document, so applying one is a call rather than a round trip through the file
+         * — and so a layout applied is exactly the one the menu named, whatever has happened to
+         * the file since.
+         *
+         * @param layouts The saved arrangements. Reordered by name.
+         */
+        void setSavedLayouts(std::vector<StudioNamedLayout> layouts);
+
+        /** @brief The saved arrangements, by name. */
+        [[nodiscard]] const std::vector<StudioNamedLayout>& savedLayouts() const
+        {
+            return savedLayouts_;
+        }
+
+        /** @brief Sets the seam through which saved layouts reach disk. */
+        void setWorkspaceServices(StudioWorkspaceServices services)
+        {
+            workspace_ = std::move(services);
+        }
+
+        /**
+         * @brief Applies the layout saved under @p name.
+         * @param name The saved layout.
+         * @return Whether one of that name was applied.
+         */
+        bool applySavedLayout(std::string_view name);
+
+        /**
+         * @brief Saves the current arrangement under @p name, replacing one of the same name.
+         * @param name What to call it.
+         * @return Whether it was saved.
+         */
+        bool saveLayoutAs(std::string_view name);
+
+        /**
+         * @brief Removes the layout saved under @p name.
+         * @param name The saved layout.
+         * @return Whether one was removed.
+         */
+        bool deleteSavedLayout(std::string_view name);
+
+        /**
+         * @brief The id of the command that applies the layout saved under @p name.
+         * @param name The saved layout.
+         * @return `studio.window.layout.<name>`.
+         */
+        [[nodiscard]] static std::string applyLayoutActionId(std::string_view name);
+
+        /**
+         * @brief The id of the command that deletes the layout saved under @p name.
+         * @param name The saved layout.
+         * @return `studio.window.deleteLayout.<name>`.
+         */
+        [[nodiscard]] static std::string deleteLayoutActionId(std::string_view name);
+
         /** @brief Whether any popup chain is open, and therefore blocking the panels beneath it. */
         [[nodiscard]] bool isPopupOpen() const { return openMenu_ >= 0 || contextOpen_; }
 
@@ -1057,6 +1149,27 @@ namespace CNA::Studio
          * happens to be underneath.
          */
         bool floatGesture_ = false;
+
+        /** @brief Which of the shell's own dialogs is open, so its answer can be acted on. */
+        enum class PendingDialog : std::uint8_t
+        {
+            /** @brief None, or one the shell opened for somebody else to answer. */
+            None,
+            SaveLayoutAs,
+            DeleteLayout
+        };
+
+        void rebuildLayoutMenu();
+        void registerLayoutActions();
+        void handleDialogAnswer();
+
+        PendingDialog pending_ = PendingDialog::None;
+
+        /** @brief What the pending dialog is about — a layout name. */
+        std::string pendingArgument_;
+
+        std::vector<StudioNamedLayout> savedLayouts_;
+        StudioWorkspaceServices workspace_;
 
         /** @brief The one open dialog, its retained field and what the user last did to it. */
         StudioDialogRequest dialog_;

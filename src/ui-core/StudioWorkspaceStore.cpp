@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 
+#include <algorithm>
+
 #include "CNA/Studio/Core/UserPaths.hpp"
 
 #include <filesystem>
@@ -24,7 +26,35 @@ namespace CNA::Studio
         return (std::filesystem::path{configDirectory} / kFileName).generic_string();
     }
 
-    bool StudioWorkspaceStore::save(const JsonValue& layout, std::string* outProblem) const
+    std::string StudioWorkspaceStore::sanitizeName(std::string_view name)
+    {
+        std::size_t first = 0;
+        while (first < name.size()
+               && static_cast<unsigned char>(name[first]) <= static_cast<unsigned char>(' '))
+        {
+            ++first;
+        }
+        std::size_t last = name.size();
+        while (last > first
+               && static_cast<unsigned char>(name[last - 1]) <= static_cast<unsigned char>(' '))
+        {
+            --last;
+        }
+
+        std::string trimmed{name.substr(first, last - first)};
+        if (trimmed.empty() || trimmed.size() > kMaximumNameLength) { return {}; }
+
+        // Control characters would make the file unreadable to a person and the menu row a
+        // surprise. Refused rather than stripped: a name the user did not type is not their name.
+        for (const char character : trimmed)
+        {
+            if (static_cast<unsigned char>(character) < 0x20) { return {}; }
+        }
+        return trimmed;
+    }
+
+    bool StudioWorkspaceStore::writeDocument(const JsonValue& document,
+                                             std::string* outProblem) const
     {
         const auto fail = [&](const std::string& reason) {
             if (outProblem != nullptr) { *outProblem = reason; }
@@ -54,9 +84,6 @@ namespace CNA::Studio
             std::ofstream stream{temporary, std::ios::binary | std::ios::trunc};
             if (!stream) { return fail("cannot write '" + temporary.generic_string() + "'"); }
 
-            JsonValue document = JsonValue::makeObject();
-            document.set("fileVersion", kFileVersion);
-            document.set("layout", layout);
             stream << Json::write(document, true);
             if (!stream)
             {
@@ -72,6 +99,104 @@ namespace CNA::Studio
             return fail("cannot replace '" + path.generic_string() + "': " + code.message());
         }
         return true;
+    }
+
+    bool StudioWorkspaceStore::rewrite(const std::function<bool(JsonValue&)>& change,
+                                       std::string* outProblem) const
+    {
+        // Read first, always. This runs on exit and on every Save Layout As, and a Studio that
+        // rewrote the whole file from what it happened to hold in memory would throw away a layout
+        // saved by a second Studio running beside it.
+        JsonValue document = JsonValue::makeObject();
+
+        std::ifstream stream{std::filesystem::path{path_}, std::ios::binary};
+        if (stream)
+        {
+            std::ostringstream contents;
+            contents << stream.rdbuf();
+            const JsonParseResult parsed = Json::parse(contents.str());
+
+            // A file this build cannot read is replaced rather than merged into: half-keeping a
+            // document whose shape is unknown is how one bad write becomes a permanent one.
+            if (parsed.succeeded && parsed.value.isObject()
+                && parsed.value["fileVersion"].asInt(0) <= kFileVersion)
+            {
+                document = parsed.value;
+            }
+        }
+
+        document.set("fileVersion", kFileVersion);
+        if (!change(document))
+        {
+            if (outProblem != nullptr) { *outProblem = "there was no such saved layout"; }
+            return false;
+        }
+        return writeDocument(document, outProblem);
+    }
+
+    bool StudioWorkspaceStore::save(const JsonValue& layout, std::string* outProblem) const
+    {
+        return rewrite([&layout](JsonValue& document) {
+            document.set("layout", layout);
+            return true;
+        }, outProblem);
+    }
+
+    bool StudioWorkspaceStore::saveNamed(std::string_view name, const JsonValue& layout,
+                                         std::string* outProblem) const
+    {
+        const std::string clean = sanitizeName(name);
+        if (clean.empty())
+        {
+            if (outProblem != nullptr)
+            {
+                *outProblem = "a saved layout needs a name of at most "
+                            + std::to_string(kMaximumNameLength) + " characters";
+            }
+            return false;
+        }
+
+        return rewrite([&](JsonValue& document) {
+            JsonValue named = document["named"].isArray() ? document["named"]
+                                                          : JsonValue::makeArray();
+            JsonValue replaced = JsonValue::makeArray();
+            for (const JsonValue& entry : named.getElements())
+            {
+                // Replaced rather than appended twice: two rows with the same name is a menu where
+                // one of them is unreachable.
+                if (entry["name"].asString() != clean) { replaced.append(entry); }
+            }
+
+            JsonValue entry = JsonValue::makeObject();
+            entry.set("name", clean);
+            entry.set("layout", layout);
+            replaced.append(std::move(entry));
+
+            document.set("named", std::move(replaced));
+            return true;
+        }, outProblem);
+    }
+
+    bool StudioWorkspaceStore::removeNamed(std::string_view name, std::string* outProblem) const
+    {
+        const std::string clean = sanitizeName(name);
+        if (clean.empty()) { return false; }
+
+        return rewrite([&](JsonValue& document) {
+            if (!document["named"].isArray()) { return false; }
+
+            bool removed = false;
+            JsonValue kept = JsonValue::makeArray();
+            for (const JsonValue& entry : document["named"].getElements())
+            {
+                if (entry["name"].asString() == clean) { removed = true; continue; }
+                kept.append(entry);
+            }
+            if (!removed) { return false; }
+
+            document.set("named", std::move(kept));
+            return true;
+        }, outProblem);
     }
 
     StudioWorkspaceDocument StudioWorkspaceStore::load() const
@@ -110,6 +235,20 @@ namespace CNA::Studio
 
         result.layout = parsed.value["layout"];
         result.found = true;
+
+        for (const JsonValue& entry : parsed.value["named"].getElements())
+        {
+            // Sanitized on the way in as well as on the way out. This file is plain JSON in the
+            // user's configuration directory, so a name that never went through saveNamed is an
+            // ordinary thing to find rather than a corruption.
+            const std::string name = sanitizeName(entry["name"].asString());
+            if (name.empty()) { continue; }
+            result.named.push_back(StudioNamedLayout{name, entry["layout"]});
+        }
+        std::sort(result.named.begin(), result.named.end(),
+                  [](const StudioNamedLayout& lhs, const StudioNamedLayout& rhs) {
+                      return lhs.name < rhs.name;
+                  });
         return result;
     }
 
