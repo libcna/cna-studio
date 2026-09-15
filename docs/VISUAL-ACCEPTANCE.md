@@ -30,6 +30,31 @@
 
 ---
 
+## Where the current captures are
+
+`docs/reference/native-vq1-1920x1080.png` and `native-vq1-1280x720.png` are the shell as it stands,
+taken the same way as the migration captures below — `--ui=studio --workspace=none` on
+`examples/HelloSprites` through CNA's `SOFTWARE` renderer, with `--frames=20` so the glyph atlas and
+the layout have settled. They are kept *beside* the migration captures rather than replacing them:
+the four files below are a matched pair at two resolutions and overwriting half of a comparison
+leaves a comparison of two different days.
+
+**What they show, against the bar above.** The panels are distinguishable surfaces rather than four
+rectangles of the same colour: the tab strips are recessed with the active tab raised, each panel
+has its own outline, and the seams between them are drawn rather than implied. Every outliner row
+carries the icon of what the entity *is*, decided from its components. The Details panel's vector
+fields carry the gizmo's own axis colours. The Content Browser is a card grid. The viewport has a
+toolbar over the scene and composites the scene behind it.
+
+**What they show that is not there yet.** Typography is one face at one weight, so a panel title and
+a property label differ only in colour. The Details panel's labels and values do not share a column
+alignment. The viewport grid is a flat grid rather than a ground plane, there is no orientation
+widget, and a selected entity has no outline. The cards carry icons rather than thumbnails. Those
+are `STUDIO-35022`, `35033`, `35051`, `35052`, `35053` and `35041`, and a reader comparing these
+captures against the bar should reach the same list.
+
+---
+
 ## The migration review (history)
 
 The rest of this document is the `STUDIO-07023` review, unchanged.

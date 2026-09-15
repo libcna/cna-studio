@@ -181,16 +181,20 @@ nothing.
 
 ### Three defects the migration produced, and the one assertion that caught all three
 
-Each produced exactly the same symptom — a completely blank frame with every draw call reported —
-and none would have been caught by a counts assertion. `--screenshot-min-colors`, added by
-`STUDIO-04015` for precisely this class of failure, caught all three:
+Two of the three produced exactly the same symptom — a completely blank frame with every draw call
+reported — and neither would have been caught by a counts assertion. `--screenshot-min-colors`,
+added by `STUDIO-04015` for precisely this class of failure, caught both; the third was a compile
+error and is listed because it is the same misunderstanding of the same API:
 
 1. **Uniforms set before the program was bound.** CNA's uniform setters write to the currently bound
    program, and binding is what `Apply()` does. The projection went to whatever program the previous
    caller had left bound.
 2. **The projection passed row-major.** CNA hands the array to the graphics API untransposed and
    XNA's `Matrix` is row-major. Every vertex landed outside the clip volume.
-3. **A `SetData` overload that takes no byte offset**, which was at least a compile error.
+3. **A `SetData` overload that takes no byte offset.** `DynamicVertexBuffer::SetData` is
+   `(data, startIndex, elementCount, options)`, where `startIndex` indexes the *source array* — XNA's
+   five-argument form with a destination byte offset is not among the overloads it declares. This
+   one was a compile error, which is the only reason it is not a fourth blank frame.
 
 The first two are worth stating plainly: a UI renderer that is *completely* wrong looks exactly like
 a UI renderer that was never called.
