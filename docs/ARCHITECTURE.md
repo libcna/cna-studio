@@ -170,9 +170,37 @@ hardware.
 
 Requirements carry a **severity**. A missing *required* capability stops Studio and produces the
 diagnostic; a missing *recommended* one disables the panel that needs it and is reported. Each also
-states whether a `Restricted` answer is enough for what Studio does with it. Two required
-capabilities, one required limit and six recommended ones today —
+states whether a `Restricted` answer is enough for what Studio does with it.
 `cna-studio --host-capabilities` prints the current contract.
+
+### 4.1 The modern API is a requirement, not a field on the report
+
+The contract's headline — that hosting Studio needs a renderer capable of CNA's modern graphics
+API — was, until `STUDIO-02070`, carried through the evaluation as a *reported fact* and consulted
+by nothing. A renderer with no modern API at all passed `canHostStudio` on the strength of
+`ThreeDimensionalPipeline`, `DepthStencilBuffer` and a 2048-pixel texture limit, which is precisely
+the classic XNA capability set a renderer that cannot execute a shader has.
+
+It is a requirement now, in the same table as the others, so it produces the same named diagnostic
+and is tested by the same evaluation. Three things have to hold together:
+
+| Signal | Source | Failure it catches |
+|--------|--------|--------------------|
+| The engine layer is compiled in | `CNA_CNAEXT` / `CNA::Graphics::getEngineLayerVersion()` | Studio built against a CNA with `-DCNA_CNAEXT=OFF` |
+| The renderer classifies `ShaderEffects` | `RendererCapabilityProfile` | A renderer that has the headers and cannot compile a shader |
+| The renderer classifies `ShaderEffectSourceExecution` | `RendererCapabilityProfile` | A renderer that accepts source and ignores it |
+
+The second and third were already in the table as **recommended**, which is what let the first be
+absent without consequence. Compiling in the layer is now required; executing a shader from source
+is required; and §3's separation still holds completely — a renderer that fails all three remains a
+perfectly valid **game target** for a project whose game does not need them. `STUDIO-02073` is the
+test that says so in as many words.
+
+**Availability is read, never asserted.** `STUDIO-02071` replaced the literal
+`/*modernApiAvailable=*/true` at both host call sites with one adapter,
+`captureStudioModernApiState()`, which reports what the build has. Where CNA cannot yet be asked
+something, the adapter is the single place that says so and `docs/CNA-GAPS.md` records the
+limitation — Studio never claims a capability was detected when it was assumed.
 
 ---
 
@@ -208,6 +236,31 @@ geometry out, `UiInputState` carries input in. That is why the CNA-side renderer
 toolkit header at all, and why "the Studio UI renders through CNA's public API" is a property of
 the build graph rather than a claim to re-check by hand. The new UI keeps this seam exactly.
 
+### 5.1 Four layers, four different questions
+
+`ARCHITECTURE.md` used "the Studio renderer" for four distinct things until `STUDIO-04021` traced
+what actually reaches the GPU. They are separated here because the host capability contract (§4) is
+a statement about the second asking something of the third, and it cannot be enforced while the two
+are one word.
+
+| # | Layer | Question it answers | Module |
+|---|-------|---------------------|--------|
+| 1 | UI framework | What should the frame contain? | `cna-studio-ui-core` — links no CNA |
+| 2 | UI GPU renderer | Which graphics calls draw it? | `cna-studio-ui-renderer` |
+| 3 | CNA host renderer | Which CNA renderer executes those calls? | chosen at Studio's configure time |
+| 4 | Game target renderer | Which CNA renderer does the *user's game* ship on? | the project's target profile |
+
+Layer 1 emits `UiDrawData` and owns no device resource. Layer 2 owns every texture, buffer and
+effect the UI has. Layer 3 is what layer 2 is compiled against, and is the subject of the contract
+in §4. Layer 4 is independent of all three, for the reasons in §3.
+
+**The audit's finding.** Layer 2 was, until the staged migration recorded in
+[`UI-RENDER-PATH.md`](UI-RENDER-PATH.md), implemented entirely on the classic XNA 4.0 surface —
+`BasicEffect` and `DrawUserIndexedPrimitives` — inherited from the Dear ImGui prototype and correct
+for what it drew. It is not the modern CNAEXT path this phase is named after. That document traces
+the call chain, lists every graphics call the UI makes, says how the mis-statement survived six
+phases, and holds the migration's stages.
+
 ### Planned UI modules
 
 | Module | Responsibility |
@@ -216,7 +269,7 @@ the build graph rather than a claim to re-check by hand. The new UI keeps this s
 | `cna-studio-ui-layout` | Row/column, flex, grids, splitters, dock layout, scrolling, virtualised lists, sizing constraints |
 | `cna-studio-ui-widgets` | The widget library |
 | `cna-studio-ui-docking` | Panel docking, tab stacks, floating panels, saved workspaces |
-| `cna-studio-ui-renderer` | The CNAEXT-backed renderer: font atlas, icon atlas, batching, clipping, DPI |
+| `cna-studio-ui-renderer` | Layer 2: the UI GPU renderer. Holds both backends behind `StudioUiRenderBackend` — the classic `CnaUiRenderer` and the modern `StudioModernUiRenderer` — plus texture ownership, batching, clipping and DPI |
 
 `cna-studio-ui-core` and `cna-studio-ui-layout` are **CNA-free and headless-testable**. That is the
 property that keeps the UI workstream honest: layout, focus, hit-testing and command routing are
