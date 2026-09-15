@@ -329,8 +329,14 @@ flag now.
 **Acceptance.** The new shell becomes the default as soon as it is good enough for daily development, with the legacy UI still reachable behind a flag
 
 **Status.** `--ui=studio` exists and runs the real thing (`STUDIO-06020`), so the remaining work is
-the word *default*, not the word *reachable*. It stays 🔄 until the shell hosts a migrated panel:
-a default that opens an editor with no inspector would be a regression however good it looks.
+the word *default*, not the word *reachable*.
+
+This used to say it waited on the shell hosting a migrated panel. It no longer does: every panel the
+prototype has is ported except the material editor, which the prototype does not have either
+(`docs/MIGRATION-INVENTORY.md`). What it waits on now is the **3D view**. The prototype's viewport
+draws one and the native viewport does not, so making the native shell the default today would ship
+a Studio that lost a feature — which is a regression whatever else improved. That is Phase 11, and
+it is the last row in the inventory's *Not yet answered* table that a user would notice.
 
 ### `STUDIO-06020` — `--ui=studio`: the native shell in a real window, on a real CNA device
 

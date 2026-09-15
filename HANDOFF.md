@@ -12,9 +12,9 @@ State of the work in progress, for whoever continues it. Updated at the end of e
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **58** — `docs: bring the handoff up to the state it describes` |
+| HEAD | commit **79** — `docs: bring the handoff up to the state it describes` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits on this branch | 58, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Commits on this branch | 79, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -122,10 +122,10 @@ CNA_STUDIO_TEST_ARTIFACTS=./artifacts ./build/tests/cna-studio-tests
 
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **1058 test cases, 45 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **1058 test cases, 45 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **1058 test cases, 45 CTest suites, 0 failures, no sanitizer reports** |
-| GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **1060 test cases, 61 CTest suites, 0 failures** |
+| GCC 13.3 Debug, no CNA | **1222 test cases, 45 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **1222 test cases, 45 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **1222 test cases, 45 CTest suites, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, **against real CNA** (`next`, SOFTWARE renderer, SDL3 platform) | **1224 test cases, 61 CTest suites, 0 failures** |
 
 The two extra *cases* in the CNA-backed run are `STUDIO-29007`, which reads CNA's own
 `RendererSelection.cmake`, and `STUDIO-04020`, which checks the host key map — both need a CNA
@@ -136,6 +136,11 @@ The CNA-backed suite now includes the native shell on a real device in both them
 shell with a project open, the workspace surviving a real process exit, and
 `CnaStudioStandaloneExport` — which exports the example project, configures it with nothing but
 CMake and a CNA checkout, compiles it and runs it (about four minutes, most of it CNA).
+
+Every capturing case now passes `--screenshot-min-colors=16`, so a run whose geometry rendered to
+nothing fails instead of writing a blank PNG and exiting zero (`STUDIO-04015`). The counts those
+cases already asserted separate "submitted no geometry" from "submitted some"; this separates
+"submitted some" from "drew something".
 
 **All four configurations run in CI** as of `STUDIO-33022`/`STUDIO-33023`. They are still worth
 running locally before a push: the CNA job takes the best part of an hour.
@@ -341,6 +346,37 @@ empty rectangles. Nothing about binding a panel needs CNA.
 ---
 
 ## Things found that were not expected
+
+**A command that exists is not a command that does anything.** Half the action registry is declared
+with no handler and given one by whatever binds it, so `shell.invoke(id)` on an unbound command
+finds the id, "runs" the absent handler, and changes nothing. `--shell-invoke` read the return of
+`find()` and threw away the return of `invoke()`, and the windowed host ran it in its constructor —
+before `LoadContent` binds the viewport's commands, which needs a graphics device. A whole session
+went looking for a missing tool overlay that had simply never been armed. The shell had recorded the
+refusal in `refusedActions()` the entire time; nothing read it.
+
+**A screenshot test that asserts on counts passes for a blank window.** The graphical cases check
+draw calls and triangles, which separates a shell that submitted geometry from one that submitted
+none — and says nothing about a frame whose geometry rendered to nothing. A wrong blend state, a
+clip rectangle that excludes the window, or a renderer quietly dropping the calls all report every
+draw call and write a perfectly valid PNG of an empty frame. `--screenshot-min-colors` closed it.
+
+**The software rasterizer's texture table kept a pointer `UiTextureRequest` forbids it to keep.**
+It worked anyway, because the only texture anybody uploads is a font atlas that outlives the frame.
+It stopped working the moment the atlas began sending partial updates: an Update's pointer is the
+top-left of a *region*, and read as a whole texture it draws every glyph from somewhere else in the
+atlas — which looks like a corrupt font rather than a wrong pointer.
+
+**A caret that moves by code point moves into the middle of a character.** And the mouse had the
+same bug in a worse form: a combining mark adds no width, so the code-point boundary inside a letter
+and its accent sits at the same x as the one before it. Clicking there put the caret inside one
+rendered glyph *invisibly*, and the damage only appeared at the next keystroke, as "café" becoming
+"caf" with the accent stranded on the f.
+
+**Two documents describing the same gap is two places for it to be closed in one of them.** The
+visual review went on naming the tilemap tool as missing for a commit after it was answered, because
+nothing compared the two lists — only three phrases inside them. They are compared now, in both
+directions.
 
 **CNA has changed more than the prototype's analysis admits.** Renderer and platform are now
 separate axes; there are 50 renderer identities, not 14; and `RendererCapabilityProfile` provides a
@@ -570,30 +606,42 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 ## Next recommended tasks
 
-In dependency order. Every panel but the material editor is ported now, so the block that matters is
-the **parity proof**: what stands between the native shell and being the editor `cna-studio` opens by
-default is no longer missing panels but the evidence that nothing was lost in porting them — and the
-inventory that evidence is checked against (`STUDIO-00014`) has not been written.
+In dependency order. The parity block this list used to describe is finished: every panel is ported,
+the inventory exists and is machine-checked in both directions, and input, docking and visual
+acceptance are all proven. What stands between the native shell and being the editor `cna-studio`
+opens by default is now a single missing feature rather than missing evidence.
+
+**The 3D view is the gate.** The prototype's viewport draws one and the native viewport does not, so
+making the native shell the default today would ship a Studio that lost a feature — a regression
+whatever else improved. It is the last row in the inventory's *Not yet answered* table that a user
+would notice, and everything below it in this list is waiting on it.
 
 | Id | Task |
 |----|------|
-| `STUDIO-00014` | Record the prototype panel/menu/shortcut inventory as the migration checklist |
-| `STUDIO-07001` | Both UIs in one running Studio, so the migration can finish panel by panel |
-| `STUDIO-07020` | Prove parity against that inventory — every port but the material editor is done |
-| `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing |
-| `STUDIO-07022` | Prove docking parity |
-| `STUDIO-07023` | Visual acceptance against the Phase 0 reference screenshots |
+| `STUDIO-11001` | Perspective and orthographic cameras in the native viewport |
+| `STUDIO-11002` | Orbit, fly and pan navigation with configurable speed |
+| `STUDIO-11006` | Object picking through the 3D projection |
+| `STUDIO-07009` | Finish the viewport container: the 2D/3D toggle, and input to a running player |
 | `STUDIO-06015` | Make the native shell the default, with the legacy UI behind a flag |
-| `STUDIO-06013` | Empty states for every panel |
-| `STUDIO-06012` | The shortcut rebinding UI — the model and the conflict rule exist |
-| `STUDIO-06014` | Notification and toast system for background results |
-| `STUDIO-16015` | Pause, Step and Restart from the native shell |
-| `STUDIO-33010` | Graphical CI with a real CNA build and a display |
-| `STUDIO-04017` | Upload only the changed region of the glyph atlas |
-| `STUDIO-04018` | Grow or evict when the glyph atlas fills |
+| `STUDIO-07001` | Both UIs in one running Studio, so the switch can be made without a rebuild |
+| `STUDIO-07030` | Remove the Dear ImGui panels |
+| `STUDIO-07031` | Remove the Dear ImGui dependency |
 
-`STUDIO-15001` (the C++ reflection mechanism) is 🔬 blocked on an architectural decision and should
-be decided before Phase 15 work begins, not during it.
+Not on that chain, and each worth doing on its own:
+
+| Id | Task |
+|----|------|
+| `STUDIO-04019` | Font fallback — CJK, Hangul and emoji are boxes today, and the caret is not the reason |
+| `STUDIO-04010` | Render-resource lifetime and recreation on device loss |
+| `STUDIO-04011` | Window resize without artefacts |
+| `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state |
+| `STUDIO-03027` | IME support where the platform provides it |
+| `STUDIO-19NNN` | The material editor — the one panel with no prototype to port from |
+
+**Blocked, not forgotten.** `STUDIO-33010` (graphical CI with a display) and the per-renderer half of
+`STUDIO-04015` both wait on CNA gap G-10: every renderer that can host Studio needs a display and
+undocumented sibling checkouts. `STUDIO-15001` (the C++ reflection mechanism) is 🔬 blocked on an
+architectural decision and should be decided before Phase 15 work begins, not during it.
 
 ---
 
