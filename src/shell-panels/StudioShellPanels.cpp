@@ -1135,6 +1135,17 @@ namespace CNA::Studio
         // The Diagnostics panel (STUDIO-07011): what this Studio is running on, as a report
         // somebody can paste into a bug report rather than a screen somebody has to transcribe.
         shell.setPanelContent("diagnostics", [this](StudioFrame& frame, const UiRect& bounds) {
+            // Read here rather than pushed by a host, because the atlas belongs to the shell and
+            // every host has one: a build with no graphics device reports it too, which is where
+            // a dropped glyph is most likely to be looked at and least likely to be pushed.
+            if (const StudioFontAtlas* atlas = frame.fontAtlas())
+            {
+                diagnostics_.atlasSize = atlas->size();
+                diagnostics_.atlasOccupancy = atlas->occupancy();
+                diagnostics_.atlasGrowths = atlas->growths();
+                diagnostics_.atlasDroppedGlyphs = atlas->droppedGlyphs();
+            }
+
             const StudioDiagnosticsResult panel =
                 studioDiagnosticsPanel(frame, bounds, diagnostics_, diagnosticsState_);
             if (frame.isDrawPass()) { counts_.diagnosticRowsDrawn = panel.rowsDrawn; }

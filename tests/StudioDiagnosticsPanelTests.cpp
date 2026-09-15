@@ -240,3 +240,55 @@ CNA_STUDIO_TEST(TheReportSurvivesRepeatedFramesWithoutPhaseViolations)
     }
     CNA_STUDIO_EXPECT(fixture.last.rowsDrawn > 0);
 }
+
+CNA_STUDIO_TEST(TheAtlasIsReportedAndADroppedGlyphIsSaidAsMissingText)
+{
+    // The atlas has counted the glyphs it could not fit since it was written, and until
+    // STUDIO-04018 nothing displayed the count -- so "the text stops partway down this panel"
+    // was a mystery to exactly the person looking at the panel that answers mysteries.
+    Fixture fixture;
+    fixture.info.atlasSize = 2048;
+    fixture.info.atlasOccupancy = 0.372f;
+    fixture.info.atlasGrowths = 1;
+    fixture.settle();
+
+    const std::string text = studioDiagnosticsText(fixture.info);
+    CNA_STUDIO_EXPECT(contains(text, "2048x2048"));
+    CNA_STUDIO_EXPECT(contains(text, "grown 1x"));
+    // One decimal, because a Latin UI at 1x uses a fraction of a percent and "0% full" reads as
+    // an atlas that is not working rather than one that is bigger than the text in front of it.
+    CNA_STUDIO_EXPECT(contains(text, "37.2% full"));
+    CNA_STUDIO_EXPECT(!contains(text, "DROPPED"));
+
+    fixture.info.atlasDroppedGlyphs = 12;
+    const std::string lost = studioDiagnosticsText(fixture.info);
+    CNA_STUDIO_EXPECT(contains(lost, "12 glyphs DROPPED (text is missing)"));
+
+    // And in the tree, which is what a user actually reads -- the report is for pasting into a
+    // bug. Said in the error colour, because it is a fault rather than a statistic.
+    const std::vector<StudioTreeRow> rows = studioDiagnosticsRows(fixture.info, fixture.state);
+    bool said = false;
+    for (const StudioTreeRow& row : rows)
+    {
+        if (row.label.find("Glyphs dropped") == std::string::npos) { continue; }
+        said = true;
+        CNA_STUDIO_EXPECT_EQ(row.detail, std::string{"12"});
+        CNA_STUDIO_EXPECT(row.detailRole == StudioColorRole::Error);
+    }
+    CNA_STUDIO_EXPECT(said);
+}
+
+CNA_STUDIO_TEST(AnAtlasNoBuildHasIsNotReportedAsAZeroSizedOne)
+{
+    // Zero is the "nobody filled this in" value, and a row saying "0x0, 0% full" is worse than no
+    // row: it says the atlas is broken rather than that nothing asked it.
+    Fixture fixture;
+    fixture.info.atlasSize = 0;
+    fixture.settle();
+
+    CNA_STUDIO_EXPECT(!contains(studioDiagnosticsText(fixture.info), "Glyph atlas"));
+    for (const StudioTreeRow& row : studioDiagnosticsRows(fixture.info, fixture.state))
+    {
+        CNA_STUDIO_EXPECT(row.label.find("Glyph atlas") == std::string::npos);
+    }
+}

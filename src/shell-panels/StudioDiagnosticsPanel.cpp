@@ -68,6 +68,31 @@ namespace CNA::Studio
                 ? StudioColorRole::Error
                 : StudioColorRole::Warning;
         }
+
+        /**
+         * @brief How full the atlas is, as a percentage with one decimal.
+         *
+         * One decimal because a Latin UI at 1x uses a fraction of a percent of a 1024-pixel atlas,
+         * and a whole-number percentage renders that as "0% full" -- which reads as an atlas that
+         * is not working rather than one that is oversized for the text in front of it.
+         */
+        std::string atlasSummary(const StudioDiagnosticsInfo& info)
+        {
+            std::string percent = std::to_string(info.atlasOccupancy * 100.0f);
+            const std::size_t point = percent.find('.');
+            if (point != std::string::npos && point + 2 < percent.size())
+            {
+                percent.resize(point + 2);
+            }
+
+            std::string summary = std::to_string(info.atlasSize) + "x"
+                + std::to_string(info.atlasSize) + ", " + percent + "% full";
+            if (info.atlasGrowths > 0)
+            {
+                summary += ", grown " + std::to_string(info.atlasGrowths) + "x";
+            }
+            return summary;
+        }
     }
 
     std::vector<StudioTreeRow> studioDiagnosticsRows(const StudioDiagnosticsInfo& info,
@@ -87,6 +112,20 @@ namespace CNA::Studio
             leaf(rows, "Frames rendered", std::to_string(info.frames));
             leaf(rows, "Draw calls, last frame", std::to_string(info.drawCalls));
             leaf(rows, "Triangles, last frame", std::to_string(info.triangles));
+
+            if (info.atlasSize > 0)
+            {
+                leaf(rows, "Glyph atlas", atlasSummary(info));
+
+                // Only when there are some, and in the error colour, because this row is not a
+                // statistic: it is the answer to "why does the text stop partway down a panel",
+                // and it is the only place in Studio that answers it.
+                if (info.atlasDroppedGlyphs > 0)
+                {
+                    leaf(rows, "Glyphs dropped (text is missing)",
+                         std::to_string(info.atlasDroppedGlyphs), StudioColorRole::Error);
+                }
+            }
         }
 
         const std::string hostSummary = info.host.outcomes.empty()
@@ -181,6 +220,19 @@ namespace CNA::Studio
                 if (!outcome.detail.empty()) { text += " (" + outcome.detail + ")"; }
                 text += "\n";
             }
+        }
+
+        if (info.atlasSize > 0)
+        {
+            text += "Glyph atlas: " + atlasSummary(info);
+            if (info.atlasDroppedGlyphs > 0)
+            {
+                // Named as text that is missing rather than as a statistic, because that is what
+                // the reader is looking at when they come here.
+                text += ", " + std::to_string(info.atlasDroppedGlyphs)
+                      + " glyphs DROPPED (text is missing)";
+            }
+            text += "\n";
         }
 
         text += "Player builds: " + std::to_string(info.players.size()) + "\n";

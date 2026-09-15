@@ -75,6 +75,14 @@ namespace CNA::Studio
         violations_.clear();
         enter(StudioFramePhase::Build, StudioFramePhase::Idle);
 
+        // Here, before any pass, because this is the only point at which no glyph pointer is held
+        // and no quad has been emitted. Growing invalidates both -- the texture coordinates are
+        // normalised by a side that is about to change -- so doing it where the need is
+        // *discovered*, inside a pack that failed partway through a draw pass, would move the
+        // glyphs out from under geometry already written against them. That is legacy ED-119's
+        // shape again, and it reads as a corrupt font rather than as an atlas that moved.
+        if (atlas_ != nullptr) { (void)atlas_->growIfNeeded(); }
+
         pendingInput_ = input;
         blockingLayer_ = blockingLayer;
 

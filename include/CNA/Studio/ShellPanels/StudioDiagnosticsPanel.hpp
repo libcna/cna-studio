@@ -69,6 +69,19 @@ namespace CNA::Studio
 
         /** @brief Frames rendered since start-up. */
         std::uint64_t frames = 0;
+
+        /**
+         * @brief The glyph atlas: side in pixels, how full, how often it has doubled, what it lost.
+         *
+         * Here because the atlas's own honesty was invisible. It has counted the glyphs it could
+         * not fit since it was written, and nothing displayed the count, so "text stops appearing
+         * partway down a panel" stayed a mystery to exactly the person looking at it. A non-zero
+         * `atlasDroppedGlyphs` with `atlasSize` at its cap is that state, named.
+         */
+        int atlasSize = 0;
+        float atlasOccupancy = 0.0f;
+        std::size_t atlasGrowths = 0;
+        std::size_t atlasDroppedGlyphs = 0;
     };
 
     /** @brief What the Diagnostics panel showed. */

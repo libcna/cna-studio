@@ -6,7 +6,7 @@
 
 **Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
 
-**Progress:** 11 of 19 complete `███████░░░░░`
+**Progress:** 12 of 19 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -27,7 +27,7 @@
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | ⬜ | `STUDIO-04013` |
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
 | `STUDIO-04017` | Upload only the changed region of the atlas | ⬜ | `STUDIO-04005` |
-| `STUDIO-04018` | Grow or evict when the glyph atlas fills | ⬜ | `STUDIO-04005` |
+| `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
 | `STUDIO-04020` | Guard test: every key Studio can ask about is one the host reports | ✅ | — |
 
 ## Acceptance and verification
@@ -97,6 +97,8 @@ every draw command. The **stall** half is not: a dirty atlas re-uploads all four
 than the changed region (`STUDIO-04017`), and a full atlas drops glyphs and counts them rather than
 growing (`STUDIO-04018`)
 
+**Verification.** A regression test for the update/draw phase split
+
 ### `STUDIO-04017` — Upload only the changed region of the atlas
 
 **Acceptance.** A frame that rasterised one new glyph uploads that glyph's rectangle, not the whole
@@ -109,11 +111,34 @@ steady-state one — which is why it is a follow-up rather than part of `STUDIO-
 counted in `droppedGlyphs()` and not drawn, which is honest but is still text that stops appearing
 partway down a panel
 
-### `STUDIO-04007` — Dynamic glyph upload without frame stalls or dropped glyphs
+**Done: grow, not evict.** The atlas doubles, from 1024 to a cap of 4096, and re-rasterises. Evicting
+is the other answer and is worse here: a UI redraws the same text every frame, so a least-recently-
+used policy under pressure evicts glyphs that are about to be needed again and thrashes — and the
+frame in which it thrashes is the frame the user is looking at. Growth is bounded, settles, and at
+the cap goes back to counting, so the honest last resort survives rather than being replaced.
 
-**Acceptance.** Glyphs first needed on a frame that does not draw are still uploaded — the prototype shipped this bug once (legacy ED-119) and it must not return
+**Where it grows is the whole of why it is safe.** Texture coordinates are normalised by the atlas
+side, and every cached `StudioGlyph` holds them. So doubling invalidates every coordinate and every
+glyph pointer handed out — and doing it where the need is *discovered*, inside a pack that failed
+partway through a draw pass, would move the glyphs out from under quads already written against
+them. That is legacy ED-119's shape again, and it would not read as a missing glyph: it would read
+as letters drawn out of pieces of other letters, which looks like a corrupt font file.
 
-**Verification.** A regression test for the update/draw phase split
+So `StudioFrame::beginFrame` calls `growIfNeeded()` before any pass, which is the one point at which
+no pointer is held and no quad exists. The frame that ran out draws without those glyphs and the
+next one has them. One frame of a missing glyph at start-up is not something a user can see; a
+permanent one partway down a panel is.
+
+**The count resets on a growth**, because the glyphs it counted are about to be tried again, and a
+count that survived would report an atlas as full while it was filling up. A non-zero
+`droppedGlyphs()` at `kMaxAtlasSize` is therefore exactly the state in which text really is lost.
+
+**And it is finally visible.** The atlas has counted its drops since it was written and nothing
+displayed the count, which made it a diagnostic only a debugger could read — so the Diagnostics
+panel now carries the atlas's size, how full it is, how often it has doubled, and, in the error
+colour when there are any, the glyphs it dropped, named as missing text rather than as a statistic.
+One decimal on the percentage: a Latin UI at 1x uses a fraction of a percent of a 1024-pixel atlas,
+and "0% full" reads as an atlas that is not working.
 
 ### `STUDIO-04009` — Select and document legally redistributable fonts and icons
 

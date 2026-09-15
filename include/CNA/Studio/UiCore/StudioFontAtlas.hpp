@@ -177,8 +177,18 @@ namespace CNA::Studio
     class StudioFontAtlas final : public StudioFontSet
     {
     public:
-        /** @brief Side of the atlas texture, in pixels. */
-        static constexpr int kAtlasSize = 1024;
+        /** @brief Side of the atlas texture when it is first created, in pixels. */
+        static constexpr int kInitialAtlasSize = 1024;
+
+        /**
+         * @brief The largest side the atlas will grow to, in pixels.
+         *
+         * Four megabytes at the initial size, sixty-four at this one. A UI needing more than this
+         * is asking for a full CJK face at a display size, which wants a different strategy than
+         * one texture; past here the atlas goes back to counting what it drops, so the last
+         * resort is still an honest one rather than a wrong picture.
+         */
+        static constexpr int kMaxAtlasSize = 4096;
 
         /**
          * @brief The texture id the atlas uses.
@@ -224,6 +234,28 @@ namespace CNA::Studio
          */
         void prepare(const StudioFontStyle& style, std::string_view utf8);
 
+        /** @brief Side of the atlas texture as it is now, in pixels. */
+        [[nodiscard]] int size() const { return size_; }
+
+        /**
+         * @brief Doubles the atlas and re-rasterises, when the last frame ran out of room.
+         *
+         * Growth invalidates every glyph's texture coordinates, because they are normalised by the
+         * atlas side, and every @ref StudioGlyph pointer handed out so far, because the caches are
+         * cleared. So this must run where neither can be in flight: @ref StudioFrame calls it at
+         * the top of a frame, before any pass. Doing it where the need is *discovered* -- inside
+         * a pack that failed, halfway through a draw pass -- would move the glyphs out from under
+         * quads already emitted against them, which is the same shape of bug as legacy ED-119 and
+         * would look like a panel of text drawn in pieces of other letters.
+         *
+         * The frame that ran out therefore draws without those glyphs and the next one has them.
+         * One frame of a missing glyph at start-up is not something a user can see; a permanent
+         * one partway down a panel is.
+         *
+         * @return True when the atlas grew, so a caller can log it.
+         */
+        bool growIfNeeded();
+
         /** @brief Whether the atlas has pixels that the renderer has not been given yet. */
         [[nodiscard]] bool hasPendingUpload() const { return dirty_; }
 
@@ -258,8 +290,18 @@ namespace CNA::Studio
         /** @brief Fraction of the atlas area used so far, in `[0, 1]`. */
         [[nodiscard]] float occupancy() const;
 
-        /** @brief Number of glyphs the atlas could not fit. Non-zero means the atlas is full. */
+        /**
+         * @brief Glyphs the atlas could not fit *since it last grew*.
+         *
+         * Reset by a growth, because the glyphs it counts are about to be given another chance and
+         * a count that survived would report an atlas as full while it was filling up again.
+         * Non-zero after a frame in which @ref growIfNeeded returned false means the atlas is full
+         * at @ref kMaxAtlasSize and text really is being lost.
+         */
         [[nodiscard]] std::size_t droppedGlyphs() const { return dropped_; }
+
+        /** @brief How many times the atlas has doubled. Zero on a UI that fits, which is most. */
+        [[nodiscard]] std::size_t growths() const { return growths_; }
 
         /**
          * @brief Decodes the next code point of a UTF-8 string.
@@ -287,11 +329,17 @@ namespace CNA::Studio
         [[nodiscard]] float lookupKerning(const StudioFontFace& face, char32_t left,
                                           char32_t right) const;
 
+        /** @brief Allocates @p size pixels, resets the packer and re-reserves the white block. */
+        void reset(int size);
+
         std::unique_ptr<Impl> impl_;
         mutable std::vector<std::uint8_t> pixels_;
+        int size_ = kInitialAtlasSize;
         float whiteU_ = 0.0f;
         float whiteV_ = 0.0f;
         mutable bool dirty_ = true;
         mutable std::size_t dropped_ = 0;
+        mutable bool growthWanted_ = false;
+        std::size_t growths_ = 0;
     };
 } // namespace CNA::Studio

@@ -103,6 +103,8 @@ namespace CNA::Studio
         std::map<std::uint64_t, StudioFontFace> faces;
 
         // --- The shelf packer -----------------------------------------------------------------
+        /** @brief Side of the atlas being packed into. A member because the atlas can grow. */
+        int size = StudioFontAtlas::kInitialAtlasSize;
         /** @brief Left edge of the next glyph on the current shelf. */
         int penX = kGlyphPadding;
         /** @brief Top edge of the current shelf. */
@@ -111,6 +113,16 @@ namespace CNA::Studio
         int shelfHeight = 0;
         /** @brief Total ink area packed, for the occupancy report. */
         std::size_t packedArea = 0;
+
+        /** @brief Empties the atlas, at @p newSize. */
+        void resetPacker(int newSize)
+        {
+            size = newSize;
+            penX = kGlyphPadding;
+            penY = kGlyphPadding;
+            shelfHeight = 0;
+            packedArea = 0;
+        }
 
         /**
          * @brief Reserves a rectangle in the atlas.
@@ -123,9 +135,9 @@ namespace CNA::Studio
         bool pack(int width, int height, int& outX, int& outY)
         {
             if (width <= 0 || height <= 0) { outX = 0; outY = 0; return true; }
-            if (width + kGlyphPadding * 2 > kAtlasSize) { return false; }
+            if (width + kGlyphPadding * 2 > size) { return false; }
 
-            if (penX + width + kGlyphPadding > kAtlasSize)
+            if (penX + width + kGlyphPadding > size)
             {
                 // Next shelf. Wasting the tail of this one is the trade shelf packing makes, and
                 // for a few hundred glyphs of similar height it costs a few percent.
@@ -133,7 +145,7 @@ namespace CNA::Studio
                 penY += shelfHeight + kGlyphPadding;
                 shelfHeight = 0;
             }
-            if (penY + height + kGlyphPadding > kAtlasSize) { return false; }
+            if (penY + height + kGlyphPadding > size) { return false; }
 
             outX = penX;
             outY = penY;
@@ -144,13 +156,16 @@ namespace CNA::Studio
         }
     };
 
-    StudioFontAtlas::StudioFontAtlas() : impl_(std::make_unique<Impl>())
+    void StudioFontAtlas::reset(int size)
     {
+        size_ = size;
+        impl_->resetPacker(size);
+
         // RGBA rather than a single alpha channel: UiDrawData's texture contract is 32-bit RGBA,
         // and a UI that needed a second pixel format for text would need a second draw path for it
         // too. White with the coverage in alpha lets a glyph take the vertex colour, so one atlas
         // serves every text colour in the theme.
-        pixels_.assign(static_cast<std::size_t>(kAtlasSize) * kAtlasSize * 4, 0);
+        pixels_.assign(static_cast<std::size_t>(size_) * static_cast<std::size_t>(size_) * 4, 0);
         for (std::size_t i = 0; i < pixels_.size(); i += 4)
         {
             pixels_[i] = 255;
@@ -161,6 +176,10 @@ namespace CNA::Studio
         // A small opaque white block, reserved before any glyph so its position is fixed. Every
         // untextured primitive samples its centre, which lets flat fills and glyph quads share one
         // draw call -- the difference between a shell frame costing eleven draw calls and thirty.
+        //
+        // Re-reserved on a growth rather than rescaled, for the same reason: "before any glyph" is
+        // the property that makes it findable, and arithmetic on the old coordinates would be a
+        // second answer to where it is.
         constexpr int kWhiteBlock = 4;
         int whiteX = 0;
         int whiteY = 0;
@@ -171,15 +190,22 @@ namespace CNA::Studio
                 for (int column = 0; column < kWhiteBlock; ++column)
                 {
                     const std::size_t index =
-                        (static_cast<std::size_t>(whiteY + row) * kAtlasSize
+                        (static_cast<std::size_t>(whiteY + row) * static_cast<std::size_t>(size_)
                          + static_cast<std::size_t>(whiteX + column)) * 4;
                     pixels_[index + 3] = 255;
                 }
             }
-            constexpr float inverse = 1.0f / static_cast<float>(kAtlasSize);
+            const float inverse = 1.0f / static_cast<float>(size_);
             whiteU_ = (static_cast<float>(whiteX) + kWhiteBlock * 0.5f) * inverse;
             whiteV_ = (static_cast<float>(whiteY) + kWhiteBlock * 0.5f) * inverse;
         }
+
+        dirty_ = true;
+    }
+
+    StudioFontAtlas::StudioFontAtlas() : impl_(std::make_unique<Impl>())
+    {
+        reset(kInitialAtlasSize);
 
         for (std::size_t i = 0; i < impl_->typefaces.size(); ++i)
         {
@@ -289,9 +315,12 @@ namespace CNA::Studio
             int atlasY = 0;
             if (!impl_->pack(glyph.width, glyph.height, atlasX, atlasY))
             {
-                // Counted rather than silently dropped. A full atlas shows as text that stops
-                // appearing partway down a panel, which is a mystery unless something says so.
+                // Counted, and remembered as a reason to grow. A full atlas shows as text that
+                // stops appearing partway down a panel, which is a mystery unless something says
+                // so -- and saying so was all this did until `STUDIO-04018`. The growth itself
+                // happens at the top of the next frame rather than here: see @ref growIfNeeded.
                 ++dropped_;
+                growthWanted_ = true;
                 return nullptr;
             }
 
@@ -307,13 +336,13 @@ namespace CNA::Studio
                     const std::size_t source =
                         static_cast<std::size_t>(row) * glyph.width + column;
                     const std::size_t destination =
-                        (static_cast<std::size_t>(atlasY + row) * kAtlasSize
+                        (static_cast<std::size_t>(atlasY + row) * static_cast<std::size_t>(size_)
                          + static_cast<std::size_t>(atlasX + column)) * 4;
                     pixels_[destination + 3] = coverage[source];
                 }
             }
 
-            constexpr float inverse = 1.0f / static_cast<float>(kAtlasSize);
+            const float inverse = 1.0f / static_cast<float>(size_);
             glyph.u0 = static_cast<float>(atlasX) * inverse;
             glyph.v0 = static_cast<float>(atlasY) * inverse;
             glyph.u1 = static_cast<float>(atlasX + glyph.width) * inverse;
@@ -445,21 +474,49 @@ namespace CNA::Studio
         UiTextureRequest request;
         request.action = UiTextureAction::Create;
         request.texture = kTextureId;
-        request.width = kAtlasSize;
-        request.height = kAtlasSize;
+        request.width = size_;
+        request.height = size_;
         request.updateX = 0;
         request.updateY = 0;
-        request.updateWidth = kAtlasSize;
-        request.updateHeight = kAtlasSize;
+        request.updateWidth = size_;
+        request.updateHeight = size_;
         request.pixels = pixels_.data();
-        request.pitch = kAtlasSize * 4;
+        request.pitch = size_ * 4;
         dirty_ = false;
         return request;
     }
 
     float StudioFontAtlas::occupancy() const
     {
-        constexpr float total = static_cast<float>(kAtlasSize) * static_cast<float>(kAtlasSize);
+        const float total = static_cast<float>(size_) * static_cast<float>(size_);
         return static_cast<float>(impl_->packedArea) / total;
+    }
+
+    bool StudioFontAtlas::growIfNeeded()
+    {
+        if (!growthWanted_) { return false; }
+        growthWanted_ = false;
+
+        // At the cap the drops stand, and `droppedGlyphs()` keeps reporting them. Growing past a
+        // limit nobody chose is how a UI comes to allocate a quarter of a gigabyte for a font.
+        if (size_ >= kMaxAtlasSize) { return false; }
+
+        reset(size_ * 2);
+
+        // The caches go with the old atlas. Every cached glyph holds texture coordinates
+        // normalised by the *old* side, so keeping them would sample the right rectangle of the
+        // wrong texture -- letters drawn out of pieces of other letters, which reads as a corrupt
+        // font rather than as an atlas that moved.
+        for (auto& [key, face] : impl_->faces)
+        {
+            (void)key;
+            face.glyphs_.clear();
+        }
+
+        // And the count, because the glyphs it counted are about to be tried again. A count that
+        // survived would report an atlas as full while it was filling up.
+        dropped_ = 0;
+        ++growths_;
+        return true;
     }
 } // namespace CNA::Studio

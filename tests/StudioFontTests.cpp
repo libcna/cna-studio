@@ -15,6 +15,7 @@
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -130,8 +131,8 @@ CNA_STUDIO_TEST(RasterisedGlyphsActuallyHaveCoverageInTheAtlas)
     const StudioGlyph* glyph = face.glyph(U'H');
     CNA_STUDIO_EXPECT(glyph != nullptr && glyph->hasInk());
 
-    const int x = static_cast<int>(glyph->u0 * StudioFontAtlas::kAtlasSize);
-    const int y = static_cast<int>(glyph->v0 * StudioFontAtlas::kAtlasSize);
+    const int x = static_cast<int>(glyph->u0 * atlas.size());
+    const int y = static_cast<int>(glyph->v0 * atlas.size());
 
     std::size_t opaque = 0;
     for (int row = 0; row < glyph->height; ++row)
@@ -139,7 +140,7 @@ CNA_STUDIO_TEST(RasterisedGlyphsActuallyHaveCoverageInTheAtlas)
         for (int column = 0; column < glyph->width; ++column)
         {
             const std::size_t index =
-                (static_cast<std::size_t>(y + row) * StudioFontAtlas::kAtlasSize
+                (static_cast<std::size_t>(y + row) * atlas.size()
                  + static_cast<std::size_t>(x + column)) * 4;
             if (atlas.pixels()[index + 3] > 200) { ++opaque; }
         }
@@ -151,10 +152,10 @@ CNA_STUDIO_TEST(RasterisedGlyphsActuallyHaveCoverageInTheAtlas)
 CNA_STUDIO_TEST(TheAtlasReservesAnOpaqueWhiteTexelForUntexturedGeometry)
 {
     StudioFontAtlas atlas;
-    const int x = static_cast<int>(atlas.whitePixelU() * StudioFontAtlas::kAtlasSize);
-    const int y = static_cast<int>(atlas.whitePixelV() * StudioFontAtlas::kAtlasSize);
+    const int x = static_cast<int>(atlas.whitePixelU() * atlas.size());
+    const int y = static_cast<int>(atlas.whitePixelV() * atlas.size());
     const std::size_t index =
-        (static_cast<std::size_t>(y) * StudioFontAtlas::kAtlasSize
+        (static_cast<std::size_t>(y) * atlas.size()
          + static_cast<std::size_t>(x)) * 4;
 
     CNA_STUDIO_EXPECT_EQ(static_cast<int>(atlas.pixels()[index + 0]), 255);
@@ -206,9 +207,9 @@ CNA_STUDIO_TEST(TheAtlasUploadRequestIsWellFormedAndClearsTheDirtyFlag)
     const UiTextureRequest request = atlas.takeUploadRequest();
     CNA_STUDIO_EXPECT(request.action == UiTextureAction::Create);
     CNA_STUDIO_EXPECT_EQ(request.texture, StudioFontAtlas::kTextureId);
-    CNA_STUDIO_EXPECT_EQ(request.width, StudioFontAtlas::kAtlasSize);
-    CNA_STUDIO_EXPECT_EQ(request.height, StudioFontAtlas::kAtlasSize);
-    CNA_STUDIO_EXPECT_EQ(request.pitch, StudioFontAtlas::kAtlasSize * 4);
+    CNA_STUDIO_EXPECT_EQ(request.width, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(request.height, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(request.pitch, atlas.size() * 4);
     CNA_STUDIO_EXPECT(request.pixels == atlas.pixels().data());
     CNA_STUDIO_EXPECT(!atlas.hasPendingUpload());
 
@@ -489,4 +490,183 @@ CNA_STUDIO_TEST(TextScalesWithDpiRatherThanBeingStretched)
                       / static_cast<float>(small.glyph(U'H')->height);
     CNA_STUDIO_EXPECT(ratio > 1.8f);
     CNA_STUDIO_EXPECT(ratio < 2.2f);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Growing the atlas when it fills (STUDIO-04018)
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /**
+     * @brief Rasterises glyphs into @p atlas until it runs out of room, or @p rounds are spent.
+     *
+     * Distinct *sizes* rather than distinct code points, because the shipped faces have a few
+     * hundred outlines between them and the atlas holds more than that. One face per size, each
+     * with its own cache, is an unlimited supply of rectangles to pack -- and it is also what
+     * actually fills a real atlas: a UI at 2x DPI rasterising a dozen theme sizes in two weights.
+     *
+     * @return Whether the atlas ran out of room.
+     */
+    bool fillUntilFull(StudioFontAtlas& atlas, int rounds = 400)
+    {
+        for (int round = 0; round < rounds; ++round)
+        {
+            const float sizePx = 40.0f + static_cast<float>(round);
+            const StudioFontFace& face = atlas.face(StudioTypeface::SansRegular, sizePx);
+            for (char32_t c = U'A'; c <= U'Z'; ++c) { (void)face.glyph(c); }
+            for (char32_t c = U'a'; c <= U'z'; ++c) { (void)face.glyph(c); }
+            if (atlas.droppedGlyphs() > 0) { return true; }
+        }
+        return false;
+    }
+}
+
+CNA_STUDIO_TEST(AnAtlasThatFillsGrowsRatherThanLosingTheTextForGood)
+{
+    StudioFontAtlas atlas;
+    CNA_STUDIO_EXPECT_EQ(atlas.size(), StudioFontAtlas::kInitialAtlasSize);
+
+    CNA_STUDIO_EXPECT(fillUntilFull(atlas));
+    CNA_STUDIO_EXPECT(atlas.droppedGlyphs() > 0);
+
+    // Not yet: the frame that ran out draws without them, because moving the glyphs mid-frame
+    // would move them out from under quads already emitted against the old coordinates.
+    CNA_STUDIO_EXPECT_EQ(atlas.size(), StudioFontAtlas::kInitialAtlasSize);
+
+    CNA_STUDIO_EXPECT(atlas.growIfNeeded());
+    CNA_STUDIO_EXPECT_EQ(atlas.size(), StudioFontAtlas::kInitialAtlasSize * 2);
+    CNA_STUDIO_EXPECT_EQ(atlas.growths(), std::size_t{1});
+
+    // And the count goes, because the glyphs it counted are about to be tried again. A count that
+    // survived would report an atlas as full while it was filling up.
+    CNA_STUDIO_EXPECT_EQ(atlas.droppedGlyphs(), std::size_t{0});
+
+    // The glyph that would not fit fits now. Asked for at the size that was being rasterised when
+    // the room ran out, so this is the text that was lost rather than any text at all.
+    const StudioFontFace& face = atlas.face(StudioTypeface::SansRegular, 40.0f);
+    const StudioGlyph* glyph = face.glyph(U'H');
+    CNA_STUDIO_EXPECT(glyph != nullptr && glyph->hasInk());
+    CNA_STUDIO_EXPECT_EQ(atlas.droppedGlyphs(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(GrowingInvalidatesTheOldTextureCoordinatesRatherThanKeepingThem)
+{
+    // The failure this prevents does not look like a missing glyph. Coordinates are normalised by
+    // the atlas side, so a cached glyph kept across a doubling samples a quarter-size rectangle in
+    // the wrong place: letters drawn out of pieces of other letters, which reads as a corrupt font.
+    StudioFontAtlas atlas;
+    const StudioGlyph before = *atlas.face(StudioTypeface::SansRegular, 40.0f).glyph(U'H');
+
+    CNA_STUDIO_EXPECT(fillUntilFull(atlas));
+    CNA_STUDIO_EXPECT(atlas.growIfNeeded());
+
+    const StudioGlyph* after = atlas.face(StudioTypeface::SansRegular, 40.0f).glyph(U'H');
+    CNA_STUDIO_EXPECT(after != nullptr);
+    if (after == nullptr) { return; }
+
+    // The metrics are the font's and do not move; the coordinates are the atlas's and do.
+    CNA_STUDIO_EXPECT_EQ(after->width, before.width);
+    CNA_STUDIO_EXPECT_EQ(after->height, before.height);
+    CNA_STUDIO_EXPECT(std::abs(after->advance - before.advance) < 0.001f);
+    CNA_STUDIO_EXPECT(std::abs(after->u1 - after->u0)
+                      < std::abs(before.u1 - before.u0) * 0.75f);
+
+    // And the ink is really there, at the new coordinates rather than only near them.
+    const int x = static_cast<int>(after->u0 * static_cast<float>(atlas.size()));
+    const int y = static_cast<int>(after->v0 * static_cast<float>(atlas.size()));
+    std::size_t opaque = 0;
+    for (int row = 0; row < after->height; ++row)
+    {
+        for (int column = 0; column < after->width; ++column)
+        {
+            const std::size_t index =
+                (static_cast<std::size_t>(y + row) * static_cast<std::size_t>(atlas.size())
+                 + static_cast<std::size_t>(x + column)) * 4;
+            if (atlas.pixels()[index + 3] > 200) { ++opaque; }
+        }
+    }
+    CNA_STUDIO_EXPECT(opaque > static_cast<std::size_t>(after->width));
+}
+
+CNA_STUDIO_TEST(AGrownAtlasUploadsAtItsNewSizeAndTheWhiteTexelIsStillWhite)
+{
+    // The renderer is told the size on every upload, so a grown atlas has to describe itself --
+    // and the white texel every untextured primitive samples has to survive the move, or a frame
+    // of panels and borders comes back sampling whatever landed where it used to be.
+    StudioFontAtlas atlas;
+    (void)atlas.takeUploadRequest();
+
+    CNA_STUDIO_EXPECT(fillUntilFull(atlas));
+    CNA_STUDIO_EXPECT(atlas.growIfNeeded());
+    CNA_STUDIO_EXPECT(atlas.hasPendingUpload());
+
+    const UiTextureRequest request = atlas.takeUploadRequest();
+    CNA_STUDIO_EXPECT_EQ(request.width, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(request.height, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(request.updateWidth, atlas.size());
+    CNA_STUDIO_EXPECT_EQ(request.pitch, atlas.size() * 4);
+    CNA_STUDIO_EXPECT_EQ(static_cast<std::size_t>(request.pitch) * atlas.size(),
+                         atlas.pixels().size());
+
+    const int x = static_cast<int>(atlas.whitePixelU() * static_cast<float>(atlas.size()));
+    const int y = static_cast<int>(atlas.whitePixelV() * static_cast<float>(atlas.size()));
+    const std::size_t index =
+        (static_cast<std::size_t>(y) * static_cast<std::size_t>(atlas.size())
+         + static_cast<std::size_t>(x)) * 4;
+    CNA_STUDIO_EXPECT_EQ(static_cast<int>(atlas.pixels()[index + 0]), 255);
+    CNA_STUDIO_EXPECT_EQ(static_cast<int>(atlas.pixels()[index + 3]), 255);
+}
+
+CNA_STUDIO_TEST(AFrameGrowsTheAtlasBeforeAnyPassRatherThanDuringOne)
+{
+    // Where the growth happens is the whole of why this is safe, so it is asserted rather than
+    // left to the comment: a frame that grew between its passes would have measured against one
+    // atlas and drawn against another.
+    StudioFontAtlas atlas;
+    StudioFrame frame{StudioTheme::dark()};
+    frame.setFontAtlas(&atlas);
+
+    CNA_STUDIO_EXPECT(fillUntilFull(atlas));
+    const int full = atlas.size();
+
+    UiInputState input;
+    input.displayWidth = 400.0f;
+    input.displayHeight = 300.0f;
+
+    int sizeDuringInput = 0;
+    int sizeDuringDraw = 0;
+    runStudioFrame(frame, input, [&](StudioFrame& pass) {
+        if (pass.isInputPass()) { sizeDuringInput = atlas.size(); }
+        if (pass.isDrawPass()) { sizeDuringDraw = atlas.size(); }
+    });
+
+    CNA_STUDIO_EXPECT_EQ(sizeDuringInput, full * 2);
+    CNA_STUDIO_EXPECT_EQ(sizeDuringDraw, full * 2);
+    CNA_STUDIO_EXPECT_EQ(atlas.growths(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(frame.phaseViolations(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(TheAtlasStopsGrowingAtItsCapAndGoesBackToCountingWhatItDrops)
+{
+    // Growing past a limit nobody chose is how a UI comes to allocate a quarter of a gigabyte for
+    // a font. At the cap the honest answer -- a count of what was lost -- is the one that is left.
+    StudioFontAtlas atlas;
+
+    int guard = 0;
+    while (atlas.size() < StudioFontAtlas::kMaxAtlasSize && guard++ < 8)
+    {
+        CNA_STUDIO_EXPECT(fillUntilFull(atlas, 2000));
+        CNA_STUDIO_EXPECT(atlas.growIfNeeded());
+        CNA_STUDIO_EXPECT(atlas.size() <= StudioFontAtlas::kMaxAtlasSize);
+    }
+    CNA_STUDIO_EXPECT_EQ(atlas.size(), StudioFontAtlas::kMaxAtlasSize);
+
+    CNA_STUDIO_EXPECT(fillUntilFull(atlas, 2000));
+    CNA_STUDIO_EXPECT(!atlas.growIfNeeded());
+    CNA_STUDIO_EXPECT_EQ(atlas.size(), StudioFontAtlas::kMaxAtlasSize);
+
+    // Still counted, and not reset by a growth that did not happen: this is the state in which
+    // `droppedGlyphs()` means text really is being lost.
+    CNA_STUDIO_EXPECT(atlas.droppedGlyphs() > 0);
 }

@@ -146,7 +146,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **173 of 488 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **174 of 488 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -172,10 +172,11 @@ and **a drop-down over a deferred popup** — the facility that lets a popup esc
 opened in, **typed drag and drop**, and **a modal dialog** — a window that owns the frame until it
 is answered, which is what About, Save Layout As and every confirmation are built on.
 
-**Phase 4 — CNAEXT UI renderer** (11 of 19). Vertex management, batching, nested scissor clipping,
+**Phase 4 — CNAEXT UI renderer** (12 of 19). Vertex management, batching, nested scissor clipping,
 rounded rectangles, clip culling, real text with kerning and correct baselines, **twenty-three
-icons drawn as vector paths** with no vendored asset, and the guard that checks the host key map
-against Studio's own key vocabulary.
+icons drawn as vector paths** with no vendored asset, **a glyph atlas that doubles rather than
+losing text** and says so in Diagnostics, and the guard that checks the host key map against
+Studio's own key vocabulary.
 
 **Phase 5 — Docking** (14 of 15). The dock node tree, splits, draggable splitters with
 minimum sizes and cursor shapes, tab strips, opening and closing panels, serialization, restoring
