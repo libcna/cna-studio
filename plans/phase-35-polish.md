@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 12 of 36 complete `███░░░░░░░░░`
+**Progress:** 13 of 37 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -69,6 +69,7 @@ truth rather than any one product's expression of it.
 | `STUDIO-35052` | An orientation widget in the viewport corner | ⬜ | `STUDIO-35050` |
 | `STUDIO-35053` | Selection feedback in the viewport: outline, pivot, bounds | ⬜ | — |
 | `STUDIO-35060` | World Outliner: a visibility toggle on every row | ✅ | `STUDIO-35031` |
+| `STUDIO-35063` | Guard test: a row's trailing toggle is drawn over the row fill, not under it | ✅ | `STUDIO-35060` |
 | `STUDIO-35062` | A lock concept in the scene document, and its outliner affordance | ⬜ | `STUDIO-35060` |
 | `STUDIO-35061` | World Outliner: search, filter and prefab indicators | ⬜ | `STUDIO-35031` |
 | `STUDIO-35070` | Status bar density and legibility | ✅ | `STUDIO-35021` |
@@ -356,9 +357,37 @@ is the frame it was there. Only the *drawing* is conditional.
 **And the label stops where the toggle starts, hovered or not.** Text that reflowed as the pointer
 crossed a row would be the most distracting thing in the panel.
 
-**A press on the toggle is not a press on the row.** The toggle is described before the row's own
-drawing so it wins the click, and the panel returns after handling it rather than falling through —
-handling both would hide an entity and select it in one gesture.
+**A press on the toggle is not a press on the row.** The toggle is described after the row so it
+wins the click — the later of two overlapping widgets is the one a press lands on — and the panel
+returns after handling it rather than falling through, because handling both would hide an entity
+and select it in one gesture.
+
+**Interaction there, drawing further down.** See `STUDIO-35063`.
+
+### `STUDIO-35063` — Guard test: the toggle is drawn over the row fill
+
+**Acceptance.** A tree row drawn with its toggle shown has something other than the row's own
+background as the last geometry in the strip the toggle occupies.
+
+**The defect it closes, which had already happened twice.** A tree row is described as *one widget
+covering the whole line*, so anything that has to win the click against it is described before it —
+and is therefore drawn before the row's background, which then paints over it.
+
+The disclosure triangle went first, and it presented as a data problem: expandable rows lost their
+triangle on alternate lines only, because the alternating fill is the one that was covering it. The
+visibility toggle went second and presented as nothing at all. The click toggled, the tooltip
+appeared, the panel test asserted `toggledRowAction`, the outliner test asserted `toggleOn` — and
+the eye was never once on screen. **A feature that works and cannot be seen is worse than one that
+is missing, because nothing reports it.**
+
+**Asserted on the geometry, not on a capture.** A golden image would catch this, but only if the
+golden had been taken while the toggle was right; the golden for a row nobody has hovered would
+have been taken while it was wrong, and would then have defended the defect. The test walks the
+emitted vertices and requires the last one in the toggle's strip not to carry the fill colour.
+
+**Verified by reintroducing the defect.** The test fails against the original drawing order and
+passes against the corrected one; an ordering assertion that has never been shown to fail is an
+assertion about nothing.
 
 ### `STUDIO-35062` — A lock concept in the scene document
 

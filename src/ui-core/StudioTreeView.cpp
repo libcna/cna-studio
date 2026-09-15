@@ -226,42 +226,53 @@ namespace CNA::Studio
                 continue;
             }
 
-            // The trailing toggle, described before the row's own drawing so it wins the click
-            // against the row underneath it -- the row is one widget covering the whole line, and a
-            // button described after it would be a button the row swallows every press of.
+            // The trailing toggle, described after the row so it wins the click against it -- the
+            // row is one widget covering the whole line, and the later of two overlapping widgets
+            // is the one a press lands on.
+            //
+            // Interaction here, *drawing* further down, for the same reason the disclosure triangle
+            // above is deferred: everything below this point paints the row's background over
+            // whatever was drawn before it. Drawing the toggle here put the selection, hover and
+            // alternating fills straight over the eye, and the symptom was a feature that worked --
+            // the click toggled, the tooltip appeared, the tests passed -- and could not be seen.
+            bool toggleVisible = false;
+            UiRect toggleBox;
+            StudioIcon toggleGlyph = StudioIcon::None;
+            StudioControlState toggleState = StudioControlState::Normal;
+
             if (row.toggleIcon != StudioIcon::None)
             {
                 const float size = metricOf(theme, StudioMetric::IconSize);
-                const UiRect box{rowBounds.right() - padding - size,
-                                 std::round(rowBounds.centerY() - size * 0.5f), size, size};
+                toggleBox = UiRect{rowBounds.right() - padding - size,
+                                   std::round(rowBounds.centerY() - size * 0.5f), size, size};
 
-                // Drawn only while the row is hovered or the toggle is off, which is what every
+                // Described in both passes and at the same size either way, so the hit area does
+                // not appear and vanish under the pointer; only the drawing is conditional. A
+                // button that existed only while hovered would be one a user cannot click, because
+                // the frame in which they press is the frame it was there.
+                const WidgetId toggleId = frame.ids().make("toggle");
+                const StudioInteraction toggle =
+                    frame.interact(toggleId, toggleBox, /*enabled=*/true);
+
+                if (!row.toggleTooltip.empty())
+                {
+                    (void)frame.requestTooltip(toggleId, row.toggleTooltip, toggleBox);
+                }
+                if (frame.isInputPass() && toggle.clicked) { result.toggledRowAction = index; }
+
+                // Shown only while the row is hovered or the toggle is off, which is what every
                 // outliner that has one does: a column of forty identical eyes is a column of
                 // noise, and the rows that matter are the ones *not* in the default state.
-                const bool show = interaction.hovered || !row.toggleOn;
-
-                StudioButtonOptions options;
-                options.icon = (!row.toggleOn && row.toggleOffIcon != StudioIcon::None)
+                toggleVisible = interaction.hovered || toggle.hovered || !row.toggleOn;
+                toggleGlyph = (!row.toggleOn && row.toggleOffIcon != StudioIcon::None)
                     ? row.toggleOffIcon
                     : row.toggleIcon;
-                options.iconOnly = true;
-                options.kind = StudioButtonKind::Ghost;
-                options.tooltip = row.toggleTooltip;
-                options.focusable = false;
+                toggleState = toggle.held ? StudioControlState::Pressed
+                            : toggle.hovered ? StudioControlState::Hover
+                                             : StudioControlState::Normal;
 
-                // Described in both passes either way, so the hit area does not appear and vanish
-                // under the pointer; only the *drawing* is conditional. A button that existed only
-                // while hovered would be one a user cannot click, because the frame in which they
-                // press is the frame it was there.
-                const bool clicked = show
-                    ? studioButton(frame, frame.ids().make("toggle"), box, row.toggleTooltip,
-                                   options).activated
-                    : frame.interact(frame.ids().make("toggle"), box, /*enabled=*/true).clicked;
-
-                if (frame.isInputPass() && clicked) { result.toggledRowAction = index; }
-
-                // And the label stops where the toggle starts, hovered or not: text that reflowed
-                // as the pointer crossed a row would be the most distracting thing in the panel.
+                // And the label stops where the toggle starts, shown or not: text that reflowed as
+                // the pointer crossed a row would be the most distracting thing in the panel.
                 cursor.splitRight(std::min(cursor.width, size + padding));
             }
 
@@ -318,6 +329,21 @@ namespace CNA::Studio
                     drawDisclosure(frame, disclosure, expanded,
                                    theme.color(disclosureHovered ? StudioColorRole::TextPrimary
                                                                  : StudioColorRole::TextSecondary));
+                }
+
+                // And the toggle, for the same reason. Its own surface only when the pointer is on
+                // it: a ghost button's whole point is that it is an icon until it is a target.
+                if (toggleVisible && toggleGlyph != StudioIcon::None)
+                {
+                    if (toggleState != StudioControlState::Normal)
+                    {
+                        frame.drawList().fillRoundedRect(
+                            toggleBox.inset(UiEdges{-2.0f, -2.0f, -2.0f, -2.0f}),
+                            theme.controlBackground(toggleState),
+                            metricOf(theme, StudioMetric::CornerRadius));
+                    }
+                    studioDrawIcon(frame, toggleBox, toggleGlyph,
+                                   theme.controlText(toggleState));
                 }
 
                 const StudioColorRole labelRole = (!row.enabled || row.muted)

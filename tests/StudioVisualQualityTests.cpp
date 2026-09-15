@@ -318,3 +318,92 @@ CNA_STUDIO_TEST(EveryPrimitiveTheDrawListEmitsNamesADrawableTexture)
     }
     CNA_STUDIO_EXPECT(commands > 0);
 }
+
+// ------------------------------------------------------------------------------------------------
+// Paint order: a row's own background is drawn over everything described before it (STUDIO-35063)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(ARowsTrailingToggleIsDrawnOverTheRowFillRatherThanUnderIt)
+{
+    // The third time this exact defect has appeared, and the reason it gets a test rather than
+    // another fix: a tree row is described as *one widget covering the whole line*, so anything
+    // described before the row's background -- because it has to win the click against it -- is
+    // drawn before that background too, and is then painted over by it.
+    //
+    // The disclosure triangle went first, and looked like a data problem: expandable rows lost
+    // their triangle on alternate lines only, which is where the alternating fill is. The
+    // visibility toggle went second, and looked like nothing at all: the click toggled, the
+    // tooltip appeared, every unit test passed, and the eye was never on screen. A feature that
+    // works and cannot be seen is worse than one that is missing, because nothing reports it.
+    //
+    // Asserted on the geometry rather than on a capture. A screenshot comparison would catch this
+    // too, but only against a golden taken while it was right, and the golden for a row nobody had
+    // hovered would have been taken while it was wrong.
+    StudioFrame frame;
+    frame.setTheme(StudioTheme::dark());
+
+    UiInputState input;
+    input.displayWidth = 400.0f;
+    input.displayHeight = 200.0f;
+
+    std::vector<StudioTreeRow> rows;
+    StudioTreeRow row;
+    row.id = "entity";
+    row.label = "Key Light";
+    // Off rather than on, so the toggle is shown without needing the pointer on the row: what is
+    // being tested is the paint order, and hovering is a second thing that can fail.
+    row.toggleIcon = StudioIcon::Visible;
+    row.toggleOffIcon = StudioIcon::Hidden;
+    row.toggleOn = false;
+    // Selected, so the row draws the largest fill it has. An alternating fill would do, but the
+    // selection fill is the one that covers every pixel of the line.
+    row.selected = true;
+    rows.push_back(row);
+
+    StudioTreeState state;
+
+    frame.beginFrame(input);
+    frame.beginInput();
+    (void)studioTreeView(frame, UiRect{0.0f, 0.0f, 400.0f, 200.0f}, rows, state, "");
+    frame.beginDraw();
+    const StudioTreeResult drawn =
+        studioTreeView(frame, UiRect{0.0f, 0.0f, 400.0f, 200.0f}, rows, state, "");
+    frame.endFrame();
+
+    CNA_STUDIO_EXPECT_EQ(drawn.rowsDrawn, static_cast<std::size_t>(1));
+
+    const std::uint32_t fill = packUiColor(frame.theme().color(StudioColorRole::Selection));
+
+    // The toggle sits in the rightmost strip of the row, which is the only part of this the test
+    // needs to know about the layout: an icon's width from the right edge, less the padding.
+    const float strip = 400.0f
+                      - static_cast<float>(frame.theme().metric(StudioMetric::IconSize))
+                      - static_cast<float>(frame.theme().metric(StudioMetric::SpacingMedium))
+                            * 2.0f;
+
+    std::size_t seen = 0;
+    std::size_t lastFill = 0;
+    std::size_t lastOther = 0;
+    std::size_t index = 0;
+
+    for (const UiDrawList& list : frame.drawData().lists)
+    {
+        for (const UiVertex& vertex : list.vertices)
+        {
+            ++index;
+            if (vertex.x < strip) { continue; }
+            ++seen;
+            if (vertex.rgba == fill) { lastFill = index; }
+            else { lastOther = index; }
+        }
+    }
+
+    // Something was drawn in that strip at all -- otherwise every assertion below holds vacuously,
+    // which is the state this test exists to rule out.
+    CNA_STUDIO_EXPECT(seen > 0);
+    CNA_STUDIO_EXPECT(lastFill > 0);
+    CNA_STUDIO_EXPECT(lastOther > 0);
+
+    // And the last thing drawn there is not the row's own background.
+    CNA_STUDIO_EXPECT(lastOther > lastFill);
+}
