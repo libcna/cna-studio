@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <cstring>
 #include <map>
 #include <fstream>
 #include <string>
@@ -711,6 +712,68 @@ CNA_STUDIO_TEST(TheMasterPlanTableAgreesWithEveryPhaseFile)
         CnaStudioTest::reportFailure(__FILE__, __LINE__,
             "plan.md's headline does not read '**" + headline
             + "**', which is what its own phase table adds up to.");
+    }
+}
+
+CNA_STUDIO_TEST(ThePlansStatusBreakdownAddsUpAndMatchesThePhaseFiles)
+{
+    // Found stale, by five tasks and by a total that did not add up to its own bottom row:
+    // 162 + 10 + 310 + 2 + 4 is 488 under a header saying 490. Nothing checked it, because the
+    // guard above checks the *phase table* and the headline and stops there -- so this table sat
+    // beside a checked one looking exactly as authoritative and being wrong.
+    static const std::pair<const char*, const char*> kRows[] = {
+        {"✅", "| ✅ Complete | "},
+        {"🔄", "| 🔄 In progress | "},
+        {"⬜", "| ⬜ Not started | "},
+        {"⛔", "| ⛔ Deferred | "},
+        {"🔬", "| 🔬 Blocked | "},
+    };
+
+    std::map<std::string, std::size_t> actual;
+    std::size_t totalTasks = 0;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator{sourceRoot() / "plans"})
+    {
+        if (entry.path().extension() != ".md") { continue; }
+        const std::string name = entry.path().filename().string();
+        if (name.size() < 8 || name.rfind("phase-", 0) != 0) { continue; }
+
+        for (const PlanTask& task : readPhaseTasks(entry.path()))
+        {
+            ++actual[task.status];
+            ++totalTasks;
+        }
+    }
+
+    const std::string plan = readFileOrEmpty(sourceRoot() / "plan.md");
+    std::size_t declaredSum = 0;
+    for (const auto& [symbol, prefix] : kRows)
+    {
+        const std::size_t at = plan.find(prefix);
+        if (at == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"plan.md has no status row starting '"} + prefix + "'.");
+            continue;
+        }
+        const std::size_t declared =
+            static_cast<std::size_t>(std::stoul(plan.substr(at + std::strlen(prefix))));
+        declaredSum += declared;
+        if (declared != actual[symbol])
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"plan.md's status breakdown says "} + std::to_string(declared) + " "
+                + symbol + " tasks; the phase files hold " + std::to_string(actual[symbol]) + ".");
+        }
+    }
+
+    // And the column adds up to its own total, which is a separate failure: a breakdown can have
+    // every row right and a bottom line that was typed rather than summed.
+    CNA_STUDIO_EXPECT_EQ(declaredSum, totalTasks);
+    if (plan.find("| **Total** | **" + std::to_string(totalTasks) + "** |") == std::string::npos)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            "plan.md's status breakdown does not total " + std::to_string(totalTasks) + ".");
     }
 }
 

@@ -306,20 +306,27 @@ namespace CNA::Studio
                 renderer_ = std::make_unique<CnaUiRenderer>();
                 renderer_->initialize(getGraphicsDeviceProperty());
 
-                capabilities_ = evaluateStudioHost(captureStudioCapabilitySnapshot(
-                    getGraphicsDeviceProperty(), getHostPlatformName(),
-                    /*modernApiAvailable=*/true));
+                // STUDIO-02071/02072: both profiles, from what the build actually carries. The
+                // literal `true` that used to sit here reported what this call site asserted
+                // rather than what CNA was configured with.
+                assessment_ = assessStudioHost(getGraphicsDeviceProperty(), getHostPlatformName(),
+                                               options_.allowCompatibilityUiRenderer);
+                capabilities_ = assessment_.effective();
 
-                if (options_.reportCapabilities || !capabilities_.canHostStudio)
+                if (options_.reportCapabilities || !assessment_.canHostStudio())
                 {
                     std::cout << capabilities_.report();
+                    std::cout << "  UI renderer: "
+                              << studioUiBackendChoiceName(assessment_.decision.choice) << " -- "
+                              << assessment_.decision.reason << "\n";
                 }
 
-                if (!capabilities_.canHostStudio)
+                if (!assessment_.canHostStudio())
                 {
                     // STUDIO-02022, on the native shell too: refuse with the reason rather than
                     // open a window that cannot draw.
                     std::cerr << capabilities_.diagnostic();
+                    std::cerr << assessment_.decision.reason << "\n";
                     Exit();
                     return;
                 }
@@ -348,6 +355,20 @@ namespace CNA::Studio
                 log_.append(LogSeverity::Info,
                             "CNA Studio on the " + CnaUiRenderer::getBackendName()
                             + " renderer, " + getHostPlatformName() + " platform.");
+                log_.append(LogSeverity::Info,
+                            "Modern graphics API: " + assessment_.modernApi.detail + ".");
+                if (assessment_.modernApi.versionMismatch)
+                {
+                    log_.append(LogSeverity::Warning,
+                                "The CNAEXT engine layer's header and library report different "
+                                "revisions. Rebuild CNA and Studio together.");
+                }
+                // A warning rather than an info line, and it says what is lost. A tool quietly on
+                // its fallback renderer is a tool whose missing features get reported as bugs.
+                if (assessment_.decision.choice == StudioUiBackendChoice::Compatibility)
+                {
+                    log_.append(LogSeverity::Warning, assessment_.decision.reason);
+                }
                 // Only what is *not* met. A console that recited twenty satisfied requirements
                 // on every start would train the user to scroll past the one that matters.
                 for (const StudioRequirementOutcome& outcome : capabilities_.unmetRecommended())
@@ -661,6 +682,7 @@ namespace CNA::Studio
             std::unique_ptr<Xna::GraphicsDeviceManager> graphics_;
             std::unique_ptr<CnaUiPlatform> platform_;
             std::unique_ptr<CnaUiRenderer> renderer_;
+            StudioHostAssessment assessment_;
             std::unique_ptr<StudioShell> shell_;
 
             StudioHostEvaluation capabilities_;

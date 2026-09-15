@@ -4,17 +4,21 @@
 
 **Purpose.** Draw the Studio UI through CNA's public modern graphics API: text, icons, batching, clipping, render resources and DPI, with no renderer-specific code.
 
-**Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation.
+**Exit criteria.** The UI draws correctly and efficiently on every renderer that satisfies the host capability contract, with one implementation, **through CNA's modern graphics API**.
 
-**Progress:** 15 of 20 complete `█████████░░░`
+> **This phase's ledger was reconciled by `STUDIO-04022` after the audit in `STUDIO-04021`.** Read
+> that section before reading the table: several tasks were ✅ against a classic XNA implementation
+> in a phase named for the modern one, and the corrections are recorded rather than quietly applied.
+
+**Progress:** 17 of 28 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-04001` | Create the `cna-studio-ui-renderer` module inside the CNA-linking boundary | ⬜ | `STUDIO-03014`, `STUDIO-02020` |
-| `STUDIO-04002` | Vertex and index buffer management for UI geometry | ✅ | `STUDIO-04001` |
+| `STUDIO-04002` | CPU-side vertex and index assembly for UI geometry | ✅ | — |
 | `STUDIO-04003` | Draw-call batching by texture, clip rectangle and blend state | ✅ | `STUDIO-04002` |
 | `STUDIO-04004` | Scissor-based clipping, including nested clip stacks | ✅ | `STUDIO-04002` |
-| `STUDIO-04005` | Font atlas construction and glyph rasterization | ✅ | `STUDIO-04001` |
+| `STUDIO-04005` | Font atlas construction and glyph rasterization | ✅ | — |
 | `STUDIO-04006` | Text rendering with kerning, and correct baseline and line metrics | ✅ | `STUDIO-04005` |
 | `STUDIO-04007` | Dynamic glyph upload without frame stalls or dropped glyphs | ✅ | `STUDIO-04005` |
 | `STUDIO-04008` | Icons, drawn as vector paths rather than sampled | ✅ | — |
@@ -22,7 +26,7 @@
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss | ⬜ | `STUDIO-04002` |
 | `STUDIO-04011` | Window resize handling without artefacts | 🔄 | `STUDIO-04010` |
 | `STUDIO-04012` | Render-target composition for the viewport panel | ✅ | `STUDIO-04004` |
-| `STUDIO-04013` | Screenshot and readback support for visual testing | ✅ | `STUDIO-04001` |
+| `STUDIO-04013` | Screenshot and readback support for visual testing | ✅ | — |
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | 🔄 | `STUDIO-04013` |
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
@@ -30,14 +34,133 @@
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
 | `STUDIO-04019` | Font fallback, so text outside the shipped faces is readable rather than boxes | ⬜ | `STUDIO-04005` |
 | `STUDIO-04020` | Guard test: every key Studio can ask about is one the host reports | ✅ | — |
+| `STUDIO-04021` | Audit which CNA graphics API the UI actually reaches the GPU through | ✅ | — |
+| `STUDIO-04022` | Reconcile this phase's ledger with what was actually implemented | ✅ | `STUDIO-04021` |
+| `STUDIO-04023` | GPU vertex and index buffers for UI geometry | ⬜ | `STUDIO-04001` |
+| `STUDIO-04024` | `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect` | ⬜ | `STUDIO-04023` |
+| `STUDIO-04025` | A/B verification: both backends draw the same frame | ⬜ | `STUDIO-04024` |
+| `STUDIO-04026` | Default the native host to the modern backend | ⬜ | `STUDIO-04025` |
+| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04026` |
+| `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ⬜ | `STUDIO-04001` |
 
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
 
+### `STUDIO-04021` — Audit which CNA graphics API the UI actually reaches the GPU through
+
+**Acceptance.** The path from a widget call to a CNA graphics call is traced and written down, and
+the answer is established by reading the calls rather than by reading the names.
+
+**Done, and the answer was no.** `docs/UI-RENDER-PATH.md` holds the trace, the complete list of
+graphics calls the UI makes, the four layers the phrase "the Studio renderer" had been used for all
+four of, and the migration's stages. The short version: the native Studio UI reaches the GPU through
+`BasicEffect` and `DrawUserIndexedPrimitives` — the classic XNA 4.0 surface it inherited from the
+Dear ImGui prototype. `CnaUiRenderer.cpp` includes no CNAEXT header and would compile against a CNA
+built with `-DCNA_CNAEXT=OFF`.
+
+**Nothing was mis-stated on purpose, which is the part worth understanding.** The seam between the
+UI and the renderer is genuinely toolkit-independent; the native UI genuinely inherited a working
+renderer across it, and doing so was right — a strangler migration that also rewrote the GPU layer
+would have had no working state to fall back to. What none of that establishes is which CNA API the
+pixels come out of, and `UiDrawData` is the seam's *name*: inheriting the seam inherited the
+implementation behind it.
+
+**The audit found two live consequences** beyond the ledger: the host contract did not enforce its
+own headline (`STUDIO-02070`), and modern-API availability was a literal `true` at both host call
+sites (`STUDIO-02071`)
+
+### `STUDIO-04022` — Reconcile this phase's ledger with what was actually implemented
+
+**Acceptance.** No task in this phase is ✅ on the strength of work that a later task has to redo,
+and no ✅ task depends on a ⬜ one. Each affected row is corrected for a stated reason.
+
+**The inconsistency.** `STUDIO-04001` — create `cna-studio-ui-renderer` — was ⬜, and four ✅ tasks
+named it as a dependency. The module does not exist; the work was done in `cna-studio-viewport`,
+beside the scene renderer and the platform layer.
+
+Resolved one at a time, and the resolutions are deliberately not all the same. The table above is
+the record; these are the reasons.
+
+- **04002 — retitled, not reopened.** It read "Vertex and index buffer management for UI geometry"
+  and depended on `04001`. What exists is `StudioDrawList` plus two scratch `std::vector`s handed
+  to `DrawUserIndexedPrimitives`: vertex and index *assembly*, which is complete and is not buffer
+  management — there is no `VertexBuffer` anywhere in Studio. So the title now says what was built,
+  and the GPU half is `STUDIO-04023`, a **new** task. Reopening 04002 would have hidden a genuine
+  piece of remaining work inside a task somebody had already reasoned about and closed.
+- **04003 and 04004 — unchanged, and correctly so.** Batching by texture and clip rectangle lives
+  in `StudioDrawList`, and nested clipping is decided in the UI core; the renderer sets one scissor
+  rectangle per command, which both backends do identically. Both survive the migration untouched.
+  Not everything in a phase named for a renderer is renderer work.
+- **04005 and 04013 — dependency on `04001` dropped.** `StudioFontAtlas` links no CNA at all, and
+  readback is `GetBackBufferData` on the host rather than anything in the UI renderer. Neither ever
+  needed the module; the dependency was written when the phase was planned and never re-examined.
+- **04001 — still ⬜, and now with no ✅ task depending on it.** The module is stage 2 of the
+  migration and has not been created.
+
+**No status was changed to preserve a percentage**, and the phase's completion went *down* as a
+fraction — 15 of 20 to 17 of 28 — because eight real tasks were added and two were closed. A ledger
+that only ever improves is a ledger that is being managed rather than kept
+
+### `STUDIO-04023` — GPU vertex and index buffers for UI geometry
+
+**Acceptance.** A UI frame's geometry reaches the device through `DynamicVertexBuffer` and
+`DynamicIndexBuffer` with `SetData`, rather than through a user-pointer draw, and the buffers are
+reused across frames rather than reallocated.
+
+**Why it is separate from the shader.** These are two independent changes to the same file and they
+fail differently: a wrong buffer shows as geometry in the wrong place, a wrong shader as the right
+geometry in the wrong colours. Landing them together would make the first failure indistinguishable
+from the second.
+
+### `STUDIO-04024` — `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect`
+
+**Acceptance.** The UI's pixels are produced by a `ShaderEffect` Studio compiled, not by
+`BasicEffect`; the effect is authored once in GLSL and is renderer-neutral; nothing in Studio names
+a graphics backend.
+
+### `STUDIO-04025` — A/B verification: both backends draw the same frame
+
+**Acceptance.** The same `UiDrawData` rendered through both backends produces captures that match
+within a stated tolerance, and the comparison runs as a test rather than as a screenshot somebody
+looked at.
+
+**Not bit-exact**, and the tolerance is the point: a fixed-function path and a fragment shader
+resolve the same triangle's edge pixels differently, and demanding equality would either fail
+forever or be loosened until it asserted nothing.
+
+### `STUDIO-04026` — Default the native host to the modern backend
+
+**Acceptance.** `resolveStudioUiBackend` prefers the modern backend on a host that meets its
+profile, that host is what a release build gets, and the fallback is reached only by hosts that
+cannot run it.
+
+### `STUDIO-04027` — Remove the classic UI GPU path, or justify retaining it
+
+**Acceptance.** Either `CnaUiRenderer` is deleted, or the reason it stays is written down on this
+task with the renderers it serves named. Two full UI GPU stacks are not kept by default.
+
+**Blocked on more than `STUDIO-04026`.** CNA's `SOFTWARE` renderer cannot execute a shader, and it
+is the only renderer this project's CI can build (gap G-10). Deleting the classic path before a
+modern-capable renderer runs in CI would delete the only automated graphical coverage Studio has.
+`STUDIO-02074` retires the host profile that goes with it.
+
+### `STUDIO-04028` — UI render benchmarks: CPU time, upload bytes, counts, state changes
+
+**Acceptance.** A repeatable measurement of representative UI frames — idle shell, a large outliner,
+a large content browser, a details panel with many properties, typing, atlas growth, resize —
+reporting CPU generation time, upload bytes, vertex and index counts, draw calls, texture changes
+and clip changes. Run before and after the migration, so "the modern renderer is not slower" is a
+number rather than an impression.
+
 ### `STUDIO-04001` — Create the `cna-studio-ui-renderer` module inside the CNA-linking boundary
 
-**Acceptance.** Consumes `UiDrawData` and produces pixels; contains no UI toolkit header, preserving the seam that keeps the core CNA-free
+**Acceptance.** Consumes `UiDrawData` and produces pixels; contains no UI toolkit header, preserving the seam that keeps the core CNA-free.
+
+**Stage 2 of `docs/UI-RENDER-PATH.md`'s migration**, and it moves `CnaUiRenderer` in unchanged
+behind a `StudioUiRenderBackend` interface before anything new is written. A module created by
+*adding* the modern renderer to it would have one backend in it and one somewhere else, which is the
+arrangement that makes an A/B comparison impossible to write.
 
 ### `STUDIO-04003` — Draw-call batching by texture, clip rectangle and blend state
 

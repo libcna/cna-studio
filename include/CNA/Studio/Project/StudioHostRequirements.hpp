@@ -45,6 +45,43 @@
  * Requirements are added when the UI actually needs them, never speculatively. A contract padded
  * with everything Studio might one day want would refuse to start on renderers it works perfectly
  * well on, and the resulting pressure would be to ignore the contract rather than to fix it.
+ *
+ * ### Two profiles, because Studio has two UI render backends
+ *
+ * `STUDIO-02070`. The contract's headline has always been that hosting Studio needs a renderer
+ * capable of CNA's modern graphics API, and until that task the evaluation *carried* modern-API
+ * availability into its report and **consulted it nowhere**. A renderer with no modern API at all
+ * passed `canHostStudio` on the strength of `ThreeDimensionalPipeline`, `DepthStencilBuffer` and a
+ * 2048-pixel texture limit — which is exactly the classic XNA capability set a renderer that
+ * cannot execute a shader has. That was an accident, not a decision, and it is closed.
+ *
+ * What replaces it is not one stricter list but two named ones, because Studio genuinely has two
+ * UI GPU backends during the migration recorded in `docs/UI-RENDER-PATH.md`:
+ *
+ * | Profile | What it is the contract for | Extra required capabilities |
+ * |---------|-----------------------------|-----------------------------|
+ * | @ref StudioHostProfile::Modern | `StudioModernUiRenderer` — `ShaderEffect` and GPU buffers | the modern API compiled in, `ShaderEffects`, `ShaderEffectSourceExecution` |
+ * | @ref StudioHostProfile::Compatibility | `CnaUiRenderer` — `BasicEffect` and user-pointer draws | none beyond the classic set |
+ *
+ * **`Modern` is the default argument**, deliberately. The bug being fixed was a permissive
+ * default, so the strict answer is what a caller gets for writing `evaluateStudioHost(snapshot)`.
+ * Asking for `Compatibility` is an explicit act and is visible in the diagnostic, the log, the
+ * Diagnostics panel and the status bar.
+ *
+ * **The compatibility profile is a migration-era allowance with a reason.** CNA's `SOFTWARE`
+ * renderer — the only one this project's CI can build, because it needs no display and no GPU
+ * (`docs/CNA-GAPS.md` G-10) — reports `ShaderEffects` and `ShaderEffectSourceExecution` as
+ * unsupported. Making the modern profile the only profile would therefore make Studio refuse to
+ * start in every automated configuration it has. The allowance is written down, named, tested and
+ * announced at run time rather than being the silent default it used to be.
+ *
+ * ### The profile does not change what a *game* may ship on
+ *
+ * `docs/ARCHITECTURE.md` §3: the Studio host renderer and the game target renderer are independent
+ * axes. A renderer that fails the modern profile outright — a 2D-only one, a fixed-function one,
+ * one from a feature era below the UI's — remains a perfectly good game target for Play, Build and
+ * Package. Nothing in this file is consulted when validating a target profile, and
+ * `STUDIO-02073` is the test that keeps it that way.
  */
 
 #include <cstdint>
@@ -55,6 +92,32 @@
 
 namespace CNA::Studio
 {
+    /**
+     * @brief Which of Studio's two UI render backends the contract is being evaluated for.
+     *
+     * See the file comment. `Modern` is what a shipping Studio requires; `Compatibility` is the
+     * classic path retained for the duration of the migration in `docs/UI-RENDER-PATH.md`.
+     */
+    enum class StudioHostProfile : std::uint8_t
+    {
+        /** @brief The intended contract: `ShaderEffect`, GPU buffers, the CNAEXT engine layer. */
+        Modern,
+        /** @brief The inherited classic XNA path: `BasicEffect` and user-pointer draws. */
+        Compatibility
+    };
+
+    /** @brief Returns a stable English name for a profile. */
+    [[nodiscard]] std::string_view studioHostProfileName(StudioHostProfile profile);
+
+    /**
+     * @brief The subject the modern-API requirement reports under.
+     *
+     * Named rather than spelled out at each use, because a diagnostic, a log line, a panel row and
+     * three tests all have to agree on it, and a typo in any one of them would read as the
+     * requirement being absent.
+     */
+    inline constexpr std::string_view kStudioModernApiSubject = "ModernGraphicsApi";
+
     /**
      * @brief A renderer's classified answer about one capability.
      *
@@ -249,6 +312,8 @@ namespace CNA::Studio
         std::string platformName;
         /** @brief Whether the modern CNAEXT graphics API is available. */
         bool modernApiAvailable = false;
+        /** @brief Which backend's contract this verdict is about. */
+        StudioHostProfile profile = StudioHostProfile::Modern;
         /** @brief Every requirement's outcome, in declaration order. */
         std::vector<StudioRequirementOutcome> outcomes;
 
@@ -276,16 +341,89 @@ namespace CNA::Studio
         [[nodiscard]] std::string report() const;
     };
 
-    /** @brief The capabilities Studio's own UI needs. The living list of `STUDIO-02020`. */
-    [[nodiscard]] const std::vector<StudioHostFeatureRequirement>& studioHostFeatureRequirements();
+    /**
+     * @brief The capabilities Studio's own UI needs. The living list of `STUDIO-02020`.
+     * @param profile Which backend's contract to return. See the file comment.
+     * @return The requirements, in the order they are reported.
+     */
+    [[nodiscard]] const std::vector<StudioHostFeatureRequirement>& studioHostFeatureRequirements(
+        StudioHostProfile profile = StudioHostProfile::Modern);
 
-    /** @brief The numeric limits Studio's own UI needs. */
-    [[nodiscard]] const std::vector<StudioHostLimitRequirement>& studioHostLimitRequirements();
+    /**
+     * @brief The numeric limits Studio's own UI needs.
+     * @param profile Which backend's contract to return.
+     * @return The limits, in the order they are reported.
+     */
+    [[nodiscard]] const std::vector<StudioHostLimitRequirement>& studioHostLimitRequirements(
+        StudioHostProfile profile = StudioHostProfile::Modern);
+
+    /**
+     * @brief Whether this profile requires the modern CNAEXT graphics API to be compiled in.
+     * @param profile The profile to ask about.
+     * @return True for @ref StudioHostProfile::Modern.
+     */
+    [[nodiscard]] bool studioHostProfileRequiresModernApi(StudioHostProfile profile);
+
+    /**
+     * @brief Why the modern profile needs the engine layer, for the diagnostic.
+     * @return One sentence.
+     */
+    [[nodiscard]] std::string_view studioHostModernApiReason();
 
     /**
      * @brief Evaluates the contract against what a device reports.
      * @param snapshot What the device said.
+     * @param profile Which backend's contract to evaluate. Strict by default, because the defect
+     *        this parameter exists to fix was a permissive default.
      * @return The verdict.
      */
-    [[nodiscard]] StudioHostEvaluation evaluateStudioHost(const StudioCapabilitySnapshot& snapshot);
+    [[nodiscard]] StudioHostEvaluation evaluateStudioHost(
+        const StudioCapabilitySnapshot& snapshot,
+        StudioHostProfile profile = StudioHostProfile::Modern);
+
+    /** @brief Which UI render backend a host should use, and why. */
+    enum class StudioUiBackendChoice : std::uint8_t
+    {
+        /** @brief Neither profile is satisfied. Studio refuses to start. */
+        None,
+        /** @brief The modern CNAEXT path. */
+        Modern,
+        /** @brief The classic path, because the modern profile is unmet. */
+        Compatibility
+    };
+
+    /** @brief Returns a stable English name for a backend choice. */
+    [[nodiscard]] std::string_view studioUiBackendChoiceName(StudioUiBackendChoice choice);
+
+    /** @brief A backend decision with the sentence that explains it. */
+    struct StudioUiBackendDecision
+    {
+        /** @brief What to draw with. */
+        StudioUiBackendChoice choice = StudioUiBackendChoice::None;
+        /**
+         * @brief One line, always populated, naming what decided it.
+         *
+         * Populated even when the modern path is chosen: "why is this host on the classic
+         * renderer" and "why is this host on the modern one" are the same question asked by
+         * somebody reading a bug report, and an empty string answers neither.
+         */
+        std::string reason;
+    };
+
+    /**
+     * @brief Chooses a UI render backend from the two profile verdicts for one device.
+     *
+     * CNA-free and pure, so the fallback — the one path that only a renderer without shaders
+     * reaches — is exercised in CI on a machine that has no renderer at all.
+     *
+     * @param modern The verdict under @ref StudioHostProfile::Modern.
+     * @param compatibility The verdict under @ref StudioHostProfile::Compatibility.
+     * @param allowCompatibilityFallback Whether falling back is permitted. False makes the modern
+     *        profile a hard requirement, which is what a shipping Studio and `--ui-renderer=modern`
+     *        both ask for.
+     * @return The decision.
+     */
+    [[nodiscard]] StudioUiBackendDecision resolveStudioUiBackend(
+        const StudioHostEvaluation& modern, const StudioHostEvaluation& compatibility,
+        bool allowCompatibilityFallback = true);
 } // namespace CNA::Studio

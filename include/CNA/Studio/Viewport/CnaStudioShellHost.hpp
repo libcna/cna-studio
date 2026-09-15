@@ -83,6 +83,17 @@ namespace CNA::Studio
         bool checkCapabilitiesOnly = false;
 
         /**
+         * @brief Whether the classic UI renderer may be used when the modern profile is unmet.
+         *
+         * `plan.md` STUDIO-02072. True by default, because the renderer this project's CI can build
+         * — `SOFTWARE`, which needs no display and no GPU — cannot execute a shader, and a Studio
+         * that refused to start there would have no automated coverage at all. `--ui-renderer=modern`
+         * sets it false, which is what a release build and anybody checking the intended contract
+         * should ask for: the fallback then refuses rather than silently degrading.
+         */
+        bool allowCompatibilityUiRenderer = true;
+
+        /**
          * @brief Where to remember the workspace arrangement between runs. Empty disables it.
          *
          * A path rather than a flag, so the tests can point it at a temporary file and a developer

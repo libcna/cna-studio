@@ -10,7 +10,9 @@
 
 #include "TestHarness.hpp"
 
+#include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
+#include "CNA/Studio/Project/TargetProfile.hpp"
 
 #include <string>
 #include <vector>
@@ -181,7 +183,11 @@ CNA_STUDIO_TEST(ACapabilityTheRendererNeverMentionedIsUnclassifiedRatherThanAssu
 {
     // The default snapshot says nothing at all, which is exactly what a renderer that has audited
     // nothing reports. Assuming the best here is how a tool ships that opens a blank window.
-    const StudioCapabilitySnapshot empty;
+    StudioCapabilitySnapshot empty;
+    // The modern API is a fact about this build rather than about the renderer, so it is never
+    // unclassified -- see evaluateStudioHost. Granting it here keeps this test about the renderer's
+    // silence, which is what it is for.
+    empty.setModernApiAvailable(true);
     const StudioHostEvaluation evaluation = evaluateStudioHost(empty);
 
     CNA_STUDIO_EXPECT(!evaluation.canHostStudio);
@@ -338,14 +344,27 @@ CNA_STUDIO_TEST(AnEvaluationIsDeterministicAndOrderedAsDeclared)
     CNA_STUDIO_EXPECT_EQ(first.outcomes.size(), second.outcomes.size());
     CNA_STUDIO_EXPECT_EQ(first.report(), second.report());
 
+    // One outcome ahead of the feature list in the modern profile: the modern API itself, which is
+    // reported first because it decides whether the rest can be attempted at all.
     CNA_STUDIO_EXPECT_EQ(first.outcomes.size(),
-                         studioHostFeatureRequirements().size()
+                         1 + studioHostFeatureRequirements().size()
                              + studioHostLimitRequirements().size());
+    CNA_STUDIO_EXPECT_EQ(first.outcomes.front().subject, std::string{kStudioModernApiSubject});
     for (std::size_t i = 0; i < studioHostFeatureRequirements().size(); ++i)
     {
-        CNA_STUDIO_EXPECT_EQ(first.outcomes[i].subject,
+        CNA_STUDIO_EXPECT_EQ(first.outcomes[i + 1].subject,
                              studioHostFeatureRequirements()[i].feature);
     }
+
+    // And the compatibility profile reports the same shape without it, so a reader of either
+    // report is never left wondering whether a missing row means unmet or means not asked.
+    const StudioHostEvaluation compatibility =
+        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility);
+    CNA_STUDIO_EXPECT_EQ(
+        compatibility.outcomes.size(),
+        studioHostFeatureRequirements(StudioHostProfile::Compatibility).size()
+            + studioHostLimitRequirements(StudioHostProfile::Compatibility).size());
+    CNA_STUDIO_EXPECT_EQ(compatibility.outcomes.front().subject, std::string{"ThreeDimensionalPipeline"});
 }
 
 CNA_STUDIO_TEST(EveryAnswerAndStatusHasAName)
@@ -365,5 +384,234 @@ CNA_STUDIO_TEST(EveryAnswerAndStatusHasAName)
                                                  StudioRequirementStatus::BelowMinimum})
     {
         CNA_STUDIO_EXPECT(!studioRequirementStatusName(status).empty());
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// The modern API is an enforced requirement, not a field on the report (STUDIO-02070)
+//
+// Four cases, written as four tests rather than as one parameterised one, because each names a
+// different failure and a shared body would report all four as the same line number. They are the
+// contract's negative space: what the evaluation must *refuse*, which is the half that was missing.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /**
+     * @brief A renderer with the complete classic XNA capability set and no shaders at all.
+     *
+     * Not hypothetical. This is CNA's `SOFTWARE` renderer, which reports `ShaderEffects` and
+     * `ShaderEffectSourceExecution` unsupported and everything the classic UI path needs supported.
+     */
+    StudioCapabilitySnapshot classicOnlyDevice()
+    {
+        StudioCapabilitySnapshot snapshot;
+        snapshot.setRendererName("CLASSIC-ONLY");
+        snapshot.setPlatformName("SDL3");
+        snapshot.setModernApiAvailable(false);
+
+        snapshot.setFeature("ThreeDimensionalPipeline", StudioCapabilityAnswer::Supported);
+        snapshot.setFeature("DepthStencilBuffer", StudioCapabilityAnswer::Supported);
+        snapshot.setFeature("MultiSampleAntiAliasing", StudioCapabilityAnswer::Supported);
+        snapshot.setFeature("AnisotropicFiltering", StudioCapabilityAnswer::Supported);
+        snapshot.setFeature("WireFrameRasterization", StudioCapabilityAnswer::Supported);
+        snapshot.setFeature("ShaderEffects", StudioCapabilityAnswer::Unsupported);
+        snapshot.setFeature("ShaderEffectSourceExecution", StudioCapabilityAnswer::Unsupported);
+        snapshot.setLimit("MaxTextureDimension", 16384);
+        return snapshot;
+    }
+}
+
+CNA_STUDIO_TEST(CaseAAClassicOnlyRendererCannotHostStudioAndTheDiagnosticSaysWhy)
+{
+    // The defect this closes: the evaluation carried modernApiAvailable into its report and
+    // consulted it nowhere, so this device passed on ThreeDimensionalPipeline, DepthStencilBuffer
+    // and a texture limit -- the exact capability set a renderer that cannot execute a shader has.
+    const StudioHostEvaluation evaluation = evaluateStudioHost(classicOnlyDevice());
+
+    CNA_STUDIO_EXPECT(!evaluation.canHostStudio);
+
+    const std::string diagnostic = evaluation.diagnostic();
+    CNA_STUDIO_EXPECT(!diagnostic.empty());
+    // Named, not merely implied by a count of unmet requirements. A user reading "3 requirements
+    // unmet" has to go and find out which; a user reading the name can search for it.
+    CNA_STUDIO_EXPECT(diagnostic.find(std::string{kStudioModernApiSubject}) != std::string::npos);
+    CNA_STUDIO_EXPECT(diagnostic.find("CNAEXT") != std::string::npos);
+
+    const StudioRequirementOutcome* modern = outcomeFor(evaluation, kStudioModernApiSubject);
+    CNA_STUDIO_EXPECT(modern != nullptr);
+    CNA_STUDIO_EXPECT(modern->severity == StudioRequirementSeverity::Required);
+    CNA_STUDIO_EXPECT(modern->status == StudioRequirementStatus::Unsupported);
+}
+
+CNA_STUDIO_TEST(CaseAAClassicOnlyRendererWithTheEngineLayerStillFailsOnTheShaders)
+{
+    // Half of Case A on its own: a Studio built *with* CNAEXT, on a renderer that cannot execute a
+    // shader. The engine layer being compiled in is necessary and is not sufficient -- a type
+    // Studio can name is not a shader the device will run.
+    StudioCapabilitySnapshot snapshot = classicOnlyDevice();
+    snapshot.setModernApiAvailable(true);
+    const StudioHostEvaluation evaluation = evaluateStudioHost(snapshot);
+
+    CNA_STUDIO_EXPECT(!evaluation.canHostStudio);
+    CNA_STUDIO_EXPECT(outcomeFor(evaluation, kStudioModernApiSubject)->isMet());
+
+    const std::string diagnostic = evaluation.diagnostic();
+    CNA_STUDIO_EXPECT(diagnostic.find("ShaderEffects") != std::string::npos);
+    CNA_STUDIO_EXPECT(diagnostic.find("ShaderEffectSourceExecution") != std::string::npos);
+}
+
+CNA_STUDIO_TEST(CaseBAModernHostMissingOneRequiredCapabilityFailsWithItNamed)
+{
+    for (const StudioHostFeatureRequirement& requirement : studioHostFeatureRequirements())
+    {
+        if (requirement.severity != StudioRequirementSeverity::Required) { continue; }
+
+        StudioCapabilitySnapshot snapshot = capableDevice();
+        snapshot.setFeature(requirement.feature, StudioCapabilityAnswer::Unsupported);
+        const StudioHostEvaluation evaluation = evaluateStudioHost(snapshot);
+
+        CNA_STUDIO_EXPECT(!evaluation.canHostStudio);
+        CNA_STUDIO_EXPECT_EQ(evaluation.unmetRequired().size(), std::size_t{1});
+        CNA_STUDIO_EXPECT_EQ(evaluation.unmetRequired().front().subject, requirement.feature);
+        CNA_STUDIO_EXPECT(evaluation.diagnostic().find(requirement.feature) != std::string::npos);
+    }
+}
+
+CNA_STUDIO_TEST(CaseCTheFullModernProfilePasses)
+{
+    const StudioHostEvaluation evaluation = evaluateStudioHost(capableDevice());
+
+    CNA_STUDIO_EXPECT(evaluation.canHostStudio);
+    CNA_STUDIO_EXPECT(evaluation.modernApiAvailable);
+    CNA_STUDIO_EXPECT(evaluation.profile == StudioHostProfile::Modern);
+    CNA_STUDIO_EXPECT(evaluation.diagnostic().empty());
+    CNA_STUDIO_EXPECT(evaluation.unmetRequired().empty());
+}
+
+CNA_STUDIO_TEST(CaseDARendererThatCannotHostStudioIsStillAValidGameTarget)
+{
+    // ARCHITECTURE.md §3, and the single easiest way to get this product's architecture wrong. The
+    // classic-only device above is CNA's SOFTWARE renderer, which cannot host the modern Studio UI
+    // and ships a perfectly good XNA-compatible game.
+    CNA_STUDIO_EXPECT(!evaluateStudioHost(classicOnlyDevice()).canHostStudio);
+
+    StudioTargetProfile profile;
+    profile.renderer = "software";
+    profile.platform = "sdl3";
+    profile.os = StudioTargetOs::Linux;
+    profile.architecture = StudioArchitecture::X86_64;
+    profile.configuration = StudioBuildConfiguration::Release;
+
+    const StudioProfileValidation validation = validateStudioTargetProfile(profile);
+    CNA_STUDIO_EXPECT(validation.isBuildable());
+
+    for (const StudioProfileProblem& problem : validation.problems)
+    {
+        // Not "no errors", which a profile could satisfy by failing silently: no problem on any
+        // axis may cite hosting Studio as a reason a *game* cannot ship on this renderer.
+        CNA_STUDIO_EXPECT(problem.message.find("host") == std::string::npos);
+        CNA_STUDIO_EXPECT(problem.message.find("Studio UI") == std::string::npos);
+    }
+
+    // And the static catalogue agrees with the runtime evaluation about this renderer, which it did
+    // not before STUDIO-02070: the catalogue has called SOFTWARE preview-only since it was written,
+    // while the runtime contract said it could host Studio.
+    const RendererInfo* software = findRenderer("software");
+    CNA_STUDIO_EXPECT(software != nullptr);
+    CNA_STUDIO_EXPECT(software->hostSupport != RendererHostSupport::StudioHost);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Choosing a backend from the two verdicts (STUDIO-02072)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AHostMeetingTheModernProfileGetsTheModernRenderer)
+{
+    const StudioCapabilitySnapshot snapshot = capableDevice();
+    const StudioUiBackendDecision decision = resolveStudioUiBackend(
+        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
+        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility));
+
+    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::Modern);
+    CNA_STUDIO_EXPECT(!decision.reason.empty());
+}
+
+CNA_STUDIO_TEST(AClassicOnlyHostFallsBackAndTheReasonNamesWhatIsMissing)
+{
+    const StudioCapabilitySnapshot snapshot = classicOnlyDevice();
+    const StudioUiBackendDecision decision = resolveStudioUiBackend(
+        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
+        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility));
+
+    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::Compatibility);
+    // The whole point of the fallback being announced rather than silent: a bug report that says
+    // "materials do not preview" is answered by this sentence and by nothing else in the product.
+    CNA_STUDIO_EXPECT(decision.reason.find(std::string{kStudioModernApiSubject}) != std::string::npos);
+    CNA_STUDIO_EXPECT(decision.reason.find("ShaderEffects") != std::string::npos);
+}
+
+CNA_STUDIO_TEST(TheFallbackCanBeRefusedAndThenAClassicOnlyHostGetsNothing)
+{
+    const StudioCapabilitySnapshot snapshot = classicOnlyDevice();
+    const StudioUiBackendDecision decision = resolveStudioUiBackend(
+        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
+        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility),
+        /*allowCompatibilityFallback=*/false);
+
+    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::None);
+    CNA_STUDIO_EXPECT(decision.reason.find("required") != std::string::npos);
+}
+
+CNA_STUDIO_TEST(AHostMeetingNeitherProfileGetsNothingAndSaysSo)
+{
+    StudioCapabilitySnapshot snapshot = classicOnlyDevice();
+    snapshot.setFeature("ThreeDimensionalPipeline", StudioCapabilityAnswer::Unsupported);
+
+    const StudioUiBackendDecision decision = resolveStudioUiBackend(
+        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
+        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility));
+
+    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::None);
+    CNA_STUDIO_EXPECT(decision.reason.find("neither") != std::string::npos);
+}
+
+CNA_STUDIO_TEST(TheCompatibilityProfileKeepsTheShaderCapabilitiesAsRecommendations)
+{
+    // Present in both profiles at different severities, rather than absent from one. A capability
+    // that disappears from the report when the profile changes reads as a contract that stopped
+    // caring about it -- and the compatibility profile cares very much, because it is the reason
+    // material previews are unavailable on such a host.
+    const StudioHostEvaluation evaluation =
+        evaluateStudioHost(classicOnlyDevice(), StudioHostProfile::Compatibility);
+
+    CNA_STUDIO_EXPECT(evaluation.canHostStudio);
+    CNA_STUDIO_EXPECT(outcomeFor(evaluation, "ShaderEffects") != nullptr);
+    CNA_STUDIO_EXPECT(outcomeFor(evaluation, "ShaderEffects")->severity
+                      == StudioRequirementSeverity::Recommended);
+    CNA_STUDIO_EXPECT(outcomeFor(evaluation, kStudioModernApiSubject) == nullptr);
+
+    bool shadersWarned = false;
+    for (const StudioRequirementOutcome& outcome : evaluation.unmetRecommended())
+    {
+        if (outcome.subject == "ShaderEffects") { shadersWarned = true; }
+    }
+    CNA_STUDIO_EXPECT(shadersWarned);
+}
+
+CNA_STUDIO_TEST(EveryProfileAndBackendChoiceHasAName)
+{
+    for (const StudioHostProfile profile : {StudioHostProfile::Modern,
+                                            StudioHostProfile::Compatibility})
+    {
+        CNA_STUDIO_EXPECT(!studioHostProfileName(profile).empty());
+        CNA_STUDIO_EXPECT(!studioHostFeatureRequirements(profile).empty());
+        CNA_STUDIO_EXPECT(!studioHostLimitRequirements(profile).empty());
+    }
+    for (const StudioUiBackendChoice choice : {StudioUiBackendChoice::None,
+                                               StudioUiBackendChoice::Modern,
+                                               StudioUiBackendChoice::Compatibility})
+    {
+        CNA_STUDIO_EXPECT(!studioUiBackendChoiceName(choice).empty());
     }
 }

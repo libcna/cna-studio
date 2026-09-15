@@ -171,7 +171,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **184 of 490 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **190 of 503 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -183,7 +183,7 @@ exactly the failure the first was written to prevent in the other file.
 **Phase 1 — Product rename** (13 of 16). `cna-studio` executable, `cna-studio-*` targets, the
 `CNA::Studio` namespace, `CNA_STUDIO_*` options. 94 files moved with `git mv`.
 
-**Phase 2 — Architecture refresh** (22 of 27). The architecture record, the CNA gap register, the
+**Phase 2 — Architecture refresh** (26 of 32). The architecture record, the CNA gap register, the
 roadmap, ten architecture guard tests, the restored CNA-backed build, the Studio host capability
 contract, the six-axis build target model, and **the standalone export**: `--export=DIR` writes a
 project that builds and runs with Studio uninstalled, and `STUDIO-02051` proves it by doing so.
@@ -198,7 +198,7 @@ and **a drop-down over a deferred popup** — the facility that lets a popup esc
 opened in, **typed drag and drop**, and **a modal dialog** — a window that owns the frame until it
 is answered, which is what About, Save Layout As and every confirmation are built on.
 
-**Phase 4 — CNAEXT UI renderer** (15 of 20). Vertex management, batching, nested scissor clipping,
+**Phase 4 — CNAEXT UI renderer** (17 of 28). Vertex management, batching, nested scissor clipping,
 rounded rectangles, clip culling, real text with kerning and correct baselines, **twenty-three
 icons drawn as vector paths** with no vendored asset, **a glyph atlas that doubles rather than
 losing text** and says so in Diagnostics, **uploads of the changed rectangle rather than four

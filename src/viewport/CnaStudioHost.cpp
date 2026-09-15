@@ -248,22 +248,28 @@ namespace CNA::Studio
         // run, not only when something is wrong, because "which of Studio's requirements does this
         // build's renderer meet" is the first question of every graphics bug report and the last
         // one anybody thinks to ask.
-        impl_->capabilities = evaluateStudioHost(captureStudioCapabilitySnapshot(
-            getGraphicsDeviceProperty(), getHostPlatformName(), /*modernApiAvailable=*/true));
+        const StudioHostAssessment assessment = assessStudioHost(
+            getGraphicsDeviceProperty(), getHostPlatformName(),
+            impl_->options.allowCompatibilityUiRenderer);
+        impl_->capabilities = assessment.effective();
         impl_->capabilitiesEvaluated = true;
 
-        if (impl_->options.reportCapabilities || !impl_->capabilities.canHostStudio)
+        if (impl_->options.reportCapabilities || !assessment.canHostStudio())
         {
             std::cout << impl_->capabilities.report();
+            std::cout << "  UI renderer: "
+                      << studioUiBackendChoiceName(assessment.decision.choice) << " -- "
+                      << assessment.decision.reason << "\n";
         }
 
-        if (!impl_->capabilities.canHostStudio)
+        if (!assessment.canHostStudio())
         {
             // STUDIO-02022. The device only exists once a window does, so this is as close to
             // "no window is opened" as an honest implementation gets: stop before drawing a frame,
             // and say exactly which requirements were unmet and whether each was refused or merely
             // never classified.
             std::cerr << impl_->capabilities.diagnostic();
+            std::cerr << assessment.decision.reason << "\n";
             Exit();
             return;
         }

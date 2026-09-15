@@ -22,6 +22,40 @@ namespace CNA::Studio
         return "";
     }
 
+    std::string_view studioHostProfileName(StudioHostProfile profile)
+    {
+        switch (profile)
+        {
+            case StudioHostProfile::Modern:        return "modern";
+            case StudioHostProfile::Compatibility: return "compatibility";
+        }
+        return "";
+    }
+
+    std::string_view studioUiBackendChoiceName(StudioUiBackendChoice choice)
+    {
+        switch (choice)
+        {
+            case StudioUiBackendChoice::None:          return "none";
+            case StudioUiBackendChoice::Modern:        return "modern";
+            case StudioUiBackendChoice::Compatibility: return "compatibility";
+        }
+        return "";
+    }
+
+    bool studioHostProfileRequiresModernApi(StudioHostProfile profile)
+    {
+        return profile == StudioHostProfile::Modern;
+    }
+
+    std::string_view studioHostModernApiReason()
+    {
+        return "The Studio UI is drawn through CNA's modern graphics API -- ShaderEffect over "
+               "vertex and index buffers -- and every authoring panel that previews a material, a "
+               "shader or a post-process compiles one. A build without the CNAEXT engine layer has "
+               "no such API to call.";
+    }
+
     std::string_view studioRequirementStatusName(StudioRequirementStatus status)
     {
         switch (status)
@@ -84,53 +118,107 @@ namespace CNA::Studio
         return found->second;
     }
 
-    const std::vector<StudioHostFeatureRequirement>& studioHostFeatureRequirements()
+    namespace
     {
-        // Introduced as the UI needs them, never speculatively. A contract padded with everything
-        // Studio might one day want would refuse to start on renderers it works perfectly well on,
-        // and the pressure that creates is to ignore the contract rather than to fix it.
-        static const std::vector<StudioHostFeatureRequirement> requirements = {
-            {"ThreeDimensionalPipeline",
-             "The Studio UI is drawn as indexed, vertex-coloured triangles through the 3D pipeline, "
-             "and the scene viewport needs it outright.",
-             StudioRequirementSeverity::Required, /*restrictedIsEnough=*/false},
+        /** @brief The capabilities every profile needs: what drawing a UI at all costs. */
+        std::vector<StudioHostFeatureRequirement> sharedFeatureRequirements()
+        {
+            // Introduced as the UI needs them, never speculatively. A contract padded with
+            // everything Studio might one day want would refuse to start on renderers it works
+            // perfectly well on, and the pressure that creates is to ignore the contract rather
+            // than to fix it.
+            return {
+                {"ThreeDimensionalPipeline",
+                 "The Studio UI is drawn as indexed, vertex-coloured triangles through the 3D "
+                 "pipeline, and the scene viewport needs it outright.",
+                 StudioRequirementSeverity::Required, /*restrictedIsEnough=*/false},
 
-            {"DepthStencilBuffer",
-             "The scene viewport draws depth-sorted geometry; without a depth attachment it shows "
-             "the last triangle submitted rather than the nearest one.",
-             StudioRequirementSeverity::Required, /*restrictedIsEnough=*/true},
+                {"DepthStencilBuffer",
+                 "The scene viewport draws depth-sorted geometry; without a depth attachment it "
+                 "shows the last triangle submitted rather than the nearest one.",
+                 StudioRequirementSeverity::Required, /*restrictedIsEnough=*/true},
+            };
+        }
 
-            {"ShaderEffects",
-             "Material and shader-graph authoring compile the effects they preview. Without them "
-             "Studio runs and those panels report that this host cannot preview.",
-             StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
+        /** @brief The two shader capabilities, at whichever severity the profile gives them. */
+        void appendShaderRequirements(std::vector<StudioHostFeatureRequirement>& into,
+                                      StudioRequirementSeverity severity)
+        {
+            // The same two entries in both profiles, at different severities, rather than present
+            // in one and absent from the other. A capability that vanishes from the report when a
+            // profile changes reads as a contract that stopped caring about it, and the
+            // compatibility profile cares very much -- it is the reason it exists.
+            into.push_back(
+                {"ShaderEffects",
+                 "The modern UI renderer draws through a ShaderEffect, and material and "
+                 "shader-graph authoring compile the effects they preview.",
+                 severity, /*restrictedIsEnough=*/true});
 
-            {"ShaderEffectSourceExecution",
-             "A previewed shader must actually determine the pixels; a host that accepts the source "
-             "and ignores it would show every material identically.",
-             StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
+            into.push_back(
+                {"ShaderEffectSourceExecution",
+                 "A shader must actually determine the pixels; a host that accepts the source and "
+                 "ignores it would draw the UI with whatever fixed path it fell back to, and would "
+                 "show every material identically.",
+                 severity, /*restrictedIsEnough=*/true});
+        }
 
-            {"MultiSampleAntiAliasing",
-             "Viewport edge quality. Studio is usable without it; gizmo and wireframe edges alias.",
-             StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
+        /** @brief The capabilities that improve Studio without gating it, in either profile. */
+        void appendRecommendedRequirements(std::vector<StudioHostFeatureRequirement>& into)
+        {
+            into.push_back(
+                {"MultiSampleAntiAliasing",
+                 "Viewport edge quality. Studio is usable without it; gizmo and wireframe edges "
+                 "alias.",
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
 
-            {"AnisotropicFiltering",
-             "Texture quality on surfaces seen at a grazing angle, which is most of a level.",
-             StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
+            into.push_back(
+                {"AnisotropicFiltering",
+                 "Texture quality on surfaces seen at a grazing angle, which is most of a level.",
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
 
-            {"WireFrameRasterization",
-             "The viewport's wireframe visualisation mode.",
-             StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
+            into.push_back(
+                {"WireFrameRasterization",
+                 "The viewport's wireframe visualisation mode.",
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
 
-            {"GpuTimers",
-             "The profiler's GPU timings. Without them it reports CPU time only.",
-             StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
-        };
-        return requirements;
+            into.push_back(
+                {"GpuTimers",
+                 "The profiler's GPU timings. Without them it reports CPU time only.",
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
+        }
+
+        /** @brief Builds one profile's feature list. */
+        std::vector<StudioHostFeatureRequirement> buildFeatureRequirements(
+            StudioHostProfile profile)
+        {
+            std::vector<StudioHostFeatureRequirement> requirements = sharedFeatureRequirements();
+            appendShaderRequirements(requirements,
+                                     profile == StudioHostProfile::Modern
+                                         ? StudioRequirementSeverity::Required
+                                         : StudioRequirementSeverity::Recommended);
+            appendRecommendedRequirements(requirements);
+            return requirements;
+        }
+    } // namespace
+
+    const std::vector<StudioHostFeatureRequirement>& studioHostFeatureRequirements(
+        StudioHostProfile profile)
+    {
+        static const std::vector<StudioHostFeatureRequirement> modern =
+            buildFeatureRequirements(StudioHostProfile::Modern);
+        static const std::vector<StudioHostFeatureRequirement> compatibility =
+            buildFeatureRequirements(StudioHostProfile::Compatibility);
+        return profile == StudioHostProfile::Modern ? modern : compatibility;
     }
 
-    const std::vector<StudioHostLimitRequirement>& studioHostLimitRequirements()
+    const std::vector<StudioHostLimitRequirement>& studioHostLimitRequirements(
+        StudioHostProfile profile)
     {
+        // One list today. It takes the profile anyway, because the modern renderer will grow
+        // limits the classic one has no opinion about -- uniform-block size, vertex input
+        // bindings -- and a caller that had to start passing an argument at that point would be a
+        // caller that forgot to in one of its four call sites.
+        static_cast<void>(profile);
         static const std::vector<StudioHostLimitRequirement> requirements = {
             {"MaxTextureDimension", 2048,
              "The UI font atlas. 2048 is the smallest square that holds Studio's font set at 200% "
@@ -210,7 +298,8 @@ namespace CNA::Studio
 
         std::string text = "CNA Studio cannot run on this build's graphics renderer.\n\n";
         text += "  Renderer: " + (rendererName.empty() ? std::string{"unknown"} : rendererName) + "\n";
-        text += "  Platform: " + (platformName.empty() ? std::string{"unknown"} : platformName) + "\n\n";
+        text += "  Platform: " + (platformName.empty() ? std::string{"unknown"} : platformName) + "\n";
+        text += "  Profile:  " + std::string{studioHostProfileName(profile)} + "\n\n";
         text += "Unmet requirements:\n\n";
 
         for (const StudioRequirementOutcome& outcome : unmet)
@@ -241,20 +330,47 @@ namespace CNA::Studio
         text += "  Platform:   " + (platformName.empty() ? std::string{"unknown"} : platformName) + "\n";
         text += "  Renderer:   " + (rendererName.empty() ? std::string{"unknown"} : rendererName) + "\n";
         text += std::string{"  Modern API: "} + (modernApiAvailable ? "available" : "unavailable") + "\n";
+        text += std::string{"  Profile:    "} + std::string{studioHostProfileName(profile)} + "\n";
         text += std::string{"  Can host:   "} + (canHostStudio ? "yes" : "no") + "\n\n";
 
         for (const StudioRequirementOutcome& outcome : outcomes) { appendOutcome(text, outcome); }
         return text;
     }
 
-    StudioHostEvaluation evaluateStudioHost(const StudioCapabilitySnapshot& snapshot)
+    StudioHostEvaluation evaluateStudioHost(const StudioCapabilitySnapshot& snapshot,
+                                            StudioHostProfile profile)
     {
         StudioHostEvaluation evaluation;
         evaluation.rendererName = std::string{snapshot.rendererName()};
         evaluation.platformName = std::string{snapshot.platformName()};
         evaluation.modernApiAvailable = snapshot.isModernApiAvailable();
+        evaluation.profile = profile;
 
-        for (const StudioHostFeatureRequirement& requirement : studioHostFeatureRequirements())
+        // First, and required, in the modern profile. It is the headline of the whole contract and
+        // reporting it after eight renderer capabilities would bury the one answer that decides
+        // whether the rest can even be attempted -- a device cannot execute a ShaderEffect that
+        // this build has no type for.
+        if (studioHostProfileRequiresModernApi(profile))
+        {
+            StudioRequirementOutcome outcome;
+            outcome.subject = std::string{kStudioModernApiSubject};
+            outcome.reason = std::string{studioHostModernApiReason()};
+            outcome.severity = StudioRequirementSeverity::Required;
+            outcome.status = snapshot.isModernApiAvailable()
+                                 ? StudioRequirementStatus::Satisfied
+                                 : StudioRequirementStatus::Unsupported;
+            // Never Unclassified: this is a fact about the build Studio is *in*, which is either
+            // true or false and is never merely unaudited. Collapsing it into the renderer's
+            // three-state vocabulary would invite a reader to go asking CNA to classify something
+            // that is answered by a compiler flag.
+            outcome.detail = snapshot.isModernApiAvailable()
+                                 ? "the CNAEXT engine layer is compiled into this Studio"
+                                 : "this Studio was built against a CNA without the CNAEXT engine "
+                                   "layer (-DCNA_CNAEXT=OFF)";
+            evaluation.outcomes.push_back(std::move(outcome));
+        }
+
+        for (const StudioHostFeatureRequirement& requirement : studioHostFeatureRequirements(profile))
         {
             StudioRequirementOutcome outcome;
             outcome.subject = requirement.feature;
@@ -267,7 +383,7 @@ namespace CNA::Studio
             evaluation.outcomes.push_back(std::move(outcome));
         }
 
-        for (const StudioHostLimitRequirement& requirement : studioHostLimitRequirements())
+        for (const StudioHostLimitRequirement& requirement : studioHostLimitRequirements(profile))
         {
             StudioRequirementOutcome outcome;
             outcome.subject = requirement.limit;
@@ -295,5 +411,51 @@ namespace CNA::Studio
 
         evaluation.canHostStudio = evaluation.unmetRequired().empty();
         return evaluation;
+    }
+
+    StudioUiBackendDecision resolveStudioUiBackend(const StudioHostEvaluation& modern,
+                                                   const StudioHostEvaluation& compatibility,
+                                                   bool allowCompatibilityFallback)
+    {
+        StudioUiBackendDecision decision;
+
+        if (modern.canHostStudio)
+        {
+            decision.choice = StudioUiBackendChoice::Modern;
+            decision.reason = "This renderer meets the modern host profile.";
+            return decision;
+        }
+
+        // Always named, both times it is reached. "The modern renderer is unavailable" without the
+        // capability that made it so sends a reader to the renderer's documentation rather than to
+        // the one line of it that answers them.
+        std::string missing;
+        for (const StudioRequirementOutcome& outcome : modern.unmetRequired())
+        {
+            if (!missing.empty()) { missing += ", "; }
+            missing += outcome.subject + " (" + std::string{studioRequirementStatusName(outcome.status)} + ")";
+        }
+        if (missing.empty()) { missing = "an unrecorded requirement"; }
+
+        if (!allowCompatibilityFallback)
+        {
+            decision.choice = StudioUiBackendChoice::None;
+            decision.reason = "The modern UI renderer was required and this host does not meet its "
+                              "profile: " + missing + ".";
+            return decision;
+        }
+
+        if (!compatibility.canHostStudio)
+        {
+            decision.choice = StudioUiBackendChoice::None;
+            decision.reason = "This host meets neither profile. Modern: " + missing + ".";
+            return decision;
+        }
+
+        decision.choice = StudioUiBackendChoice::Compatibility;
+        decision.reason = "Falling back to the compatibility UI renderer: this host does not meet "
+                          "the modern profile (" + missing + "). Material, shader and post-process "
+                          "previews are unavailable on it.";
+        return decision;
     }
 } // namespace CNA::Studio

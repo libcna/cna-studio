@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 22 of 27 complete `█████████░░░`
+**Progress:** 26 of 32 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -37,6 +37,11 @@
 | `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ✅ | `STUDIO-02040` |
 | `STUDIO-02052` | Export a project as a standalone CNA game | ✅ | `STUDIO-02040` |
 | `STUDIO-02053` | The exported game's runtime travels with the project | ✅ | `STUDIO-02052` |
+| `STUDIO-02070` | `modernApiAvailable` must decide host eligibility, not decorate the report | ✅ | `STUDIO-02021` |
+| `STUDIO-02071` | Read modern-API availability from the build instead of asserting it | ✅ | `STUDIO-02070` |
+| `STUDIO-02072` | Choose a UI render backend from the two profile verdicts, and announce it | ✅ | `STUDIO-02070` |
+| `STUDIO-02073` | Guard test: failing the Studio host contract never disqualifies a game target | ✅ | `STUDIO-02070` |
+| `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | ⬜ | `STUDIO-04026` |
 
 ## Acceptance and verification
 
@@ -272,3 +277,96 @@ from the writer that produced the scene: a committed second copy would be free t
 **Verification.** `TheExportedRuntimeIsTheSameCodeStudioItselfCompiles` compares every embedded file
 against its original byte for byte
 
+
+### `STUDIO-02070` — `modernApiAvailable` must decide host eligibility, not decorate the report
+
+**Acceptance.** A renderer without the modern CNAEXT graphics API does not pass `canHostStudio`,
+and the diagnostic names the missing modern requirement rather than implying it.
+
+**The defect, exactly.** `StudioHostEvaluation` carried `modernApiAvailable` from the snapshot into
+its report and **no requirement consulted it**. `canHostStudio` was `unmetRequired().empty()` over a
+list holding `ThreeDimensionalPipeline`, `DepthStencilBuffer` and a 2048-pixel texture minimum —
+which is exactly the classic XNA capability set a renderer that cannot execute a shader has. The
+contract's headline was in its report and nowhere in its decision.
+
+**Two profiles rather than one stricter list**, because Studio genuinely has two UI GPU backends
+while `docs/UI-RENDER-PATH.md`'s migration runs. `StudioHostProfile::Modern` requires the engine
+layer, `ShaderEffects` and `ShaderEffectSourceExecution`; `StudioHostProfile::Compatibility` keeps
+the last two as recommendations. **`Modern` is the default argument**, because the bug was a
+permissive default and the fix has to be the other one.
+
+**The compatibility profile is an allowance with a written reason, not a loophole.** CNA's
+`SOFTWARE` renderer — the only one this project's CI can build (gap G-10) — reports both shader
+capabilities unsupported. A single modern-only contract would make Studio refuse to start in every
+automated configuration it has. So the fallback exists, is named `compatibility`, is announced in
+the report, the log, the Diagnostics panel and the status bar, and `--ui-renderer=modern` turns it
+off. `STUDIO-02074` deletes it.
+
+**It also reconciled two things that had been disagreeing.** `RendererCatalog` has classified
+`SOFTWARE` as preview-only since it was written, while the runtime contract said it could host
+Studio. They agree now, and `CaseDARendererThatCannotHostStudioIsStillAValidGameTarget` checks it in
+both directions.
+
+**Verification.** `tests/StudioHostCapabilityTests.cpp`, four named cases plus the resolver's:
+Case A — a classic-only device fails and the diagnostic names `ModernGraphicsApi` and `CNAEXT`;
+Case A′ — the engine layer present is necessary and not sufficient, because a type Studio can name
+is not a shader the device will run; Case B — each required capability removed in turn fails with
+itself named and nothing else; Case C — the full profile passes with an empty diagnostic; Case D —
+the same device that fails the host contract validates as a game target, and no problem on any axis
+cites hosting Studio as the reason
+
+### `STUDIO-02071` — Read modern-API availability from the build instead of asserting it
+
+**Acceptance.** No literal is passed for a capability. The answer comes from the build state, and
+where CNA cannot yet be asked, exactly one adapter says so.
+
+**What was there.** `/*modernApiAvailable=*/true`, at both host call sites. The field reported what
+the call site asserted, so a Studio configured against a CNA with `-DCNA_CNAEXT=OFF` would have
+claimed the modern API and then failed to find a type for it.
+
+**What it is now.** `captureStudioModernApiState()`, the one adapter, reading `CNA_CNAEXT` — which
+reaches that translation unit through CNA's own `cna_build_config` interface target, so it is CNA's
+statement about itself rather than Studio's guess about CNA — plus
+`CNA::Graphics::getEngineLayerVersion()` for the revision. **No CNA gap was needed**: the question
+is answerable from CNA's public API today.
+
+**And it catches something the literal could not.** CNA publishes the engine-layer revision twice on
+purpose: a macro for what a translation unit compiled against and a function for what it linked to.
+When those disagree, something was rebuilt and something else was not — which surfaces much later
+as a call resolving to the wrong shape. `versionMismatch` reports it as a warning rather than as
+unavailability, because a mixed build *has* the layer, at an unknown revision, which is a different
+and more alarming thing than not having it
+
+### `STUDIO-02072` — Choose a UI render backend from the two profile verdicts, and announce it
+
+**Acceptance.** One place decides which backend draws; the decision carries a sentence naming what
+decided it; and the sentence reaches the report, the log and the user.
+
+**Why one place.** The ImGui host and the native shell host asked the same three questions in the
+same order, and the day they stopped agreeing would have been a day one of them ran on a different
+renderer than the other with nothing saying so. `assessStudioHost()` asks the device **once** and
+evaluates the one snapshot twice — asking twice would be two chances for a device to answer
+differently, and a report whose halves disagreed about one renderer is worse than either half.
+
+**The reason is populated even when the modern path is chosen.** "Why is this host on the classic
+renderer" and "why is this host on the modern one" are the same question asked by somebody reading a
+bug report, and an empty string answers neither.
+
+**`--ui-renderer=modern`** makes the modern profile a hard requirement. That is what turns "Studio
+requires the modern API" from a sentence in a document into something a script can check.
+
+**Verification.** `AHostMeetingTheModernProfileGetsTheModernRenderer`,
+`AClassicOnlyHostFallsBackAndTheReasonNamesWhatIsMissing` — which asserts the reason names both
+missing capabilities, because "the modern renderer is unavailable" without them sends a reader to
+the renderer's documentation rather than to the one line that answers them —
+`TheFallbackCanBeRefusedAndThenAClassicOnlyHostGetsNothing`,
+`AHostMeetingNeitherProfileGetsNothingAndSaysSo`, and `CnaStudioRejectsUnknownUiRenderer`
+
+### `STUDIO-02074` — Retire the compatibility host profile once the modern renderer is the default
+
+**Acceptance.** `StudioHostProfile` has one member, `--ui-renderer` is gone or is a no-op kept for
+scripts, and a host that cannot run the modern UI renderer refuses to start.
+
+**Deliberately not now.** It cannot be done before `STUDIO-04026`, and it should not be done before
+CI can build a renderer that meets the modern profile (gap G-10). Doing it earlier would mean
+deleting the only configuration this project has automated coverage in.

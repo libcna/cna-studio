@@ -376,9 +376,15 @@ set_tests_properties(CnaStudioRejectsUnknownShellTheme PROPERTIES WILL_FAIL TRUE
 # architectural invariant (docs/ARCHITECTURE.md §4), and a contract nobody can read is one nobody
 # will notice has quietly grown a renderer name in it.
 add_test(NAME CnaStudioHostCapabilityContract COMMAND cna-studio --host-capabilities)
+# Both names in one property, because a second set_tests_properties on the same test *replaces*
+# this one rather than adding to it -- which is how a check quietly stops checking what it says.
 set_tests_properties(CnaStudioHostCapabilityContract PROPERTIES
-    PASS_REGULAR_EXPRESSION "ThreeDimensionalPipeline"
+    PASS_REGULAR_EXPRESSION "ThreeDimensionalPipeline.*ShaderEffectSourceExecution"
     TIMEOUT 60)
+
+add_test(NAME CnaStudioRejectsUnknownUiRenderer
+    COMMAND cna-studio --ui-renderer=vulkan --host-capabilities)
+set_tests_properties(CnaStudioRejectsUnknownUiRenderer PROPERTIES WILL_FAIL TRUE)
 
 add_test(NAME CnaStudioHelp COMMAND cna-studio --help)
 add_test(NAME CnaStudioListBackends COMMAND cna-studio --list-backends)

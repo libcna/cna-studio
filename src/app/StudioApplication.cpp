@@ -112,6 +112,17 @@ namespace CNA::Studio
                 if (name == "--shell-drag") { options.shellPreviewDragPanel = value; continue; }
                 if (name == "--scene") { options.scenePath = value; continue; }
                 if (name == "--ui") { options.uiBackend = value; continue; }
+                if (name == "--ui-renderer")
+                {
+                    if (value != "auto" && value != "modern")
+                    {
+                        options.hasError = true;
+                        options.errorMessage =
+                            "--ui-renderer expects auto or modern, got '" + value + "'";
+                    }
+                    options.uiRenderer = value;
+                    continue;
+                }
                 if (name == "--screenshot") { options.screenshotPath = value; continue; }
                 if (name == "--shell-preview") { options.shellPreviewPath = value; continue; }
                 if (name == "--shell-theme")
@@ -369,6 +380,8 @@ namespace CNA::Studio
             "                       preview. Needs --shell-pointer.\n"
             "  --shell-tooltip      Rest the pointer until a tooltip appears.\n"
             "  --ui=imgui         Run the legacy Dear ImGui editor instead of the native shell.\n"
+            "  --ui-renderer=R    auto (default) or modern. modern refuses a host that cannot\n"
+            "                     run the CNAEXT UI renderer instead of falling back.\n"
             "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"
             "  --select=NAME      Select this entity at start-up, for --ui=studio.\n"
             "  --export=DIR       Export the project as a standalone CNA game and exit.\n"

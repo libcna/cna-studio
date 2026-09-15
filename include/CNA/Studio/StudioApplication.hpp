@@ -257,6 +257,17 @@ namespace CNA::Studio
         bool hostCapabilities = false;
 
         /**
+         * @brief Which UI render backend the host should use: `"auto"` or `"modern"`.
+         *
+         * `plan.md` STUDIO-02072. `auto` — the default — uses the modern CNAEXT UI renderer where
+         * the host meets its profile and the classic one where it does not, announcing the fallback
+         * rather than taking it silently. `modern` refuses to start on a host that cannot run the
+         * intended renderer, which is what a release build asks for and what makes "Studio requires
+         * the modern API" checkable from a script rather than only from a document.
+         */
+        std::string uiRenderer = "auto";
+
+        /**
          * @brief Export the opened project as a standalone CNA game into this directory, and exit.
          *
          * On the command line because the invariant it serves has to be *provable* by a script:
