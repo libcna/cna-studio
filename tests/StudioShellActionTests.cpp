@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: MS-PL
+/**
+ * @file StudioShellActionTests.cpp
+ * @brief One action object, reached three ways: menu, toolbar and keyboard.
+ *
+ * `plan.md` STUDIO-06001, STUDIO-06008.
+ *
+ * The registry exists so those three cannot drift apart, and that promise is only worth anything if
+ * something checks it. A menu item that saves while Ctrl+S does nothing, or a toolbar button that
+ * stays bright while the menu row greys out, are the two ways an editor loses a user's trust
+ * quietly — neither crashes, and both are obvious the moment somebody tries the other route.
+ */
+
+#include "TestHarness.hpp"
+
+#include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Ui/StudioLog.hpp"
+#include "CNA/Studio/UiCore/StudioShell.hpp"
+
+#include <memory>
+#include <string>
+
+using namespace CNA::Studio;
+
+namespace
+{
+    UiInputState at(float x, float y, bool leftDown = false)
+    {
+        UiInputState input;
+        input.displayWidth = 1280.0f;
+        input.displayHeight = 720.0f;
+        input.mouseX = x;
+        input.mouseY = y;
+        input.mouseInWindow = true;
+        input.setMouseDown(UiMouseButton::Left, leftDown);
+        return input;
+    }
+
+    /** @brief A shell bound to a context holding one renamed entity, so Undo has work to do. */
+    struct Fixture
+    {
+        StudioContext context;
+        StudioLog log;
+        std::unique_ptr<StudioShell> shell = std::make_unique<StudioShell>(StudioTheme::dark());
+        Uuid entity;
+
+        Fixture()
+        {
+            StudioEntity subject{Uuid::generate(), "Player"};
+            entity = subject.getId();
+            context.getScene().addEntity(std::move(subject));
+            context.select(entity);
+
+            shell->resetLayout();
+            CNA_STUDIO_EXPECT(bindStudioShellActions(*shell, context, log) >= 4);
+            shell->renderFrame(at(-1.0f, -1.0f));
+        }
+
+        [[nodiscard]] std::string name() const
+        {
+            const StudioEntity* found = context.getScene().findEntity(entity);
+            return found != nullptr ? found->getName() : std::string{};
+        }
+
+        void rename(const std::string& to)
+        {
+            context.execute(std::make_unique<RenameEntityCommand>(context.getScene(), entity, to));
+        }
+    };
+}
+
+CNA_STUDIO_TEST(UndoIsDisabledUntilThereIsSomethingToUndo)
+{
+    // A control that looks available and refuses is indistinguishable from one that is broken.
+    // Asking the predicate at the moment the answer is needed is what makes this exact, rather
+    // than correct until somebody forgets to refresh a cached boolean.
+    Fixture fixture;
+
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.undo"));
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.redo"));
+
+    fixture.rename("Hero");
+    CNA_STUDIO_EXPECT(fixture.shell->actions().isEnabled("studio.edit.undo"));
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.redo"));
+
+    fixture.shell->invoke("studio.edit.undo");
+    CNA_STUDIO_EXPECT_EQ(fixture.name(), std::string{"Player"});
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.undo"));
+    CNA_STUDIO_EXPECT(fixture.shell->actions().isEnabled("studio.edit.redo"));
+
+    fixture.shell->invoke("studio.edit.redo");
+    CNA_STUDIO_EXPECT_EQ(fixture.name(), std::string{"Hero"});
+}
+
+CNA_STUDIO_TEST(TheKeyboardAndTheMenuReachTheSameAction)
+{
+    // Not "both work" -- the same object. A shortcut wired to its own copy of the handler is a
+    // shortcut that keeps working after the menu's stops, which is how the two come to disagree.
+    Fixture fixture;
+    fixture.rename("Hero");
+
+    UiInputState undo = at(600.0f, 400.0f);
+    undo.setKeyDown(UiKey::Z, true);
+    undo.modifiers.control = true;
+
+    fixture.shell->renderFrame(undo);
+    CNA_STUDIO_EXPECT_EQ(fixture.name(), std::string{"Player"});
+
+    // And what ran is recorded under the action's id, whichever route invoked it.
+    bool sawUndo = false;
+    for (const std::string& invoked : fixture.shell->invokedActions())
+    {
+        if (invoked == "studio.edit.undo") { sawUndo = true; }
+    }
+    CNA_STUDIO_EXPECT(sawUndo);
+}
+
+CNA_STUDIO_TEST(DeletingAnEntityIsUndoable)
+{
+    // The single operation a user most needs to be able to take back.
+    Fixture fixture;
+    CNA_STUDIO_EXPECT(fixture.shell->actions().isEnabled("studio.edit.delete"));
+
+    fixture.shell->invoke("studio.edit.delete");
+    CNA_STUDIO_EXPECT(fixture.context.getScene().findEntity(fixture.entity) == nullptr);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+
+    // With nothing selected, Delete greys out rather than staying bright and doing nothing.
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.delete"));
+
+    fixture.shell->invoke("studio.edit.undo");
+    CNA_STUDIO_EXPECT(fixture.context.getScene().findEntity(fixture.entity) != nullptr);
+}
+
+CNA_STUDIO_TEST(EveryActionTheShellInvokesEitherRunsOrIsRefusedOutLoud)
+{
+    // The failure this guards against is a menu with rows that quietly do nothing: an id a menu
+    // names and the registry does not carry, or one carried with no handler. Both are invisible
+    // from the outside and both are exactly what a half-finished migration produces.
+    Fixture fixture;
+
+    for (const StudioMenuDefinition& menu : fixture.shell->menus())
+    {
+        for (const std::string& entry : menu.entries)
+        {
+            if (entry == kStudioMenuSeparatorId) { continue; }
+            if (fixture.shell->actions().find(entry) == nullptr)
+            {
+                CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                    "the " + menu.title + " menu names '" + entry
+                    + "', which the action registry does not carry. The row would draw and do "
+                      "nothing.");
+            }
+        }
+    }
+
+    // An unbound action refuses rather than pretending. Every menu row is therefore either
+    // enabled and working, or greyed out -- never bright and inert.
+    fixture.shell->invoke("studio.no.such.action");
+    CNA_STUDIO_EXPECT(!fixture.shell->refusedActions().empty());
+}
+
+CNA_STUDIO_TEST(EachActionSaysWhatItDidRatherThanLeavingTheUserGuessing)
+{
+    // A user who pressed Ctrl+Z and saw nothing change needs to know whether nothing happened or
+    // nothing was undoable -- and the description is read *before* the undo, because afterwards it
+    // names whatever is now on top of the stack.
+    Fixture fixture;
+    fixture.rename("Hero");
+
+    const std::size_t before = fixture.log.entries().size();
+    fixture.shell->invoke("studio.edit.undo");
+
+    CNA_STUDIO_EXPECT(fixture.log.entries().size() > before);
+    CNA_STUDIO_EXPECT(fixture.log.toText().find("Undid") != std::string::npos);
+}

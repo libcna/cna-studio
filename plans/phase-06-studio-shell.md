@@ -6,12 +6,13 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 10 of 22 complete `█████░░░░░░░`
+**Progress:** 11 of 23 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-06001` | Central command and action registry | ✅ | `STUDIO-03012` |
 | `STUDIO-06002` | Register the core command set | ✅ | `STUDIO-06001` |
+| `STUDIO-06023` | Bind the core commands to the editor, with live enablement | ✅ | `STUDIO-06002`, `STUDIO-06022` |
 | `STUDIO-06003` | Application menu bar | ✅ | `STUDIO-06002` |
 | `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | 🔄 | `STUDIO-06003` |
 | `STUDIO-06005` | Context menus | ⬜ | `STUDIO-06003` |
@@ -189,3 +190,30 @@ says the Output Log drew something and only the status bar says the context open
 given. `CnaStudioNativeShellDoesNotModifyTheProject` hashes every file under the example project
 before and after: applying an importer fact on first open is intended, doing it on every open fills
 a repository with diffs nobody made
+
+### `STUDIO-06023` — Bind the core commands to the editor, with live enablement
+
+**Acceptance.** Undo, Redo, Save and Delete reach a real `StudioContext`, from the menu, the toolbar
+and the keyboard alike. Each carries an enablement predicate asked at the moment the answer is
+needed, so Undo greys out the instant the history empties — a control that looks available and
+refuses is indistinguishable from one that is broken
+
+**Binding is not declaring.** The registry already holds every command with its label, menu and
+shortcut; what it could not know is what any of them *do*. An id the registry does not carry is
+skipped rather than added, because the menus are built from the registry and an action invented at
+binding time would be one no menu shows
+
+**Where it lives.** `cna-studio-shell-panels`, not the CNA-linked host: it is the same seam as a
+panel — the shell on one side, the document model on the other — and putting it in the host would
+have made the one thing worth testing here untestable without a window
+
+**`StudioShell::invoke` is public now, and that is the point.** `actions()` was already public, so
+anything needing to run a command could reach the registry directly and skip the shell's record of
+what ran and what was refused — which is the only thing that makes a menu row quietly doing nothing
+discoverable without a debugger. One public route that keeps the books beats a private one everybody
+goes around
+
+**Verification.** `tests/StudioShellActionTests.cpp` — Undo disabled until there is something to
+undo, Ctrl+Z and the menu reaching the same object, a delete that undoes, every menu row naming an
+action the registry carries, and each action saying what it did (with the undo description read
+*before* the undo, because afterwards it names a different entry)

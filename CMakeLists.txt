@@ -417,7 +417,8 @@ endif()
 # other. Every panel ported in Phase 7 belongs here.
 add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioOutlinerPanel.cpp
-    src/shell-panels/StudioDetailsPanel.cpp)
+    src/shell-panels/StudioDetailsPanel.cpp
+    src/shell-panels/StudioShellActions.cpp)
 target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context)
 
 # ---------------------------------------------------------------------------------------------

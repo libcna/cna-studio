@@ -23,7 +23,9 @@
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
@@ -110,6 +112,8 @@ namespace CNA::Studio
                         shell_->setStatusLeft("Could not open " + options.projectPath);
                     }
                 }
+
+                (void)bindStudioShellActions(*shell_, *context_, log_);
 
                 // The World Outliner (STUDIO-07006), the second ported panel and the first that
                 // reads the document model rather than a log.

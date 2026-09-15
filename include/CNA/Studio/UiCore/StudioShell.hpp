@@ -269,6 +269,22 @@ namespace CNA::Studio
         bool closePanel(std::string_view id);
 
         /**
+         * @brief Runs a registered action by id, recording what happened.
+         *
+         * Public because the alternative is worse. `actions()` is public, so anything that needs
+         * to run a command can already reach `StudioActionRegistry::invoke` -- and doing so skips
+         * the shell's record of what ran and what was refused, which is the only thing that makes
+         * a menu row quietly doing nothing discoverable without a debugger. One public route that
+         * keeps the books beats a private one everybody goes around.
+         *
+         * A refusal -- an unknown id, a disabled action, one with no handler -- is recorded rather
+         * than thrown or ignored. See @ref refusedActions.
+         *
+         * @param id The action's id.
+         */
+        void invoke(std::string_view id);
+
+        /**
          * @brief Serializes the workspace arrangement.
          * @return The JSON document, versioned by @ref StudioDockTree::kLayoutVersion.
          */
@@ -494,7 +510,6 @@ namespace CNA::Studio
 
         void handleMenuKeyboard();
         void dispatchShortcuts();
-        void invoke(std::string_view id);
 
         /** @brief Moves the menu highlight by @p delta rows, skipping separators and disabled rows. */
         void moveHighlight(int delta);
