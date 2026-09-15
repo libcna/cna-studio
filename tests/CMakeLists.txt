@@ -37,6 +37,7 @@ add_executable(cna-studio-tests
     StudioDropdownTests.cpp
     StudioBuildPanelTests.cpp
     StudioProblemsPanelTests.cpp
+    StudioHistoryPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -215,6 +216,14 @@ add_test(NAME CnaStudioShellPreviewPortedPanels
                        --shell-size=1400x900
                        --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioShellPreviewPortedPanels PROPERTIES TIMEOUT 60)
+
+# The History panel, which is a third tab beside Details and therefore only capturable by raising
+# it -- and whose one row on a freshly opened project is itself the thing worth photographing.
+add_test(NAME CnaStudioShellPreviewHistoryPanel
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-history.png
+                       --shell-size=1400x900 --panel=history
+                       --project=${CMAKE_SOURCE_DIR}/examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioShellPreviewHistoryPanel PROPERTIES TIMEOUT 60)
 
 # The Problems panel, whose good state is emptiness -- so the capture is of a panel that says so
 # rather than of a blank rectangle.

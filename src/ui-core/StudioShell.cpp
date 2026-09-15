@@ -52,6 +52,7 @@ namespace CNA::Studio
         registerPanel({"layers", "Layers"});
         registerPanel({"details", "Details"});
         registerPanel({"material", "Material"});
+        registerPanel({"history", "History"});
         registerPanel({"content", "Content Browser"});
         registerPanel({"output", "Output Log"});
         registerPanel({"build", "Build"});
@@ -250,6 +251,7 @@ namespace CNA::Studio
         dock_.addPanel(left, "layers");
         dock_.addPanel(right, "details");
         dock_.addPanel(right, "material");
+        dock_.addPanel(right, "history");
         dock_.addPanel(bottom, "content");
         dock_.addPanel(bottom, "output");
         dock_.addPanel(bottom, "build");

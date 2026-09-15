@@ -11,6 +11,7 @@
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -111,6 +112,26 @@ namespace CNA::Studio
                 build_.cancel();
                 log_.append(LogSeverity::Warning, "Build cancelled.");
             }
+        });
+
+        // The History panel (STUDIO-07013): the undo stack as a list a user can jump around in,
+        // which is the only way to reach a state twenty commands back without counting Ctrl+Z.
+        shell.setPanelContent("history", [this](StudioFrame& frame, const UiRect& bounds) {
+            const StudioHistoryResult history =
+                studioHistoryPanel(frame, bounds, context_, historyState_);
+            if (frame.isDrawPass())
+            {
+                counts_.historyRowsDrawn = history.rowsDrawn;
+                counts_.historyPositions = history.positions;
+            }
+            if (!history.navigateTo.has_value()) { return; }
+
+            const std::size_t ran = studioNavigateHistory(context_, *history.navigateTo);
+            if (ran == 0) { return; }
+
+            log_.append(LogSeverity::Trace,
+                        "History: moved to position " + std::to_string(context_.getHistory().getCursor())
+                            + " of " + std::to_string(context_.getHistory().getCount()) + ".");
         });
 
         // The Problems panel (STUDIO-07012): scene validation and broken asset references, as one

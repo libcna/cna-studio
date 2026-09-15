@@ -252,10 +252,12 @@ CNA_STUDIO_TEST(ClosingEveryOtherPanelGivesTheViewportTheWholeDockArea)
     const UiRect before = shell.panelBounds("viewport");
     CNA_STUDIO_EXPECT(!before.isEmpty());
 
-    for (const char* panel : {"outliner", "layers", "details", "material",
-                              "content", "output", "build", "problems"})
+    // Every registered panel except the viewport, read from the shell rather than listed here: a
+    // hand-written list stops meaning "everything else" the moment a panel is added, and the test
+    // then passes while proving less than it says.
+    for (const StudioPanelDescriptor& descriptor : shell.registeredPanels())
     {
-        shell.dockTree().removePanel(panel);
+        if (descriptor.id != "viewport") { shell.dockTree().removePanel(descriptor.id); }
     }
     shell.renderFrame(input);
 

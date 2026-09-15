@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 9 of 26 complete `████░░░░░░░░`
+**Progress:** 10 of 26 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,7 +22,7 @@
 | `STUDIO-07010` | Port the Build panel | ✅ | `STUDIO-07001`, `STUDIO-02040`, `STUDIO-03036` |
 | `STUDIO-07011` | Port the Diagnostics panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07012` | Port the Validation panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
-| `STUDIO-07013` | Port the History panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07013` | Port the History panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07014` | Port the Comparison panel | ⬜ | `STUDIO-07001` |
 | `STUDIO-07015` | One log model, read by both consoles | ✅ | — |
 | `STUDIO-07016` | Panel content seam: the shell hosts a ported panel's content | ✅ | `STUDIO-06018` |
@@ -284,3 +284,36 @@ grouped with everything that refers to it, severity carried as a colour, clickin
 for the entity at fault, the toolbar refused until a broken asset is selected and acting on it by id
 when one is, clicking a row selecting it, and no phase violations across repeated frames. Plus
 `CnaStudioShellPreviewProblemsPanel`
+
+### `STUDIO-07013` — Port the History panel
+
+**Acceptance.** The undo stack as a list, showing where the cursor is, what has been undone and
+where the document last agreed with the file on disk — and clicking a row goes there
+
+**Rows are positions, not entries.** Row *i* is the document after *i* commands, so there is one
+more row than there are entries. That extra row — the document as it was opened — is the one a user
+reaching for "put it back how it was" is actually aiming at, and a list of entries alone can take
+them everywhere except there. It is the first test in the file for that reason.
+
+**Navigating is undo and redo, not a jump.** Clicking a row runs the commands between here and
+there one at a time, through the same `CommandHistory` that Ctrl+Z uses. Setting the cursor directly
+would leave the document and the history describing different things, and a command that refused
+would be skipped silently instead of stopping the walk. The walk is bounded by the entry count on
+both sides, because `undo()` and `redo()` report failure rather than throwing and a loop that
+trusted the cursor to move would spin.
+
+**And it is reported rather than applied where it is found.** Navigating runs commands, which
+changes the very list being drawn: half the rows would describe one history and half another.
+
+**Undone entries are marked, not hidden**, because they are precisely what a user is trying to get
+back to — a list that hides them has no forward direction at all. The saved position is marked in
+its own colour: "where was this when I last saved it" is the question behind most uses of an undo
+list.
+
+**The panel is new to the native shell's layout**, docked beside Details and Material.
+
+**Verification.** `tests/StudioHistoryPanelTests.cpp`: the empty history still having the position
+it started from, one more row than commands, undone entries marked and muted, the saved position
+marked, navigating backwards and forwards one command at a time with the document following,
+navigating to where you already are running nothing, a click reporting rather than moving, and a
+click on the current position asking for nothing. Plus `CnaStudioShellPreviewHistoryPanel`

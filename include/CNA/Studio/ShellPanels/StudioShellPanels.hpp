@@ -29,6 +29,7 @@
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Project/BuildRunner.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -67,6 +68,8 @@ namespace CNA::Studio
         std::size_t logRowsDrawn = 0;
         std::size_t logRowsMatching = 0;
         std::size_t problemRowsDrawn = 0;
+        std::size_t historyRowsDrawn = 0;
+        std::size_t historyPositions = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
         std::size_t sceneWarnings = 0;
@@ -119,6 +122,7 @@ namespace CNA::Studio
         StudioTreeState outlinerState_;
         StudioTreeState contentState_;
         StudioProblemsState problemsState_;
+        StudioTreeState historyState_;
         Uuid selectedAsset_;
 
         BuildProcess build_;
