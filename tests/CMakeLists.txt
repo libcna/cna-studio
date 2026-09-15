@@ -48,6 +48,7 @@ add_executable(cna-studio-tests
     StudioFloatingPanelTests.cpp
     StudioTilemapToolTests.cpp
     StudioTooltipTests.cpp
+    StudioViewport3DTests.cpp
     StudioSubmenuTests.cpp
     StudioContextMenuTests.cpp
     StudioDropdownTests.cpp

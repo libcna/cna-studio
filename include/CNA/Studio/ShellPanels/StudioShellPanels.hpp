@@ -79,6 +79,16 @@ namespace CNA::Studio
          */
         StudioCamera2D* camera = nullptr;
 
+        /**
+         * @brief The 3D editor camera, for the 3D view. Unset leaves that view unreachable.
+         *
+         * A second camera rather than one that switches projection, exactly as the prototype
+         * keeps them: the 2D view's pan and zoom and the 3D view's orbit and distance are
+         * different state, and a user who switches to 3D, looks around and switches back expects
+         * to find the 2D view where they left it.
+         */
+        StudioCamera3D* camera3D = nullptr;
+
         /** @brief Resolves a sprite's texel size for picking. Empty picks at the default size. */
         SpriteSizeProvider spriteSize;
 
@@ -176,10 +186,15 @@ namespace CNA::Studio
          * created — that is what lets the headless preview bind the same panels — and the camera
          * belongs to whoever renders the scene.
          *
-         * @param camera The editor camera; must outlive this.
+         * @param camera The 2D editor camera; must outlive this.
+         * @param camera3D The 3D editor camera; must outlive this.
          * @param spriteSize Resolves a sprite's texel size for picking.
          */
-        void setViewportServices(StudioCamera2D& camera, SpriteSizeProvider spriteSize);
+        void setViewportServices(StudioCamera2D& camera, StudioCamera3D& camera3D,
+                                 SpriteSizeProvider spriteSize);
+
+        /** @brief Which projection the viewport is showing, so the host renders the same one. */
+        [[nodiscard]] StudioViewportView viewportView() const { return viewportState_.view; }
 
         /** @brief Which manipulator the viewport shows, so the renderer draws the same one. */
         [[nodiscard]] GizmoMode viewportMode() const { return viewportState_.mode; }
@@ -387,6 +402,14 @@ namespace CNA::Studio
         StudioContext& context_;
         StudioLog& log_;
         StudioShellPanelServices services_;
+
+        /**
+         * @brief Whether the 3D camera has been placed over the scene.
+         *
+         * The first switch to 3D frames the scene and no later one does: the default camera looks
+         * straight down an axis, and framing every time would throw away an angle the user set up.
+         */
+        bool framedIn3D_ = false;
 
         StudioTreeState outlinerState_;
         StudioTreeState contentState_;

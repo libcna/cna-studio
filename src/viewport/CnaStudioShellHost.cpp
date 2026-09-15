@@ -24,6 +24,9 @@
 #include "Microsoft/Xna/Framework/Graphics/Viewport.hpp"
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
+#include "CNA/Studio/Scene/SceneModels.hpp"
+#include "CNA/Studio/Scene/SceneSprites3D.hpp"
+#include "CNA/Studio/Scene/SceneWireframe.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
@@ -376,6 +379,7 @@ namespace CNA::Studio
                 // Handed over now that the device exists: the panels were bound before it did,
                 // because binding needs no CNA and that is the whole point of the seam.
                 panels_->setViewportServices(sceneViewport_->getCamera(),
+                                             sceneViewport_->getCamera3D(),
                                              sceneViewport_->makeSizeProvider());
 
                 StudioDiagnosticsInfo& diagnostics = panels_->diagnostics();
@@ -550,15 +554,48 @@ namespace CNA::Studio
                     return;
                 }
 
-                // The mode the toolbar chose, so the manipulator drawn is the one a drag will
-                // grab. Two sources of truth here would show a rotate ring and move the entity.
-                const UiTextureId texture = sceneViewport_->render(
-                    context_->getScene(), width, height, context_->getSelection(),
-                    panels_->viewportMode(), panels_->viewportSpace());
+                const UiTextureId texture = panels_->viewportView() == StudioViewportView::ThreeD
+                    ? renderSceneIn3D(width, height)
+                    // The mode the toolbar chose, so the manipulator drawn is the one a drag will
+                    // grab. Two sources of truth here would show a rotate ring and move the entity.
+                    : sceneViewport_->render(context_->getScene(), width, height,
+                                             context_->getSelection(), panels_->viewportMode(),
+                                             panels_->viewportSpace());
 
                 shell_->setViewportImage(texture,
                                          sceneViewport_->isRenderTextureFlippedVertically());
                 viewportComposited_ = texture != kUiTextureNone;
+            }
+
+            /**
+             * @brief Renders the 3D view: the wireframe, the solid meshes and the sprites as quads.
+             *
+             * Every batch is built by a CNA-free, tested function and handed to the viewport to
+             * upload, which is what keeps the decision of *what* to draw testable without a device
+             * — the same division the prototype's 3D view uses, and the reason porting it was
+             * wiring rather than invention.
+             */
+            UiTextureId renderSceneIn3D(int width, int height)
+            {
+                const StudioCamera3D& camera = sceneViewport_->getCamera3D();
+                const SpriteSizeProvider sizes = sceneViewport_->makeSizeProvider();
+
+                const WireframeResult wireframe = buildSceneWireframe(
+                    context_->getScene(), camera, context_->getSelection(), sizes);
+
+                const SceneModelBatch models = buildSceneModelBatch(
+                    context_->getScene(), camera, context_->makeMeshProvider(),
+                    context_->getSelection(), context_->makeMaterialProvider());
+
+                // Sprites as quads in the scene's own plane. `SpriteBatch` cannot draw the
+                // trapezoid a sprite becomes from an angle, which is why the 3D view has its own
+                // path for them rather than reusing the 2D one.
+                const SceneSpriteBatch3D sprites = buildSceneSpriteQuads(
+                    context_->getScene(), camera, sizes, AnimationPreview{},
+                    context_->getSelection(), &context_->getComponentRegistry());
+
+                return sceneViewport_->renderScene3D(models, sprites, wireframe.segments, width,
+                                                     height);
             }
 
             void captureScreenshotIfRequested()

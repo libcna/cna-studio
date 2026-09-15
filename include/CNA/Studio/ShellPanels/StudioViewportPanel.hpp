@@ -24,6 +24,7 @@
 
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Scene/StudioCamera2D.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/Scene/Tilemap.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
@@ -53,6 +54,29 @@ namespace CNA::Studio
      * `CNA::Studio` is the ODR violation `STUDIO-02039` exists to refuse: it compiles, it links,
      * and it corrupts memory at run time hundreds of tests away from the cause.
      */
+    /**
+     * @brief Which projection the viewport is showing.
+     *
+     * Named apart from the prototype's `ViewMode` for the reason `STUDIO-02039` records: two types
+     * of one name in `CNA::Studio` compile, link and corrupt memory at run time, and both UIs are
+     * in this binary until `STUDIO-07031`.
+     *
+     * The two views share nothing below the camera. A press in 3D orbits rather than pans, picks
+     * along a ray rather than against a layer order, and has no tile under it at all — so the
+     * panel branches once, at the top, rather than threading a mode through six functions that
+     * would each then be about two things.
+     */
+    enum class StudioViewportView
+    {
+        /** @brief The orthographic 2D scene: sprites, tilemaps, the grid. */
+        TwoD,
+        /** @brief The perspective or orthographic 3D scene: meshes, sprites as quads, wireframe. */
+        ThreeD
+    };
+
+    /** @brief The name of @p view, for a menu row or an overlay. */
+    [[nodiscard]] const char* studioViewportViewName(StudioViewportView view);
+
     enum class StudioViewportTool
     {
         /** @brief Pick entities and drag the gizmo. The default. */
@@ -83,7 +107,35 @@ namespace CNA::Studio
          * manipulates at all. A single enum spanning both would make "paint tiles with the rotate
          * gizmo" expressible, which is not a thing.
          */
+        /**
+         * @brief Which projection is showing. The 2D and 3D views share only the document.
+         */
+        StudioViewportView view = StudioViewportView::TwoD;
+
         StudioViewportTool tool = StudioViewportTool::Select;
+
+        /**
+         * @brief Multiplier on pan, orbit and fly speed, from the user's preferences.
+         *
+         * Carried on the state rather than read from a preferences object the panel would have to
+         * be handed, because the panel is CNA-free arithmetic over a camera and a document and
+         * giving it a second thing to know about would be giving it a reason to need a Studio.
+         * The shell copies it in every frame, for the reason the autosave interval is re-read
+         * every poll: a setting applied only when the panel changes it is one that works when you
+         * change it and not when you restart.
+         */
+        float cameraSpeed = 1.0f;
+
+        /** @brief Whether the wheel's zoom direction is reversed. */
+        bool invertZoom = false;
+
+        /** @brief Whether a 3D navigation gesture is in progress. */
+        bool navigating = false;
+        /** @brief Whether that gesture has moved at all, which is what makes it not a click. */
+        bool navigationMoved = false;
+        /** @brief Where the pointer was last frame, in panel coordinates. */
+        float navigationX = 0.0f;
+        float navigationY = 0.0f;
 
         /** @brief The tile the paint and fill tools write. */
         std::int64_t paintTile = 0;
@@ -199,6 +251,15 @@ namespace CNA::Studio
 
         /** @brief The tool changed itself, which the eyedropper does. Input pass only. */
         bool toolChanged = false;
+
+        /**
+         * @brief A press and release in the 3D view that turned no camera. Input pass only.
+         *
+         * Separate from a plain click because in 3D every button is also a navigation gesture: a
+         * release after an orbit must not select whatever the camera happened to stop over, which
+         * is exactly what makes a 3D viewport feel like it is fighting the user.
+         */
+        bool clicked3D = false;
     };
 
     /**
@@ -217,6 +278,30 @@ namespace CNA::Studio
                                              StudioContext& context, StudioCamera2D& camera,
                                              StudioViewportState& state,
                                              const SpriteSizeProvider& sizeProvider = {});
+
+    /**
+     * @brief Drives the 3D camera and the selection from input over @p bounds.
+     *
+     * The same shape as @ref studioViewportPanel and deliberately a separate function rather than a
+     * branch inside it: the two views share the document and nothing else, and one function holding
+     * both would be one where every reader has to work out which half they are in.
+     *
+     * Orbit is a left drag, pan is Shift, and the wheel dollies geometrically so that one notch
+     * feels the same close up and far away. The turn rate is radians per *pixel* rather than per
+     * fraction of the panel, so a narrow viewport does not turn faster than a wide one.
+     *
+     * @param frame The frame.
+     * @param bounds The viewport panel's body, in window coordinates.
+     * @param context The editor. Its scene is picked against; its selection is written.
+     * @param camera The 3D editor camera, orbited, panned and dollied in place.
+     * @param state The viewport's retained state.
+     * @param sizeProvider Resolves a sprite's texel size, so a sprite picks at its extent.
+     * @return What happened.
+     */
+    StudioViewportResult studioViewportPanel3D(StudioFrame& frame, const UiRect& bounds,
+                                               StudioContext& context, StudioCamera3D& camera,
+                                               StudioViewportState& state,
+                                               const SpriteSizeProvider& sizeProvider = {});
 
     /**
      * @brief Moves @p camera to frame the current selection.

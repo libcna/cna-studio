@@ -22,6 +22,7 @@
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <memory>
@@ -269,8 +270,9 @@ CNA_STUDIO_TEST(F2RenamesTheSelectionAndRaisesTheOutlinerToDoIt)
     shell.resetLayout();
     (void)bindStudioShellActions(shell, context, log);
     StudioCamera2D camera;
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     const Uuid player = add(context.getScene(), "Player");
     context.select(player);
@@ -298,8 +300,9 @@ CNA_STUDIO_TEST(RenameIsGreyedOutWithNothingSelected)
     shell.resetLayout();
     (void)bindStudioShellActions(shell, context, log);
     StudioCamera2D camera;
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     const StudioAction* rename = shell.actions().find("studio.edit.rename");
     CNA_STUDIO_EXPECT(rename != nullptr);

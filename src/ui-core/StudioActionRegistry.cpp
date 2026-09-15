@@ -332,6 +332,16 @@ namespace CNA::Studio
                 "Switch the gizmo to translation.", C::View, chord(UiKey::W));
         command("studio.view.rotate", "Rotate",
                 "Switch the gizmo to rotation.", C::View, chord(UiKey::E));
+        // The two views, checkable and exclusive. The prototype binds 2 and 3 for these and so
+        // does this: they are the keys anybody who has used a 3D editor reaches for, and a view
+        // that can only be changed through a menu is one people stop changing.
+        command("studio.view.2d", "2D View",
+                "Show the scene in the orthographic 2D view.", C::View, chord(UiKey::Digit2),
+                /*checkable=*/true);
+        command("studio.view.3d", "3D View",
+                "Show the scene in the 3D view.", C::View, chord(UiKey::Digit3),
+                /*checkable=*/true);
+
         // The tilemap tools. Checkable, because a toolbar has to *show* which one is armed: a
         // press means something different under each of them, and a user who cannot see which is
         // active finds out by editing their level.

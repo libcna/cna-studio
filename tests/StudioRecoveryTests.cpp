@@ -22,6 +22,7 @@
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/StudioRecovery.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <filesystem>
@@ -94,6 +95,7 @@ namespace
         StudioLog log;
         std::unique_ptr<StudioShell> shell = std::make_unique<StudioShell>(StudioTheme::dark());
         StudioCamera2D camera;
+        StudioCamera3D camera3D;
         std::unique_ptr<StudioShellPanels> panels;
 
         SecondStudio(const std::string& snapshots, const std::string& project, int autosaveSeconds)
@@ -105,7 +107,7 @@ namespace
             shell->resetLayout();
             (void)bindStudioShellActions(*shell, context, log);
             panels = std::make_unique<StudioShellPanels>(*shell, context, log);
-            panels->setViewportServices(camera, {});
+            panels->setViewportServices(camera, camera3D, {});
             panels->recovery().setDirectory(snapshots);
             panels->preferences().autosaveSeconds = autosaveSeconds;
             (void)context.openProject(project);
@@ -129,6 +131,7 @@ namespace
         StudioLog log;
         std::unique_ptr<StudioShell> shell = std::make_unique<StudioShell>(StudioTheme::dark());
         StudioCamera2D camera;
+        StudioCamera3D camera3D;
         std::unique_ptr<StudioShellPanels> panels;
 
         explicit Fixture(const std::string& name) : scratch(name)
@@ -147,7 +150,7 @@ namespace
             shell->resetLayout();
             (void)bindStudioShellActions(*shell, context, log);
             panels = std::make_unique<StudioShellPanels>(*shell, context, log);
-            panels->setViewportServices(camera, {});
+            panels->setViewportServices(camera, camera3D, {});
             panels->recovery().setDirectory(scratch.snapshots());
             panels->preferences().autosaveSeconds = 1;
 

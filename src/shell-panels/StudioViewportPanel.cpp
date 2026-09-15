@@ -11,6 +11,7 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
+#include "CNA/Studio/Scene/SceneWireframe.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
@@ -501,7 +502,8 @@ namespace CNA::Studio
         {
             // About the pointer, not about the centre. Zooming about the centre makes a user chase
             // the thing they were looking at across the screen.
-            camera.zoomAt(pointer, std::pow(kZoomPerNotch, router.wheelY()));
+            const float notches = state.invertZoom ? -router.wheelY() : router.wheelY();
+            camera.zoomAt(pointer, std::pow(kZoomPerNotch, notches));
             result.cameraChanged = true;
         }
 
@@ -520,7 +522,7 @@ namespace CNA::Studio
                                           router.mouseY() - panState.scrollY};
                 if (delta.x != 0.0f || delta.y != 0.0f)
                 {
-                    camera.panByScreenDelta(delta);
+                    camera.panByScreenDelta(StudioVector2{delta.x * state.cameraSpeed, delta.y * state.cameraSpeed});
                     result.cameraChanged = true;
                 }
             }
@@ -558,6 +560,153 @@ namespace CNA::Studio
             }
         }
 
+        return result;
+    }
+
+    const char* studioViewportViewName(StudioViewportView view)
+    {
+        switch (view)
+        {
+            case StudioViewportView::TwoD: return "2D";
+            case StudioViewportView::ThreeD: return "3D";
+        }
+        return "2D";
+    }
+
+    StudioViewportResult studioViewportPanel3D(StudioFrame& frame, const UiRect& bounds,
+                                               StudioContext& context, StudioCamera3D& camera,
+                                               StudioViewportState& state,
+                                               const SpriteSizeProvider& sizeProvider)
+    {
+        StudioViewportResult result;
+        if (bounds.isEmpty()) { return result; }
+
+        camera.setViewportSize(StudioVector2{bounds.width, bounds.height});
+
+        // One widget over the whole body, as in 2D and for the same reason: it takes focus so the
+        // keyboard can reach the viewport, and it is what stops the panels underneath responding
+        // to a drag that began here and wandered off.
+        const WidgetId id = frame.ids().make("viewport.surface3d");
+        const StudioInteraction surface = frame.interact(id, bounds, /*enabled=*/true);
+
+        StudioInputRouter& router = frame.router();
+        const StudioVector2 pointer{router.mouseX() - bounds.left(), router.mouseY() - bounds.top()};
+
+        result.pointerInside = surface.hovered;
+
+        if (!frame.isInputPass()) { return result; }
+
+        const UiInputState& input = frame.input();
+
+        if (surface.hovered && input.wheelY != 0.0f)
+        {
+            // Geometric, like the 2D zoom and for the same reason: one notch has to feel the same
+            // close up and far away. Scrolling up moves the eye towards the pivot, so the exponent
+            // is negated.
+            constexpr float kDollyPerNotch = 1.15f;
+            const float notches = state.invertZoom ? input.wheelY : -input.wheelY;
+            camera.dolly(std::pow(kDollyPerNotch, notches));
+            result.cameraChanged = true;
+        }
+
+        const bool left = router.mouseDown(UiMouseButton::Left);
+        const bool middle = router.mouseDown(UiMouseButton::Middle);
+        const bool right = router.mouseDown(UiMouseButton::Right);
+        const bool anyButton = left || middle || right;
+
+        if (state.navigating && !anyButton)
+        {
+            state.navigating = false;
+            // A release that moved nothing is a click, and a click selects. Tracked rather than
+            // read from the interaction because a drag that left the panel and came back must not
+            // count as one -- the same rule the 2D viewport applies to its gizmo.
+            if (!state.navigationMoved && surface.hovered) { result.clicked3D = true; }
+        }
+        else if (!state.navigating && anyButton && surface.pressed)
+        {
+            state.navigating = true;
+            state.navigationMoved = false;
+            state.navigationX = pointer.x;
+            state.navigationY = pointer.y;
+        }
+
+        if (state.navigating)
+        {
+            const StudioVector2 delta{pointer.x - state.navigationX, pointer.y - state.navigationY};
+            state.navigationX = pointer.x;
+            state.navigationY = pointer.y;
+
+            if (std::abs(delta.x) > 0.0f || std::abs(delta.y) > 0.0f)
+            {
+                state.navigationMoved = true;
+
+                // Radians per pixel. A full turn across a 900-pixel panel is the rate every 3D
+                // editor has converged on, and it is deliberately independent of the panel's size:
+                // a rate derived from the width would turn faster in a narrow panel than a wide
+                // one, which is the kind of thing nobody reports and everybody notices.
+                const float radiansPerPixel = 0.007f * state.cameraSpeed;
+
+                if (middle || input.modifiers.shift)
+                {
+                    camera.panByScreenDelta(StudioVector2{delta.x * state.cameraSpeed, delta.y * state.cameraSpeed});
+                }
+                else if (right)
+                {
+                    // Turning in place rather than about the pivot: the gesture that goes with
+                    // flying, and the reason `look()` exists beside `orbit()`.
+                    camera.look(-delta.x * radiansPerPixel, delta.y * radiansPerPixel);
+                }
+                else if (left)
+                {
+                    camera.orbit(-delta.x * radiansPerPixel, delta.y * radiansPerPixel);
+                }
+                result.cameraChanged = true;
+            }
+        }
+
+        // Flying, while the right button is held. The modifier is what keeps W, A, S and D from
+        // meaning two things at once: they are the gizmo shortcuts everywhere else.
+        if (right)
+        {
+            // Proportional to the orbit distance, so one press crosses the same fraction of what
+            // is on screen whether the camera is inside a room or above a level.
+            const float step = std::max(0.05f, camera.getDistance() * 0.04f) * state.cameraSpeed;
+
+            StudioVector3 move;
+            if (input.isKeyDown(UiKey::W)) { move.z += step; }
+            if (input.isKeyDown(UiKey::S)) { move.z -= step; }
+            if (input.isKeyDown(UiKey::D)) { move.x += step; }
+            if (input.isKeyDown(UiKey::A)) { move.x -= step; }
+            if (input.isKeyDown(UiKey::E)) { move.y += step; }
+            if (input.isKeyDown(UiKey::Q)) { move.y -= step; }
+
+            if (!(move == StudioVector3{}))
+            {
+                camera.moveLocal(move);
+                result.cameraChanged = true;
+            }
+        }
+
+        if (!result.clicked3D) { return result; }
+
+        const Uuid picked = pickEntityAt3D(context.getScene(), camera, pointer, sizeProvider);
+        result.picked = picked;
+
+        // The same two selection rules the 2D viewport has, because they are rules about selecting
+        // rather than about a projection: Ctrl adds and removes, and Ctrl on empty space leaves a
+        // half-assembled selection alone.
+        if (input.modifiers.control)
+        {
+            if (picked.isValid())
+            {
+                context.toggleSelection(picked);
+                result.selectionChanged = true;
+            }
+            return result;
+        }
+
+        context.select(picked);
+        result.selectionChanged = true;
         return result;
     }
 

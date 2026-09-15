@@ -18,6 +18,7 @@
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <algorithm>
@@ -47,13 +48,14 @@ namespace
         StudioLog log;
         StudioShell shell;
         StudioCamera2D camera;
+        StudioCamera3D camera3D;
         StudioShellPanels panels{shell, context, log};
 
         Fixture()
         {
             shell.resetLayout();
             (void)bindStudioShellActions(shell, context, log);
-            panels.setViewportServices(camera, {});
+            panels.setViewportServices(camera, camera3D, {});
         }
 
         /** @brief Glyphs the panel's content drew on its own, with nothing open. */

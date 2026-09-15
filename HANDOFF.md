@@ -151,7 +151,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **178 of 489 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **182 of 490 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -606,36 +606,32 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 ## Next recommended tasks
 
-In dependency order. The parity block this list used to describe is finished: every panel is ported,
-the inventory exists and is machine-checked in both directions, and input, docking and visual
-acceptance are all proven. What stands between the native shell and being the editor `cna-studio`
-opens by default is now a single missing feature rather than missing evidence.
-
-**The 3D view is the gate.** The prototype's viewport draws one and the native viewport does not, so
-making the native shell the default today would ship a Studio that lost a feature — a regression
-whatever else improved. It is the last row in the inventory's *Not yet answered* table that a user
-would notice, and everything below it in this list is waiting on it.
+In dependency order. The 3D view — which the previous handoff named as the single gate on making the
+native shell the default — is answered: `2` and `3` switch views, a drag orbits, Shift pans, the
+wheel dollies, W/A/S/D/Q/E fly, and a click picks along a ray. The migration inventory now names
+**nothing the prototype does that the native shell does not**, apart from forwarding input to a
+running player.
 
 | Id | Task |
 |----|------|
-| `STUDIO-11001` | Perspective and orthographic cameras in the native viewport |
-| `STUDIO-11002` | Orbit, fly and pan navigation with configurable speed |
-| `STUDIO-11006` | Object picking through the 3D projection |
-| `STUDIO-07009` | Finish the viewport container: the 2D/3D toggle, and input to a running player |
+| `STUDIO-07009` | Forward input to a running player — the viewport's last unported piece |
 | `STUDIO-06015` | Make the native shell the default, with the legacy UI behind a flag |
 | `STUDIO-07001` | Both UIs in one running Studio, so the switch can be made without a rebuild |
 | `STUDIO-07030` | Remove the Dear ImGui panels |
-| `STUDIO-07031` | Remove the Dear ImGui dependency |
+| `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source |
+| `STUDIO-07099` | Guard test: the production Studio UI has no dependency on Dear ImGui |
 
 Not on that chain, and each worth doing on its own:
 
 | Id | Task |
 |----|------|
+| `STUDIO-11015` | Maya and Blender navigation schemes — the preference exists and nothing reads it |
 | `STUDIO-04019` | Font fallback — CJK, Hangul and emoji are boxes today, and the caret is not the reason |
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss |
-| `STUDIO-04011` | Window resize without artefacts |
+| `STUDIO-04011` | The device half of window resize: back buffer and viewport render targets |
 | `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state |
 | `STUDIO-03027` | IME support where the platform provides it |
+| `STUDIO-11003` … `11012` | Focus selection, standard views, adaptive grid, outlines, wireframe mode |
 | `STUDIO-19NNN` | The material editor — the one panel with no prototype to port from |
 
 **Blocked, not forgotten.** `STUDIO-33010` (graphical CI with a display) and the per-renderer half of

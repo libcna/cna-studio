@@ -599,9 +599,10 @@ it hits
 pointer, the middle *or* right button pans, a click picks the topmost sprite and Ctrl adds to the
 selection, a click on nothing clears it, **all three manipulators drag** — translate axis-constrained,
 rotate about the ring, scale as a screen-space ratio — with Ctrl snapping to the project's step or
-the visible grid, **on one entity or on a whole selection**, and **tiles paint** (below). What does
-not: the 3D view toggle and forwarding input to a running player. Each is its own task and each is a
-real piece of the prototype's viewport.
+the visible grid, **on one entity or on a whole selection**, **tiles paint** (below), and **the 3D
+view works** — `2` and `3` switch, a drag orbits, and a click picks along a ray (`STUDIO-11001`,
+`STUDIO-11002`, `STUDIO-11006`). What does not: forwarding input to a running player. That is the
+last piece of the prototype's viewport this one does not answer, and it is its own task.
 
 **A tool is not a mode, and a press under one does not select.** Painting resolves before the gizmo
 and before the selection, and returns. The tilemap being painted into has to *stay* selected for the

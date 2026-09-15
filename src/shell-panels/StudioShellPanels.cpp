@@ -628,10 +628,11 @@ namespace CNA::Studio
 
 
 
-    void StudioShellPanels::setViewportServices(StudioCamera2D& camera,
+    void StudioShellPanels::setViewportServices(StudioCamera2D& camera, StudioCamera3D& camera3D,
                                                 SpriteSizeProvider spriteSize)
     {
         services_.camera = &camera;
+        services_.camera3D = &camera3D;
         services_.spriteSize = std::move(spriteSize);
         // Re-bound rather than checked per frame: the content callback captures `this` and reads
         // the services through it, so the only thing that has to happen here is that the viewport
@@ -741,6 +742,57 @@ namespace CNA::Studio
             shell.actions().add(std::move(action));
         }
 
+        // The two views. Exclusive and checkable for the same reason the tools are: a viewport can
+        // only be showing one of them, and a menu that cannot say which is one a user tests by
+        // pressing it.
+        for (const auto& [id, view] : {std::pair{"studio.view.2d", StudioViewportView::TwoD},
+                                       std::pair{"studio.view.3d", StudioViewportView::ThreeD}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this, view] { return viewportState_.view == view; };
+            action.run = [this, view] {
+                if (viewportState_.view == view) { return; }
+                viewportState_.view = view;
+
+                // Every gesture ends with the view that owned it. A gizmo drag half-finished in
+                // the 2D view would otherwise keep writing positions from a projection that is no
+                // longer on screen, and a navigation gesture would resume mid-orbit.
+                viewportState_.endDrag();
+                viewportState_.navigating = false;
+                viewportState_.fillStart.reset();
+
+                // The first switch frames the scene, and only the first: the default camera looks
+                // straight down an axis, so an unframed 3D view opens on a grid with the level
+                // somewhere off the edge of it. Framing on *every* switch would be worse than not
+                // framing at all -- a user who set up a view, glanced at 2D and came back would
+                // find their angle thrown away.
+                if (view == StudioViewportView::ThreeD && !framedIn3D_
+                    && services_.camera3D != nullptr)
+                {
+                    if (const std::optional<WorldBounds3D> bounds = computeSceneBounds3D(
+                            context_.getScene(), services_.spriteSize))
+                    {
+                        services_.camera3D->frame(*bounds);
+                        framedIn3D_ = true;
+                    }
+                }
+
+                // Said out loud, because the two views share a panel and the change is dramatic
+                // enough that a user who pressed 3 by accident deserves to be told what they
+                // pressed -- and told how to get back.
+                log_.append(LogSeverity::Info,
+                            view == StudioViewportView::ThreeD
+                                ? "Viewport: 3D. Drag to orbit, Shift-drag to pan, wheel to zoom. "
+                                  "Press 2 for the 2D view."
+                                : "Viewport: 2D.");
+            };
+            shell.actions().add(std::move(action));
+        }
+
         // The tilemap tools. Checkable so the toolbar shows which press-means-what is armed, and
         // exclusive because a press is one thing: arming two would be arming neither.
         for (const auto& [id, tool] :
@@ -813,6 +865,37 @@ namespace CNA::Studio
             {
                 sayViewportIsEmpty(frame, bounds, "No project open.",
                                    "Open one with File > Open Project, or --project.");
+                return;
+            }
+
+            // Read every frame rather than applied when the Preferences panel changes them, for
+            // the reason the autosave interval is re-read every poll: preferences also arrive by
+            // being *assigned*, when the host loads them from disk, and a setting that only takes
+            // effect down one of the two paths is one that works when you change it and not when
+            // you restart.
+            viewportState_.cameraSpeed = preferences_.cameraSpeed;
+            viewportState_.invertZoom = preferences_.invertZoom;
+
+            // The two views branch here, at the top, rather than inside one function that would
+            // then be about both. They share the document and nothing below it: a press in 3D
+            // orbits rather than pans, picks along a ray rather than against a layer order, and
+            // has no tile under it at all.
+            if (viewportState_.view == StudioViewportView::ThreeD && services_.camera3D != nullptr)
+            {
+                const StudioViewportResult view3D = studioViewportPanel3D(
+                    frame, bounds, context_, *services_.camera3D, viewportState_,
+                    services_.spriteSize);
+
+                if (!view3D.selectionChanged) { return; }
+                ++counts_.viewportSelections;
+                if (const StudioEntity* entity = context_.getScene().findEntity(view3D.picked))
+                {
+                    log_.append(LogSeverity::Trace, "Selected '" + entity->getName() + "'.");
+                }
+                else
+                {
+                    log_.append(LogSeverity::Trace, "Selection cleared.");
+                }
                 return;
             }
 

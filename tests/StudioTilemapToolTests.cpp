@@ -21,6 +21,7 @@
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <string>
@@ -52,6 +53,7 @@ namespace
     {
         StudioContext context;
         StudioCamera2D camera;
+        StudioCamera3D camera3D;
         StudioFrame frame{StudioTheme::dark()};
         StudioViewportState state;
         UiRect body{0.0f, 0.0f, kWidth, kHeight};
@@ -344,6 +346,8 @@ CNA_STUDIO_TEST(PaintingWithNoTilemapSelectedSaysSoOncePerPress)
     context.select(spriteId);
 
     StudioCamera2D camera;
+
+    StudioCamera3D camera3D;
     camera.setViewportSize(StudioVector2{kWidth, kHeight});
     StudioFrame frame{StudioTheme::dark()};
     StudioViewportState state;
@@ -400,8 +404,9 @@ CNA_STUDIO_TEST(TheToolCommandsAreExclusiveAndSayWhichIsArmed)
     StudioShell shell{StudioTheme::dark()};
     shell.resetLayout();
     StudioCamera2D camera;
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     const std::vector<std::string> ids = {"studio.view.tool.select", "studio.view.tool.paint",
                                           "studio.view.tool.erase", "studio.view.tool.pick",
@@ -444,7 +449,8 @@ CNA_STUDIO_TEST(AToolCommandWithNoViewportBehindItIsRefusedRatherThanIgnored)
 
     // And bound, it runs and is recorded as having run.
     StudioCamera2D camera;
-    panels.setViewportServices(camera, {});
+    StudioCamera3D camera3D;
+    panels.setViewportServices(camera, camera3D, {});
     shell.invoke("studio.view.tool.paint");
     CNA_STUDIO_EXPECT_EQ(shell.invokedActions().size(), std::size_t{1});
     CNA_STUDIO_EXPECT_EQ(shell.refusedActions().size(), std::size_t{1});

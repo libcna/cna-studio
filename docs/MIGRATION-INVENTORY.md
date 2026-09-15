@@ -52,9 +52,8 @@ of what was replaced.
 | Viewport | `src/panels/ViewportPanel.cpp` | `viewport` | 🔄 |
 
 The Viewport is 🔄 rather than ✅ because the native one composites the 2D scene, navigates, picks,
-manipulates and paints tiles, and the prototype's also has the 3D view. That is the substance of what
-keeps `STUDIO-06015` from being true, and it is listed under *Not yet answered* below rather than
-hidden inside a ✅.
+manipulates, paints tiles and now shows the 3D view, and the prototype's also forwards input to a
+running player. That last is `STUDIO-07009`'s remaining piece rather than a panel of its own.
 
 Panels the native shell adds, which the prototype has no equivalent for: `layers`, `preferences`,
 `material` (registered, no content yet — Phase 19).
@@ -138,8 +137,8 @@ name would be matching on something nobody can check.
 | Tools | Tile to paint | `Tile` | `studio.view.tool.paint` | ✅ |
 | Tools | Manipulator | `##gizmo` | `studio.view.translate` | ✅ |
 | Tools | Gizmo space | `##space` | `studio.view.toggleGizmoSpace` | 🔄 |
-| Tools | 2D view | `2D##view` | — | ⬜ |
-| Tools | 3D view | `3D##view` | — | ⬜ |
+| Tools | 2D view | `2D##view` | `studio.view.2d` | ✅ |
+| Tools | 3D view | `3D##view` | `studio.view.3d` | ✅ |
 
 **The tilemap tool and the tile index** are ✅ together as of `STUDIO-07003`, which is how they were
 ⬜ together: the index only appears beside the paint and fill tools, so it arrived with them. Finding
@@ -191,7 +190,24 @@ toolbar has three checkable buttons, so it shows which mode is on without being 
 nothing native *shows* which space is active. The prototype's button is labelled with the space it
 is in for exactly that reason, and a toolbar that cannot be read is half a control.
 
-**2D and 3D** are ⬜ for the same reason the Viewport is 🔄: there is no native 3D view yet.
+**2D and 3D** are ✅ as of `STUDIO-11001`/`STUDIO-11002`. The model was never the gap here either:
+`StudioCamera3D`, `pickEntityAt3D`, `buildSceneModelBatch`, `buildSceneSpriteQuads` and
+`buildSceneWireframe` are CNA-free, tested, and have been shared with the prototype since it had a
+3D view. What was missing was a native viewport that switched to it and turned a drag into an orbit.
+
+The prototype's dropdown is two exclusive checkable commands here, on `2` and `3` — the keys the
+prototype binds and the ones anybody who has used a 3D editor reaches for.
+
+**A press in 3D is a camera gesture first.** Every button navigates, so a release cannot simply mean
+"clicked": a release after an orbit that selected whatever the camera happened to stop over is the
+thing that makes a 3D viewport feel like it is fighting the user. A gesture that moved is a
+navigation and never selects; one that did not is a click, and selects by the same two rules the 2D
+view has.
+
+**The first switch frames the scene and no later one does.** The default camera looks straight down
+an axis, so an unframed 3D view opens on a grid with the level off the edge of it — but framing on
+every switch would be worse than not framing at all, because a user who set up a view, glanced at 2D
+and came back would find their angle thrown away.
 
 ---
 
@@ -233,8 +249,8 @@ Taken from `StudioApplication::handleShortcuts`. Each must resolve to a native a
 | `Delete` | Delete selection | `studio.edit.delete` | ✅ |
 | `F2` | Rename selection | `studio.edit.rename` | ✅ |
 | `F` | Frame selection | `studio.view.focusSelected` | ✅ |
-| `2` | 2D view | — | ⬜ |
-| `3` | 3D view | — | ⬜ |
+| `2` | 2D view | `studio.view.2d` | ✅ |
+| `3` | 3D view | `studio.view.3d` | ✅ |
 | `W` | Translate gizmo | `studio.view.translate` | ✅ |
 | `E` | Rotate gizmo | `studio.view.rotate` | ✅ |
 | `R` | Scale gizmo | `studio.view.scale` | ✅ |
@@ -276,14 +292,15 @@ ever shrinks is one nobody can tell the difference between "done" and "quietly d
 
 | What | Prototype home | What it needs |
 |------|----------------|---------------|
-| The 3D view | `ViewportPanel`, `StudioApplication` | A 3D camera and mesh drawing in the native viewport (Phase 11) |
 | Material editing | — | There is no `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19) |
 
-Two rows have left this table since it was written. **Plugin menus** are answered by
+Three rows have left this table since it was written. **The 3D view** is answered by
+`studioViewportPanel3D` and the host's `renderSceneIn3D`, described under *Toolbar controls* above.
+**Plugin menus** are answered by
 `bindStudioPluginMenus`: a plugin registers commands under `studio.plugin.` and the menus draw them
 like any others, rather than a menu bar calling back into a plugin to draw its own rows.
 **Tilemap painting** is answered by `StudioViewportTool` and `studioViewportToolOverlay`, described
 under *Toolbar controls* above.
 
-What is left is the 3D view and material editing. The 3D view is the one that keeps
-`STUDIO-06015` from being true; material editing is a panel the prototype never had either.
+What is left is material editing, which is a panel the prototype never had either — so the
+inventory no longer names anything the prototype does that the native shell does not.

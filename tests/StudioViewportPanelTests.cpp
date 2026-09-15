@@ -13,6 +13,7 @@
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
@@ -44,6 +45,7 @@ namespace
     {
         StudioContext context;
         StudioCamera2D camera;
+        StudioCamera3D camera3D;
         StudioViewportState state;
         StudioFrame frame{StudioTheme::dark()};
         UiRect body{0.0f, 0.0f, kWidth, kHeight};
@@ -505,8 +507,10 @@ CNA_STUDIO_TEST(TheToolbarsTransformButtonsChooseTheManipulator)
     shell.resetLayout();
 
     StudioCamera2D camera;
+
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     UiInputState input;
     input.displayWidth = 1280.0f;
@@ -668,8 +672,10 @@ CNA_STUDIO_TEST(TheTransformShortcutsReachTheGizmoThroughTheRegistry)
     shell.resetLayout();
 
     StudioCamera2D camera;
+
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     UiInputState input;
     input.displayWidth = 1280.0f;
@@ -703,8 +709,10 @@ CNA_STUDIO_TEST(FIsRefusedUntilSomethingIsSelected)
     shell.resetLayout();
 
     StudioCamera2D camera;
+
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
     shell.renderFrame(UiInputState{});
 
     CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.focusSelected"));

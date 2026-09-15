@@ -18,6 +18,7 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <algorithm>
@@ -210,8 +211,9 @@ CNA_STUDIO_TEST(EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered)
 
     Fixture fixture;
     StudioCamera2D camera;
+    StudioCamera3D camera3D;
     StudioShellPanels panels{*fixture.shell, fixture.context, fixture.log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     std::vector<std::string> unimplemented;
     for (const StudioAction& action : fixture.shell->actions().commands())
@@ -266,8 +268,9 @@ CNA_STUDIO_TEST(EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle)
 
     Fixture fixture;
     StudioCamera2D camera;
+    StudioCamera3D camera3D;
     StudioShellPanels panels{*fixture.shell, fixture.context, fixture.log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     std::vector<std::string> empty;
     for (const StudioPanelDescriptor& descriptor : fixture.shell->registeredPanels())

@@ -71,11 +71,13 @@ control that changes nothing visible is a bug report waiting to be filed. The re
 above predate the change and are left as they were; they are the "before" of the migration, and
 re-taking them to hide what the review found would be the wrong kind of tidy.
 
-Everything else the captures differ by is already recorded in the inventory as unanswered — 2D/3D —
-or is a deliberate difference: the prototype's Play button and backend chooser are on the viewport's
+Everything else the captures differ by is a deliberate difference: the prototype's Play button and backend chooser are on the viewport's
 own toolbar, and natively they are on the application toolbar and in the Backends panel; and its
 tilemap tool strip is a dropdown on that same toolbar, where natively the tools are commands on the
 View menu and the tile index is an overlay in the viewport's own corner, beside the image it edits.
+The same goes for its 2D/3D dropdown: natively those are two exclusive commands on `2` and `3`.
+
+The captures are of the 2D view on both sides, which is what each opens on.
 
 ## The verdict
 
@@ -83,9 +85,9 @@ The native shell is ahead of the prototype on everything a user sees first, and 
 screen's worth of scene-level settings — which this review found and which are now answered.
 
 What `STUDIO-07030` — deleting the Dear ImGui panels — is still waiting for is the inventory's *Not
-yet answered* table, repeated here so the two can be compared by a test rather than by eye:
+yet answered* table, repeated here so the two can be compared by a test rather than by eye. The 3D
+view left that table when the native viewport gained one, which is why the list is now one row:
 
-- The 3D view
 - Material editing
 
 **This review is a judgement and says so.** No test can assert that one editor looks better than

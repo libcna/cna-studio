@@ -18,6 +18,7 @@
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <filesystem>
@@ -86,6 +87,7 @@ namespace
         StudioLog log;
         StudioShell shell;
         StudioCamera2D camera;
+        StudioCamera3D camera3D;
         StudioShellPanels panels{shell, context, log};
         int closed = 0;
 
@@ -93,7 +95,7 @@ namespace
         {
             shell.resetLayout();
             (void)bindStudioShellActions(shell, context, log);
-            panels.setViewportServices(camera, {});
+            panels.setViewportServices(camera, camera3D, {});
             shell.setQuitHandler([this] { ++closed; });
         }
 
@@ -255,8 +257,9 @@ CNA_STUDIO_TEST(AShellWithNoHostSaysSoRatherThanDoingNothing)
     shell.resetLayout();
     (void)bindStudioShellActions(shell, context, log);
     StudioCamera2D camera;
+    StudioCamera3D camera3D;
     StudioShellPanels panels{shell, context, log};
-    panels.setViewportServices(camera, {});
+    panels.setViewportServices(camera, camera3D, {});
 
     CNA_STUDIO_EXPECT(!shell.canQuit());
     shell.invoke("studio.file.quit");
