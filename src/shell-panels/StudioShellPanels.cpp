@@ -50,6 +50,7 @@ namespace CNA::Studio
 
     void StudioShellPanels::poll(double nowSeconds)
     {
+        pollRecovery(nowSeconds);
         build_.poll();
         pollBuild();
         pollPlayer();
@@ -73,6 +74,51 @@ namespace CNA::Studio
         std::string line = notification.title;
         if (!notification.detail.empty()) { line += " -- " + notification.detail; }
         log_.append(studioNotificationLogSeverity(notification.severity), line);
+    }
+
+    void StudioShellPanels::pollRecovery(double nowSeconds)
+    {
+        // A delta from the clock the host already passes, rather than a second one. `poll` is the
+        // only thing these panels run every frame, so this is where the seconds are.
+        // Read every poll rather than applied when the panel changes it. The preferences also
+        // arrive by being *assigned* -- the host loads them from disk straight into this object --
+        // and a setting that only takes effect down one of the two paths is a setting that works
+        // when you change it and not when you restart.
+        recovery_.setIntervalSeconds(static_cast<double>(preferences_.autosaveSeconds));
+
+        const double delta = recoveryLastSeconds_ < 0.0 || nowSeconds < recoveryLastSeconds_
+            ? 0.0
+            : nowSeconds - recoveryLastSeconds_;
+        recoveryLastSeconds_ = nowSeconds;
+
+        // The project changing is what "a project was opened" looks like from here. Watching the
+        // path rather than being told means the scan happens however the project was opened -- the
+        // command, the command line, or a host that opened one before these panels existed.
+        const std::string project = context_.hasProject()
+            ? context_.getProject().getFilePath() : std::string{};
+        if (project != recoveryProject_)
+        {
+            recoveryProject_ = project;
+            if (recovery_.scan() && shell_ != nullptr)
+            {
+                // Announced rather than only logged. This arrives at start-up, when the log has
+                // just filled with everything else start-up says, and it is the one message whose
+                // whole point is that the user was not there for what produced it.
+                const RecoverySnapshot* snapshot = recovery_.recoverable();
+                StudioNotification notification;
+                notification.id = "studio.recovery";
+                notification.severity = StudioNotificationSeverity::Warning;
+                notification.title = "Unsaved work was found";
+                notification.detail = "Scene '" + snapshot->sceneName + "' from "
+                                    + formatRecoveryTime(snapshot->savedAtSeconds);
+                notification.actionId = "studio.file.recoverScene";
+                notification.actionLabel = "Recover";
+                notification.seconds = -1.0f;
+                notify(std::move(notification));
+            }
+        }
+
+        recovery_.update(delta);
     }
 
     void StudioShellPanels::pollBuild()
@@ -771,6 +817,34 @@ namespace CNA::Studio
             package.isEnabled = [this] { return context_.hasProject(); };
             package.run = [this] { packageProject(); };
             shell.actions().add(std::move(package));
+        }
+
+        // Both greyed out unless there is something to answer for. A menu row that offers to
+        // discard work when there is none is a row a user has to read twice to be sure.
+        if (const StudioAction* found = shell.actions().find("studio.file.recoverScene"))
+        {
+            StudioAction recover = *found;
+            recover.isEnabled = [this] { return recovery_.hasRecoverable(); };
+            recover.run = [this] {
+                if (recovery_.recover() && shell_ != nullptr)
+                {
+                    shell_->notifications().dismiss("studio.recovery");
+                }
+            };
+            shell.actions().add(std::move(recover));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.file.discardRecovered"))
+        {
+            StudioAction drop = *found;
+            drop.isEnabled = [this] { return recovery_.hasRecoverable(); };
+            drop.run = [this] {
+                if (recovery_.discard() && shell_ != nullptr)
+                {
+                    shell_->notifications().dismiss("studio.recovery");
+                }
+            };
+            shell.actions().add(std::move(drop));
         }
 
         // The Layers panel (STUDIO-07024), which answers the one question the outliner cannot:

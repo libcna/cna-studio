@@ -346,7 +346,8 @@ target_link_libraries(cna-studio-plugins PUBLIC cna-studio-core)
 add_library(cna-studio-context STATIC
     src/context/StudioContext.cpp
     src/context/ProjectCommands.cpp
-    src/context/PrefabWorkflow.cpp)
+    src/context/PrefabWorkflow.cpp
+    src/context/StudioRecovery.cpp)
 target_link_libraries(cna-studio-context PUBLIC
     cna-studio-scene
     cna-studio-assets

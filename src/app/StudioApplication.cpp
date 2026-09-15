@@ -404,8 +404,8 @@ namespace CNA::Studio
         frameLimit_ = options.frameLimit;
         threeDimensionalView_ = options.threeDimensionalView;
 
-        autosaveInterval_ = options.autosaveSeconds;
-        if (!options.recoveryDirectory.empty()) { recovery_ = RecoveryStore{options.recoveryDirectory}; }
+        recovery_.setIntervalSeconds(options.autosaveSeconds);
+        recovery_.setDirectory(options.recoveryDirectory);
 
         context_.log(LogSeverity::Info,
                      std::string{"cna-studio starting (ui="} + ui_->getBackendName()
@@ -484,139 +484,13 @@ namespace CNA::Studio
         ui_->requestExit();
     }
 
-    void StudioApplication::findRecoverableScene()
-    {
-        recoverable_.reset();
-        autosaveSuspensionReported_ = false;
+    void StudioApplication::findRecoverableScene() { (void)recovery_.scan(); }
 
-        if (!context_.hasProject() || autosaveInterval_ <= 0.0) { return; }
+    void StudioApplication::recoverScene() { (void)recovery_.recover(); }
 
-        recoverable_ = recovery_.findForProject(context_.getProject().getFilePath());
-        if (!recoverable_) { return; }
+    void StudioApplication::discardRecoveredScene() { (void)recovery_.discard(); }
 
-        // A warning, not information: the alternative reading of this state is that the user's
-        // last session ended without saving, and either way there is work on disk that the
-        // document in front of them does not contain.
-        context_.log(LogSeverity::Warning,
-                     "Unsaved changes to scene '" + recoverable_->sceneName + "' from "
-                         + formatRecoveryTime(recoverable_->savedAtSeconds)
-                         + " were found. File > Recover Unsaved Scene restores them; "
-                           "File > Discard Recovered Scene throws them away.");
-    }
-
-    void StudioApplication::recoverScene()
-    {
-        if (!recoverable_) { return; }
-
-        const RecoverySnapshot snapshot = *recoverable_;
-
-        const SceneLoadResult result =
-            context_.getScene().loadFromJson(snapshot.scene, context_.getComponentRegistry());
-        if (!result.succeeded)
-        {
-            // The snapshot stays. A recovery that failed is not a reason to delete the only copy
-            // of the work it was holding.
-            context_.log(LogSeverity::Error, "Cannot recover the scene: " + result.errorMessage);
-            return;
-        }
-
-        for (const std::string& warning : result.warnings)
-        {
-            context_.log(LogSeverity::Warning, "Recovered scene: " + warning);
-        }
-
-        context_.clearSelection();
-        context_.getHistory().clear();
-
-        // The recovered document was never saved, so no position in the fresh history is the file
-        // on disk. Saying otherwise would let the user close the editor believing it was.
-        context_.getHistory().markUnsaved();
-
-        recoverable_.reset();
-        autosaveSuspensionReported_ = false;
-
-        context_.log(LogSeverity::Info,
-                     "Recovered scene '" + context_.getScene().getName() + "' from "
-                         + formatRecoveryTime(snapshot.savedAtSeconds)
-                         + ". The file on disk is unchanged until you save. Undo history was not "
-                           "recovered.");
-    }
-
-    void StudioApplication::discardRecoveredScene()
-    {
-        if (!recoverable_) { return; }
-
-        const std::string name = recoverable_->sceneName;
-        recovery_.discard(recoverable_->sceneId);
-        recoverable_.reset();
-        autosaveSuspensionReported_ = false;
-
-        context_.log(LogSeverity::Info, "Discarded the recovered copy of '" + name + "'.");
-    }
-
-    void StudioApplication::updateAutosave(double deltaSeconds)
-    {
-        if (autosaveInterval_ <= 0.0) { return; }
-
-        const SceneDocument& scene = context_.getScene();
-
-        if (!context_.getHistory().isDirty())
-        {
-            // The document matches its file, so there is nothing a snapshot could rescue. Dropping
-            // it here is what stops the next start-up offering a recovery of work already saved --
-            // an offer that trains users to click "discard" without reading it.
-            if (autosaveWritten_)
-            {
-                recovery_.discard(scene.getSceneId());
-                autosaveWritten_ = false;
-            }
-            autosaveElapsed_ = 0.0;
-            return;
-        }
-
-        autosaveElapsed_ += deltaSeconds;
-        if (autosaveElapsed_ < autosaveInterval_) { return; }
-        autosaveElapsed_ = 0.0;
-
-        // Never write over work from a previous session that the user has not answered for yet.
-        // The current session's unsaved seconds are worth less than the previous session's unsaved
-        // hours, and the snapshot file is keyed by scene id, so this would overwrite it.
-        if (recoverable_ && recoverable_->sceneId == scene.getSceneId())
-        {
-            if (!autosaveSuspensionReported_)
-            {
-                autosaveSuspensionReported_ = true;
-                context_.log(LogSeverity::Warning,
-                             "Autosave is suspended while recovered work from a previous session is "
-                             "waiting. Recover it or discard it from the File menu.");
-            }
-            return;
-        }
-
-        RecoverySnapshot snapshot;
-        snapshot.projectPath = context_.getProject().getFilePath();
-        snapshot.scenePath = context_.getScenePath();
-        snapshot.sceneName = scene.getName();
-        snapshot.sceneId = scene.getSceneId();
-        snapshot.savedAtSeconds = static_cast<std::int64_t>(std::time(nullptr));
-        snapshot.scene = scene.toJson();
-
-        std::string errorMessage;
-        if (!recovery_.write(snapshot, &errorMessage))
-        {
-            // Said once. An editor that repeats a filesystem complaint every thirty seconds is one
-            // whose console nobody reads.
-            if (!autosaveFailureReported_)
-            {
-                autosaveFailureReported_ = true;
-                context_.log(LogSeverity::Error, "Cannot write a crash-recovery snapshot: " + errorMessage);
-            }
-            return;
-        }
-
-        autosaveWritten_ = true;
-        autosaveFailureReported_ = false;
-    }
+    void StudioApplication::updateAutosave(double deltaSeconds) { recovery_.update(deltaSeconds); }
 
     void StudioApplication::setAudio(std::unique_ptr<StudioAudio> audio)
     {
@@ -752,9 +626,7 @@ namespace CNA::Studio
         if (!context_.saveScene()) { return; }
 
         // The file on disk now holds this work, so the snapshot has nothing left to rescue.
-        recovery_.discard(context_.getScene().getSceneId());
-        autosaveWritten_ = false;
-        autosaveElapsed_ = 0.0;
+        recovery_.discardForCurrentScene();
     }
 
     void StudioApplication::beginRename(const Uuid& entityId)

@@ -133,7 +133,11 @@ namespace CNA::Studio
             // put the project commands above it would have people reaching past them all day.
             {"File", {"studio.file.newScene", sep,
                       "studio.file.newProject", "studio.file.openProject", sep,
-                      "studio.file.save", "studio.file.saveAll", sep, "studio.file.quit"}},
+                      "studio.file.save", "studio.file.saveAll", sep,
+                      // Where the prototype puts them, which is where a user who has been told
+                      // "File > Recover Unsaved Scene" by the log will look.
+                      "studio.file.recoverScene", "studio.file.discardRecovered", sep,
+                      "studio.file.quit"}},
             {"Edit", {"studio.edit.undo", "studio.edit.redo", sep,
                       "studio.edit.duplicate", "studio.edit.delete"}},
             {"View", {"studio.view.focusSelected", "studio.view.toggleGrid", sep,

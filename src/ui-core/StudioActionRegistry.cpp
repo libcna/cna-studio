@@ -300,6 +300,14 @@ namespace CNA::Studio
         command("studio.file.saveAll", "Save All",
                 "Save every document with unsaved changes.", C::File,
                 chord(UiKey::S, mods(true, true)));
+        // No chord, deliberately. These appear only after a crash, they are answered once, and one
+        // of the two throws work away -- a key that does that is a key somebody hits by accident.
+        command("studio.file.recoverScene", "Recover Unsaved Scene",
+                "Restore the unsaved work a previous session left behind.", C::File,
+                StudioShortcut{});
+        command("studio.file.discardRecovered", "Discard Recovered Scene",
+                "Throw away the unsaved work a previous session left behind.", C::File,
+                StudioShortcut{});
         command("studio.file.quit", "Quit",
                 "Close CNA Studio.", C::File, chord(UiKey::Q, mods(true)));
 

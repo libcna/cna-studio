@@ -67,8 +67,8 @@ Panels the native shell adds, which the prototype has no equivalent for: `layers
 |------|------|----------|--------|--------|
 | File | New Scene | `Ctrl+N` | `studio.file.newScene` | ✅ |
 | File | Save Scene | `Ctrl+S` | `studio.file.save` | ✅ |
-| File | Recover Unsaved Scene | — | — | ⬜ |
-| File | Discard Recovered Scene | — | — | ⬜ |
+| File | Recover Unsaved Scene | — | `studio.file.recoverScene` | ✅ |
+| File | Discard Recovered Scene | — | `studio.file.discardRecovered` | ✅ |
 | File | Exit | `Alt+F4` | `studio.file.quit` | 🔄 |
 | Edit | Undo | `Ctrl+Z` | `studio.edit.undo` | ✅ |
 | Edit | Redo | `Ctrl+Y` | `studio.edit.redo` | ✅ |
@@ -83,8 +83,11 @@ Panels the native shell adds, which the prototype has no equivalent for: `layers
 | View | Use Local Space / Use World Space | `X` | `studio.view.toggleGizmoSpace` | ✅ |
 | *plugin* | Plugin menus and commands | — | — | ⬜ |
 
-**Recover / Discard Unsaved Scene** are ⬜ because crash recovery has no native surface yet; the
-model (`RecoverySnapshot`) is shared and works, so this is a menu binding rather than a feature.
+**Recover / Discard Unsaved Scene** are ✅ as of `StudioRecoverySession`, which is the flow itself
+rather than a second copy of it: the snapshot timer, the scan after a project opens, and the two
+answers. Both UIs drive the same object, so the native shell writes snapshots, offers what a previous
+session left — as a sticky notification as well as a log line — and greys both rows out when there is
+nothing to answer for.
 
 **Exit** is 🔄 because the command exists and is refused: the shell has no way to ask its host to
 close, which is what `STUDIO-06015` needs anyway.
@@ -199,6 +202,5 @@ project; each is a panel or a mode with a known shape.
 | The 3D view | `ViewportPanel`, `StudioApplication` | A 3D camera and mesh drawing in the native viewport (Phase 11) |
 | Tilemap painting | `ViewportPanel`, `StudioTool` | Paint, erase, pick and fill as viewport tools with a brush (Phase 25 adjacent) |
 | Material editing | — | There is no `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19) |
-| Crash recovery surface | `MainMenuBar` | Two menu bindings over `RecoverySnapshot`, which already works |
 | Plugin menus | `MainMenuBar::drawPluginMenus` | Plugins registering actions and menu definitions rather than drawing rows (Phase 28) |
 | Rename in place | `HierarchyPanel` | An editable tree row |

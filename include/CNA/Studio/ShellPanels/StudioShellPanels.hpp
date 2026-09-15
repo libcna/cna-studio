@@ -37,6 +37,7 @@
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
+#include "CNA/Studio/StudioRecovery.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
@@ -196,6 +197,17 @@ namespace CNA::Studio
         [[nodiscard]] const StudioPreferences& preferences() const { return preferences_; }
 
         /**
+         * @brief Crash recovery: the snapshot timer, and whatever a previous session left.
+         *
+         * Exposed so a host can point it at a directory other than the default -- which is what
+         * `--recovery-dir` is for, and the only way a test can have one that is not the user's.
+         */
+        [[nodiscard]] StudioRecoverySession& recovery() { return recovery_; }
+
+        /** @brief Crash recovery. */
+        [[nodiscard]] const StudioRecoverySession& recovery() const { return recovery_; }
+
+        /**
          * @brief Sets the seam through which changed preferences reach disk.
          *
          * Unset means "nothing is persisted", which the preview wants: a shell that refused to
@@ -270,6 +282,12 @@ namespace CNA::Studio
          */
         void notify(StudioNotification notification);
 
+        /**
+         * @brief Drives crash recovery: the snapshot timer, and the offer after a project opens.
+         * @param nowSeconds The host's clock, which this differences into an interval.
+         */
+        void pollRecovery(double nowSeconds);
+
         /** @brief Announces a build that has just finished, either way. */
         void pollBuild();
 
@@ -307,6 +325,15 @@ namespace CNA::Studio
 
         /** @brief The build's state last poll, so a finish is noticed as a transition. */
         BuildState buildWasState_ = BuildState::Idle;
+
+        /** @brief Snapshots of the open scene, and whatever a previous session left behind. */
+        StudioRecoverySession recovery_{context_};
+
+        /** @brief The host clock at the last poll, or negative before the first. */
+        double recoveryLastSeconds_ = -1.0;
+
+        /** @brief The project the last scan was for, so opening another triggers a new one. */
+        std::string recoveryProject_;
         std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
 
         /** @brief Whether the open dialog is this object's Reset confirmation. */

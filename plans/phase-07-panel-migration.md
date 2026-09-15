@@ -134,8 +134,14 @@ lines below the rest of the toolbar and only when the paint or fill tool is acti
 **What this does not establish.** That the answered items *behave* the same. Coverage is what this
 task proves: every item accounted for, with a reason attached to each that is not. Behaviour is
 `STUDIO-07021` for input, `STUDIO-07022` for docking and `STUDIO-07023` against the reference
-screenshots, and the ⬜ rows — the 3D view, tilemap painting, Pause and Step, crash recovery, plugin
-menus, rename in place — are what keeps `STUDIO-06015` and `STUDIO-07030` from being true.
+screenshots, and the ⬜ rows are what keeps `STUDIO-06015` and `STUDIO-07030` from being true.
+
+**Since.** Crash recovery was the first of those rows to close, and closing it showed what the
+inventory is worth: everything *about* recovery already worked and was shared — the snapshot format,
+the store, the atomic write — so it read as done from every angle except the one that mattered.
+Nobody was running it. The Dear ImGui host wrote snapshots and offered what it found; the native
+host runs a different loop and did neither, so a user on `--ui=studio` had no crash recovery at all
+and nothing said so. It is one `StudioRecoverySession` now, driven by whichever host is running.
 
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 

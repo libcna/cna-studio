@@ -35,6 +35,7 @@
 #include "CNA/Studio/Panels/ValidationPanel.hpp"
 #include "CNA/Studio/Panels/ViewportPanel.hpp"
 #include "CNA/Studio/Project/RecoveryStore.hpp"
+#include "CNA/Studio/StudioRecovery.hpp"
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/Ui/StudioUi.hpp"
 #include "CNA/Studio/Viewport/StudioViewport.hpp"
@@ -471,7 +472,7 @@ namespace CNA::Studio
 
         [[nodiscard]] const RecoverySnapshot* getRecoverableScene() const override
         {
-            return recoverable_ ? &*recoverable_ : nullptr;
+            return recovery_.recoverable();
         }
         void recoverScene() override;
         void discardRecoveredScene() override;
@@ -489,7 +490,7 @@ namespace CNA::Studio
         }
 
         /** @brief Returns the snapshot store, so a test can point it at a scratch directory. */
-        [[nodiscard]] RecoveryStore& getRecoveryStore() { return recovery_; }
+        [[nodiscard]] RecoveryStore& getRecoveryStore() { return recovery_.store(); }
 
     private:
         /**
@@ -657,20 +658,12 @@ namespace CNA::Studio
         int frameLimit_ = 0;
         int framesRendered_ = 0;
 
-        RecoveryStore recovery_{getDefaultRecoveryDirectory()};
-        double autosaveInterval_ = 30.0;
-        double autosaveElapsed_ = 0.0;
-
-        /** @brief Unsaved work from a previous session, waiting for the user to accept or drop it. */
-        std::optional<RecoverySnapshot> recoverable_;
-
-        /** @brief Whether a snapshot for the open scene is currently on disk. */
-        bool autosaveWritten_ = false;
-
-        /** @brief Whether the "autosave is suspended" warning has already been said. */
-        bool autosaveSuspensionReported_ = false;
-
-        /** @brief Whether the "cannot write a snapshot" error has already been said. */
-        bool autosaveFailureReported_ = false;
+        /**
+         * @brief Snapshots, and whatever a previous session left behind.
+         *
+         * The flow rather than a copy of it: the native shell runs the same object through its own
+         * host, and two hosts each deciding when work is safe is one decision too many.
+         */
+        StudioRecoverySession recovery_{context_};
     };
 }

@@ -210,7 +210,10 @@ CNA-linked module, so the headless preview shows the same panels the editor does
 is now proven both ways**: the tests read the prototype's own panels, menu bar, toolbars and
 shortcut dispatcher and require every item to be accounted for in the inventory, which is how the
 toolbars — never inventoried at all, and the only home of Pause, Step, the backend chooser and the
-tilemap tools — were found.
+tilemap tools — were found. **Crash recovery is the first unanswered row to close**: everything
+about it already worked and was shared, but nobody was running it on the native host, so
+`--ui=studio` had none. It is one `StudioRecoverySession` now, driven by whichever host is running,
+and the offer arrives as a sticky notification rather than a log line at start-up.
 
 **Phase 16 — Play in editor** (3 of 18). Play and Stop from the native shell with mutually exclusive
 enablement; a player that cannot be launched refused at the launch rather than surfacing later as a
