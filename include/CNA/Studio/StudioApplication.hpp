@@ -153,7 +153,12 @@ namespace CNA::Studio
         /** @brief True to hold the primary mouse button down in the shell preview. */
         bool shellPreviewMouseDown = false;
 
-        /** @brief Title of the menu to open in the shell preview, e.g. `"File"`. */
+        /**
+         * @brief Menu to open in the shell preview, e.g. `"File"` or `"Window>Panels"`.
+         *
+         * A `>`-separated path, because a submenu is reached by hovering and a harness that could
+         * only open a top-level menu could never photograph one.
+         */
         std::string shellPreviewOpenMenu;
 
         /**

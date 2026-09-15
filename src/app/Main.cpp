@@ -149,17 +149,28 @@ namespace
 
         CNA::Studio::StudioShell shell{theme};
 
+        // "Window>Panels" rather than just "Window": a submenu is reached by hovering, and a
+        // capture harness that could only open a top-level menu could never photograph one.
+        std::vector<std::string> menuPath;
         if (!options.shellPreviewOpenMenu.empty())
         {
+            std::string remaining = options.shellPreviewOpenMenu;
+            for (std::size_t cut = remaining.find('>'); ; cut = remaining.find('>'))
+            {
+                if (cut == std::string::npos) { menuPath.push_back(remaining); break; }
+                menuPath.push_back(remaining.substr(0, cut));
+                remaining = remaining.substr(cut + 1);
+            }
+
             const auto& menus = shell.menus();
             int index = -1;
             for (std::size_t i = 0; i < menus.size(); ++i)
             {
-                if (menus[i].title == options.shellPreviewOpenMenu) { index = static_cast<int>(i); }
+                if (menus[i].title == menuPath.front()) { index = static_cast<int>(i); }
             }
             if (index < 0)
             {
-                std::cerr << "cna-studio: no menu titled '" << options.shellPreviewOpenMenu
+                std::cerr << "cna-studio: no menu titled '" << menuPath.front()
                           << "'. This shell has:";
                 for (const CNA::Studio::StudioMenuDefinition& menu : menus)
                 {
@@ -191,6 +202,35 @@ namespace
         shell.renderFrame(input);
         textures.apply(shell.drawData());
         shell.renderFrame(input);
+
+        // One level per step, each needing a frame to lay out before the next can be found in it.
+        for (std::size_t depth = 1; depth < menuPath.size(); ++depth)
+        {
+            const std::size_t level = depth - 1;
+            int row = -1;
+            for (std::size_t i = 0; i < shell.menuRowCount(level); ++i)
+            {
+                if (shell.menuRowActionId(level, i) == menuPath[depth]) { row = static_cast<int>(i); }
+            }
+            if (row < 0)
+            {
+                std::cerr << "cna-studio: no submenu named '" << menuPath[depth]
+                          << "'. That menu has:";
+                for (std::size_t i = 0; i < shell.menuRowCount(level); ++i)
+                {
+                    const std::string_view name = shell.menuRowActionId(level, i);
+                    if (!name.empty() && name != CNA::Studio::kStudioMenuSeparatorId)
+                    {
+                        std::cerr << " " << name;
+                    }
+                }
+                std::cerr << "\n";
+                return 2;
+            }
+            shell.openSubmenu(level, row);
+            shell.renderFrame(input);
+            textures.apply(shell.drawData());
+        }
 
         if (options.shellPreviewTooltip)
         {

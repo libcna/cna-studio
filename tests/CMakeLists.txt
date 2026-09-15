@@ -32,6 +32,7 @@ add_executable(cna-studio-tests
     StudioContentBrowserTests.cpp
     StudioDockDragTests.cpp
     StudioTooltipTests.cpp
+    StudioSubmenuTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -201,6 +202,17 @@ add_test(NAME CnaStudioShellPreviewDockDrag
                        --shell-size=1280x720 --shell-drag=layers
                        --shell-pointer=1000,400 --shell-mouse-down)
 set_tests_properties(CnaStudioShellPreviewDockDrag PROPERTIES TIMEOUT 60)
+
+# A submenu open beside its parent, which is the one menu state a top-level capture cannot reach.
+add_test(NAME CnaStudioShellPreviewSubmenu
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/shell-submenu.png
+                       --shell-size=1280x720 "--shell-open-menu=Window>Panels"
+                       --shell-pointer=1000,110)
+set_tests_properties(CnaStudioShellPreviewSubmenu PROPERTIES TIMEOUT 60)
+
+add_test(NAME CnaStudioRejectsUnknownShellSubmenu
+    COMMAND cna-studio --shell-preview=never.png "--shell-open-menu=Window>Nonexistent")
+set_tests_properties(CnaStudioRejectsUnknownShellSubmenu PROPERTIES WILL_FAIL TRUE)
 
 # The icon toolbar is only as discoverable as its tooltips, so the tooltip is captured rather than
 # assumed: the run fails outright if resting the pointer on a toolbar button produces none.

@@ -66,6 +66,12 @@ namespace CNA::Studio
     /** @brief The id an entry uses to mean "a separator here", rather than an action. */
     inline constexpr std::string_view kStudioMenuSeparatorId = "-";
 
+    /** @brief The label of the Window submenu the shell fills in with its registered panels. */
+    inline constexpr std::string_view kStudioPanelMenuLabel = "Panels";
+
+    /** @brief The id prefix of the show/hide command the shell registers for each panel. */
+    inline constexpr std::string_view kStudioPanelActionPrefix = "studio.window.panel.";
+
     /**
      * @brief A panel the shell knows about.
      *
@@ -88,18 +94,64 @@ namespace CNA::Studio
         bool isViewport = false;
     };
 
+    /**
+     * @brief One row of a menu: an action, a separator, or a submenu.
+     *
+     * Ids rather than labels for an action row: everything the row shows is read from the registry
+     * when it is drawn, so a menu cannot fall out of step with the command it invokes. A submenu
+     * is the one row that carries its own label, because it names a *grouping* rather than a
+     * command and there is no registry entry to read it from.
+     */
+    struct StudioMenuEntry
+    {
+        StudioMenuEntry() = default;
+
+        // Implicit on purpose. A menu is written as a list of action ids, and spelling every one
+        // of them `StudioMenuEntry{"..."}` would cost every menu in the application its
+        // readability to buy nothing at all.
+        StudioMenuEntry(const char* actionId) : id(actionId) {}     // NOLINT(*-explicit-*)
+        StudioMenuEntry(std::string actionId) : id(std::move(actionId)) {} // NOLINT(*-explicit-*)
+        StudioMenuEntry(std::string_view actionId) : id(actionId) {} // NOLINT(*-explicit-*)
+
+        /**
+         * @brief A submenu row.
+         * @param label Its title, e.g. `"Recent Projects"`.
+         * @param rows  What it opens.
+         */
+        static StudioMenuEntry submenu(std::string label, std::vector<StudioMenuEntry> rows)
+        {
+            StudioMenuEntry entry;
+            entry.label = std::move(label);
+            entry.rows = std::move(rows);
+            return entry;
+        }
+
+        /** @brief Action id, or @ref kStudioMenuSeparatorId. Empty for a submenu. */
+        std::string id;
+        /** @brief A submenu's own title. Empty for an action row, which reads its label from the registry. */
+        std::string label;
+        /** @brief What a submenu opens. */
+        std::vector<StudioMenuEntry> rows;
+
+        /** @brief True for a rule rather than a row. */
+        [[nodiscard]] bool isSeparator() const { return id == kStudioMenuSeparatorId; }
+
+        /**
+         * @brief True for a row that opens a submenu.
+         *
+         * The *label* marks it, not the row list: a submenu that happens to be empty is still a
+         * submenu, and drawing it as an action row named "" would be the worse answer.
+         */
+        [[nodiscard]] bool isSubmenu() const { return !label.empty(); }
+    };
+
     /** @brief One menu in the application menu bar. */
     struct StudioMenuDefinition
     {
         /** @brief Title shown in the bar. */
         std::string title;
-        /**
-         * @brief Action ids in order, with @ref kStudioMenuSeparatorId for a rule.
-         *
-         * Ids rather than labels: everything a row shows is read from the registry when it is
-         * drawn, so a menu cannot fall out of step with the command it invokes.
-         */
-        std::vector<std::string> entries;
+        /** @brief Its rows in order. */
+        std::vector<StudioMenuEntry> entries;
     };
 
     /**
@@ -440,8 +492,41 @@ namespace CNA::Studio
          */
         void setOpenMenu(int index);
 
-        /** @brief Index of the keyboard-highlighted row in the open menu, or -1. */
-        [[nodiscard]] int highlightedMenuEntry() const { return highlightedEntry_; }
+        /**
+         * @brief Index of the highlighted row in the *deepest* open popup, or -1.
+         *
+         * The deepest, because that is the one the arrow keys move and Enter chooses from. With no
+         * submenu open it is the open menu's own highlight, which is what it has always meant.
+         */
+        [[nodiscard]] int highlightedMenuEntry() const;
+
+        /**
+         * @brief Index of the highlighted row in one open popup.
+         * @param level 0 for the menu itself, 1 for its open submenu, and so on.
+         * @return The row index, or -1 when nothing is highlighted or the level is not open.
+         */
+        [[nodiscard]] int highlightedMenuEntry(std::size_t level) const;
+
+        /**
+         * @brief Opens the submenu on row @p row of @p level, closing any deeper one.
+         * @param level Popup holding the row.
+         * @param row   Row index, or -1 to close whatever @p level had open.
+         * @return True when the path changed.
+         */
+        bool openSubmenu(std::size_t level, int row);
+
+        /**
+         * @brief Which row of a popup has its submenu open.
+         * @param level Popup index.
+         * @return The row index, or -1.
+         */
+        [[nodiscard]] int openSubmenuRow(std::size_t level) const;
+
+        /** @brief How long a submenu takes to switch when the pointer crosses a sibling row, in seconds. */
+        void setSubmenuSwitchDelay(float seconds) { submenuSwitchDelay_ = std::max(0.0f, seconds); }
+
+        /** @brief The submenu switch delay in seconds. */
+        [[nodiscard]] float submenuSwitchDelay() const { return submenuSwitchDelay_; }
 
         /** @brief Whether a menu is open and therefore blocking the panels beneath it. */
         [[nodiscard]] bool isMenuOpen() const { return openMenu_ >= 0; }
@@ -471,25 +556,66 @@ namespace CNA::Studio
          */
         [[nodiscard]] UiRect menuTitleBounds(std::size_t index) const;
 
+        /**
+         * @brief How many popups are open.
+         *
+         * 0 with no menu open, 1 for a menu with no submenu showing, and one more for each open
+         * submenu.
+         */
+        [[nodiscard]] std::size_t menuLevelCount() const { return menuLevels_.size(); }
+
         /** @brief Where the open menu's list sits, or an empty rectangle when none is open. */
-        [[nodiscard]] UiRect menuPopupBounds() const { return menuPopup_; }
+        [[nodiscard]] UiRect menuPopupBounds() const { return menuPopupBounds(0); }
+
+        /**
+         * @brief Where one open popup sits.
+         * @param level 0 for the menu itself, 1 for its open submenu, and so on.
+         * @return Its rectangle, or an empty one when that level is not open.
+         */
+        [[nodiscard]] UiRect menuPopupBounds(std::size_t level) const;
 
         /** @brief Number of rows in the open menu, separators included. */
-        [[nodiscard]] std::size_t menuRowCount() const { return menuRows_.size(); }
+        [[nodiscard]] std::size_t menuRowCount() const { return menuRowCount(0); }
+
+        /**
+         * @brief Number of rows in one open popup, separators included.
+         * @param level Popup index.
+         */
+        [[nodiscard]] std::size_t menuRowCount(std::size_t level) const;
 
         /**
          * @brief Where a row of the open menu sits.
          * @param index Row index.
          * @return Its rectangle, or an empty one when the index is out of range.
          */
-        [[nodiscard]] UiRect menuRowBounds(std::size_t index) const;
+        [[nodiscard]] UiRect menuRowBounds(std::size_t index) const { return menuRowBounds(0, index); }
+
+        /**
+         * @brief Where a row of one open popup sits.
+         * @param level Popup index.
+         * @param index Row index.
+         * @return Its rectangle, or an empty one when either index is out of range.
+         */
+        [[nodiscard]] UiRect menuRowBounds(std::size_t level, std::size_t index) const;
 
         /**
          * @brief The action a row of the open menu invokes.
          * @param index Row index.
          * @return The action id, @ref kStudioMenuSeparatorId for a rule, or empty when out of range.
          */
-        [[nodiscard]] std::string_view menuRowActionId(std::size_t index) const;
+        [[nodiscard]] std::string_view menuRowActionId(std::size_t index) const
+        {
+            return menuRowActionId(0, index);
+        }
+
+        /**
+         * @brief The action a row of one open popup invokes.
+         * @param level Popup index.
+         * @param index Row index.
+         * @return The action id, @ref kStudioMenuSeparatorId for a rule, the submenu's own label
+         *         for a submenu row, or empty when either index is out of range.
+         */
+        [[nodiscard]] std::string_view menuRowActionId(std::size_t level, std::size_t index) const;
 
         /** @brief Number of toolbar entries, separators included. */
         [[nodiscard]] std::size_t toolbarEntryCount() const { return toolbarEntries_.size(); }
@@ -507,6 +633,13 @@ namespace CNA::Studio
          * @return The action id, @ref kStudioMenuSeparatorId for a rule, or empty when out of range.
          */
         [[nodiscard]] std::string_view toolbarEntryActionId(std::size_t index) const;
+
+        /**
+         * @brief The show/hide command id the shell registers for a panel.
+         * @param panelId The panel's stable id.
+         * @return `"studio.window.panel."` followed by @p panelId.
+         */
+        [[nodiscard]] static std::string panelActionId(std::string_view panelId);
 
         /** @brief Studio's default menu bar: File, Edit, View, Project, Build, Play, Tools, Window, Help. */
         [[nodiscard]] static std::vector<StudioMenuDefinition> defaultMenus();
@@ -545,10 +678,20 @@ namespace CNA::Studio
         struct MenuRowGeometry
         {
             UiRect bounds;
-            /** @brief Action id, or @ref kStudioMenuSeparatorId. */
+            /** @brief Action id, @ref kStudioMenuSeparatorId, or empty for a submenu row. */
             std::string id;
+            /** @brief A submenu row's own label. Empty for an action row. */
+            std::string label;
             bool separator = false;
+            bool submenu = false;
             bool enabled = true;
+        };
+
+        /** @brief One open popup: the menu itself, or a submenu of the popup above it. */
+        struct MenuLevel
+        {
+            UiRect popup;
+            std::vector<MenuRowGeometry> rows;
         };
 
         /** @brief One resolved toolbar entry. */
@@ -559,6 +702,12 @@ namespace CNA::Studio
             bool separator = false;
         };
 
+        /** @brief Registers (or refreshes) the show/hide command for one panel. */
+        void registerPanelAction(const std::string& panelId);
+
+        /** @brief Refills the Window menu's Panels submenu from the registered panels. */
+        void rebuildPanelMenu();
+
         void buildContent();
         void computeLayout(float width, float height);
         [[nodiscard]] float tabStripHeight() const;
@@ -566,6 +715,21 @@ namespace CNA::Studio
 
         void describeMenuBar();
         void describeMenuPopup();
+
+        /**
+         * @brief Lays one popup out from its rows.
+         * @param entries The rows to measure.
+         * @param anchor  The rectangle to open beside: the menu title for level 0, the parent row
+         *                for a submenu.
+         * @param sideways True for a submenu, which opens to the right of @p anchor rather than
+         *                 below it.
+         * @return Its rectangle and rows.
+         */
+        [[nodiscard]] MenuLevel layOutMenuLevel(const std::vector<StudioMenuEntry>& entries,
+                                                const UiRect& anchor, bool sideways) const;
+
+        /** @brief The rows one open level draws, or nullptr when the path no longer resolves. */
+        [[nodiscard]] const std::vector<StudioMenuEntry>* entriesForLevel(std::size_t level) const;
         void describeToolbar();
         void describeDocks();
         void describeSplitters();
@@ -579,8 +743,27 @@ namespace CNA::Studio
         void handleMenuKeyboard();
         void dispatchShortcuts();
 
-        /** @brief Moves the menu highlight by @p delta rows, skipping separators and disabled rows. */
+        /** @brief Moves the deepest popup's highlight by @p delta rows, skipping separators and disabled rows. */
         void moveHighlight(int delta);
+
+        /**
+         * @brief Applies the pointer resting on a row to the open submenu at that level.
+         * @param level Popup holding the row.
+         * @param row   The row under the pointer.
+         */
+        void updateHoverSubmenu(std::size_t level, int row);
+
+        /** @brief Opens the highlighted row's submenu, if it has one. @return True when one opened. */
+        bool openHighlightedSubmenu();
+
+        /** @brief Seeds @p level's highlight on its first (or last) choosable row, before it has laid out. */
+        void moveHighlightInto(std::size_t level, int delta);
+
+        /** @brief Closes the deepest open submenu. @return True when one closed. */
+        bool closeDeepestSubmenu();
+
+        /** @brief Chooses the deepest popup's highlighted row: invokes it, or opens its submenu. */
+        void chooseHighlightedRow();
 
         /** @brief Opens @p index and seeds the highlight, without going through a click. */
         void openMenuAt(int index);
@@ -611,12 +794,28 @@ namespace CNA::Studio
 
         StudioShellLayout layout_;
         std::vector<MenuTitleGeometry> menuTitles_;
-        std::vector<MenuRowGeometry> menuRows_;
+        std::vector<MenuLevel> menuLevels_;
         std::vector<ToolbarEntryGeometry> toolbarEntries_;
-        UiRect menuPopup_;
 
         int openMenu_ = -1;
-        int highlightedEntry_ = -1;
+
+        /**
+         * @brief Which row of each popup has its submenu open, deepest last.
+         *
+         * A path rather than a pointer into the tree: menus are rebuilt from `menus_` every frame,
+         * so anything holding a node would be a dangling reference the first time a menu changed
+         * while it was open.
+         */
+        std::vector<int> submenuPath_;
+
+        /** @brief The highlighted row of each open popup. Always `submenuPath_.size() + 1` long while a menu is open. */
+        std::vector<int> highlight_;
+
+        /** @brief The row the pointer is waiting on before the open submenu switches to it. */
+        int submenuPendingRow_ = -1;
+        std::size_t submenuPendingLevel_ = 0;
+        float submenuPendingSeconds_ = 0.0f;
+        float submenuSwitchDelay_ = 0.25f;
         bool textInputActive_ = false;
         /** @brief True once the open menu has acted on a key this frame; nothing else may. */
         bool keyboardConsumed_ = false;

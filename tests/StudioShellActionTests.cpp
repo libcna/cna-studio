@@ -141,19 +141,31 @@ CNA_STUDIO_TEST(EveryActionTheShellInvokesEitherRunsOrIsRefusedOutLoud)
     // from the outside and both are exactly what a half-finished migration produces.
     Fixture fixture;
 
-    for (const StudioMenuDefinition& menu : fixture.shell->menus())
-    {
-        for (const std::string& entry : menu.entries)
+    // Recursive, because a submenu is exactly where a dead row hides: it is one gesture further
+    // from anybody who opens the menu to look.
+    const auto check = [&](auto&& self, const std::string& where,
+                           const std::vector<StudioMenuEntry>& entries) -> void {
+        for (const StudioMenuEntry& entry : entries)
         {
-            if (entry == kStudioMenuSeparatorId) { continue; }
-            if (fixture.shell->actions().find(entry) == nullptr)
+            if (entry.isSeparator()) { continue; }
+            if (entry.isSubmenu())
+            {
+                self(self, where + " \u203a " + entry.label, entry.rows);
+                continue;
+            }
+            if (fixture.shell->actions().find(entry.id) == nullptr)
             {
                 CnaStudioTest::reportFailure(__FILE__, __LINE__,
-                    "the " + menu.title + " menu names '" + entry
+                    "the " + where + " menu names '" + entry.id
                     + "', which the action registry does not carry. The row would draw and do "
                       "nothing.");
             }
         }
+    };
+
+    for (const StudioMenuDefinition& menu : fixture.shell->menus())
+    {
+        check(check, menu.title, menu.entries);
     }
 
     // An unbound action refuses rather than pretending. Every menu row is therefore either

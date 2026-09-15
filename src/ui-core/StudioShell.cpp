@@ -86,7 +86,11 @@ namespace CNA::Studio
             {"Build", {"studio.build.build", "studio.build.package"}},
             {"Play", {"studio.play.play", "studio.play.stop"}},
             {"Tools", {}},
-            {"Window", {"studio.window.resetLayout"}},
+            // The panel list is filled in by registerPanel(), because which panels exist is decided
+            // at run time by whoever assembles the shell. It ships empty rather than absent so the
+            // row is in the same place in a shell with no panels as in one with ten.
+            {"Window", {StudioMenuEntry::submenu(std::string{kStudioPanelMenuLabel}, {}),
+                        std::string{kStudioMenuSeparatorId}, "studio.window.resetLayout"}},
             {"Help", {"studio.help.about"}},
         };
     }
@@ -104,10 +108,67 @@ namespace CNA::Studio
 
     void StudioShell::registerPanel(StudioPanelDescriptor descriptor)
     {
+        const std::string id = descriptor.id;
+
         const auto existing = std::find_if(panels_.begin(), panels_.end(),
             [&](const StudioPanelDescriptor& p) { return p.id == descriptor.id; });
-        if (existing != panels_.end()) { *existing = std::move(descriptor); return; }
-        panels_.push_back(std::move(descriptor));
+        if (existing != panels_.end()) { *existing = std::move(descriptor); }
+        else { panels_.push_back(std::move(descriptor)); }
+
+        registerPanelAction(id);
+        rebuildPanelMenu();
+    }
+
+    std::string StudioShell::panelActionId(std::string_view panelId)
+    {
+        return std::string{kStudioPanelActionPrefix} + std::string{panelId};
+    }
+
+    void StudioShell::registerPanelAction(const std::string& panelId)
+    {
+        const StudioPanelDescriptor* descriptor = panel(panelId);
+        if (descriptor == nullptr) { return; }
+
+        StudioAction action;
+        action.id = panelActionId(panelId);
+        action.label = descriptor->title;
+        action.description = "Show or hide the " + descriptor->title + " panel.";
+        action.category = StudioActionCategory::Window;
+        action.checkable = true;
+        // Pulled rather than stored, like every other enablement in the registry: a panel closed
+        // by dragging its tab away must show as unchecked without anybody remembering to tell the
+        // menu about it.
+        action.isChecked = [this, panelId] { return isPanelOpen(panelId); };
+        action.isEnabled = [this, panelId] {
+            const StudioPanelDescriptor* current = panel(panelId);
+            if (current == nullptr) { return false; }
+            // A panel the user must not be able to close is offered only as a way to bring it
+            // back. Drawn enabled and then refusing would be the worse answer.
+            return current->closable || !isPanelOpen(panelId);
+        };
+        action.run = [this, panelId] {
+            if (isPanelOpen(panelId)) { closePanel(panelId); }
+            else { openPanel(panelId); }
+        };
+        actions_.add(std::move(action));
+    }
+
+    void StudioShell::rebuildPanelMenu()
+    {
+        for (StudioMenuDefinition& menu : menus_)
+        {
+            for (StudioMenuEntry& entry : menu.entries)
+            {
+                if (!entry.isSubmenu() || entry.label != kStudioPanelMenuLabel) { continue; }
+
+                entry.rows.clear();
+                entry.rows.reserve(panels_.size());
+                for (const StudioPanelDescriptor& descriptor : panels_)
+                {
+                    entry.rows.emplace_back(panelActionId(descriptor.id));
+                }
+            }
+        }
     }
 
     const StudioPanelDescriptor* StudioShell::panel(std::string_view id) const
@@ -312,8 +373,7 @@ namespace CNA::Studio
     void StudioShell::setMenus(std::vector<StudioMenuDefinition> menus)
     {
         menus_ = std::move(menus);
-        openMenu_ = -1;
-        highlightedEntry_ = -1;
+        setOpenMenu(-1);
     }
 
     void StudioShell::setToolbar(std::vector<std::string> entries)
@@ -326,7 +386,10 @@ namespace CNA::Studio
         if (index < 0 || static_cast<std::size_t>(index) >= menus_.size())
         {
             openMenu_ = -1;
-            highlightedEntry_ = -1;
+            submenuPath_.clear();
+            highlight_.clear();
+            submenuPendingRow_ = -1;
+            submenuPendingSeconds_ = 0.0f;
             return;
         }
         openMenuAt(index);
@@ -335,10 +398,15 @@ namespace CNA::Studio
     void StudioShell::openMenuAt(int index)
     {
         openMenu_ = index;
+        // Every submenu closes with it: moving along the bar with the arrow keys must not leave
+        // the previous menu's submenu hanging over the new one.
+        submenuPath_.clear();
+        submenuPendingRow_ = -1;
+        submenuPendingSeconds_ = 0.0f;
         // No row is highlighted until the keyboard asks for one. Pre-selecting the first item
         // would make Enter -- pressed to dismiss something else entirely -- run a command the user
         // never looked at.
-        highlightedEntry_ = -1;
+        highlight_.assign(1, -1);
     }
 
     void StudioShell::invoke(std::string_view id)
@@ -355,22 +423,94 @@ namespace CNA::Studio
         refused_.emplace_back(std::string{id} + ": " + std::string{resultName(result)});
     }
 
+    int StudioShell::highlightedMenuEntry() const
+    {
+        return highlight_.empty() ? -1 : highlight_.back();
+    }
+
+    int StudioShell::highlightedMenuEntry(std::size_t level) const
+    {
+        return level < highlight_.size() ? highlight_[level] : -1;
+    }
+
+    int StudioShell::openSubmenuRow(std::size_t level) const
+    {
+        return level < submenuPath_.size() ? submenuPath_[level] : -1;
+    }
+
+    bool StudioShell::openSubmenu(std::size_t level, int row)
+    {
+        if (!isMenuOpen() || level >= highlight_.size()) { return false; }
+
+        if (row < 0)
+        {
+            if (level >= submenuPath_.size()) { return false; }
+            submenuPath_.resize(level);
+            highlight_.resize(level + 1);
+            return true;
+        }
+
+        if (level < submenuPath_.size() && submenuPath_[level] == row) { return false; }
+
+        submenuPath_.resize(level + 1);
+        submenuPath_[level] = row;
+        // A freshly opened submenu has no highlighted row, for the same reason a freshly opened
+        // menu does not: Enter pressed to dismiss something else must not run a command nobody
+        // looked at.
+        highlight_.resize(level + 2);
+        highlight_[level + 1] = -1;
+        return true;
+    }
+
+    UiRect StudioShell::menuPopupBounds(std::size_t level) const
+    {
+        return level < menuLevels_.size() ? menuLevels_[level].popup : UiRect{};
+    }
+
+    std::size_t StudioShell::menuRowCount(std::size_t level) const
+    {
+        return level < menuLevels_.size() ? menuLevels_[level].rows.size() : 0;
+    }
+
     UiRect StudioShell::menuTitleBounds(std::size_t index) const
     {
         if (index >= menuTitles_.size()) { return UiRect{}; }
         return menuTitles_[index].bounds;
     }
 
-    UiRect StudioShell::menuRowBounds(std::size_t index) const
+    UiRect StudioShell::menuRowBounds(std::size_t level, std::size_t index) const
     {
-        if (index >= menuRows_.size()) { return UiRect{}; }
-        return menuRows_[index].bounds;
+        if (level >= menuLevels_.size() || index >= menuLevels_[level].rows.size())
+        {
+            return UiRect{};
+        }
+        return menuLevels_[level].rows[index].bounds;
     }
 
-    std::string_view StudioShell::menuRowActionId(std::size_t index) const
+    std::string_view StudioShell::menuRowActionId(std::size_t level, std::size_t index) const
     {
-        if (index >= menuRows_.size()) { return {}; }
-        return menuRows_[index].id;
+        if (level >= menuLevels_.size() || index >= menuLevels_[level].rows.size()) { return {}; }
+        const MenuRowGeometry& row = menuLevels_[level].rows[index];
+        return row.submenu ? std::string_view{row.label} : std::string_view{row.id};
+    }
+
+    const std::vector<StudioMenuEntry>* StudioShell::entriesForLevel(std::size_t level) const
+    {
+        if (!isMenuOpen() || static_cast<std::size_t>(openMenu_) >= menus_.size()) { return nullptr; }
+
+        const std::vector<StudioMenuEntry>* entries =
+            &menus_[static_cast<std::size_t>(openMenu_)].entries;
+        for (std::size_t depth = 0; depth < level; ++depth)
+        {
+            if (depth >= submenuPath_.size()) { return nullptr; }
+            const int row = submenuPath_[depth];
+            if (row < 0 || static_cast<std::size_t>(row) >= entries->size()) { return nullptr; }
+
+            const StudioMenuEntry& entry = (*entries)[static_cast<std::size_t>(row)];
+            if (!entry.isSubmenu()) { return nullptr; }
+            entries = &entry.rows;
+        }
+        return entries;
     }
 
     UiRect StudioShell::toolbarEntryBounds(std::size_t index) const
@@ -506,14 +646,46 @@ namespace CNA::Studio
             toolbarEntries_.push_back(geometry);
         }
 
-        // --- The open menu's popup ------------------------------------------------------------------
-        menuRows_.clear();
-        menuPopup_ = UiRect{};
+        // --- The open menu, and every submenu open beneath it -----------------------------------
+        menuLevels_.clear();
         if (!isMenuOpen() || static_cast<std::size_t>(openMenu_) >= menuTitles_.size()) { return; }
 
-        const StudioMenuDefinition& menu = menus_[static_cast<std::size_t>(openMenu_)];
-        if (menu.entries.empty()) { return; }
+        // Level by level, each opening beside the row that opened it. The path is walked rather
+        // than trusted: a menu can be replaced while it is open, and a path that no longer names a
+        // submenu simply stops the walk instead of laying out a level that is not there.
+        UiRect anchor = menuTitles_[static_cast<std::size_t>(openMenu_)].bounds;
+        for (std::size_t level = 0;; ++level)
+        {
+            const std::vector<StudioMenuEntry>* entries = entriesForLevel(level);
+            if (entries == nullptr || entries->empty()) { break; }
 
+            MenuLevel laidOut = layOutMenuLevel(*entries, anchor, level > 0);
+            if (laidOut.rows.empty()) { break; }
+            menuLevels_.push_back(std::move(laidOut));
+
+            if (level >= submenuPath_.size()) { break; }
+            const int row = submenuPath_[level];
+            if (row < 0 || static_cast<std::size_t>(row) >= menuLevels_[level].rows.size()) { break; }
+            anchor = menuLevels_[level].rows[static_cast<std::size_t>(row)].bounds;
+        }
+
+        // The path can outlive the levels that laid out -- a submenu whose rows all vanished, say.
+        // Trimming it here keeps "how many popups are open" and "how deep is the path" the same
+        // number, which every keyboard rule below relies on.
+        if (submenuPath_.size() + 1 > menuLevels_.size())
+        {
+            submenuPath_.resize(menuLevels_.empty() ? 0 : menuLevels_.size() - 1);
+            highlight_.resize(submenuPath_.size() + 1, -1);
+        }
+    }
+
+    StudioShell::MenuLevel StudioShell::layOutMenuLevel(const std::vector<StudioMenuEntry>& entries,
+                                                        const UiRect& anchor, bool sideways) const
+    {
+        MenuLevel level;
+        if (entries.empty()) { return level; }
+
+        const StudioTheme& theme = frame_.theme();
         const float rowHeight = studioMenuItemHeight(theme);
         const float separatorHeight = studioMenuSeparatorHeight(theme);
         const float padding = metricOf(theme, StudioMetric::SpacingMedium);
@@ -521,19 +693,28 @@ namespace CNA::Studio
 
         float widest = 0.0f;
         float totalHeight = metricOf(theme, StudioMetric::SpacingSmall) * 2.0f;
-        for (const std::string& entry : menu.entries)
+        for (const StudioMenuEntry& entry : entries)
         {
-            if (entry == kStudioMenuSeparatorId) { totalHeight += separatorHeight; continue; }
+            if (entry.isSeparator()) { totalHeight += separatorHeight; continue; }
             totalHeight += rowHeight;
 
-            const StudioAction* action = actions_.find(entry);
-            const std::string_view label = action != nullptr ? std::string_view{action->label}
-                                                             : std::string_view{entry};
+            const StudioAction* action = entry.isSubmenu() ? nullptr : actions_.find(entry.id);
+            const std::string_view label = entry.isSubmenu()
+                ? std::string_view{entry.label}
+                : (action != nullptr ? std::string_view{action->label} : std::string_view{entry.id});
+
             float rowWidth = padding * 2.0f + checkColumn
                            + metricOf(theme, StudioMetric::SpacingSmall)
                            + frame_.measureText(StudioFontRole::Body, label).width;
 
-            if (action != nullptr && action->shortcut.isBound())
+            if (entry.isSubmenu())
+            {
+                // The arrow column widens the menu for the same reason the shortcut column does:
+                // an arrow overlapping the last letter of "Recent Projects" is the detail that
+                // makes a menu look unfinished.
+                rowWidth += metricOf(theme, StudioMetric::SpacingXLarge) + checkColumn;
+            }
+            else if (action != nullptr && action->shortcut.isBound())
             {
                 // The shortcut column widens the menu rather than being clipped: a hint the user
                 // cannot read is worse than no hint, because it looks like the binding is wrong.
@@ -548,30 +729,62 @@ namespace CNA::Studio
         float popupWidth = std::ceil(std::max(widest, minimumWidth));
         popupWidth = std::min(popupWidth, layout_.window.width);
 
-        float popupX = menuTitles_[static_cast<std::size_t>(openMenu_)].bounds.left();
-        // Kept on screen. A menu opened from the rightmost title must not run off the edge, and
-        // shifting it left is what every desktop menu does rather than clipping it.
+        float popupX = 0.0f;
+        float popupY = 0.0f;
+        if (sideways)
+        {
+            // Beside its row, and flipped to the other side when it would run off: a submenu that
+            // opened half off-screen would have the user chasing it with the pointer.
+            popupX = anchor.right();
+            if (popupX + popupWidth > layout_.window.right())
+            {
+                popupX = anchor.left() - popupWidth;
+            }
+            popupY = anchor.top() - metricOf(theme, StudioMetric::SpacingSmall);
+        }
+        else
+        {
+            popupX = anchor.left();
+            popupY = layout_.menuBar.bottom();
+        }
+
         popupX = std::min(popupX, layout_.window.right() - popupWidth);
         popupX = std::max(popupX, layout_.window.left());
 
-        const float popupY = layout_.menuBar.bottom();
-        const float available = std::max(0.0f, layout_.window.bottom() - popupY);
-        menuPopup_ = UiRect{std::round(popupX), popupY, popupWidth,
-                            std::round(std::min(totalHeight, available))};
+        // Lifted rather than clipped when it would run off the bottom, which is what a long
+        // submenu opened from a row near the status bar does on every desktop.
+        float popupHeight = std::min(totalHeight, std::max(0.0f, layout_.window.height));
+        if (popupY + popupHeight > layout_.window.bottom())
+        {
+            popupY = layout_.window.bottom() - popupHeight;
+        }
+        popupY = std::max(popupY, layout_.window.top());
+        popupHeight = std::min(popupHeight, std::max(0.0f, layout_.window.bottom() - popupY));
 
-        UiRect rowCursor = menuPopup_.inset(
+        level.popup = UiRect{std::round(popupX), std::round(popupY), popupWidth,
+                             std::round(popupHeight)};
+
+        UiRect rowCursor = level.popup.inset(
             UiEdges{0.0f, metricOf(theme, StudioMetric::SpacingSmall)});
-        for (const std::string& entry : menu.entries)
+        for (const StudioMenuEntry& entry : entries)
         {
             MenuRowGeometry row;
-            row.id = entry;
-            row.separator = entry == kStudioMenuSeparatorId;
+            row.id = entry.id;
+            row.label = entry.label;
+            row.separator = entry.isSeparator();
+            row.submenu = entry.isSubmenu();
 
-            const StudioAction* action = row.separator ? nullptr : actions_.find(entry);
-            row.enabled = !row.separator && action != nullptr && actions_.isEnabled(entry);
+            const StudioAction* action =
+                (row.separator || row.submenu) ? nullptr : actions_.find(entry.id);
+            // A submenu is enabled when it has something in it. One that opens on nothing is a
+            // dead end the user has to discover by trying it.
+            row.enabled = row.submenu ? !entry.rows.empty()
+                                      : (!row.separator && action != nullptr
+                                         && actions_.isEnabled(entry.id));
             row.bounds = rowCursor.splitTop(row.separator ? separatorHeight : rowHeight);
-            menuRows_.push_back(std::move(row));
+            level.rows.push_back(std::move(row));
         }
+        return level;
     }
 
     void StudioShell::describe()
@@ -744,70 +957,129 @@ namespace CNA::Studio
 
     void StudioShell::describeMenuPopup()
     {
-        if (!isMenuOpen() || menuRows_.empty() || menuPopup_.isEmpty()) { return; }
+        if (!isMenuOpen() || menuLevels_.empty()) { return; }
 
         const StudioTheme& theme = frame_.theme();
-        frame_.pushLayer(kMenuLayer);
-        frame_.pushClip(menuPopup_);
+        StudioInputRouter& router = frame_.router();
+        const float pointerX = router.mouseX();
+        const float pointerY = router.mouseY();
 
-        if (frame_.isDrawPass())
+        // Which popup the pointer is actually in. Popups overlap -- a submenu flipped to the left
+        // sits on top of its parent -- and without this every row under the pointer would light up
+        // and a click would reach the one underneath. The deepest wins, because it is the one
+        // drawn last and therefore the one the user sees.
+        int deepestUnderPointer = -1;
+        for (std::size_t level = 0; level < menuLevels_.size(); ++level)
         {
-            frame_.drawList().fillRect(menuPopup_, theme.color(StudioColorRole::PopupBackground));
-            frame_.drawList().strokeRect(menuPopup_, theme.color(StudioColorRole::BorderStrong),
-                                         metricOf(theme, StudioMetric::BorderWidth));
+            if (menuLevels_[level].popup.contains(pointerX, pointerY))
+            {
+                deepestUnderPointer = static_cast<int>(level);
+            }
         }
 
+        bool activatedThisPass = false;
+        int hoveredLevel = -1;
+        int hoveredRow = -1;
+
+        frame_.pushLayer(kMenuLayer);
         frame_.ids().push("menu");
         frame_.ids().pushIndex(openMenu_);
 
-        int hoveredRow = -1;
-        bool activatedThisPass = false;
-
-        for (std::size_t i = 0; i < menuRows_.size(); ++i)
+        for (std::size_t level = 0; level < menuLevels_.size(); ++level)
         {
-            const MenuRowGeometry& row = menuRows_[i];
-            if (row.separator)
+            const MenuLevel& popup = menuLevels_[level];
+            if (popup.popup.isEmpty()) { continue; }
+
+            frame_.pushClip(popup.popup);
+            if (frame_.isDrawPass())
             {
-                studioMenuSeparator(frame_, row.bounds);
-                continue;
+                frame_.drawList().fillRect(popup.popup,
+                                           theme.color(StudioColorRole::PopupBackground));
+                frame_.drawList().strokeRect(popup.popup,
+                                             theme.color(StudioColorRole::BorderStrong),
+                                             metricOf(theme, StudioMetric::BorderWidth));
             }
 
-            const StudioAction* action = actions_.find(row.id);
-            const std::string shortcut = action != nullptr
-                ? describeStudioShortcut(action->shortcut) : std::string{};
-
-            StudioMenuItemOptions options;
-            options.enabled = row.enabled;
-            options.checkable = action != nullptr && action->checkable;
-            options.checked = options.checkable && actions_.isChecked(row.id);
-            options.highlighted = highlightedEntry_ == static_cast<int>(i);
-            options.shortcut = shortcut;
-
-            const std::string_view label = action != nullptr ? std::string_view{action->label}
-                                                             : std::string_view{row.id};
-
-            const StudioWidgetResult result =
-                studioMenuItem(frame_, frame_.ids().make(row.id), row.bounds, label, options);
-
-            if (!frame_.isInputPass()) { continue; }
-            if (result.interaction.hovered) { hoveredRow = static_cast<int>(i); }
-            if (result.activated && !activatedThisPass)
+            frame_.ids().pushIndex(static_cast<int>(level));
+            for (std::size_t i = 0; i < popup.rows.size(); ++i)
             {
-                activatedThisPass = true;
-                invoke(row.id);
+                const MenuRowGeometry& row = popup.rows[i];
+                if (row.separator)
+                {
+                    studioMenuSeparator(frame_, row.bounds);
+                    continue;
+                }
+
+                const StudioAction* action = row.submenu ? nullptr : actions_.find(row.id);
+                const std::string shortcut = action != nullptr
+                    ? describeStudioShortcut(action->shortcut) : std::string{};
+
+                StudioMenuItemOptions options;
+                options.enabled = row.enabled;
+                options.checkable = action != nullptr && action->checkable;
+                options.checked = options.checkable && actions_.isChecked(row.id);
+                options.hasSubmenu = row.submenu;
+                options.shortcut = shortcut;
+
+                // A row whose submenu is open stays highlighted even when the pointer has moved
+                // off it and into that submenu -- otherwise the trail back up the chain goes dark
+                // and the user cannot see which rows they came through.
+                const bool opensTheNextLevel = level < submenuPath_.size()
+                    && submenuPath_[level] == static_cast<int>(i);
+                options.highlighted = opensTheNextLevel
+                    || (level < highlight_.size() && highlight_[level] == static_cast<int>(i));
+
+                const std::string_view label = row.submenu
+                    ? std::string_view{row.label}
+                    : (action != nullptr ? std::string_view{action->label}
+                                         : std::string_view{row.id});
+
+                const StudioWidgetResult result =
+                    studioMenuItem(frame_, frame_.ids().make(row.submenu ? row.label : row.id),
+                                   row.bounds, label, options);
+
+                if (!frame_.isInputPass()) { continue; }
+                if (deepestUnderPointer != static_cast<int>(level)) { continue; }
+
+                if (result.interaction.hovered)
+                {
+                    hoveredLevel = static_cast<int>(level);
+                    hoveredRow = static_cast<int>(i);
+                }
+                if (result.activated && !activatedThisPass && !row.submenu)
+                {
+                    activatedThisPass = true;
+                    invoke(row.id);
+                }
+                // Clicking a submenu row opens it rather than doing nothing, which is what a user
+                // who has not learned that hovering is enough will try first.
+                if (result.activated && row.submenu) { openSubmenu(level, static_cast<int>(i)); }
             }
+            frame_.ids().pop();
+
+            frame_.popClip();
         }
 
         frame_.ids().pop();
         frame_.ids().pop();
-        frame_.popClip();
         frame_.popLayer();
 
         if (!frame_.isInputPass()) { return; }
 
-        // The pointer moves the highlight too, so that arrowing down and then reaching for the
-        // mouse does not leave two rows looking chosen.
-        if (hoveredRow >= 0) { highlightedEntry_ = hoveredRow; }
+        if (hoveredLevel >= 0)
+        {
+            // The pointer moves the highlight too, so that arrowing down and then reaching for the
+            // mouse does not leave two rows looking chosen. Levels below the pointer keep theirs,
+            // because they are the trail back up.
+            const auto level = static_cast<std::size_t>(hoveredLevel);
+            if (level < highlight_.size()) { highlight_[level] = hoveredRow; }
+            updateHoverSubmenu(level, hoveredRow);
+        }
+        else if (deepestUnderPointer < 0)
+        {
+            submenuPendingRow_ = -1;
+            submenuPendingSeconds_ = 0.0f;
+        }
 
         if (activatedThisPass)
         {
@@ -815,17 +1087,61 @@ namespace CNA::Studio
             return;
         }
 
-        // A press that landed on neither the bar nor the list dismisses the menu without
+        // A press that landed on neither the bar nor any open popup dismisses the menu without
         // activating anything -- the other half of "click elsewhere to cancel".
-        if (frame_.router().mousePressed(UiMouseButton::Left))
+        if (router.mousePressed(UiMouseButton::Left) && deepestUnderPointer < 0
+            && !layout_.menuBar.contains(pointerX, pointerY))
         {
-            const float x = frame_.router().mouseX();
-            const float y = frame_.router().mouseY();
-            if (!menuPopup_.contains(x, y) && !layout_.menuBar.contains(x, y))
-            {
-                setOpenMenu(-1);
-            }
+            setOpenMenu(-1);
         }
+    }
+
+    void StudioShell::updateHoverSubmenu(std::size_t level, int row)
+    {
+        if (row < 0 || level >= menuLevels_.size()) { return; }
+
+        const MenuRowGeometry& hovered = menuLevels_[level].rows[static_cast<std::size_t>(row)];
+        const int alreadyOpen = openSubmenuRow(level);
+
+        // Nothing open at this level: a submenu opens the moment the pointer reaches its row, and
+        // a row that is not one closes nothing, because there is nothing to close.
+        if (alreadyOpen < 0)
+        {
+            submenuPendingRow_ = -1;
+            submenuPendingSeconds_ = 0.0f;
+            if (hovered.submenu && hovered.enabled) { openSubmenu(level, row); }
+            return;
+        }
+
+        if (alreadyOpen == row)
+        {
+            submenuPendingRow_ = -1;
+            submenuPendingSeconds_ = 0.0f;
+            return;
+        }
+
+        // Something else is open at this level and the pointer has moved to a sibling row. It does
+        // *not* switch immediately: the natural way to reach a submenu is to cut the corner
+        // diagonally, which drags the pointer across one or two of the rows in between. Switching
+        // on the first frame of that would slam the submenu shut halfway to it, and the user would
+        // learn to travel in an L rather than trust the menu. So a sibling row has to hold the
+        // pointer for a moment before it wins.
+        if (submenuPendingRow_ != row || submenuPendingLevel_ != level)
+        {
+            submenuPendingRow_ = row;
+            submenuPendingLevel_ = level;
+            submenuPendingSeconds_ = 0.0f;
+            return;
+        }
+
+        const float delta = frame_.input().deltaSeconds > 0.0f ? frame_.input().deltaSeconds
+                                                               : 1.0f / 60.0f;
+        submenuPendingSeconds_ += delta;
+        if (submenuPendingSeconds_ < submenuSwitchDelay_) { return; }
+
+        submenuPendingRow_ = -1;
+        submenuPendingSeconds_ = 0.0f;
+        openSubmenu(level, hovered.submenu && hovered.enabled ? row : -1);
     }
 
     void StudioShell::describeToolbar()
@@ -1225,23 +1541,103 @@ namespace CNA::Studio
 
     void StudioShell::moveHighlight(int delta)
     {
-        if (menuRows_.empty()) { return; }
+        if (menuLevels_.empty() || highlight_.empty()) { return; }
 
-        const auto count = static_cast<int>(menuRows_.size());
-        int index = highlightedEntry_;
+        // The deepest popup, because that is the one the user is looking at. Arrowing down in a
+        // menu whose submenu is open must move inside the submenu, not behind it.
+        const std::size_t level = std::min(highlight_.size(), menuLevels_.size()) - 1;
+        const std::vector<MenuRowGeometry>& rows = menuLevels_[level].rows;
+        if (rows.empty()) { return; }
+
+        const auto count = static_cast<int>(rows.size());
+        int index = highlight_[level];
 
         // Wrapping and skipping in one loop, bounded by the row count so that a menu of nothing
         // but separators terminates rather than spinning.
         for (int step = 0; step < count; ++step)
         {
             index = index < 0 ? (delta > 0 ? 0 : count - 1) : (index + delta + count) % count;
-            const MenuRowGeometry& row = menuRows_[static_cast<std::size_t>(index)];
+            const MenuRowGeometry& row = rows[static_cast<std::size_t>(index)];
             if (!row.separator && row.enabled)
             {
-                highlightedEntry_ = index;
+                highlight_[level] = index;
                 return;
             }
         }
+    }
+
+    bool StudioShell::openHighlightedSubmenu()
+    {
+        if (menuLevels_.empty() || highlight_.empty()) { return false; }
+
+        const std::size_t level = std::min(highlight_.size(), menuLevels_.size()) - 1;
+        const int row = highlight_[level];
+        if (row < 0 || static_cast<std::size_t>(row) >= menuLevels_[level].rows.size())
+        {
+            return false;
+        }
+
+        const MenuRowGeometry& entry = menuLevels_[level].rows[static_cast<std::size_t>(row)];
+        if (!entry.submenu || !entry.enabled) { return false; }
+
+        openSubmenu(level, row);
+        // Opened from the keyboard, so it gets a highlighted row straight away: a submenu reached
+        // with Right arrow and then arrowed into would otherwise need a second Down just to reach
+        // the row that should already have been chosen.
+        highlight_.back() = -1;
+        moveHighlightInto(level + 1, 1);
+        return true;
+    }
+
+    void StudioShell::moveHighlightInto(std::size_t level, int delta)
+    {
+        // The level may not have laid out yet -- it is created by the next frame's layout pass --
+        // so the highlight is seeded now and the first real row is found once the rows exist.
+        if (level >= highlight_.size()) { return; }
+
+        const std::vector<StudioMenuEntry>* entries = entriesForLevel(level);
+        if (entries == nullptr || entries->empty()) { return; }
+
+        const auto count = static_cast<int>(entries->size());
+        int index = delta > 0 ? -1 : count;
+        for (int step = 0; step < count; ++step)
+        {
+            index = (index + delta + count) % count;
+            const StudioMenuEntry& entry = (*entries)[static_cast<std::size_t>(index)];
+            if (entry.isSeparator()) { continue; }
+            if (entry.isSubmenu() ? !entry.rows.empty() : actions_.isEnabled(entry.id))
+            {
+                highlight_[level] = index;
+                return;
+            }
+        }
+    }
+
+    bool StudioShell::closeDeepestSubmenu()
+    {
+        if (submenuPath_.empty()) { return false; }
+
+        // The highlight returns to the row that opened it, so Left then Right retraces the step
+        // rather than dropping the user back at the top of the parent menu.
+        const std::size_t level = submenuPath_.size() - 1;
+        const int parentRow = submenuPath_[level];
+        openSubmenu(level, -1);
+        if (level < highlight_.size()) { highlight_[level] = parentRow; }
+        return true;
+    }
+
+    void StudioShell::chooseHighlightedRow()
+    {
+        if (openHighlightedSubmenu()) { return; }
+
+        if (menuLevels_.empty() || highlight_.empty()) { return; }
+        const std::size_t level = std::min(highlight_.size(), menuLevels_.size()) - 1;
+        const int row = highlight_[level];
+        if (row < 0 || static_cast<std::size_t>(row) >= menuLevels_[level].rows.size()) { return; }
+
+        const MenuRowGeometry& entry = menuLevels_[level].rows[static_cast<std::size_t>(row)];
+        if (!entry.separator && !entry.submenu && entry.enabled) { invoke(entry.id); }
+        setOpenMenu(-1);
     }
 
     void StudioShell::handleMenuKeyboard()
@@ -1252,7 +1648,10 @@ namespace CNA::Studio
 
         if (router.keyPressed(UiKey::Escape))
         {
-            setOpenMenu(-1);
+            // One level at a time. Escape inside a submenu backs out of it; only Escape with
+            // nothing nested closes the whole menu, which is what lets a user who opened a submenu
+            // by accident get back without losing their place.
+            if (!closeDeepestSubmenu()) { setOpenMenu(-1); }
             keyboardConsumed_ = true;
             return;
         }
@@ -1260,42 +1659,43 @@ namespace CNA::Studio
         if (router.keyPressed(UiKey::UpArrow)) { moveHighlight(-1); keyboardConsumed_ = true; }
         if (router.keyPressed(UiKey::Home))
         {
-            highlightedEntry_ = -1;
+            if (!highlight_.empty()) { highlight_.back() = -1; }
             moveHighlight(1);
             keyboardConsumed_ = true;
         }
         if (router.keyPressed(UiKey::End))
         {
-            highlightedEntry_ = -1;
+            if (!highlight_.empty()) { highlight_.back() = -1; }
             moveHighlight(-1);
             keyboardConsumed_ = true;
         }
 
-        if (!menus_.empty())
+        if (router.keyPressed(UiKey::RightArrow))
         {
-            const auto count = static_cast<int>(menus_.size());
-            if (router.keyPressed(UiKey::LeftArrow))
+            keyboardConsumed_ = true;
+            // Into the submenu when the highlighted row has one, and on to the next menu in the
+            // bar when it does not. Both are what a desktop menu does, and which one applies is
+            // decided by the row rather than by a mode.
+            if (!openHighlightedSubmenu() && !menus_.empty())
             {
-                openMenuAt((openMenu_ - 1 + count) % count);
-                keyboardConsumed_ = true;
-            }
-            if (router.keyPressed(UiKey::RightArrow))
-            {
+                const auto count = static_cast<int>(menus_.size());
                 openMenuAt((openMenu_ + 1) % count);
-                keyboardConsumed_ = true;
+            }
+        }
+        if (router.keyPressed(UiKey::LeftArrow))
+        {
+            keyboardConsumed_ = true;
+            if (!closeDeepestSubmenu() && !menus_.empty())
+            {
+                const auto count = static_cast<int>(menus_.size());
+                openMenuAt((openMenu_ - 1 + count) % count);
             }
         }
 
         if (router.keyPressed(UiKey::Enter))
         {
             keyboardConsumed_ = true;
-            if (highlightedEntry_ >= 0
-                && static_cast<std::size_t>(highlightedEntry_) < menuRows_.size())
-            {
-                const MenuRowGeometry& row = menuRows_[static_cast<std::size_t>(highlightedEntry_)];
-                if (!row.separator && row.enabled) { invoke(row.id); }
-                setOpenMenu(-1);
-            }
+            chooseHighlightedRow();
         }
     }
 

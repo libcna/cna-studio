@@ -287,7 +287,7 @@ namespace CNA::Studio
             "  --shell-preview=P  Render the native Studio shell to PNG at P and exit.\n"
             "  --shell-pointer=X,Y  Place the pointer, so hover states are capturable.\n"
             "  --shell-mouse-down   Hold the primary button, so pressed states are capturable.\n"
-            "  --shell-open-menu=T  Open the menu titled T, e.g. File.\n"
+            "  --shell-open-menu=T  Open the menu titled T, e.g. File or Window>Panels.\n"
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
             "  --shell-tooltip    Rest the pointer until a tooltip appears.\n"
             "                       preview. Needs --shell-pointer.\n"

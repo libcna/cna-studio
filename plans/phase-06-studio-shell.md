@@ -6,7 +6,7 @@
 
 **Exit criteria.** Menus, toolbars and keyboard shortcuts all invoke the same command objects, and the shell looks like production software.
 
-**Progress:** 11 of 23 complete `█████░░░░░░░`
+**Progress:** 13 of 23 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -14,7 +14,7 @@
 | `STUDIO-06002` | Register the core command set | ✅ | `STUDIO-06001` |
 | `STUDIO-06023` | Bind the core commands to the editor, with live enablement | ✅ | `STUDIO-06002`, `STUDIO-06022` |
 | `STUDIO-06003` | Application menu bar | ✅ | `STUDIO-06002` |
-| `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | 🔄 | `STUDIO-06003` |
+| `STUDIO-06004` | Submenus, separators, checkable items and shortcut hints | ✅ | `STUDIO-06003` |
 | `STUDIO-06005` | Context menus | ⬜ | `STUDIO-06003` |
 | `STUDIO-06006` | Main toolbar | 🔄 | `STUDIO-06002` |
 | `STUDIO-06007` | Status bar | 🔄 | `STUDIO-06001` |
@@ -27,7 +27,7 @@
 | `STUDIO-06014` | Notification and toast system for background results | ⬜ | `STUDIO-06007` |
 | `STUDIO-06016` | Shell preview entry point on the real executable | ✅ | `STUDIO-06003` |
 | `STUDIO-06015` | The `cna-studio` executable starts on the new shell by default | 🔄 | `STUDIO-06003`, `STUDIO-05009` |
-| `STUDIO-06017` | Nested submenus, opening on hover, with keyboard traversal | ⬜ | `STUDIO-06004` |
+| `STUDIO-06017` | Nested submenus, opening on hover, with keyboard traversal | ✅ | `STUDIO-06004` |
 | `STUDIO-06018` | `StudioShell`: the application frame as an interactive object driving the frame lifecycle | ✅ | `STUDIO-03015`, `STUDIO-03031` |
 | `STUDIO-06019` | Capture the shell's interaction states from the preview entry point | ✅ | `STUDIO-06016`, `STUDIO-06018` |
 | `STUDIO-06020` | `--ui=studio`: the native shell in a real window, on a real CNA device | ✅ | `STUDIO-06018`, `STUDIO-02021` |
@@ -82,10 +82,10 @@ image, and those are the tokens a theme gets wrong
 
 ### `STUDIO-06004` — Submenus, separators, checkable items and shortcut hints
 
-**In progress.** Separators, checkable items with a reserved check column, and right-aligned
-shortcut hints that widen the menu rather than being clipped are done and tested. **Submenus are
-not**, and the task stays 🔄 until they are: the arrow is drawn for an item that declares one, but
-nothing opens. `STUDIO-06017` is the remaining work
+**Done.** Separators, checkable items with a reserved check column, and right-aligned shortcut
+hints that widen the menu rather than being clipped. Submenus were the piece that kept this at 🔄
+— the arrow was drawn for an item that declared one and nothing opened — and they landed with
+`STUDIO-06017`
 
 ### `STUDIO-06006` — Main toolbar
 
@@ -217,3 +217,58 @@ goes around
 undo, Ctrl+Z and the menu reaching the same object, a delete that undoes, every menu row naming an
 action the registry carries, and each action saying what it did (with the undo description read
 *before* the undo, because afterwards it names a different entry)
+
+### `STUDIO-06017` — Nested submenus, opening on hover, with keyboard traversal
+
+**Acceptance.** A submenu opens beside the row that owns it, to any depth, reachable by pointer and
+by keyboard, and staying on screen
+
+**The model is a path, not a pointer.** Menus are rebuilt from their definitions every frame, so
+anything holding a node into the tree would dangle the first time a menu changed while it was open
+— and menus *do* change while open, because the Window menu's panel list is rebuilt whenever a
+panel registers. What persists between frames is which row of each level is open (`submenuPath_`)
+and which row of each level is highlighted; the popups themselves are laid out fresh each frame by
+walking that path. A path that no longer names a submenu simply stops the walk.
+
+**The delay exists for one gesture: cutting the corner.** The natural way to reach a submenu is to
+move diagonally towards it, which drags the pointer across one or two of the rows in between. A menu
+that switched on the first frame of that would slam the submenu shut halfway to it, and the user
+would learn to travel in an L rather than trust the menu. So a *sibling* row has to hold the pointer
+for a quarter of a second before it wins, while a row with nothing open at its level opens
+immediately. `CuttingTheCornerDoesNotSlamTheSubmenuShut` crosses a row for half the delay and is
+confirmed to fail when the wait is removed.
+
+**Placement.** Beside its parent row, flipped to the other side when it would run off the right
+edge, and lifted rather than clipped when it would run off the bottom. Its first row lines up with
+the row that opened it, which is what makes the pair read as one gesture rather than as a popup that
+appeared somewhere else on screen.
+
+**The keyboard is not a second implementation.** Right enters the highlighted submenu, or moves to
+the next menu in the bar when the row has none; Left backs out of the deepest submenu, or moves to
+the previous menu; Escape backs out one level before closing the whole menu; Enter opens a submenu
+row rather than closing the menu and running nothing. Up and Down move inside the *deepest* open
+popup — arrowing in a menu whose submenu is open must move inside the submenu, not behind it.
+
+**The trail stays lit.** A row whose submenu is open keeps its highlight while the pointer is inside
+that submenu. Without it the chain behind the pointer goes dark and the user cannot see which rows
+they came through, which is the whole navigational value of a nested menu.
+
+**It fixed a latent highlight bug.** `studioMenuItem` emphasised a row from its own hit test, and
+`interaction.hovered` is true for *every* widget whose rectangle holds the pointer. That was
+invisible while popups never overlapped; a submenu flipped to the left sits on top of its parent,
+and both rows would have lit up. It now reads the router's hover *winner*, which is the honest
+definition of "the row under the pointer".
+
+**Shipped in the Window menu.** `Window ▸ Panels ▸ …` lists every registered panel as a checkable
+show/hide toggle, built from the panel list rather than written down: the command for each panel is
+registered by `registerPanel`, its check state is pulled from `isPanelOpen` so a panel closed by
+dragging its tab away shows as unchecked without anybody telling the menu, and a panel the user must
+not close (the viewport) is drawn disabled rather than drawn enabled and then refusing.
+
+**Verification.** `tests/StudioSubmenuTests.cpp` — the model (levels, depth beyond one, a submenu
+row reporting its own label rather than an action id, closing the chain with its menu), the pointer
+(opening on rest, the corner-cutting delay and its counterpart, clicking a submenu row, invoking
+from inside one, pressing outside, the lit trail), the keyboard (Right in, Left out, Escape by one
+level, Enter opening rather than closing, arrows moving inside the deepest popup, and Right on a
+plain row still walking the bar), and the Window panel list. Plus `CnaStudioShellPreviewSubmenu`,
+which photographs one through the rasterizer, and `CnaStudioRejectsUnknownShellSubmenu`

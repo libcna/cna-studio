@@ -588,7 +588,11 @@ namespace CNA::Studio
 
         if (!frame.isDrawPass()) { return result; }
 
-        const bool emphasised = options.highlighted || result.interaction.hovered;
+        // The router's *winner*, not this widget's own hit test. `interaction.hovered` is true for
+        // every widget whose rectangle holds the pointer, and menu popups overlap -- a submenu
+        // flipped to the left sits on top of its parent. Reading the hit test would light up both
+        // the row the user is on and the one hidden underneath it.
+        const bool emphasised = options.highlighted || frame.router().hoveredId() == id;
         if (emphasised && options.enabled)
         {
             frame.drawList().fillRect(bounds, theme.color(StudioColorRole::Selection));
