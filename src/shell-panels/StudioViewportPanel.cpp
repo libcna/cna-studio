@@ -794,7 +794,7 @@ namespace CNA::Studio
             {"studio.view.rotate", StudioIcon::Rotate},
             {"studio.view.scale", StudioIcon::Scale},
             {{}, StudioIcon::None},
-            {"studio.view.toggleGizmoSpace", StudioIcon::Focus},
+            {"studio.view.toggleGizmoSpace", StudioIcon::SpaceWorld, StudioIcon::SpaceLocal},
             {"studio.view.toggleGrid", StudioIcon::Grid},
         };
         return items;
@@ -884,11 +884,14 @@ namespace CNA::Studio
                 if (!action->description.empty()) { tooltip += "\n" + action->description; }
             }
 
+            const bool checked = actions.isChecked(item.actionId);
+
             StudioButtonOptions options;
-            options.icon = item.icon;
+            options.icon = (checked && item.checkedIcon != StudioIcon::None) ? item.checkedIcon
+                                                                            : item.icon;
             options.iconOnly = true;
             options.enabled = actions.isEnabled(item.actionId);
-            options.selected = actions.isChecked(item.actionId);
+            options.selected = checked;
             options.tooltip = tooltip;
 
             if (studioButton(frame, frame.ids().make(item.actionId), box, action->label, options)

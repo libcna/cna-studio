@@ -244,6 +244,17 @@ namespace CNA::Studio
         std::string_view actionId;
         /** @brief What to draw. */
         StudioIcon icon = StudioIcon::None;
+
+        /**
+         * @brief What to draw instead while the action is checked. `None` keeps @ref icon.
+         *
+         * For a toggle whose two states are two *things* rather than one thing on and off. World
+         * space and local space are the case: a lit button says "this is on", which is the wrong
+         * sentence when the alternative is not "off" but "the other one". The prototype's button
+         * was labelled with the space it was in for exactly this reason, and a toolbar that cannot
+         * be read is half a control (`docs/MIGRATION-INVENTORY.md`).
+         */
+        StudioIcon checkedIcon = StudioIcon::None;
     };
 
     /** @brief The toolbar's contents, in order. Empty ids are separators. */

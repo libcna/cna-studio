@@ -167,6 +167,7 @@ namespace CNA::Studio
             "entity", "camera", "light", "mesh", "sprite", "prefab",
             "texture", "material", "audio", "scene",
             "visible", "hidden", "lock", "unlock", "add", "select",
+            "spaceWorld", "spaceLocal",
         };
     }
 
@@ -545,6 +546,24 @@ namespace CNA::Studio
                 triangle(frame, space, 4.0f, 2.0f, 4.0f, 12.5f, 7.2f, 9.6f, color);
                 triangle(frame, space, 4.0f, 2.0f, 7.2f, 9.6f, 11.6f, 9.6f, color);
                 line(frame, space, 7.6f, 9.8f, 10.0f, 14.0f, color, 1.8f);
+                break;
+
+            case StudioIcon::SpaceWorld:
+                // A globe: a circle with a meridian and a parallel. Three curves and nothing else,
+                // because the pair below it has to be tellable apart at sixteen pixels and the only
+                // reliable difference at that size is round versus angular.
+                arc(frame, space, 8.0f, 8.0f, 6.0f, 0.0f, 360.0f, color, 1.4f);
+                line(frame, space, 2.0f, 8.0f, 14.0f, 8.0f, color, 1.2f);
+                arc(frame, space, 8.0f, 8.0f, 6.0f, 90.0f, 270.0f, color, 1.2f);
+                box(frame, space, 7.4f, 2.0f, 8.6f, 14.0f, color);
+                break;
+
+            case StudioIcon::SpaceLocal:
+                // Three axes from one corner: the object's own frame. Angular against the globe's
+                // round, which is the difference that survives being small.
+                line(frame, space, 4.0f, 12.0f, 13.0f, 12.0f, color, 1.5f);
+                line(frame, space, 4.0f, 12.0f, 4.0f, 3.0f, color, 1.5f);
+                line(frame, space, 4.0f, 12.0f, 10.0f, 7.0f, color, 1.5f);
                 break;
 
             case StudioIcon::None:

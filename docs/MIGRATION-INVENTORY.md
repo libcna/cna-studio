@@ -136,7 +136,7 @@ name would be matching on something nobody can check.
 | Tools | Tilemap tool | `##tool` | `studio.view.tool.paint` | ✅ |
 | Tools | Tile to paint | `Tile` | `studio.view.tool.paint` | ✅ |
 | Tools | Manipulator | `##gizmo` | `studio.view.translate` | ✅ |
-| Tools | Gizmo space | `##space` | `studio.view.toggleGizmoSpace` | 🔄 |
+| Tools | Gizmo space | `##space` | `studio.view.toggleGizmoSpace` | ✅ |
 | Tools | 2D view | `2D##view` | `studio.view.2d` | ✅ |
 | Tools | 3D view | `3D##view` | `studio.view.3d` | ✅ |
 
@@ -186,9 +186,17 @@ restarts would quietly ship a different answer from the one in the project.
 **The manipulator** is ✅ although the shapes differ: the prototype has one dropdown, the native
 toolbar has three checkable buttons, so it shows which mode is on without being opened.
 
-**The gizmo space** is 🔄 because the command exists and is on the same `X` as the prototype, but
-nothing native *shows* which space is active. The prototype's button is labelled with the space it
-is in for exactly that reason, and a toolbar that cannot be read is half a control.
+**The gizmo space** was 🔄 for one reason and is ✅ for its answer. The command existed and was on
+the same `X` as the prototype, and nothing native *showed* which space was active — the prototype's
+button is labelled with the space it is in for exactly that reason, and a toolbar that cannot be
+read is half a control.
+
+`STUDIO-35050`'s viewport toolbar shows it, and shows it as the prototype does: **two pictures
+rather than one lit button**. A lit toggle says "this is on", which is the wrong sentence when the
+alternative is not "off" but "the other one" — so the button draws a globe in world space and a set
+of axes in local space, and the two are round against angular because that is the difference that
+survives sixteen pixels. It is on the viewport rather than on the window toolbar, which is better
+than the prototype managed: the answer is beside the gizmo it describes.
 
 **2D and 3D** are ✅ as of `STUDIO-11001`/`STUDIO-11002`. The model was never the gap here either:
 `StudioCamera3D`, `pickEntityAt3D`, `buildSceneModelBatch`, `buildSceneSpriteQuads` and

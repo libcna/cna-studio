@@ -123,6 +123,10 @@ namespace CNA::Studio
         Add,
         /** @brief The selection tool. */
         Select,
+        /** @brief Transforms applied in world space. */
+        SpaceWorld,
+        /** @brief Transforms applied in the object's own space. */
+        SpaceLocal,
 
         /** @brief Number of declared icons; not itself one. */
         Count
