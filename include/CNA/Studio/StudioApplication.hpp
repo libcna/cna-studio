@@ -189,6 +189,9 @@ namespace CNA::Studio
          */
         std::string workspacePath;
 
+        /** @brief Select the entity with this name at start-up. Used by `--ui=studio`. */
+        std::string selectEntity;
+
         /**
          * @brief argv[0], used to find the `cna-player-*` binaries beside Studio.
          *

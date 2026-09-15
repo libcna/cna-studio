@@ -7,6 +7,7 @@
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
 #include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
+#include "CNA/Studio/UiCore/StudioTextEdit.hpp"
 #include "CNA/Studio/UiCore/StudioTextMeasure.hpp"
 
 #include <algorithm>
@@ -730,5 +731,306 @@ namespace CNA::Studio
     void studioEndScroll(StudioFrame& frame)
     {
         frame.popClip();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Text entry
+    // ---------------------------------------------------------------------------------------
+
+    namespace
+    {
+        /**
+         * @brief Converts the frame's typed UTF-16 code units to UTF-8.
+         *
+         * Surrogate pairs included, because an emoji typed into a name field is a user typing a
+         * character, and dropping half of a pair leaves a string that is not valid UTF-16 or UTF-8.
+         * An unpaired surrogate -- which a platform can emit when a composition is interrupted --
+         * is dropped rather than encoded: there is no character to encode.
+         */
+        std::string utf8From(const std::vector<char16_t>& units)
+        {
+            std::string out;
+            out.reserve(units.size());
+
+            for (std::size_t i = 0; i < units.size(); ++i)
+            {
+                char32_t code = units[i];
+
+                if (code >= 0xD800 && code <= 0xDBFF)
+                {
+                    if (i + 1 >= units.size()) { continue; }
+                    const char16_t low = units[i + 1];
+                    if (low < 0xDC00 || low > 0xDFFF) { continue; }
+                    code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                    ++i;
+                }
+                else if (code >= 0xDC00 && code <= 0xDFFF)
+                {
+                    continue;
+                }
+
+                // Control characters are not text. Tab and Enter mean something to the field and
+                // are handled as keys; the rest would be invisible bytes in somebody's entity name.
+                if (code < 0x20 || code == 0x7F) { continue; }
+
+                if (code < 0x80) { out.push_back(static_cast<char>(code)); }
+                else if (code < 0x800)
+                {
+                    out.push_back(static_cast<char>(0xC0 | (code >> 6)));
+                    out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+                }
+                else if (code < 0x10000)
+                {
+                    out.push_back(static_cast<char>(0xE0 | (code >> 12)));
+                    out.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+                    out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+                }
+                else
+                {
+                    out.push_back(static_cast<char>(0xF0 | (code >> 18)));
+                    out.push_back(static_cast<char>(0x80 | ((code >> 12) & 0x3F)));
+                    out.push_back(static_cast<char>(0x80 | ((code >> 6) & 0x3F)));
+                    out.push_back(static_cast<char>(0x80 | (code & 0x3F)));
+                }
+            }
+            return out;
+        }
+
+        /**
+         * @brief The byte offset in @p text nearest to @p x, measuring from @p left.
+         *
+         * Nearest boundary rather than the one before: clicking in the right half of a character
+         * must put the caret after it, which is where a person aiming between two letters expects
+         * it. Measuring prefix by prefix is O(n) per click over a single-line field, which is
+         * nothing; a field long enough for that to matter needs a different layout anyway.
+         */
+        std::size_t offsetNearest(const StudioFrame& frame, const StudioFontStyle& style,
+                                  std::string_view text, float left, float x)
+        {
+            std::size_t best = 0;
+            float bestDistance = std::abs(x - left);
+
+            std::size_t offset = 0;
+            while (offset < text.size())
+            {
+                offset = studioUtf8Next(text, offset);
+                const float edge =
+                    left + frame.measureText(style, text.substr(0, offset)).width;
+                const float distance = std::abs(x - edge);
+                if (distance < bestDistance) { bestDistance = distance; best = offset; }
+            }
+            return best;
+        }
+    }
+
+    StudioTextFieldResult studioTextField(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                          std::string& value,
+                                          const StudioTextFieldOptions& options)
+    {
+        StudioTextFieldResult result;
+        const StudioTheme& theme = frame.theme();
+        const StudioFontStyle style = theme.font(options.font);
+
+        // Registered before interact(), like every other control: the router assigns focus on a
+        // press to a widget it knows is focusable, and one that never registered is one Tab skips
+        // and a click never focuses.
+        if (frame.isInputPass() && options.enabled) { frame.router().registerFocusable(id, true); }
+
+        result.interaction = frame.interact(id, bounds, options.enabled);
+        WidgetState& state = frame.state().get(id);
+
+        const bool focused = result.interaction.focused && options.enabled;
+
+        // The editing buffer is the retained text; `value` is the committed one. Keeping them
+        // apart is what lets Escape restore the old value and what stops a half-typed number being
+        // parsed into the document on every keystroke.
+        // The press, not the focus, starts an edit session. The router grants focus *after* the
+        // frame a press happened on -- it reports the focused widget as of the start of the frame
+        // and reassigns it during interact() -- so a session that waited for focus would begin on
+        // a frame where nothing says the pointer was involved, and select-all-on-focus would then
+        // wipe a field somebody merely clicked into.
+        const bool pressedHere = result.interaction.pressed && options.enabled;
+        const bool editing = focused || pressedHere;
+
+        if (!editing)
+        {
+            state.text = value;
+            state.caret = value.size();
+            state.selectionAnchor = value.size();
+            state.active = false;
+        }
+        else if (!state.active)
+        {
+            state.active = true;
+            state.text = value;
+            state.caret = value.size();
+
+            // Select-all applies to focus arriving from the *keyboard*. Tabbing to a number and
+            // typing should replace it; clicking into a name and typing must not destroy it,
+            // because a click is how a person says "I want the caret here". The pointer branch
+            // below places the caret for that case, so all that is needed here is to not select.
+            state.selectionAnchor =
+                (options.selectAllOnFocus && !pressedHere) ? 0 : value.size();
+        }
+
+        StudioTextEdit edit{state.text};
+        edit.moveTo(state.selectionAnchor, false);
+        edit.moveTo(state.caret, true);
+
+        const UiRect textArea =
+            bounds.inset(UiEdges{metricOf(theme, StudioMetric::ControlPaddingHorizontal) * 0.5f,
+                                 0.0f});
+
+        if (editing && frame.isInputPass())
+        {
+            // Said every frame the field is focused, so the shell's shortcut dispatch and the
+            // keyboard-activation path in the other widgets know a key means text here.
+            frame.router().setWantsTextInput(true);
+
+            const UiInputState& input = frame.input();
+            const bool shift = input.modifiers.shift;
+            const bool control = input.modifiers.control;
+            const StudioInputRouter& router = frame.router();
+
+            if (control && router.keyPressed(UiKey::A)) { edit.selectAll(); }
+            else if (control && router.keyPressed(UiKey::C))
+            {
+                if (edit.hasSelection()) { frame.setClipboardText(edit.selectedText()); }
+            }
+            else if (control && router.keyPressed(UiKey::X))
+            {
+                if (edit.hasSelection())
+                {
+                    frame.setClipboardText(edit.selectedText());
+                    (void)edit.deleteSelection();
+                }
+            }
+            else if (control && router.keyPressed(UiKey::V))
+            {
+                const std::string pasted = frame.clipboardText();
+                if (!pasted.empty())
+                {
+                    // One line. A pasted paragraph in a single-line field would otherwise carry
+                    // newlines the measurer cannot render and the document would store verbatim.
+                    std::string flattened;
+                    flattened.reserve(pasted.size());
+                    for (const char character : pasted)
+                    {
+                        flattened.push_back(character == '\n' || character == '\r' ? ' ' : character);
+                    }
+                    (void)edit.insert(flattened);
+                }
+            }
+            else if (router.keyPressed(UiKey::LeftArrow)) { edit.moveLeft(shift); }
+            else if (router.keyPressed(UiKey::RightArrow)) { edit.moveRight(shift); }
+            else if (router.keyPressed(UiKey::Home)) { edit.moveHome(shift); }
+            else if (router.keyPressed(UiKey::End)) { edit.moveEnd(shift); }
+            else if (router.keyPressed(UiKey::Backspace)) { (void)edit.deleteBackward(); }
+            else if (router.keyPressed(UiKey::Delete)) { (void)edit.deleteForward(); }
+            else if (router.keyPressed(UiKey::Escape))
+            {
+                edit.setText(value);
+                edit.selectAll();
+                result.cancelled = true;
+                frame.router().setFocus(WidgetId{});
+            }
+            else if (router.keyPressed(UiKey::Enter))
+            {
+                if (edit.text() != value) { value = edit.text(); result.committed = true; }
+                frame.router().setFocus(WidgetId{});
+            }
+
+            if (!result.cancelled)
+            {
+                const std::string typed = utf8From(input.characters);
+                if (!typed.empty()) { (void)edit.insert(typed); }
+            }
+        }
+
+        // Pointer, in both passes so the caret the input pass hit-tested is the one drawn.
+        if (options.enabled && (result.interaction.pressed || result.interaction.held))
+        {
+            const std::size_t offset =
+                offsetNearest(frame, style, edit.text(), textArea.left(), frame.input().mouseX);
+            edit.moveTo(offset, !result.interaction.pressed);
+        }
+
+        if (frame.isInputPass())
+        {
+            state.text = edit.text();
+            state.caret = edit.caret();
+            state.selectionAnchor = edit.anchor();
+        }
+
+        // Focus lost with an uncommitted edit commits it. Abandoning somebody's typing because
+        // they clicked elsewhere is the behaviour every form gets wrong and nobody forgives.
+        if (frame.isInputPass() && !editing && state.active)
+        {
+            state.active = false;
+            if (state.text != value) { value = state.text; result.committed = true; }
+        }
+
+        result.editing = editing && edit.text() != value;
+
+        if (options.enabled) { (void)frame.requestCursor(id, StudioCursor::Text); }
+
+        if (frame.isDrawPass())
+        {
+            const StudioColorRole background =
+                !options.enabled ? StudioColorRole::ControlBackgroundDisabled
+                                 : (editing ? StudioColorRole::ControlBackgroundSelected
+                                            : (result.interaction.hovered
+                                                   ? StudioColorRole::ControlBackgroundHover
+                                                   : StudioColorRole::ControlBackground));
+            frame.drawList().fillRect(bounds, theme.color(background));
+            frame.drawList().strokeRect(bounds,
+                                        theme.color(editing ? StudioColorRole::FocusRing
+                                                            : StudioColorRole::Border),
+                                        metricOf(theme, StudioMetric::BorderWidth));
+
+            const std::string_view shown = edit.text();
+            if (shown.empty() && !editing && !options.placeholder.empty())
+            {
+                studioDrawText(frame, textArea, options.placeholder, options.font,
+                               theme.color(StudioColorRole::TextDisabled));
+            }
+            else
+            {
+                if (editing && edit.hasSelection())
+                {
+                    const float from =
+                        frame.measureText(style, shown.substr(0, edit.selectionBegin())).width;
+                    const float to =
+                        frame.measureText(style, shown.substr(0, edit.selectionEnd())).width;
+                    frame.drawList().fillRect(
+                        UiRect{textArea.left() + from, bounds.top() + 2.0f, to - from,
+                               std::max(0.0f, bounds.height - 4.0f)},
+                        theme.color(StudioColorRole::Selection));
+                }
+
+                studioDrawText(frame, textArea,
+                               studioTruncateText(frame, style, shown, textArea.width),
+                               options.font,
+                               theme.color(options.enabled ? StudioColorRole::TextPrimary
+                                                           : StudioColorRole::TextDisabled));
+
+                if (editing)
+                {
+                    // Steady, not blinking. Studio has no animation model yet (STUDIO-03030), and
+                    // a caret that blinks off is a caret a golden image catches half the time --
+                    // which would make every text screenshot in the suite nondeterministic.
+                    const float caretX = std::round(
+                        textArea.left()
+                        + frame.measureText(style, shown.substr(0, edit.caret())).width);
+                    frame.drawList().fillRect(
+                        UiRect{caretX, bounds.top() + 2.0f,
+                               std::max(1.0f, metricOf(theme, StudioMetric::BorderWidth)),
+                               std::max(0.0f, bounds.height - 4.0f)},
+                        theme.color(StudioColorRole::TextPrimary));
+                }
+            }
+        }
+
+        return result;
     }
 } // namespace CNA::Studio

@@ -48,7 +48,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**119 of 472 tasks complete** `█████░░░░░░░░░░░░░░░░░░░`  25.2%
+**123 of 475 tasks complete** `█████░░░░░░░░░░░░░░░░░░░`  25.9%
 
 | Status | Count |
 |--------|------:|
@@ -57,9 +57,9 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | ⬜ Not started | 341 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 3 |
-| **Total** | **472** |
+| **Total** | **475** |
 
-> **On the task count.** 472 tasks are decomposed today. That is not the final number: the
+> **On the task count.** 475 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
 > Tasks are added when the work is understood well enough to state a completion condition — never
 > to reach a number. A phase whose detail is still coarse says so by having few rows, which is
@@ -72,11 +72,11 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
 | 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 27 | 22 | `████████░░` |
-| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 30 | 21 | `███████░░░` |
+| 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 31 | 24 | `███████░░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 18 | 7 | `████░░░░░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 14 | 10 | `██████░░░░` |
 | 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | 🔄 | 22 | 10 | `████░░░░░░` |
-| 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 24 | 5 | `░░░░░░░░░░` |
+| 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ⬜ | 26 | 6 | `░░░░░░░░░░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |
 | 10 | [Asset pipeline and importing](plans/phase-10-asset-pipeline.md) | `STUDIO-10NNN` | ⬜ | 13 | 0 | `░░░░░░░░░░` |

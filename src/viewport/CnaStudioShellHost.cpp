@@ -22,6 +22,7 @@
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -138,6 +139,20 @@ namespace CNA::Studio
                         }
                     });
 
+                // The Details panel (STUDIO-07007), the third ported and the first that writes to
+                // the document. Every edit goes through the command history, so Ctrl+Z reaches it.
+                shell_->setPanelContent("details",
+                    [this](StudioFrame& frame, const UiRect& bounds) {
+                        const StudioDetailsResult details =
+                            studioDetailsPanel(frame, bounds, *context_);
+                        if (frame.isDrawPass()) { detailsRowsDrawn_ = details.rowsDrawn; }
+                        if (details.edited)
+                        {
+                            log_.append(LogSeverity::Info, "Changed " + details.editedProperty
+                                                           + ".  Undo with Ctrl+Z.");
+                        }
+                    });
+
                 // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI
                 // owns -- which is the whole shape of the strangler migration: the ImGui Console
                 // reads the same model and keeps working until it is deleted.
@@ -168,6 +183,28 @@ namespace CNA::Studio
                         }
                     });
 
+                if (!options.selectEntity.empty())
+                {
+                    // By name, because that is what a person types. SceneDocument looks entities
+                    // up by id, so the walk is here rather than being a lookup the document does
+                    // not have and that nothing else has asked for.
+                    const StudioEntity* wanted = nullptr;
+                    for (const StudioEntity& candidate : context_->getScene().getEntities())
+                    {
+                        if (candidate.getName() == options.selectEntity) { wanted = &candidate; break; }
+                    }
+
+                    if (wanted != nullptr)
+                    {
+                        context_->select(wanted->getId());
+                    }
+                    else
+                    {
+                        log_.append(LogSeverity::Warning,
+                                    "No entity called '" + options.selectEntity + "' in this scene.");
+                    }
+                }
+
                 if (!options.focusPanel.empty() && !shell_->activatePanel(options.focusPanel))
                 {
                     log_.append(LogSeverity::Warning,
@@ -190,6 +227,7 @@ namespace CNA::Studio
             [[nodiscard]] const std::string& statusLeft() const { return shell_->statusLeft(); }
             [[nodiscard]] std::size_t outlinerRowsDrawn() const { return outlinerRowsDrawn_; }
             [[nodiscard]] std::size_t outlinerRowsTotal() const { return outlinerRowsTotal_; }
+            [[nodiscard]] std::size_t detailsRowsDrawn() const { return detailsRowsDrawn_; }
             [[nodiscard]] std::size_t logRowsDrawn() const { return logRowsDrawn_; }
             [[nodiscard]] std::size_t logRowsMatching() const { return logRowsMatching_; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
@@ -404,6 +442,7 @@ namespace CNA::Studio
             StudioTreeState outlinerState_;
             std::size_t outlinerRowsDrawn_ = 0;
             std::size_t outlinerRowsTotal_ = 0;
+            std::size_t detailsRowsDrawn_ = 0;
             StudioLog log_;
             std::size_t logRowsDrawn_ = 0;
             std::size_t logRowsMatching_ = 0;
@@ -437,6 +476,7 @@ namespace CNA::Studio
         result.statusLeft = game.statusLeft();
         result.outlinerRowsDrawn = game.outlinerRowsDrawn();
         result.outlinerRowsTotal = game.outlinerRowsTotal();
+        result.detailsRowsDrawn = game.detailsRowsDrawn();
         result.logRowsDrawn = game.logRowsDrawn();
         result.logRowsMatching = game.logRowsMatching();
         result.layoutRestored = game.layoutRestored();

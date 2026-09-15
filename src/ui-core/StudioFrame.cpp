@@ -252,4 +252,25 @@ namespace CNA::Studio
         if (describe) { describe(frame); }
         frame.endFrame();
     }
+
+    void StudioFrame::setClipboard(std::function<std::string()> read,
+                                   std::function<void(const std::string&)> write)
+    {
+        readClipboard_ = std::move(read);
+        writeClipboard_ = std::move(write);
+    }
+
+    std::string StudioFrame::clipboardText() const
+    {
+        return readClipboard_ ? readClipboard_() : localClipboard_;
+    }
+
+    void StudioFrame::setClipboardText(const std::string& text)
+    {
+        // Both, when a platform clipboard is installed. Keeping the local copy in step costs a
+        // string and means a paste still works when the platform's read comes back empty -- which
+        // it does on a machine where another application took ownership and then exited.
+        localClipboard_ = text;
+        if (writeClipboard_) { writeClipboard_(text); }
+    }
 } // namespace CNA::Studio

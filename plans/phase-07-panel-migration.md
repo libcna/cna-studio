@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 5 of 24 complete `██░░░░░░░░░░`
+**Progress:** 6 of 26 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,7 +16,7 @@
 | `STUDIO-07004` | Port the status bar | ⬜ | `STUDIO-06007` |
 | `STUDIO-07005` | Port the Console / Output Log | ✅ | `STUDIO-07001` |
 | `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
-| `STUDIO-07007` | Port the Inspector panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07007` | Port the Inspector panel (Details) | ✅ | `STUDIO-07001`, `STUDIO-03035` |
 | `STUDIO-07008` | Port the Content Browser | ⬜ | `STUDIO-07001` |
 | `STUDIO-07009` | Port the viewport container | ⬜ | `STUDIO-04012` |
 | `STUDIO-07010` | Port the Build panel | ⬜ | `STUDIO-07001` |
@@ -27,6 +27,8 @@
 | `STUDIO-07015` | One log model, read by both consoles | ✅ | — |
 | `STUDIO-07016` | Panel content seam: the shell hosts a ported panel's content | ✅ | `STUDIO-06018` |
 | `STUDIO-07017` | A module for the ported panels, above widgets and document alike | ✅ | `STUDIO-07016` |
+| `STUDIO-07018` | Editors for the property kinds the Details panel shows read-only | ⬜ | `STUDIO-07007` |
+| `STUDIO-07019` | An undoable command for an entity's enabled flag | ⬜ | `STUDIO-07007` |
 | `STUDIO-07020` | Prove parity against the Phase 0 panel and shortcut inventory | ⬜ | `STUDIO-00014`, `STUDIO-07014` |
 | `STUDIO-07021` | Prove input parity: keyboard, mouse, drag and drop, clipboard, text editing | ⬜ | `STUDIO-07020` |
 | `STUDIO-07022` | Prove docking parity | ⬜ | `STUDIO-07020` |
@@ -139,3 +141,38 @@ which ui-core already depends on. The outliner reads a `SceneDocument` and write
 ui-core depends on neither — deliberately, because that is what keeps the widget layer reusable and
 testable without a document model. A panel is the seam where the two are put together, and a seam
 deserves somewhere to be
+
+### `STUDIO-07007` — Port the Inspector panel (Details)
+
+**Acceptance.** The selected entity's name, enabled flag and components, with every property shown
+and the simple kinds editable. Every edit goes through the command history, so Ctrl+Z reaches it
+
+**The first ported panel that writes.** That is what makes it different from the outliner and what
+decides its tests: showing a scene wrong is a bad afternoon, editing one wrong is a lost afternoon's
+work. Nothing here touches an entity directly except the enabled flag, which has no command yet
+(`STUDIO-07019`) and is recorded as such rather than left looking undoable and not being
+
+**What is editable, and what is honestly not.** Booleans, integers, floats, strings, enumerations
+and the two- and three-component vectors. Colours, quaternions, rectangles, references, lists and
+structures are *shown* with what they hold and labelled as not editable yet — a property nobody can
+see is worse than one nobody can change, and a control that looked editable and silently did nothing
+would be worse than both. `STUDIO-07018` wants pickers rather than more text fields: a colour typed
+as four numbers and a rotation typed as four is how an inspector gets a reputation
+
+**A component the registry does not know still shows its properties.** A scene authored by a plugin
+that is not loaded must be readable, or opening it looks like data loss
+
+**Verification.** `tests/StudioDetailsPanelTests.cpp` — the components shown, the two empty states,
+a rename reaching the history and surviving an undo, one axis of a vector edited without disturbing
+the other two, text that is not a number rejected rather than turned into zero, and an entity
+deleted while selected reported rather than dereferenced
+
+### `STUDIO-07018` — Editors for the property kinds the Details panel shows read-only
+
+**Acceptance.** A colour picker, a rotation editor, a rectangle editor, asset and entity pickers,
+and list add/remove/reorder. Pickers, not text fields: four numbers is not a colour
+
+### `STUDIO-07019` — An undoable command for an entity's enabled flag
+
+**Acceptance.** `SceneCommands` gains a set-enabled command and the Details panel routes the
+checkbox through it, like every other edit

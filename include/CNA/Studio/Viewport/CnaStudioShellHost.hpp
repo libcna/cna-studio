@@ -75,6 +75,14 @@ namespace CNA::Studio
         std::string projectPath;
 
         /**
+         * @brief Select the entity with this name at start-up, so the Details panel has content.
+         *
+         * A screenshot of an inspector with nothing selected is a screenshot of its empty state,
+         * which is worth capturing once and useless as a check that the panel works.
+         */
+        std::string selectEntity;
+
+        /**
          * @brief Bring this panel to the front of its tab group before drawing.
          *
          * A panel sharing a tab strip with five others cannot be photographed at all otherwise,
@@ -117,6 +125,9 @@ namespace CNA::Studio
 
         /** @brief How many rows the scene and the current expansion produced. */
         std::size_t outlinerRowsTotal = 0;
+
+        /** @brief How many Details rows the ported inspector put on screen. */
+        std::size_t detailsRowsDrawn = 0;
 
         /** @brief Whether a stored workspace arrangement was found and applied at start-up. */
         bool layoutRestored = false;

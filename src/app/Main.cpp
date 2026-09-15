@@ -415,6 +415,7 @@ int main(int argc, char** argv)
         // meant to isolate itself would silently write over the developer's layout.
         hostOptions.focusPanel = options.focusPanel;
         hostOptions.projectPath = options.projectPath;
+        hostOptions.selectEntity = options.selectEntity;
         if (options.workspacePath == "none") { hostOptions.workspacePath.clear(); }
         else if (!options.workspacePath.empty()) { hostOptions.workspacePath = options.workspacePath; }
         else { hostOptions.workspacePath = CNA::Studio::StudioWorkspaceStore::defaultPath(); }
@@ -453,6 +454,10 @@ int main(int argc, char** argv)
             {
                 std::cout << ", outliner showing " << result.outlinerRowsDrawn << " of "
                           << result.outlinerRowsTotal << " entities";
+            }
+            if (result.detailsRowsDrawn > 0)
+            {
+                std::cout << ", details showing " << result.detailsRowsDrawn << " rows";
             }
             if (result.logRowsMatching > 0 || result.logRowsDrawn > 0)
             {

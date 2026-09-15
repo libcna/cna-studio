@@ -256,6 +256,7 @@ add_library(cna-studio-ui-core STATIC
     src/ui-core/StudioWorkspaceStore.cpp
     src/ui-core/StudioLogPanel.cpp
     src/ui-core/StudioTreeView.cpp
+    src/ui-core/StudioTextEdit.cpp
     src/ui-core/StudioDockTree.cpp
     src/ui-core/StudioInputRouter.cpp
     src/ui-core/StudioFrame.cpp
@@ -415,7 +416,8 @@ endif()
 # knows nothing about widgets, and keeping it that way is what lets each be tested without the
 # other. Every panel ported in Phase 7 belongs here.
 add_library(cna-studio-shell-panels STATIC
-    src/shell-panels/StudioOutlinerPanel.cpp)
+    src/shell-panels/StudioOutlinerPanel.cpp
+    src/shell-panels/StudioDetailsPanel.cpp)
 target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-studio-context)
 
 # ---------------------------------------------------------------------------------------------

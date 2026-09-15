@@ -343,6 +343,31 @@ namespace CNA::Studio
         /** @brief The cursor shape the platform should show this frame. */
         [[nodiscard]] StudioCursor cursor() const { return cursor_; }
 
+        // --- Clipboard (STUDIO-03025) -------------------------------------------------------------
+
+        /**
+         * @brief Installs the platform's clipboard.
+         *
+         * Until one is installed the frame keeps its own string, so a text field can be cut and
+         * pasted in a headless test and in a build whose CNA has the Devices module switched off
+         * (CNA gap G-02). That fallback is real but local: it does not reach other applications,
+         * which is why the host installs the platform's as soon as there is one.
+         *
+         * @param read Returns the clipboard's text.
+         * @param write Puts text on the clipboard.
+         */
+        void setClipboard(std::function<std::string()> read,
+                          std::function<void(const std::string&)> write);
+
+        /** @brief Whether the platform's clipboard is installed, rather than the local fallback. */
+        [[nodiscard]] bool hasPlatformClipboard() const { return readClipboard_ != nullptr; }
+
+        /** @brief The clipboard's text. */
+        [[nodiscard]] std::string clipboardText() const;
+
+        /** @brief Puts @p text on the clipboard. */
+        void setClipboardText(const std::string& text);
+
         // --- Misuse --------------------------------------------------------------------------------
 
         /** @brief Number of operations attempted in a phase that refuses them. */
@@ -386,6 +411,9 @@ namespace CNA::Studio
         StudioFontAtlas* atlas_ = nullptr;
 
         StudioCursor cursor_ = StudioCursor::Arrow;
+        std::function<std::string()> readClipboard_;
+        std::function<void(const std::string&)> writeClipboard_;
+        std::string localClipboard_;
         std::vector<std::string> violations_;
     };
 

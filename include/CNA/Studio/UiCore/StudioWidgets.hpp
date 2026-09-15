@@ -433,4 +433,71 @@ namespace CNA::Studio
 
     /** @brief Ends the region opened by @ref studioBeginScroll, popping its clip. */
     void studioEndScroll(StudioFrame& frame);
+
+    // ---------------------------------------------------------------------------------------
+    // Text entry
+    // ---------------------------------------------------------------------------------------
+
+    /** @brief How a text field behaves and what it says when empty. */
+    struct StudioTextFieldOptions
+    {
+        /** @brief False to draw and route it read-only. */
+        bool enabled = true;
+
+        /** @brief Shown, dimmed, when the field is empty and unfocused. */
+        std::string_view placeholder;
+
+        /** @brief Typographic role. Monospace suits a number or an identifier. */
+        StudioFontRole font = StudioFontRole::Body;
+
+        /**
+         * @brief Select everything when the field takes focus.
+         *
+         * What a property grid wants: tabbing to a number and typing should replace it, not append
+         * to it. What a long free-text field does not want, because one keystroke then loses the
+         * lot.
+         */
+        bool selectAllOnFocus = false;
+    };
+
+    /** @brief What a text field did this frame. */
+    struct StudioTextFieldResult
+    {
+        /** @brief Hover, press, focus and disabled state. */
+        StudioInteraction interaction;
+
+        /**
+         * @brief The value changed and was committed. Input pass only.
+         *
+         * Committed means Enter, or focus leaving the field. Not every keystroke: a property bound
+         * to a field that wrote on every character would put a hundred entries in the undo stack
+         * for one edit, and would re-validate a number while it is half-typed.
+         */
+        bool committed = false;
+
+        /** @brief The user is editing: the text differs from @p value. Both passes. */
+        bool editing = false;
+
+        /** @brief The edit was abandoned with Escape. Input pass only. */
+        bool cancelled = false;
+    };
+
+    /**
+     * @brief An editable single-line text field.
+     *
+     * Click to place the caret, drag to select, Shift with the arrows and Home/End to extend,
+     * Ctrl+A to select all, Ctrl+C/X/V through the frame's clipboard, Escape to abandon and Enter
+     * to commit. The in-progress text is retained state keyed by @p id, so it survives the frames
+     * between keystrokes and a value changing underneath it does not throw away what was typed.
+     *
+     * @param frame The frame.
+     * @param id Identity of the field.
+     * @param bounds Area it occupies.
+     * @param value Read for the displayed value; written on commit.
+     * @param options Behaviour.
+     * @return What happened.
+     */
+    StudioTextFieldResult studioTextField(StudioFrame& frame, WidgetId id, const UiRect& bounds,
+                                          std::string& value,
+                                          const StudioTextFieldOptions& options = {});
 } // namespace CNA::Studio

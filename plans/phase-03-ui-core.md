@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 21 of 30 complete `████████░░░░`
+**Progress:** 24 of 31 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -29,8 +29,8 @@
 | `STUDIO-03021` | Tooltip model with delay, placement and dismissal | ⬜ | `STUDIO-03009` |
 | `STUDIO-03022` | Popup and modal layering with correct input blocking | 🔄 | `STUDIO-03009` |
 | `STUDIO-03023` | Drag and drop: sources, targets, payload typing, visual feedback | ⬜ | `STUDIO-03010` |
-| `STUDIO-03024` | Text selection model for text fields | ⬜ | `STUDIO-03007` |
-| `STUDIO-03025` | Clipboard integration through the platform seam | ⬜ | `STUDIO-03024` |
+| `STUDIO-03024` | Text selection model for text fields | ✅ | `STUDIO-03007` |
+| `STUDIO-03025` | Clipboard integration through the platform seam | ✅ | `STUDIO-03024` |
 | `STUDIO-03026` | UTF-8 and Unicode correctness through the whole text path | 🔄 | `STUDIO-03024` |
 | `STUDIO-03027` | IME support where the platform provides it | ⬜ | `STUDIO-03026` |
 | `STUDIO-03028` | High-DPI scale factor threaded through layout and styling | ✅ | `STUDIO-03004` |
@@ -40,6 +40,7 @@
 | `STUDIO-03032` | Text measurement seam: code-point-correct extents, baselines and truncation | ✅ | `STUDIO-03015` |
 | `STUDIO-03033` | Scrollable regions: wheel, draggable thumb, and row virtualisation | ✅ | `STUDIO-03031`, `STUDIO-03018` |
 | `STUDIO-03034` | Tree view: flattened rows, disclosure, indentation and selection | ✅ | `STUDIO-03033` |
+| `STUDIO-03035` | Editable single-line text field over the selection model | ✅ | `STUDIO-03024`, `STUDIO-03025` |
 
 ## Acceptance and verification
 
@@ -258,3 +259,57 @@ their scene has anything in it
 **Verification.** `tests/StudioOutlinerPanelTests.cpp` — hierarchy and depth, collapsing hiding only
 its own children, the open default, selection marking, a click reaching the selection, and a
 two-thousand-deep chain that neither exhausts the stack nor draws more than a screenful
+
+### `STUDIO-03024` — Text selection model for text fields
+
+**Acceptance.** A caret and a selection over a UTF-8 string, moving by whole code points, with the
+selection running between an *anchor* and the caret in either direction — because dragging left from
+the middle of a word selects leftwards, and Shift+Right then shrinks that selection from its left
+edge, which a model storing only a begin and an end cannot express
+
+**Separate from the widget, and tested without one.** Nearly everything that goes wrong with a text
+field goes wrong here: a caret landing inside a multi-byte character, Backspace eating one byte of
+three and leaving a string that is no longer UTF-8, an arrow with a selection moving past its edge
+instead of to it. None of that needs a frame, a font or a window to reproduce, and none of it shows
+in a screenshot until the damage is done
+
+**What it deliberately is not.** Grapheme clusters. A flag emoji is one thing a reader sees and
+several code points, so moving by code point steps inside some characters. That needs a grapheme
+breaker and a table this repository does not have; code points are a real improvement on bytes, and
+stopping here is a deliberate half-step recorded as `STUDIO-03026` rather than an oversight
+
+**Verification.** `tests/StudioTextEditTests.cpp`, over an accented Latin character and a
+four-byte emoji
+
+### `STUDIO-03025` — Clipboard integration through the platform seam
+
+**Acceptance.** The frame carries a clipboard the widgets use, and a host installs the platform's
+into it. Until one is installed the frame keeps its own string, so a text field can be cut and
+pasted in a headless test and in a build whose CNA has the Devices module switched off (CNA gap
+G-02). That fallback is real but local, and the distinction is visible: `hasPlatformClipboard()`
+says which one is in use
+
+**Verification.** `TheClipboardWorksWithoutAPlatformAndDefersToOneWhenThereIs`
+
+### `STUDIO-03035` — Editable single-line text field over the selection model
+
+**Acceptance.** Click to place the caret, drag to select, Shift with the arrows and Home/End to
+extend, Ctrl+A, Ctrl+C/X/V, Escape to abandon and Enter to commit. Committed on Enter or on losing
+focus — never per keystroke, because a property bound to a field that wrote per character would put
+one undo entry per letter and would parse a number while it is half-typed
+
+**Two things it gets right that are easy to get wrong.** Focus arriving by *click* places the caret;
+focus arriving by *keyboard* honours select-all-on-focus. The router grants focus on the frame after
+a press, so a session that waited for focus would begin on a frame where nothing says the pointer was
+involved — and a single click into a name field would then wipe it on the next keystroke. The press
+starts the session instead. And losing focus with an uncommitted edit *commits* it: abandoning
+somebody's typing because they clicked elsewhere is the behaviour every form gets wrong and nobody
+forgives
+
+**On the caret not blinking.** Studio has no animation model yet (`STUDIO-03030`), and a caret that
+blinks off is a caret a golden image catches half the time — which would make every text screenshot
+in the suite nondeterministic
+
+**Verification.** `tests/StudioTextEditTests.cpp` — commit on Enter and not before, Escape leaving
+the value alone, the router being told a key means text, and a click placing the caret where it
+landed rather than at an end

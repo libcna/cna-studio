@@ -26,6 +26,8 @@ add_executable(cna-studio-tests
     StudioWorkspaceStoreTests.cpp
     StudioLogPanelTests.cpp
     StudioOutlinerPanelTests.cpp
+    StudioTextEditTests.cpp
+    StudioDetailsPanelTests.cpp
     ArchitectureGuardTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
@@ -318,6 +320,26 @@ if(CNA_STUDIO_WITH_CNA)
     # messages rather than a demonstration of them.
     set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
         PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level01'.*outliner showing [1-9][0-9]* of 5 entities.*output log showing [1-9][0-9]* of [1-9][0-9]* messages")
+
+    # The same run with something selected, so the Details panel has an entity to inspect. Four
+    # ported panels' worth of state in one line, none of which any one of them could produce alone:
+    # the context opened the project, the outliner read its scene, the selection reached the
+    # inspector, and the inspector found the components on it.
+    add_test(NAME CnaStudioNativeShellDetails
+        COMMAND cna-studio --ui=studio --workspace=none --select=Player
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-details.png)
+    set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
+        PASS_REGULAR_EXPRESSION "outliner showing [1-9][0-9]* of 5 entities.*details showing [1-9][0-9]* rows")
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+    else()
+        set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
+    endif()
 
     if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
