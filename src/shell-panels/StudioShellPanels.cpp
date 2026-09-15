@@ -7,6 +7,8 @@
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Project/Project.hpp"
+#include "CNA/Studio/Project/ProjectExport.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
@@ -19,6 +21,7 @@
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -45,6 +48,36 @@ namespace CNA::Studio
         // the services through it, so the only thing that has to happen here is that the viewport
         // gains content it did not have when there was no camera to drive.
         bindViewport(*shell_);
+    }
+
+    void StudioShellPanels::packageProject()
+    {
+        const Project& project = context_.getProject();
+
+        // Beside the project, in a directory named for it. A file dialog would be the better
+        // answer and there is no modal yet (STUDIO-03022 covers the layering, not the window), so
+        // the export goes somewhere predictable and the log says exactly where -- which is more
+        // useful than a command that refuses until a dialog exists.
+        StudioExportRequest request;
+        request.outputDirectory =
+            (std::filesystem::path{project.getRootPath()} / "Exported").generic_string();
+        request.overwrite = true;
+
+        const StudioExportResult result = exportStandaloneProject(project, request);
+        if (!result.succeeded())
+        {
+            log_.append(LogSeverity::Error, "Could not package the project: " + result.errorMessage);
+            return;
+        }
+
+        for (const std::string& warning : result.warnings)
+        {
+            log_.append(LogSeverity::Warning, "Packaging: " + warning);
+        }
+        log_.append(LogSeverity::Info,
+                    "Packaged " + std::to_string(result.writtenFiles.size()) + " files into "
+                        + request.outputDirectory
+                        + ".  It builds with CMake and a CNA checkout, and needs no Studio.");
     }
 
     void StudioShellPanels::bindViewport(StudioShell& shell)
@@ -216,6 +249,37 @@ namespace CNA::Studio
         });
 
         bindViewport(shell);
+
+        // Build and Package, which the Build panel and the exporter can both already do. Bound
+        // here rather than with the document commands because the process they drive is this
+        // object's: two BuildProcesses would be two builds racing for one output directory.
+        if (const StudioAction* found = shell.actions().find("studio.build.build"))
+        {
+            StudioAction build = *found;
+            build.isEnabled = [this] {
+                return context_.hasProject() && build_.getState() != BuildState::Running;
+            };
+            build.run = [this] {
+                std::string problem;
+                if (build_.start(buildPanel_->makeRequest(), &problem))
+                {
+                    log_.append(LogSeverity::Info, "Build started; log at " + build_.getLogPath());
+                }
+                else
+                {
+                    log_.append(LogSeverity::Error, "Cannot start the build: " + problem);
+                }
+            };
+            shell.actions().add(std::move(build));
+        }
+
+        if (const StudioAction* found = shell.actions().find("studio.build.package"))
+        {
+            StudioAction package = *found;
+            package.isEnabled = [this] { return context_.hasProject(); };
+            package.run = [this] { packageProject(); };
+            shell.actions().add(std::move(package));
+        }
 
         // The Problems panel (STUDIO-07012): scene validation and broken asset references, as one
         // report, because a user whose model has the wrong material on it does not know in advance

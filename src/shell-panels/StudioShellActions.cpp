@@ -7,6 +7,7 @@
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 
 #include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -89,6 +90,41 @@ namespace CNA::Studio
                  context.execute(std::make_unique<DeleteEntityCommand>(context.getScene(), target));
                  context.clearSelection();
                  log.append(LogSeverity::Info, "Deleted '" + name + "'.");
+             });
+
+        bind("studio.file.saveAll",
+             [&context] { return context.hasProject(); },
+             [&context, &log] {
+                 // The scene *and* the project. "Save All" that saved one of the two would be the
+                 // command a user reaches for precisely when they cannot afford it to be partial.
+                 const bool scene = context.saveScene();
+                 std::string problem;
+                 const bool project = context.getProject().saveToFile({}, &problem);
+
+                 if (scene && project)
+                 {
+                     log.append(LogSeverity::Info, "Saved the scene and the project.");
+                     return;
+                 }
+                 log.append(LogSeverity::Error,
+                            std::string{"Save All did not complete: "}
+                                + (scene ? "" : "the scene would not save. ")
+                                + (project ? "" : "the project would not save. " + problem));
+             });
+
+        bind("studio.edit.duplicate",
+             [&context] { return !context.getSelection().empty(); },
+             [&context, &log] {
+                 if (context.getSelection().empty()) { return; }
+
+                 const Uuid source = context.getSelection().back();
+                 auto command = std::make_unique<DuplicateEntityCommand>(context.getScene(), source);
+
+                 // Asked *before* executing, because after it the command owns the answer and the
+                 // description names a copy that did not exist when the question was asked.
+                 const std::string what = command->getDescription();
+                 context.execute(std::move(command));
+                 log.append(LogSeverity::Info, what + ".");
              });
 
         return bound;

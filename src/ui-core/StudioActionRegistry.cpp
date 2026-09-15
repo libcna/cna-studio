@@ -126,6 +126,13 @@ namespace CNA::Studio
     {
         const StudioAction* command = find(id);
         if (command == nullptr) { return false; }
+
+        // A command with no handler is not available, whatever its predicate says. Otherwise every
+        // half-migrated menu row draws as though it works, and a control that looks available and
+        // then does nothing is indistinguishable from one that is broken -- which is worse than a
+        // greyed-out row, because the user cannot tell whether to report it.
+        if (!command->run) { return false; }
+
         // No predicate means always available. That is the common case, and requiring every
         // command to supply a trivial one would be noise that hides the ones that matter.
         return !command->isEnabled || command->isEnabled();

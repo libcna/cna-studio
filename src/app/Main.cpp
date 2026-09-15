@@ -18,6 +18,7 @@
 #include "CNA/Studio/Project/ProjectExport.hpp"
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
@@ -166,6 +167,11 @@ namespace
             std::cerr << "cna-studio: could not open '" << options.projectPath << "'.\n";
             return 2;
         }
+
+        // The same two bindings the real editor makes, in the same order: the document commands
+        // and then the panels. A preview that bound one and not the other would photograph a File
+        // menu whose Save is greyed out, which is a picture of this function rather than of Studio.
+        (void)CNA::Studio::bindStudioShellActions(shell, context, log);
 
         CNA::Studio::StudioShellPanels panels{shell, context, log};
         if (context.hasProject())

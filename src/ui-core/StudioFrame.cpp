@@ -289,7 +289,7 @@ namespace CNA::Studio
         // one toolbar button to the next, the frame of the move would still be counted against the
         // button just left, the clock would never reset, and the new button's tooltip would appear
         // instantly. The delay would then work only for the first control the pointer ever touched.
-        const WidgetId hovered = router_.hoveredId();
+        const WidgetId hovered = router_.pointerTargetId();
         if (hovered.isValid() && hovered == tooltipHovered_)
         {
             tooltipHoverSeconds_ += pendingInput_.deltaSeconds > 0.0f ? pendingInput_.deltaSeconds
@@ -419,7 +419,10 @@ namespace CNA::Studio
         // Only the widget under the pointer, and only when nothing is being dragged: a tooltip
         // that appeared halfway through a splitter drag would cover the thing being dragged.
         if (router_.activeId().isValid()) { return false; }
-        if (router_.hoveredId() != id) { return false; }
+
+        // The pointer's *target*, not the hovered widget: a disabled control is deliberately not
+        // hovered, and "why is this greyed out" is exactly when somebody hovers for an answer.
+        if (router_.pointerTargetId() != id) { return false; }
 
         // The clock belongs to a widget, not to the pointer. On the frame the pointer crosses from
         // one control to the next, the clock still holds the time spent on the one it left; letting

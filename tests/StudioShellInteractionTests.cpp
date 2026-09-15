@@ -388,10 +388,19 @@ CNA_STUDIO_TEST(ADisabledActionIsRefusedFromTheToolbarToo)
     CNA_STUDIO_EXPECT_EQ(harness.recorder.count("studio.edit.redo"), 0);
 }
 
-CNA_STUDIO_TEST(AnActionWithNoHandlerIsRecordedAsRefusedRatherThanDroppedSilently)
+CNA_STUDIO_TEST(AnActionWithNoHandlerIsDrawnUnavailableRatherThanLookingLikeItWorks)
 {
+    // A control that looks available and then does nothing is indistinguishable from one that is
+    // broken -- and worse than a greyed-out row, because the user cannot tell whether to report
+    // it. So a command with no handler is *not enabled*, whatever its predicate says, and the row
+    // cannot be clicked at all. Invoking it directly still reports "not implemented" rather than
+    // going quiet, which is what keeps the state discoverable from a test or a log.
     StudioShell shell;   // no handlers attached
     shell.renderFrame(at(600.0f, 400.0f));
+
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.file.save"));
+    CNA_STUDIO_EXPECT(shell.actions().invoke("studio.file.save")
+                      == StudioActionResult::NotImplemented);
 
     const UiRect file = shell.menuTitleBounds(0);
     shell.renderFrame(at(file.centerX(), file.centerY()));
@@ -408,9 +417,10 @@ CNA_STUDIO_TEST(AnActionWithNoHandlerIsRecordedAsRefusedRatherThanDroppedSilentl
     shell.renderFrame(at(bounds.centerX(), bounds.centerY(), true));
     shell.renderFrame(at(bounds.centerX(), bounds.centerY()));
 
+    // The click reached nothing: the row is disabled, so there is neither an invocation nor a
+    // refusal to record.
     CNA_STUDIO_EXPECT(shell.invokedActions().empty());
-    CNA_STUDIO_EXPECT_EQ(shell.refusedActions().size(), std::size_t{1});
-    CNA_STUDIO_EXPECT(shell.refusedActions().front().find("not implemented") != std::string::npos);
+    CNA_STUDIO_EXPECT(shell.refusedActions().empty());
 }
 
 // ------------------------------------------------------------------------------------------------

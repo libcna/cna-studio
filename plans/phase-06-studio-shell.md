@@ -216,6 +216,25 @@ binding time would be one no menu shows
 panel — the shell on one side, the document model on the other — and putting it in the host would
 have made the one thing worth testing here untestable without a window
 
+**A command with no handler is not available.** Every half-migrated menu row used to draw as
+though it worked, and a control that looks available and then does nothing is indistinguishable
+from one that is broken — worse than a greyed-out row, because the user cannot tell whether to
+report it. The registry now refuses to call such a command *enabled*, whatever its predicate says,
+so the whole class of dead controls disappeared from the UI in one edit.
+
+**That immediately broke tooltips on greyed-out controls, which is where they matter most.** A
+disabled widget is deliberately not *hovered* — otherwise things beneath it would light up through
+it — so nothing under the pointer answered for one. Hover ("what would respond to a click") and the
+pointer's target ("what is the pointer on") are different questions; the router answers both now,
+and the tooltip asks the second. "Why is this greyed out" is exactly the moment somebody hovers for
+an explanation.
+
+**The ones still unbound are named, not discovered.** `EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered`
+holds the list with a reason for each, and fails in both directions: binding one fails until its
+name is removed, and adding an unbound command fails until somebody writes down what it is waiting
+for. Seven remain — two file dialogs, Quit, the grid toggle, Play, Stop and About — and each is
+waiting on something real.
+
 **`StudioShell::invoke` is public now, and that is the point.** `actions()` was already public, so
 anything needing to run a command could reach the registry directly and skip the shell's record of
 what ran and what was refused — which is the only thing that makes a menu row quietly doing nothing

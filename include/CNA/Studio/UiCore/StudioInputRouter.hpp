@@ -235,6 +235,18 @@ namespace CNA::Studio
         [[nodiscard]] WidgetId activeId() const { return active_; }
 
         /**
+         * @brief The topmost widget the pointer is over, *including* disabled ones.
+         *
+         * Different from @ref hoveredId, and the difference matters. Hover is "what would respond
+         * to a click", so a disabled widget is deliberately not hovered — otherwise things beneath
+         * it would light up through it. But "what is the pointer over" is a separate question, and
+         * it is the one a tooltip has to answer: "why is this greyed out" is exactly the moment
+         * somebody hovers for an explanation, and a control that withheld its tooltip then would
+         * be silent at the one time it is most wanted.
+         */
+        [[nodiscard]] WidgetId pointerTargetId() const { return pointerTarget_; }
+
+        /**
          * @brief Whether the pointer is over @p bounds, ignoring which widget holds the mouse.
          *
          * Clip- and layer-aware like @ref interact, but *without* its capture rule. That rule --
@@ -316,6 +328,7 @@ namespace CNA::Studio
         WidgetId hovered_;
         WidgetId active_;
         WidgetId pressedIn_;
+        WidgetId pointerTarget_;
         float pressX_ = 0.0f;
         float pressY_ = 0.0f;
         WidgetId focused_;

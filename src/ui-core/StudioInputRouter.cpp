@@ -44,6 +44,7 @@ namespace CNA::Studio
         layers_.push_back(0);
 
         hovered_ = kInvalidWidgetId;
+        pointerTarget_ = kInvalidWidgetId;
         focusables_.clear();
         wantsTextInput_ = false;
 
@@ -186,6 +187,12 @@ namespace CNA::Studio
         if (!id.isValid()) { return result; }
 
         const bool inside = pointerInside(bounds);
+
+        // What the pointer is *over*, whether or not it can respond. Recorded before every rule
+        // below, because none of them is about that question: a disabled control and one under a
+        // captured drag are both still the thing the pointer is on, and a tooltip has to be able
+        // to say so.
+        if (inside && layerAcceptsInput() && !active_.isValid()) { pointerTarget_ = id; }
 
         // While a widget holds the mouse, nothing else can be hovered -- including the widget the
         // pointer is actually over. Without this, dragging a splitter past its neighbour hands the

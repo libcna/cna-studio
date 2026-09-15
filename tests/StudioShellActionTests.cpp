@@ -14,13 +14,17 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace CNA::Studio;
 
@@ -187,4 +191,69 @@ CNA_STUDIO_TEST(EachActionSaysWhatItDidRatherThanLeavingTheUserGuessing)
 
     CNA_STUDIO_EXPECT(fixture.log.entries().size() > before);
     CNA_STUDIO_EXPECT(fixture.log.toText().find("Undid") != std::string::npos);
+}
+
+CNA_STUDIO_TEST(EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered)
+{
+    // A command with no handler is drawn unavailable, which is right — but it means the *number*
+    // of them is invisible from the UI, and a half-migrated menu can quietly stay half-migrated.
+    // This is the list, and it has to be edited deliberately: binding one fails this test until
+    // its name is removed, and adding an unbound command fails it until somebody writes down why.
+    //
+    // Each entry says what it is waiting for. None of them is waiting on nothing.
+    const std::vector<std::pair<std::string, std::string>> pending = {
+        {"studio.file.newProject", "a modal dialog and a file picker (STUDIO-03022, STUDIO-08001)"},
+        {"studio.file.openProject", "a file picker; --project opens one today"},
+        {"studio.file.quit", "the shell asking its host to close, which no host exposes yet"},
+        {"studio.view.toggleGrid", "a grid option on the viewport, which the renderer does not take"},
+        {"studio.play.play", "a play service in the native shell (Phase 16)"},
+        {"studio.play.stop", "a play service in the native shell (Phase 16)"},
+        {"studio.help.about", "a modal dialog (STUDIO-03022)"},
+    };
+
+    Fixture fixture;
+    StudioCamera2D camera;
+    StudioShellPanels panels{*fixture.shell, fixture.context, fixture.log};
+    panels.setViewportServices(camera, {});
+
+    std::vector<std::string> unimplemented;
+    for (const StudioAction& action : fixture.shell->actions().commands())
+    {
+        // The per-panel show/hide commands are generated, not declared, and are always bound.
+        if (action.id.rfind(std::string{kStudioPanelActionPrefix}, 0) == 0) { continue; }
+        if (action.id.rfind(std::string{kStudioClosePanelActionPrefix}, 0) == 0) { continue; }
+        if (!action.run) { unimplemented.push_back(action.id); }
+    }
+
+    for (const std::string& id : unimplemented)
+    {
+        const bool named = std::any_of(pending.begin(), pending.end(),
+                                       [&](const auto& entry) { return entry.first == id; });
+        if (!named)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "'" + id + "' has no handler and is not on the pending list. Either bind it, or "
+                "add it with the reason it cannot be bound yet.");
+        }
+    }
+
+    for (const auto& [id, reason] : pending)
+    {
+        const bool still = std::find(unimplemented.begin(), unimplemented.end(), id)
+                        != unimplemented.end();
+        if (!still)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "'" + id + "' is bound now, so remove it from the pending list (it was waiting on "
+                + reason + ").");
+        }
+    }
+
+    // And every one of them is drawn unavailable, which is what stops a user discovering the gap
+    // by clicking something that appears to work.
+    for (const auto& [id, reason] : pending)
+    {
+        (void)reason;
+        CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled(id));
+    }
 }

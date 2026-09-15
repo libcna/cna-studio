@@ -158,6 +158,9 @@ namespace CNA::Studio
         void bind(StudioShell& shell);
         void bindViewport(StudioShell& shell);
 
+        /** @brief Writes the project out as a standalone CNA game and says where. */
+        void packageProject();
+
         /** @brief Borrowed so the viewport can be re-bound when a camera arrives. */
         StudioShell* shell_ = nullptr;
 

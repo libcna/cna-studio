@@ -246,5 +246,9 @@ CNA_STUDIO_TEST(TheShellsFirstToolbarButtonIsUnderThePointTheScreenshotTestsUse)
 
     CNA_STUDIO_EXPECT(shell.toolbarEntryCount() > 0);
     CNA_STUDIO_EXPECT(shell.toolbarEntryBounds(0).contains(20.0f, 40.0f));
-    CNA_STUDIO_EXPECT(shell.frame().router().hoveredId().isValid());
+
+    // The pointer's *target*, not the hovered widget. A bare shell has no handlers, so Save is
+    // disabled and deliberately not hovered — and that is precisely the state in which a tooltip
+    // still has to work, which is why the capture test above uses this shell at all.
+    CNA_STUDIO_EXPECT(shell.frame().router().pointerTargetId().isValid());
 }
