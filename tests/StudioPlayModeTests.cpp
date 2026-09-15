@@ -199,11 +199,13 @@ CNA_STUDIO_TEST(APlayerThatEndsOnItsOwnReleasesTheToolbar)
     // asking whether it is playing is itself what notices the exit, so a loop that stopped there
     // would stop one poll before the poll that says so. Bounded, so a player that somehow lives
     // cannot hang the test.
+    double now = 0.0;
     for (int attempt = 0;
          attempt < 400 && !contains(harness.lastMessage(), "Player exited");
          ++attempt)
     {
-        harness.panels.poll();
+        now += 0.005;
+        harness.panels.poll(now);
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 

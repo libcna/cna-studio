@@ -174,6 +174,16 @@ namespace
         (void)CNA::Studio::bindStudioShellActions(shell, context, log);
 
         CNA::Studio::StudioShellPanels panels{shell, context, log};
+
+        // And the same discovery, for the same reason: what Play can launch and what the Backends
+        // panel can compare are decided by which cna-player binaries are beside this executable,
+        // so a preview that skipped it would photograph a Studio poorer than the one being run.
+        if (!options.executablePath.empty())
+        {
+            panels.setPlayerBuilds(CNA::Studio::discoverPlayerBuilds(
+                std::filesystem::path{options.executablePath}.parent_path().generic_string()));
+        }
+
         if (context.hasProject())
         {
             shell.setStatusLeft(context.getProject().getName() + "  --  "

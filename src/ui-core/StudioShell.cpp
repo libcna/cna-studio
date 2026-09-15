@@ -57,6 +57,7 @@ namespace CNA::Studio
         registerPanel({"output", "Output Log"});
         registerPanel({"build", "Build"});
         registerPanel({"problems", "Problems"});
+        registerPanel({"comparison", "Backends"});
         registerPanel({"diagnostics", "Diagnostics"});
         resetLayout();
 
@@ -257,6 +258,7 @@ namespace CNA::Studio
         dock_.addPanel(bottom, "output");
         dock_.addPanel(bottom, "build");
         dock_.addPanel(bottom, "problems");
+        dock_.addPanel(bottom, "comparison");
         dock_.addPanel(bottom, "diagnostics");
         dock_.addPanel(centre, "viewport");
 

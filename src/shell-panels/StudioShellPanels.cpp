@@ -11,6 +11,7 @@
 #include "CNA/Studio/Project/ProjectExport.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
@@ -38,10 +39,11 @@ namespace CNA::Studio
         bind(shell);
     }
 
-    void StudioShellPanels::poll()
+    void StudioShellPanels::poll(double nowSeconds)
     {
         build_.poll();
         pollPlayer();
+        comparison_.poll(nowSeconds);
     }
 
     void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
@@ -124,6 +126,64 @@ namespace CNA::Studio
         // exit the editor did not expect.
         playerWasRunning_ = false;
         log_.append(LogSeverity::Info, "Stopped the player.");
+    }
+
+    void StudioShellPanels::startComparison()
+    {
+        // The scene on screen, not the project's startup scene: a comparison of something the user
+        // is not looking at answers a question nobody asked. And, like play mode, each player is a
+        // separate process reading from disk, so what is on screen has to be written there first.
+        if (context_.getScenePath().empty())
+        {
+            log_.append(LogSeverity::Warning,
+                        "Save the scene before comparing renderers: each player is a separate "
+                        "process and reads the scene from disk.");
+            return;
+        }
+        if (context_.getHistory().isDirty())
+        {
+            if (!context_.saveScene())
+            {
+                log_.append(LogSeverity::Error,
+                            "Could not save the scene; not comparing renderers.");
+                return;
+            }
+            log_.append(LogSeverity::Info, "Saved the scene before comparing renderers.");
+        }
+
+        ComparisonRequest request = makeComparisonRequest();
+
+        // Relative to the project, like play mode's: several processes need not agree on a working
+        // directory, and the project root is the one anchor all of them already have.
+        std::error_code relativeError;
+        const std::filesystem::path relativeScene = std::filesystem::relative(
+            std::filesystem::path{context_.getScenePath()},
+            std::filesystem::path{request.projectPath}.parent_path(), relativeError);
+        if (!relativeError) { request.scenePath = relativeScene.generic_string(); }
+
+        if (!comparison_.start(request, services_.readImage, services_.writeImage))
+        {
+            log_.append(LogSeverity::Error, "Cannot compare renderers: " + comparison_.getError());
+            return;
+        }
+
+        log_.append(LogSeverity::Info,
+                    "Comparing " + std::to_string(request.builds.size())
+                        + " renderers; captures go to " + request.outputDirectory + ".");
+    }
+
+    ComparisonRequest StudioShellPanels::makeComparisonRequest() const
+    {
+        ComparisonRequest request;
+        if (context_.hasProject())
+        {
+            request.projectPath = context_.getProject().getFilePath();
+            request.outputDirectory = getDefaultComparisonDirectory(request.projectPath);
+        }
+        // The same list Play chooses from, so the panel cannot offer a renderer Play will not use.
+        request.builds = playerBuilds_;
+        request.tolerance = comparisonTolerance_;
+        return request;
     }
 
     void StudioShellPanels::pollPlayer()
@@ -488,6 +548,37 @@ namespace CNA::Studio
                 log_.append(LogSeverity::Warning,
                             "This build has no clipboard: CNA's Devices module is off "
                             "(CNA gap G-02). Rebuild CNA with CNA_DEVICES=ON.");
+            }
+        });
+
+        // The Backends panel (STUDIO-07014): the same scene on every installed player, and where
+        // the pictures disagree. The run is owned here rather than by the panel, so closing the
+        // tab does not abandon several games that are already starting.
+        shell.setPanelContent("comparison", [this](StudioFrame& frame, const UiRect& bounds) {
+            StudioComparisonView view;
+            view.hasProject = context_.hasProject();
+            view.tolerance = comparisonTolerance_;
+            view.state = comparison_.getState();
+            view.entries = &comparison_.getEntries();
+            view.error = comparison_.getError();
+            view.allAgree = comparison_.allBackendsAgree();
+            if (view.hasProject)
+            {
+                const ComparisonRequest probe = makeComparisonRequest();
+                view.outputDirectory = probe.outputDirectory;
+                view.problem = describeComparisonProblem(probe);
+            }
+
+            const StudioComparisonResult panel =
+                studioComparisonPanel(frame, bounds, view, comparisonState_);
+            if (frame.isDrawPass()) { counts_.comparisonRowsDrawn = panel.rowsDrawn; }
+
+            if (panel.toleranceChanged) { comparisonTolerance_ = panel.tolerance; }
+            if (panel.compareRequested) { startComparison(); }
+            if (panel.cancelRequested)
+            {
+                comparison_.cancel();
+                log_.append(LogSeverity::Warning, "Renderer comparison cancelled.");
             }
         });
 

@@ -326,7 +326,8 @@ namespace CNA::Studio
                 // Once per frame, before the panel that reports on it: a build that advanced only
                 // when its panel happened to be the visible tab would stall whenever the user
                 // looked at something else.
-                panels_->poll();
+                elapsedSeconds_ += static_cast<double>(deltaSeconds);
+                panels_->poll(elapsedSeconds_);
 
                 renderSceneIntoViewport();
 
@@ -501,6 +502,9 @@ namespace CNA::Studio
             std::string layoutProblem_;
             bool layoutRestored_ = false;
             std::uint64_t frames_ = 0;
+
+            /** @brief Monotonic seconds since start-up, for anything the panels time. */
+            double elapsedSeconds_ = 0.0;
             std::size_t drawCalls_ = 0;
             std::size_t triangles_ = 0;
             float displayWidth_ = 0.0f;

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 14 of 27 complete `██████░░░░░░`
+**Progress:** 15 of 27 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-07011` | Port the Diagnostics panel | ✅ | `STUDIO-07001`, `STUDIO-02022` |
 | `STUDIO-07012` | Port the Validation panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
 | `STUDIO-07013` | Port the History panel | ✅ | `STUDIO-07001`, `STUDIO-03034` |
-| `STUDIO-07014` | Port the Comparison panel | ⬜ | `STUDIO-07001` |
+| `STUDIO-07014` | Port the Comparison panel | ✅ | `STUDIO-07001` |
 | `STUDIO-07015` | One log model, read by both consoles | ✅ | — |
 | `STUDIO-07016` | Panel content seam: the shell hosts a ported panel's content | ✅ | `STUDIO-06018` |
 | `STUDIO-07017` | A module for the ported panels, above widgets and document alike | ✅ | `STUDIO-07016` |
@@ -509,3 +509,36 @@ selecting all of it, clicking one entity selecting just that, and no project say
 `EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle`, which is the same discipline as
 the unimplemented-command guard: a panel that draws nothing is on a list with a reason, or the
 build fails
+
+### `STUDIO-07014` — Port the Comparison panel
+
+**Acceptance.** The Backends panel runs the open scene on every discovered player build and reports
+where the pictures disagree, from the native shell, with no Dear ImGui and no graphics device.
+
+**It reads a snapshot, not the run.** The legacy panel held its own `BackendComparison`, which is
+why it was never tested: showing it anything at all meant launching several games. Here the run is
+owned by `StudioShellPanels` — so it survives the tab being closed, which half an hour of launching
+games deserves — and the panel takes the entries, the state and the verdict as plain values. Every
+case a real run makes expensive to reach is then a unit test: a capture that never arrived, two
+frames of different sizes, a renderer that would not launch.
+
+**A row opens.** Two renderers disagreeing is the start of an investigation, not the end of one, so
+each row carries how many pixels, how far apart, and where on the picture. A band along one edge is
+a viewport or scissor problem; a scattering over one sprite is a filtering one — the rectangle
+usually is the diagnosis, and the legacy panel printed it as an indented line of text.
+
+**"Waiting" and "never arrived" are different sentences.** The same empty entry means be patient
+during a run and "this renderer produced nothing" after it, and a user cannot act on the second
+while it is worded as the first — so the run's state decides which is said, and the colour with it.
+
+**The tolerance is clamped, not trusted.** 255 calls every pair of images identical, which is a
+comparison that can never report anything: a control that can be set to "always agree" is worse than
+no control.
+
+**Verification.** `tests/StudioComparisonPanelTests.cpp`: the two empty states, Compare and Cancel
+never both offered, a problem said before the button and not hiding a run already in flight, the
+reference named on its own row, agreement and disagreement differing in words *and* colour, the
+bounding box present only where something differs, a collapsed renderer keeping its verdict, a
+missing capture reading differently during and after a run, a size mismatch not reported as a
+disagreement, a launch failure carrying its reason, the verdict withheld until the run finishes, and
+the tolerance clamped — checked by removing the clamp and watching it fail

@@ -30,6 +30,7 @@
 #include "CNA/Studio/Project/BuildRunner.hpp"
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
@@ -64,6 +65,19 @@ namespace CNA::Studio
         SpriteSizeProvider spriteSize;
 
         /**
+         * @brief Decodes an image file. Unset means this build cannot read one back.
+         *
+         * A seam for the same reason the clipboard is: decoding a PNG needs a graphics API and
+         * exactly one module may have one (decision D-03). A headless Studio leaves it unset, and
+         * the Backends panel then reports that it could not read the captures — which is the
+         * honest answer rather than a crash or a silent run that compares nothing.
+         */
+        ImageReader readImage;
+
+        /** @brief Writes an image file, for the difference images. Unset writes none. */
+        ImageWriter writeImage;
+
+        /**
          * @brief Puts text on the system clipboard, returning whether it got there.
          *
          * A seam rather than a direct call, because the clipboard is behind a default-off CNA
@@ -89,6 +103,7 @@ namespace CNA::Studio
         std::size_t diagnosticRowsDrawn = 0;
         std::size_t viewportSelections = 0;
         std::size_t layerRowsDrawn = 0;
+        std::size_t comparisonRowsDrawn = 0;
         std::size_t playerMessages = 0;
         std::size_t brokenReferences = 0;
         std::size_t sceneErrors = 0;
@@ -120,11 +135,14 @@ namespace CNA::Studio
         /**
          * @brief Advances anything the panels own that runs between frames.
          *
-         * Today that is the build process, which must be polled whether or not its panel is the
-         * visible tab: a build that advanced only while somebody was looking at it would stall the
-         * moment they looked away.
+         * The build process, the player and a running backend comparison, all of which must be
+         * polled whether or not their panel is the visible tab: work that advanced only while
+         * somebody was looking at it would stall the moment they looked away.
+         *
+         * @param nowSeconds A monotonic clock. Passed in, like every other clock here, so a test
+         *        can drive a timeout rather than wait for one.
          */
-        void poll();
+        void poll(double nowSeconds);
 
         /** @brief What the panels reported over the last frame. */
         [[nodiscard]] const StudioShellPanelCounts& counts() const { return counts_; }
@@ -161,6 +179,9 @@ namespace CNA::Studio
         /** @brief Whether a player is running right now. */
         [[nodiscard]] bool isPlaying() const;
 
+        /** @brief The backend comparison this Studio would run, for a caller to report on. */
+        [[nodiscard]] const BackendComparison& comparison() const { return comparison_; }
+
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_; }
 
@@ -185,6 +206,12 @@ namespace CNA::Studio
         void startPlaying();
         void stopPlaying();
 
+        /** @brief Runs the open scene on every discovered player build. */
+        void startComparison();
+
+        /** @brief The comparison this Studio would run, from the project and the discovered builds. */
+        [[nodiscard]] ComparisonRequest makeComparisonRequest() const;
+
         /** @brief Pumps the bridge once a frame and reports what the player said. */
         void pollPlayer();
 
@@ -201,6 +228,7 @@ namespace CNA::Studio
         StudioTreeState historyState_;
         StudioTreeState layersState_;
         StudioTreeState diagnosticsState_;
+        StudioTreeState comparisonState_;
         StudioViewportState viewportState_;
         Uuid selectedAsset_;
 
@@ -219,6 +247,16 @@ namespace CNA::Studio
 
         /** @brief Whether the player was running when it was last polled. See pollPlayer(). */
         bool playerWasRunning_ = false;
+
+        /**
+         * @brief The renderer comparison, and the tolerance the next run uses.
+         *
+         * Owned here rather than by its panel, so a run started from the panel survives the panel
+         * being closed — half an hour of launching several games is not something to abandon
+         * because a user switched tabs.
+         */
+        BackendComparison comparison_;
+        int comparisonTolerance_ = kDefaultImageTolerance;
 
         StudioDiagnosticsInfo diagnostics_;
         StudioShellPanelCounts counts_;
