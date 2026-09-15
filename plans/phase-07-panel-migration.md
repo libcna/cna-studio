@@ -96,13 +96,19 @@ action, which is the shape of bug that looks like the menus being wrong rather t
 
 **Acceptance.** Every control the prototype's toolbars offer is reachable from the native one.
 
-**In progress, and the remainder is three rows.** The prototype has no application toolbar at all;
+**In progress, and the remainder is one row.** The prototype has no application toolbar at all;
 its controls live inside the Viewport panel, which means they move and resize with it and vanish if
 it is closed. The native toolbar is icons at the top of the window, driven by the registry.
 
 `docs/MIGRATION-INVENTORY.md`'s toolbar table accounts for all eleven controls. Play, Stop, Pause,
-Step, the manipulator and the backend chooser are answered; **the tilemap tool, the tile index and
-2D/3D** are not, and are waiting on the phases that own them (25 and 11).
+Step, the manipulator, the backend chooser and now **the tilemap tool and the tile index** are
+answered; **2D/3D** is not, and waits on the phase that owns it (11).
+
+**The tilemap tool is a menu and an overlay, not a toolbar button.** Five exclusive checkable
+commands on the View menu arm it, and the tile index sits in an overlay in the viewport's own corner
+— beside the image it edits, which is where the prototype puts it, and where a docked viewport can
+still show it at any panel size. A toolbar button per tool would be five more icons at the top of the
+window for a mode that only means anything over the viewport.
 
 ### `STUDIO-07004` — Port the status bar
 
@@ -591,11 +597,36 @@ it hits
 
 **In progress.** What holds: the scene is composited (`STUDIO-04012`), the wheel zooms about the
 pointer, the middle *or* right button pans, a click picks the topmost sprite and Ctrl adds to the
-selection, a click on nothing clears it, and **all three manipulators drag** — translate
-axis-constrained, rotate about the ring, scale as a screen-space ratio — with Ctrl snapping to the
-project's step or the visible grid, **on one entity or on a whole selection**. What does not: the 3D
-view toggle, tilemap painting, and forwarding input to a running player. Each is its own task and
-each is a real piece of the prototype's viewport.
+selection, a click on nothing clears it, **all three manipulators drag** — translate axis-constrained,
+rotate about the ring, scale as a screen-space ratio — with Ctrl snapping to the project's step or
+the visible grid, **on one entity or on a whole selection**, and **tiles paint** (below). What does
+not: the 3D view toggle and forwarding input to a running player. Each is its own task and each is a
+real piece of the prototype's viewport.
+
+**A tool is not a mode, and a press under one does not select.** Painting resolves before the gizmo
+and before the selection, and returns. The tilemap being painted into has to *stay* selected for the
+next cell to land: a press that also selected would move the inspector out from under the user on
+every stroke, and paint into whatever they last clicked. The model was never the gap — the grid,
+`PaintTilesCommand` and its stroke merging have been shared and tested since the prototype had them
+— what was missing was a viewport that armed a tool and turned a press into a cell.
+
+**A stroke is one undo entry and two strokes are two.** The first cell of a stroke opens an entry and
+every later one merges into it, keyed by a counter the press bumps: forty tiles and forty Ctrl+Zs is
+a tool nobody uses twice, and without the counter the second stroke would merge into the first and
+one Ctrl+Z would jump back past a stroke the user had finished and accepted.
+
+**The eraser clears rather than writing zero, and the eyedropper goes back to painting.** Tile 0 is
+the first tile in every sheet anyone draws, so "empty" cannot be zero — an eraser that wrote it would
+paint with the first tile instead. And an eyedropper that left the user still holding the eyedropper
+is one they have to put down before they can use what it took; over an empty cell it takes nothing,
+because an empty cell is not a brush.
+
+**A fill commits on the release, as one entry**, so a drag can be adjusted before it lands, and
+either diagonal works: up and to the left is an ordinary way to drag, and a fill that only worked one
+way would be a tool that works for half its users.
+
+**Missing the tilemap says so once per press**, not sixty times a second. A brush over a sprite is a
+near miss, and a console that scrolls is one that stops being read.
 
 **A group drag is one gesture applied many times, not many gestures.** The three drags above compute
 *what the gesture is* — how far along an axis, through what angle, by what factor — and the

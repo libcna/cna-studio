@@ -741,6 +741,31 @@ namespace CNA::Studio
             shell.actions().add(std::move(action));
         }
 
+        // The tilemap tools. Checkable so the toolbar shows which press-means-what is armed, and
+        // exclusive because a press is one thing: arming two would be arming neither.
+        for (const auto& [id, tool] :
+             {std::pair{"studio.view.tool.select", StudioViewportTool::Select},
+              std::pair{"studio.view.tool.paint", StudioViewportTool::PaintTiles},
+              std::pair{"studio.view.tool.erase", StudioViewportTool::EraseTiles},
+              std::pair{"studio.view.tool.pick", StudioViewportTool::PickTile},
+              std::pair{"studio.view.tool.fill", StudioViewportTool::FillTiles}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this, tool] { return viewportState_.tool == tool; };
+            action.run = [this, tool] {
+                viewportState_.tool = tool;
+                // Any gesture in flight ends with the tool that owned it: a fill half-dragged when
+                // the user reaches for Erase would otherwise commit as a fill on the next release.
+                viewportState_.fillStart.reset();
+                viewportState_.endDrag();
+            };
+            shell.actions().add(std::move(action));
+        }
+
         // The toolbar's three transform buttons, which have been drawing and doing nothing since
         // the toolbar existed. Bound here rather than with the document commands because the mode
         // they set is the viewport's, and checkable so the toolbar shows which one is on -- three
@@ -793,6 +818,11 @@ namespace CNA::Studio
 
             const StudioViewportResult viewport = studioViewportPanel(
                 frame, bounds, context_, *services_.camera, viewportState_, services_.spriteSize);
+
+            // After the surface, so the overlay's field wins hover against the viewport underneath
+            // it -- the surface is one widget covering the whole panel, and a field described
+            // before it would be a field the viewport swallows every click of.
+            studioViewportToolOverlay(frame, bounds, viewportState_);
 
             // No "camera changed" callback: the host renders the scene every frame anyway, and a
             // hook nothing sets is scaffolding rather than a seam.

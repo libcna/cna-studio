@@ -412,6 +412,19 @@ namespace
                 return 2;
             }
             shell.invoke(options.shellPreviewInvoke);
+
+            // Existing is not the same as doing something. Most of the registry is declared with
+            // no handler and given one by whatever binds it, so a command a headless build never
+            // binds -- every viewport command, with no camera to drive -- is found, invoked, and
+            // quietly does nothing. A screenshot tool that answers a request with the picture it
+            // would have produced anyway is worse than one that refuses: the capture looks like
+            // the feature failing. The shell already records the refusal; this reads it.
+            if (!shell.refusedActions().empty())
+            {
+                std::cerr << "cna-studio: --shell-invoke did nothing -- "
+                          << shell.refusedActions().front() << ".\n";
+                return 2;
+            }
         }
 
         CNA::Studio::UiInputState input;
@@ -779,6 +792,7 @@ int main(int argc, char** argv)
         hostOptions.focusPanel = options.focusPanel;
         hostOptions.projectPath = options.projectPath;
         hostOptions.selectEntity = options.selectEntity;
+        hostOptions.invokeAction = options.shellPreviewInvoke;
         if (options.windowWidth > 0 && options.windowHeight > 0)
         {
             hostOptions.windowWidth = options.windowWidth;

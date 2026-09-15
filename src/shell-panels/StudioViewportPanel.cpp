@@ -238,6 +238,199 @@ namespace CNA::Studio
         }
     }
 
+    std::string_view studioViewportToolName(StudioViewportTool tool)
+    {
+        switch (tool)
+        {
+            case StudioViewportTool::Select: return "Select";
+            case StudioViewportTool::PaintTiles: return "Paint Tiles";
+            case StudioViewportTool::EraseTiles: return "Erase Tiles";
+            case StudioViewportTool::PickTile: return "Pick Tile";
+            case StudioViewportTool::FillTiles: return "Fill Tiles";
+        }
+        return "Select";
+    }
+
+    bool studioViewportToolPaints(StudioViewportTool tool)
+    {
+        return tool != StudioViewportTool::Select;
+    }
+
+    namespace
+    {
+        /**
+         * @brief The tile the cursor is over, on the selected entity's tilemap.
+         *
+         * @param context The editor.
+         * @param camera The viewport camera.
+         * @param pointer Cursor position in panel coordinates.
+         * @param report Whether to say why when there is no tilemap to paint into. Once per press
+         *        rather than per frame: a brush over a sprite is a near miss, and sixty lines a
+         *        second about it is how a console stops being read.
+         * @return The cell, or nothing.
+         */
+        std::optional<TileCoordinate> tileUnder(StudioContext& context, const StudioCamera2D& camera,
+                                                const StudioVector2& pointer, bool report)
+        {
+            const Uuid selected = context.getPrimarySelection();
+            const StudioEntity* entity = context.getScene().findEntity(selected);
+            const StudioComponent* tilemap =
+                entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTilemap) : nullptr;
+
+            if (tilemap == nullptr)
+            {
+                if (report)
+                {
+                    context.log(LogSeverity::Warning,
+                                "Select an entity with a Tilemap component to paint into.");
+                }
+                return std::nullopt;
+            }
+
+            const std::optional<WorldTransform> transform =
+                computeWorldTransform(context.getScene(), selected);
+            if (!transform) { return std::nullopt; }
+
+            const ComponentDescriptor* descriptor =
+                context.getComponentRegistry().find(BuiltinComponentIds::kTilemap);
+
+            return worldToTile(
+                *transform,
+                static_cast<int>(tilemap->getPropertyOrDefault(TilemapKeys::kTileWidth, descriptor)
+                                     .get<std::int64_t>(0)),
+                static_cast<int>(tilemap->getPropertyOrDefault(TilemapKeys::kTileHeight, descriptor)
+                                     .get<std::int64_t>(0)),
+                camera.screenToWorld(pointer));
+        }
+
+        /** @brief Writes one cell, opening an undo entry on the first of a stroke. */
+        bool paintCell(StudioContext& context, StudioViewportState& state,
+                       const TileCoordinate& cell, std::int64_t value)
+        {
+            auto command = std::make_unique<PaintTilesCommand>(context.getScene(),
+                                                               context.getComponentRegistry(),
+                                                               context.getPrimarySelection(),
+                                                               state.paintStroke);
+            if (!command->paint(cell.x, cell.y, value)) { return false; }
+
+            // The first cell of a stroke opens a new entry and every later one merges into it,
+            // which is what makes a drag across forty tiles one Ctrl+Z.
+            const MergePolicy policy = state.paintStrokeHasEdited ? MergePolicy::MergeWithPrevious
+                                                                  : MergePolicy::NewEntry;
+            state.paintStrokeHasEdited = true;
+            context.execute(std::move(command), policy);
+            return true;
+        }
+
+        /**
+         * @brief Runs whichever tile tool is active. Returns true when it took the press.
+         *
+         * Before selection and before the gizmo, because a tool that painted *and* selected would
+         * move the inspector out from under the user on every stroke -- and the tilemap they are
+         * painting into is the thing that has to stay selected for the next cell to land.
+         */
+        bool applyTileTool(StudioFrame& frame, StudioContext& context, const StudioCamera2D& camera,
+                           StudioViewportState& state, const StudioInteraction& surface,
+                           const StudioVector2& pointer, StudioViewportResult& result)
+        {
+            if (!studioViewportToolPaints(state.tool)) { return false; }
+
+            StudioInputRouter& router = frame.router();
+            const bool held = router.mouseDown(UiMouseButton::Left);
+
+            switch (state.tool)
+            {
+                case StudioViewportTool::PaintTiles:
+                case StudioViewportTool::EraseTiles:
+                {
+                    const bool starting = surface.pressed;
+                    if (!starting && !(held && state.paintStrokeHasEdited)) { return true; }
+
+                    if (starting)
+                    {
+                        ++state.paintStroke;
+                        state.paintStrokeHasEdited = false;
+                    }
+
+                    const std::optional<TileCoordinate> cell =
+                        tileUnder(context, camera, pointer, starting);
+                    if (!cell) { return true; }
+
+                    const std::int64_t value = state.tool == StudioViewportTool::EraseTiles
+                        ? kEmptyTile : state.paintTile;
+                    if (paintCell(context, state, *cell, value)) { result.tilesPainted = true; }
+                    return true;
+                }
+
+                case StudioViewportTool::PickTile:
+                {
+                    if (!surface.pressed) { return true; }
+
+                    const std::optional<TileCoordinate> cell =
+                        tileUnder(context, camera, pointer, true);
+                    if (!cell) { return true; }
+
+                    const StudioEntity* entity =
+                        context.getScene().findEntity(context.getPrimarySelection());
+                    const StudioComponent* tilemap = entity != nullptr
+                        ? entity->findComponent(BuiltinComponentIds::kTilemap) : nullptr;
+                    if (tilemap == nullptr) { return true; }
+
+                    const TilemapGrid grid = readTilemapGrid(
+                        *tilemap, context.getComponentRegistry().find(BuiltinComponentIds::kTilemap));
+
+                    // An empty cell is not a brush. Taking one would leave the user painting
+                    // nothing and wondering why the tool stopped working.
+                    const std::int64_t picked = grid.at(cell->x, cell->y);
+                    if (picked == kEmptyTile) { return true; }
+
+                    // The brush, and then painting: an eyedropper that left the user still holding
+                    // the eyedropper is one they have to put down before they can use what it took.
+                    state.paintTile = picked;
+                    state.tool = StudioViewportTool::PaintTiles;
+                    result.toolChanged = true;
+                    return true;
+                }
+
+                case StudioViewportTool::FillTiles:
+                {
+                    if (surface.pressed)
+                    {
+                        state.fillStart = tileUnder(context, camera, pointer, true);
+                        return true;
+                    }
+                    if (held || !state.fillStart) { return true; }
+
+                    // On the release, so a drag can be adjusted before it commits -- and as one
+                    // entry, because a fill is one intention however many cells it covers.
+                    const std::optional<TileCoordinate> end =
+                        tileUnder(context, camera, pointer, false);
+                    const TileCoordinate from = *state.fillStart;
+                    state.fillStart.reset();
+                    if (!end) { return true; }
+
+                    ++state.paintStroke;
+                    state.paintStrokeHasEdited = false;
+
+                    for (int y = std::min(from.y, end->y); y <= std::max(from.y, end->y); ++y)
+                    {
+                        for (int x = std::min(from.x, end->x); x <= std::max(from.x, end->x); ++x)
+                        {
+                            if (paintCell(context, state, TileCoordinate{x, y}, state.paintTile))
+                            {
+                                result.tilesPainted = true;
+                            }
+                        }
+                    }
+                    return true;
+                }
+
+                case StudioViewportTool::Select: return false;
+            }
+            return false;
+        }
+    }
+
     StudioViewportResult studioViewportPanel(StudioFrame& frame, const UiRect& bounds,
                                              StudioContext& context, StudioCamera2D& camera,
                                              StudioViewportState& state,
@@ -283,6 +476,16 @@ namespace CNA::Studio
             }
             // While a manipulator has the pointer nothing else does: the press that grabbed it
             // must not also select, and the drag must not also pan.
+            return result;
+        }
+
+        // --- Paint ------------------------------------------------------------------------------
+        //
+        // Before the gizmo and before selection. A tool that painted *and* selected would move the
+        // inspector out from under the user on every stroke, and the tilemap being painted into is
+        // exactly the thing that has to stay selected for the next cell to land.
+        if (applyTileTool(frame, context, camera, state, surface, pointer, result))
+        {
             return result;
         }
 
@@ -356,6 +559,68 @@ namespace CNA::Studio
         }
 
         return result;
+    }
+
+    void studioViewportToolOverlay(StudioFrame& frame, const UiRect& bounds,
+                                   StudioViewportState& state)
+    {
+        if (bounds.isEmpty() || !studioViewportToolPaints(state.tool)) { return; }
+
+        const StudioTheme& theme = frame.theme();
+        const float pad = static_cast<float>(theme.metric(StudioMetric::SpacingSmall));
+        const float rowHeight = static_cast<float>(theme.metric(StudioMetric::ControlHeight));
+
+        // Over the image, in the corner, exactly where the prototype puts it. A tool that armed
+        // silently would be a viewport where a press does something different from yesterday and
+        // nothing on the screen says so.
+        UiRect strip{bounds.x + pad, bounds.y + pad,
+                     std::min(bounds.width - pad * 2.0f, 260.0f), rowHeight};
+        if (strip.width <= 0.0f || strip.height > bounds.height) { return; }
+
+        if (frame.isDrawPass())
+        {
+            frame.drawList().fillRect(strip, theme.color(StudioColorRole::PopupBackground));
+            frame.drawList().strokeRect(strip, theme.color(StudioColorRole::Border),
+                                        static_cast<float>(theme.metric(StudioMetric::BorderWidth)));
+        }
+
+        UiRect row = strip.inset(UiEdges{pad, 0.0f});
+        frame.ids().push("viewport.tool");
+
+        // The tile index only where it means something: the eraser has no index and the eyedropper
+        // sets one rather than reading it, so a field beside either would be a control that does
+        // nothing.
+        const bool needsTile = state.tool == StudioViewportTool::PaintTiles
+                            || state.tool == StudioViewportTool::FillTiles;
+
+        if (needsTile)
+        {
+            const UiRect field = row.splitRight(std::min(row.width, rowHeight * 2.5f));
+            row.splitRight(std::min(pad, row.width));
+
+            std::string text = std::to_string(state.paintTile);
+            StudioTextFieldOptions options;
+            options.font = StudioFontRole::Monospace;
+            options.selectAllOnFocus = true;
+            options.placeholder = "tile";
+            if (studioTextField(frame, frame.ids().make("tile"), field, text, options).committed)
+            {
+                try
+                {
+                    const std::int64_t parsed = std::stoll(text);
+                    if (parsed >= 0) { state.paintTile = parsed; }
+                }
+                catch (const std::exception&) { /* left as it was */ }
+            }
+        }
+
+        if (frame.isDrawPass())
+        {
+            studioDrawText(frame, row, studioViewportToolName(state.tool), StudioFontRole::Body,
+                           theme.color(StudioColorRole::TextPrimary));
+        }
+
+        frame.ids().pop();
     }
 
     bool studioFrameSelection(const StudioContext& context, StudioCamera2D& camera,

@@ -71,19 +71,27 @@ control that changes nothing visible is a bug report waiting to be filed. The re
 above predate the change and are left as they were; they are the "before" of the migration, and
 re-taking them to hide what the review found would be the wrong kind of tidy.
 
-Everything else the captures differ by is already recorded in the inventory as unanswered — the
-tilemap tool strip, the tile index, and 2D/3D — or is a deliberate difference: the prototype's
-Play button and backend chooser are on the viewport's own toolbar, and natively they are on the
-application toolbar and in the Backends panel.
+Everything else the captures differ by is already recorded in the inventory as unanswered — 2D/3D —
+or is a deliberate difference: the prototype's Play button and backend chooser are on the viewport's
+own toolbar, and natively they are on the application toolbar and in the Backends panel; and its
+tilemap tool strip is a dropdown on that same toolbar, where natively the tools are commands on the
+View menu and the tile index is an overlay in the viewport's own corner, beside the image it edits.
 
 ## The verdict
 
 The native shell is ahead of the prototype on everything a user sees first, and was behind it on one
-screen's worth of scene-level settings — which this review found and which are now answered. What
-`STUDIO-07030` — deleting the Dear ImGui panels — is still waiting for is the 3D view, tilemap
-painting and plugin menus the inventory already names.
+screen's worth of scene-level settings — which this review found and which are now answered.
+
+What `STUDIO-07030` — deleting the Dear ImGui panels — is still waiting for is the inventory's *Not
+yet answered* table, repeated here so the two can be compared by a test rather than by eye:
+
+- The 3D view
+- Material editing
 
 **This review is a judgement and says so.** No test can assert that one editor looks better than
 another. What the suite does check is that the four captures exist, that they are the sizes this
-document claims, and that everything the review calls unanswered is also unanswered in the
-inventory — so the two cannot come to disagree about what is missing.
+document claims, that everything the review calls unanswered is also unanswered in the inventory, and
+that the list above of what `STUDIO-07030` waits for is exactly the inventory's *Not yet answered*
+table — so the two cannot come to disagree about what is missing. That last check is new: the review
+went on naming the tilemap tool as missing for a commit after it was answered, because nothing was
+comparing the two lists, only three phrases inside them.

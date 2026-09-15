@@ -51,10 +51,10 @@ of what was replaced.
 | Backends | `src/panels/ComparisonPanel.cpp` | `comparison` | ✅ |
 | Viewport | `src/panels/ViewportPanel.cpp` | `viewport` | 🔄 |
 
-The Viewport is 🔄 rather than ✅ because the native one composites the 2D scene, navigates, picks
-and manipulates, and the prototype's also has the 3D view and tilemap painting. Those are the
-substance of what keeps `STUDIO-06015` from being true, and they are listed under *Not yet answered*
-below rather than hidden inside a ✅.
+The Viewport is 🔄 rather than ✅ because the native one composites the 2D scene, navigates, picks,
+manipulates and paints tiles, and the prototype's also has the 3D view. That is the substance of what
+keeps `STUDIO-06015` from being true, and it is listed under *Not yet answered* below rather than
+hidden inside a ✅.
 
 Panels the native shell adds, which the prototype has no equivalent for: `layers`, `preferences`,
 `material` (registered, no content yet — Phase 19).
@@ -134,16 +134,36 @@ name would be matching on something nobody can check.
 | Play | Resume a paused game | `Resume` | `studio.play.pause` | ✅ |
 | Play | Advance one frame | `Step` | `studio.play.step` | ✅ |
 | Play | Which backend to launch on | `Backend` | `studio.window.showPanel.comparison` | ✅ |
-| Tools | Tilemap tool | `##tool` | — | ⬜ |
-| Tools | Tile to paint | `Tile` | — | ⬜ |
+| Tools | Tilemap tool | `##tool` | `studio.view.tool.paint` | ✅ |
+| Tools | Tile to paint | `Tile` | `studio.view.tool.paint` | ✅ |
 | Tools | Manipulator | `##gizmo` | `studio.view.translate` | ✅ |
 | Tools | Gizmo space | `##space` | `studio.view.toggleGizmoSpace` | 🔄 |
 | Tools | 2D view | `2D##view` | — | ⬜ |
 | Tools | 3D view | `3D##view` | — | ⬜ |
 
-**The tilemap tool and the tile index** are ⬜ together: the index only appears beside the paint
-and fill tools, so it arrives with them. Finding it is what this table was for — it is drawn a
-hundred lines below the rest of the toolbar, under a condition, and it had been in no list at all.
+**The tilemap tool and the tile index** are ✅ together as of `STUDIO-07003`, which is how they were
+⬜ together: the index only appears beside the paint and fill tools, so it arrived with them. Finding
+it is what this table was for — it is drawn a hundred lines below the rest of the toolbar, under a
+condition, and it had been in no list at all.
+
+The model was never the gap. The grid, `PaintTilesCommand` and its stroke merging have been shared
+and tested since the prototype had them; what was missing was a viewport that armed a tool and turned
+a press into a cell. Five exclusive checkable commands on the View menu arm it, and the index sits in
+an overlay in the viewport's own corner rather than in a toolbar — beside the image it edits, where
+the prototype puts it, and where a docked viewport can still show it at any panel size.
+
+Both rows name `studio.view.tool.paint` for the same reason Pause and Resume both name
+`studio.play.pause`: the index is not a command, it is a field that exists when a tool that uses one
+is armed, and the command that arms it is the honest answer to "what do I press to get this".
+
+The prototype's tool selector is a dropdown with no key behind it, so there is no shortcut to match
+here — and because the native ones are commands, they are rebindable in the shortcut editor, which a
+dropdown never was.
+
+The native tools differ from the prototype's in two places, both deliberate. A drag is **one** undo
+entry rather than one per cell, because forty tiles and forty Ctrl+Zs is a tool nobody uses twice.
+And the eyedropper **goes back to painting** once it has taken a tile, because one left holding the
+eyedropper is one the user has to put down before they can use what it took.
 
 **Pause, Resume and Step** are ✅ as of `STUDIO-16015`. The protocol was always there — the player
 has honoured `Pause`, `Resume` and `StepFrame` since play mode existed, with its own tests — and what
@@ -251,9 +271,19 @@ the worst kind of regression: it works, so nothing reports it.
 These are the reason the native shell is not the default (`STUDIO-06015`). None is a research
 project; each is a panel or a mode with a known shape.
 
+Rows leave this table by being answered, and the prose below says which, because a list that only
+ever shrinks is one nobody can tell the difference between "done" and "quietly dropped" in.
+
 | What | Prototype home | What it needs |
 |------|----------------|---------------|
 | The 3D view | `ViewportPanel`, `StudioApplication` | A 3D camera and mesh drawing in the native viewport (Phase 11) |
-| Tilemap painting | `ViewportPanel`, `StudioTool` | Paint, erase, pick and fill as viewport tools with a brush (Phase 25 adjacent) |
 | Material editing | — | There is no `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19) |
-| Plugin menus | `MainMenuBar::drawPluginMenus` | Plugins registering actions and menu definitions rather than drawing rows (Phase 28) |
+
+Two rows have left this table since it was written. **Plugin menus** are answered by
+`bindStudioPluginMenus`: a plugin registers commands under `studio.plugin.` and the menus draw them
+like any others, rather than a menu bar calling back into a plugin to draw its own rows.
+**Tilemap painting** is answered by `StudioViewportTool` and `studioViewportToolOverlay`, described
+under *Toolbar controls* above.
+
+What is left is the 3D view and material editing. The 3D view is the one that keeps
+`STUDIO-06015` from being true; material editing is a panel the prototype never had either.

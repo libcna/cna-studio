@@ -92,6 +92,16 @@ namespace CNA::Studio
         std::string selectEntity;
 
         /**
+         * @brief A command to invoke once the shell is up, or empty.
+         *
+         * The windowed equivalent of `--shell-invoke`, and for the same reason: a state that has to
+         * be *armed* — a tilemap tool, a dialog — is a state no still capture can reach by placing
+         * a pointer, and a capture harness that could only photograph the default state could only
+         * ever review the default state.
+         */
+        std::string invokeAction;
+
+        /**
          * @brief Bring this panel to the front of its tab group before drawing.
          *
          * A panel sharing a tab strip with five others cannot be photographed at all otherwise,

@@ -463,3 +463,93 @@ CNA_STUDIO_TEST(TheReviewAndTheInventoryAgreeAboutWhatIsMissing)
         }
     }
 }
+
+namespace
+{
+    /** @brief The first column of the inventory's *Not yet answered* table. */
+    std::vector<std::string> inventoryUnanswered(const std::string& inventory)
+    {
+        std::vector<std::string> names;
+        std::istringstream stream{inventory};
+        std::string line;
+        bool inSection = false;
+
+        while (std::getline(stream, line))
+        {
+            if (line.rfind("## ", 0) == 0)
+            {
+                inSection = line.find("Not yet answered") != std::string::npos;
+                continue;
+            }
+            if (!inSection || line.empty() || line[0] != '|') { continue; }
+
+            const std::size_t second = line.find('|', 1);
+            if (second == std::string::npos) { continue; }
+
+            std::string cell = trimmed(line.substr(1, second - 1));
+            // The header and its dashed rule, which are shape rather than content.
+            if (cell == "What" || cell.find_first_not_of("-: ") == std::string::npos) { continue; }
+            names.push_back(std::move(cell));
+        }
+        return names;
+    }
+
+    /** @brief The bullet list under the review's verdict. */
+    std::vector<std::string> reviewWaitingOn(const std::string& review)
+    {
+        std::vector<std::string> names;
+        std::istringstream stream{review};
+        std::string line;
+        bool inList = false;
+
+        while (std::getline(stream, line))
+        {
+            if (line.find("still waiting for is the inventory") != std::string::npos)
+            {
+                inList = true;
+                continue;
+            }
+            if (!inList) { continue; }
+
+            if (line.rfind("- ", 0) == 0) { names.push_back(trimmed(line.substr(2))); }
+            else if (!names.empty()) { break; }
+        }
+        return names;
+    }
+}
+
+CNA_STUDIO_TEST(TheReviewsWaitingListIsTheInventorysUnansweredTable)
+{
+    // Both directions, because both have happened. The review went on naming the tilemap tool as
+    // missing after it was answered -- nothing compared the lists, only three phrases inside them
+    // -- and the opposite drift, a row added to the inventory that the verdict never mentions, is
+    // the same failure read the other way: a reader believing one document is reading the other.
+    const std::vector<std::string> inventory =
+        inventoryUnanswered(readFile("docs/MIGRATION-INVENTORY.md"));
+    const std::vector<std::string> review = reviewWaitingOn(readFile("docs/VISUAL-ACCEPTANCE.md"));
+
+    // An empty list either side would make the comparison below vacuously true, which is the one
+    // way a guard like this fails silently.
+    CNA_STUDIO_EXPECT(!inventory.empty());
+    CNA_STUDIO_EXPECT(!review.empty());
+
+    for (const std::string& name : inventory)
+    {
+        if (std::find(review.begin(), review.end(), name) == review.end())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "MIGRATION-INVENTORY.md still lists '" + name + "' as not yet answered, and "
+                "VISUAL-ACCEPTANCE.md's verdict does not mention it.");
+        }
+    }
+
+    for (const std::string& name : review)
+    {
+        if (std::find(inventory.begin(), inventory.end(), name) == inventory.end())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "VISUAL-ACCEPTANCE.md's verdict says STUDIO-07030 waits for '" + name + "', which "
+                "MIGRATION-INVENTORY.md no longer lists as unanswered.");
+        }
+    }
+}

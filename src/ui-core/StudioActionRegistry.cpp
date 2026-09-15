@@ -332,6 +332,23 @@ namespace CNA::Studio
                 "Switch the gizmo to translation.", C::View, chord(UiKey::W));
         command("studio.view.rotate", "Rotate",
                 "Switch the gizmo to rotation.", C::View, chord(UiKey::E));
+        // The tilemap tools. Checkable, because a toolbar has to *show* which one is armed: a
+        // press means something different under each of them, and a user who cannot see which is
+        // active finds out by editing their level.
+        command("studio.view.tool.select", "Select Tool",
+                "Pick entities and drag the gizmo.", C::View, StudioShortcut{}, /*checkable=*/true);
+        command("studio.view.tool.paint", "Paint Tiles",
+                "Set the tile under the cursor on the selected tilemap.", C::View, StudioShortcut{},
+                /*checkable=*/true);
+        command("studio.view.tool.erase", "Erase Tiles",
+                "Clear the tile under the cursor.", C::View, StudioShortcut{}, /*checkable=*/true);
+        command("studio.view.tool.pick", "Pick Tile",
+                "Take the tile under the cursor as the brush, then go back to painting.", C::View,
+                StudioShortcut{}, /*checkable=*/true);
+        command("studio.view.tool.fill", "Fill Tiles",
+                "Fill the rectangle a drag encloses.", C::View, StudioShortcut{},
+                /*checkable=*/true);
+
         command("studio.view.toggleGizmoSpace", "Toggle Gizmo Space",
                 "Switch the gizmo between world and local space.", C::View, chord(UiKey::X));
         command("studio.view.scale", "Scale",

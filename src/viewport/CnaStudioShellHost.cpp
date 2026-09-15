@@ -354,6 +354,35 @@ namespace CNA::Studio
                             .generic_string()));
                 }
 
+                // `--shell-invoke` runs here, last, rather than in the constructor where the
+                // rest of the options are read. Half the registry is declared with no handler and
+                // given one by whatever binds it, and the viewport's commands -- the tools, the
+                // gizmo modes, Focus -- are bound by the `setViewportServices` above, which needs
+                // a graphics device and so cannot happen until now. Invoking before that found
+                // the command, ran its absent handler and captured a window where nothing had
+                // happened: a whole session spent looking for a missing overlay that had simply
+                // never been armed.
+                if (!options_.invokeAction.empty())
+                {
+                    if (shell_->actions().find(options_.invokeAction) == nullptr)
+                    {
+                        log_.append(LogSeverity::Warning,
+                                    "No command called '" + options_.invokeAction + "'.");
+                    }
+                    else
+                    {
+                        shell_->invoke(options_.invokeAction);
+                        // Existing is not doing. The shell records what it refused, so a command
+                        // with no handler says so instead of looking like a feature that failed.
+                        if (!shell_->refusedActions().empty())
+                        {
+                            log_.append(LogSeverity::Warning,
+                                        "'" + options_.invokeAction + "' did nothing: "
+                                            + shell_->refusedActions().front() + ".");
+                        }
+                    }
+                }
+
                 contentLoaded_ = true;
                 Game::LoadContent();
             }
