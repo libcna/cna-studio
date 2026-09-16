@@ -85,7 +85,9 @@ The import carried the product's licence and notices unchanged:
 - [`LICENSE`](../LICENSE) — Microsoft Public License (Ms-PL), matching CNA
 - [`NOTICE.md`](../NOTICE.md)
 - [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)
-- `third_party/imgui/` — Dear ImGui, and `third_party/cgltf/` — cgltf, each with its own licence
+- `third_party/cgltf/` — cgltf, with its own licence. `third_party/imgui/` — Dear ImGui, imported
+  at the same time — was removed by `STUDIO-07031` once the UI it backed (`STUDIO-07030`) no longer
+  needed it.
 
 A product rename does not discharge third-party obligations. As dependencies are later added
 or removed, these notices are updated to match what is actually shipped.

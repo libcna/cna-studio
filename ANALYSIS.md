@@ -503,12 +503,15 @@ and receive `ImDrawData*`. That works, and it was rejected for three reasons:
 2. **It costs nothing.** ImGui's vertex layout and CNA's `VertexPositionColorTexture` differ, so a
    per-vertex repack is required whichever way this is structured. Doing it while filling
    `UiDrawData` means it happens exactly once, in the place that was going to pay for it anyway.
-3. **It makes the whole UI testable headless.** `tests/UiTests.cpp` runs the real
-   `StudioApplication` over the real Dear ImGui, drives frames of synthetic input, and validates
+3. **It makes the whole UI testable headless.** `tests/UiTests.cpp` used to run the real
+   `StudioApplication` over the real Dear ImGui, driving frames of synthetic input and validating
    every draw command's index ranges, vertex offsets and clip rectangles — with no window, no GPU
-   and no CNA checkout. That is why `CNA_STUDIO_WITH_IMGUI` defaults to **ON** while
-   `CNA_STUDIO_WITH_CNA` defaults to OFF: ImGui is portable C++ with no system dependencies, so
-   building it costs only compile time and buys real CI coverage.
+   and no CNA checkout. That is why `CNA_STUDIO_WITH_IMGUI` defaulted to **ON** while
+   `CNA_STUDIO_WITH_CNA` defaulted to OFF: ImGui was portable C++ with no system dependencies, so
+   building it cost only compile time and bought real CI coverage. The same headless property now
+   belongs to the native shell directly — `--headless` and `--shell-preview` run it with no window,
+   no GPU and no CNA checkout either — and `STUDIO-07030`/`STUDIO-07031` deleted `tests/UiTests.cpp`
+   and the `CNA_STUDIO_WITH_IMGUI` option along with the Dear ImGui prototype they tested.
 
 **Also decided here.** `ImGuiStudioUi` owns the `UiTextureId` namespace rather than the renderer.
 ImGui 1.92 asserts the moment a draw command references a texture whose id is unset, and draw

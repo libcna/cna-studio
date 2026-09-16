@@ -25,12 +25,6 @@ endif()
 # GPU and no window. See ANALYSIS.md decision D-03.
 option(CNA_STUDIO_WITH_CNA "Build the CNA-backed viewport (requires a ../cna sibling checkout)" OFF)
 
-# Default ON, unlike CNA_STUDIO_WITH_CNA. Dear ImGui is vendored in third_party/ and is pure
-# portable C++ with no system dependencies of its own, so building it costs nothing but compile
-# time -- and it lets CI run the *real* editor UI headless, asserting on the geometry it produces
-# with no window and no GPU. See ANALYSIS.md decision D-14.
-option(CNA_STUDIO_WITH_IMGUI "Build the Dear ImGui implementation of StudioUi" ON)
-
 option(CNA_STUDIO_BUILD_TESTS "Build the cna-studio test suite" ON)
 
 # Empty by default, and expensive when it is not. Each entry is a *separate build of CNA*, because
@@ -283,29 +277,6 @@ target_link_libraries(cna-studio-ui-core PUBLIC cna-studio-core cna-studio-ui)
 # translation unit includes it, so nothing above the font atlas can reach for it and no consumer of
 # cna-studio-ui-core inherits a third-party header on its include path.
 target_include_directories(cna-studio-ui-core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
-
-# Dear ImGui itself. Vendored core only -- none of ImGui's own platform or renderer backends are
-# built, because cna-studio supplies its own through CNA's public API (ANALYSIS.md decision D-14).
-#
-# The implementation that used to sit on top of this -- cna-studio-ui-imgui, built from
-# src/ui/imgui/ImGuiStudioUi.cpp -- is gone (STUDIO-07030). Nothing links this library any more;
-# it stays buildable, unused, until STUDIO-07031 removes the option and the vendored source
-# together.
-if(CNA_STUDIO_WITH_IMGUI)
-    add_library(cna-studio-imgui-vendor STATIC
-        third_party/imgui/imgui.cpp
-        third_party/imgui/imgui_draw.cpp
-        third_party/imgui/imgui_tables.cpp
-        third_party/imgui/imgui_widgets.cpp)
-    target_include_directories(cna-studio-imgui-vendor SYSTEM PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui")
-    target_compile_features(cna-studio-imgui-vendor PUBLIC cxx_std_23)
-    # Third-party code is not held to this project's warning settings; its warnings are not
-    # actionable here and would drown out our own under -Werror.
-    if(NOT MSVC)
-        target_compile_options(cna-studio-imgui-vendor PRIVATE -w)
-    endif()
-endif()
 
 # cna-studio-runtime-bridge -- the editor/player wire protocol, its loopback TCP transport, and
 # the editor-side process supervisor. Sockets and process spawning are the only platform-specific
@@ -571,7 +542,6 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_PLAYER_BACKENDS)
                 -DCNA_STUDIO_WITH_CNA=ON
                 -DCNA_STUDIO_CNA_ROOT=${CNA_STUDIO_CNA_ROOT}
                 -DCNA_GRAPHICS_RENDERER=${_cna_studio_extra_upper}
-                -DCNA_STUDIO_WITH_IMGUI=OFF
                 -DCNA_STUDIO_BUILD_TESTS=OFF
                 -DCNA_STUDIO_PLAYER_BACKENDS=
             BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target cna-player
@@ -599,6 +569,5 @@ endif()
 
 message(STATUS "cna-studio ${PROJECT_VERSION}")
 message(STATUS "  CNA viewport : ${CNA_STUDIO_WITH_CNA}")
-message(STATUS "  Dear ImGui   : ${CNA_STUDIO_WITH_IMGUI}")
 message(STATUS "  tests        : ${CNA_STUDIO_BUILD_TESTS}")
 message(STATUS "  extra players: ${CNA_STUDIO_PLAYER_BACKENDS}")

@@ -179,12 +179,13 @@ CNA_STUDIO_TEST(OnlyTheTwoCnaLinkedModulesIncludeCnaHeaders)
 CNA_STUDIO_TEST(TheNativeStudioUiHasNoDearImGuiDependency)
 {
     // The end state of the UI migration is that production Studio UI does not depend on Dear
-    // ImGui at all (STUDIO-07099). The panel implementations that depended on it are gone
-    // (STUDIO-07030), but the vendored source and the option that builds it are still here for
-    // STUDIO-07031 to remove deliberately -- so this stays scoped to ui-core rather than widening
-    // to the whole tree, which is STUDIO-07099's own job once that option is gone too.
+    // ImGui at all. STUDIO-07030 deleted the panel implementations that depended on it, and
+    // STUDIO-07031 removed the vendored source and the CNA_STUDIO_WITH_IMGUI option that built
+    // it -- so there is no longer a narrower "the parts that have been ported" scope to hold this
+    // to. It covers the whole tree now, and the build files a dependency could come back through
+    // without a single #include appearing anywhere the source scan below looks (STUDIO-07099).
     std::size_t violations = 0;
-    for (const SourceFile& file : collectSources({"src/ui-core", "include/CNA/Studio/UiCore"}))
+    for (const SourceFile& file : collectSources({"src", "include"}))
     {
         const std::string code = stripCommentsAndStrings(file.text);
         for (const char* imgui : {"imgui.h", "ImGui::", "ImDrawList", "ImVec2"})
@@ -200,6 +201,43 @@ CNA_STUDIO_TEST(TheNativeStudioUiHasNoDearImGuiDependency)
             }
         }
     }
+
+    // Through CMake as well as through code: an option or a vendored library target can bring
+    // the dependency back with no line the source scan above would ever see. Specific build-graph
+    // tokens rather than the word "imgui" itself, which also appears in comments recording this
+    // history and in `--ui=imgui`, the CLI name STUDIO-07030 deliberately kept as a synonym for
+    // headless rendering -- neither of those is the dependency returning.
+    for (const char* relative : {"CMakeLists.txt", "tests/CMakeLists.txt"})
+    {
+        std::ifstream stream{sourceRoot() / relative, std::ios::binary};
+        const std::string text{std::istreambuf_iterator<char>{stream},
+                               std::istreambuf_iterator<char>{}};
+        for (const char* token :
+             {"CNA_STUDIO_WITH_IMGUI", "CNA_STUDIO_HAS_IMGUI", "third_party/imgui",
+              "cna-studio-imgui-vendor", "cna-studio-ui-imgui"})
+        {
+            if (text.find(token) != std::string::npos)
+            {
+                ++violations;
+                CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                    std::string{relative} + " contains '" + token
+                    + "'. The option and the vendored library it built (STUDIO-07031) are gone; "
+                      "a build file naming this again is the dependency returning through CMake "
+                      "rather than through code.");
+            }
+        }
+    }
+
+    // And the vendored source itself, which a re-add would restore before any build file changed
+    // to build it.
+    if (std::filesystem::exists(sourceRoot() / "third_party" / "imgui"))
+    {
+        ++violations;
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            "third_party/imgui/ exists. STUDIO-07031 removed it; its return is the dependency "
+            "coming back at the source level, ahead of anything that would build it.");
+    }
+
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
 

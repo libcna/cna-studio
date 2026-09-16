@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 42 of 46 complete `███████████░`
+**Progress:** 44 of 46 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -54,7 +54,7 @@
 | `STUDIO-07057` | The angles a user typed survive being read back | ✅ | `STUDIO-07018` |
 | `STUDIO-07058` | Reparenting by dragging in the World Outliner | ✅ | `STUDIO-07006` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ✅ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
-| `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
+| `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ✅ | `STUDIO-07030` |
 
 > **`STUDIO-07030` blocked more than this phase, and closing it only closed part of that.**
 > `CnaStudioHost` — the `--ui=imgui` host — created a `CnaUiRenderer` unconditionally, with no
@@ -64,7 +64,7 @@
 > still constructs a `CnaUiRenderer` of its own, as a compatibility fallback and behind
 > `--ui-renderer=compat`, so the classic backend has a second, native consumer that this task never
 > touched. `STUDIO-04027`'s own entry records the current state of that dependency.
-| `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | ⬜ | `STUDIO-07031` |
+| `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | ✅ | `STUDIO-07031` |
 
 ## Acceptance and verification
 
@@ -834,11 +834,57 @@ could not reach.
 
 ### `STUDIO-07031` — Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source
 
-**Acceptance.** Removed deliberately, with `THIRD_PARTY_NOTICES.md` updated to match what is actually shipped
+**Acceptance.** Removed deliberately, with `THIRD_PARTY_NOTICES.md` updated to match what is
+actually shipped.
+
+**Done.** `option(CNA_STUDIO_WITH_IMGUI ...)`, the `if(CNA_STUDIO_WITH_IMGUI)`-gated
+`cna-studio-imgui-vendor` target, the `-DCNA_STUDIO_WITH_IMGUI=OFF` passed to every extra player
+build, and the status line that printed the option's value are gone from `CMakeLists.txt`.
+`third_party/imgui/` — eleven files, 3.5 MB — is deleted. `THIRD_PARTY_NOTICES.md` lost the Dear
+ImGui section entirely, and its stb_truetype entry, which explained why that translation unit
+carries `STBTT_STATIC` (so its symbols could never collide with ImGui's own vendored copy of the
+same library), is rewritten in the past tense: the reason `STBTT_STATIC` is there has not changed,
+but what it was originally guarding against no longer exists to guard against.
+
+**The default build tree collapses from six configurations to five.** `CNA_STUDIO_WITH_IMGUI=OFF`
+was its own leg of the validation matrix from `STUDIO-07030` onward, distinguishing a build with
+the option off from the (then still ImGui-capable) default. With the option gone, every build is
+that configuration, so there is no longer a distinct fifth thing to build and test — the matrix is
+Debug, Release with `-Werror`, ASan+UBSan, CNA on `SOFTWARE` and CNA on `OPENGL4`, all of them
+already exercising a tree with no Dear ImGui in it anywhere.
+
+**README.md, ANALYSIS.md and docs/ORIGIN.md** each named the option, the vendored directory, or
+`cna-studio-ui-imgui` as a currently-shipped thing rather than as history, and are corrected: the
+architecture diagram's UI box is `cna-studio-shell-panels` now, not "`cna-studio-ui-imgui` (legacy,
+being replaced)", and the build-options table no longer offers a flag that does not exist.
 
 ### `STUDIO-07099` — Guard test: production Studio UI has no dependency on Dear ImGui
 
-**Acceptance.** Fails the build if the dependency returns, whether through code or through CMake
+**Acceptance.** Fails the build if the dependency returns, whether through code or through CMake.
+
+**Done.** `TheNativeStudioUiHasNoDearImGuiDependency` (`tests/ArchitectureGuardTests.cpp`) no
+longer stops at `src/ui-core` and `include/CNA/Studio/UiCore` — the scope that was deliberately
+narrow while the vendored source and the option that built it were still waiting on `STUDIO-07031`
+to remove them. It scans the whole of `src` and `include` for `imgui.h`, `ImGui::`, `ImDrawList`
+and `ImVec2` now that there is no longer a part of the tree excluded on the grounds that it had not
+been ported yet.
+
+**"Through CMake" is a separate check, on purpose.** A `#include` scan cannot see an `option()`
+reintroduced, or a vendored library target added back, so the same test also reads `CMakeLists.txt`
+and `tests/CMakeLists.txt` and fails on `CNA_STUDIO_WITH_IMGUI`, `CNA_STUDIO_HAS_IMGUI`,
+`third_party/imgui`, `cna-studio-imgui-vendor` or `cna-studio-ui-imgui` appearing in either — and on
+`third_party/imgui/` existing on disk at all, which would precede any build file changing to build
+it. The tokens are specific build-graph names rather than the word "imgui" itself: a naive scan for
+that word failed on its first run, against `--ui=imgui`, the CLI name `STUDIO-07030` deliberately
+kept as a synonym for headless rendering, and against the comments recording this history in both
+files — neither of those is the dependency returning, and a guard that could not tell the
+difference would have needed loosening the first time somebody wrote a sentence about why Dear
+ImGui is gone.
+
+**Verified rather than trusted:** the check was proven to actually fail by reintroducing
+`CNA_STUDIO_WITH_IMGUI` as a probe line in `CMakeLists.txt`, confirming the test caught it, and
+reverting the probe before moving on — the same discipline `STUDIO-35063` was written from applies
+to a guard added today exactly as much as to one added a year ago.
 
 ### `STUDIO-07006` — Port the Hierarchy panel (World Outliner)
 

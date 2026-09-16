@@ -120,7 +120,6 @@ working clipboard.
 | Option | Default | Meaning |
 |--------|:-------:|---------|
 | `CNA_STUDIO_WITH_CNA` | `OFF` | Build the CNA-backed viewport, UI renderer and input platform |
-| `CNA_STUDIO_WITH_IMGUI` | `ON` | Build the legacy Dear ImGui UI (vendored; no system dependencies) |
 | `CNA_STUDIO_BUILD_TESTS` | `ON` | Build the test suite |
 | `CNA_STUDIO_WARNINGS_AS_ERRORS` | `OFF` | `-Werror` / `/WX` |
 | `CNA_STUDIO_CNA_ROOT` | `../cna` | Where to find the CNA checkout |
@@ -128,12 +127,12 @@ working clipboard.
 
 Run `cna-studio --help` for the command-line options.
 
-### Seeing the new Studio UI
+### Seeing the Studio UI headless
 
-The native Studio UI ([`plan.md`](plan.md) Phases 3-7) is being grown underneath the existing
-Dear ImGui presentation. Its shell -- menu bar, toolbar, docks, viewport, status bar -- is real
-geometry today but is not yet interactive, so it is reachable as a preview rather than as a UI
-you can click:
+The native Studio UI ([`plan.md`](plan.md) Phases 3-7) is what `cna-studio` opens today -- there is
+no other presentation left to choose (`STUDIO-07030` removed the Dear ImGui prototype this project
+started from). Its shell geometry is CNA-free and can be rasterised with no window and no GPU, which
+is what a `--shell-preview` capture is for:
 
 ```bash
 ./build/cna-studio --shell-preview=shell.png --shell-size=1280x720
@@ -157,8 +156,8 @@ exists. `--shell-theme=light` and `--shell-scale=2.0` render the other theme and
                              │
         ┌────────────────────┴────────────────────┐
         ▼                                         ▼
- cna-studio-ui-imgui                      cna-studio-context
- (legacy, being replaced)                 (project, scene, registry,
+ cna-studio-shell-panels                  cna-studio-context
+ (the native shell's own panels)          (project, scene, registry,
         │                                  assets, undo, selection)
         │  UiDrawData  ▼   ▲  UiInputState
         └──────────────┬───┴──────────────┐
@@ -201,8 +200,8 @@ Moving `Assets/player.png` into `Assets/Characters/` touches no scene and breaks
 **Play mode is a separate process.** Structurally required: Studio and the game are linked against
 different CNA builds and cannot share an address space. A game crash also cannot take Studio down.
 
-**The UI toolkit is behind an abstraction.** No panel calls Dear ImGui directly — which is what
-makes replacing it (see below) a migration rather than a rewrite.
+**The UI toolkit was behind an abstraction.** No panel called Dear ImGui directly, which is what
+made replacing it (`STUDIO-07030`) a migration rather than a rewrite.
 
 **Studio's own UI is drawn with the same API a game has.** No `CNA::Internal::*`, no authored
 shader, no per-renderer code. If CNA cannot draw Studio's UI, that is a gap in CNA worth finding;
@@ -235,7 +234,6 @@ cna-studio/
 │   └── LEGACY-EDITOR-TASK-MAP.md   Where the prototype's ED-* tasks went
 ├── include/CNA/Studio/      Public headers
 ├── src/                     One directory per module
-├── third_party/imgui/       Dear ImGui — legacy UI, being replaced
 ├── third_party/cgltf/       cgltf, with its symbols prefixed
 ├── tests/                   566 assertions, no third-party framework
 └── examples/HelloSprites/   A project Studio opens end to end

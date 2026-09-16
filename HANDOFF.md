@@ -294,7 +294,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **241 of 564 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **243 of 564 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -409,7 +409,7 @@ survives a restart; and **notifications** — a build, a package, a renderer com
 player announcing itself over the corner of the workspace, with the panel that explains it offered
 as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
-**Phase 7 — Panel migration** (42 of 46, 2 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (44 of 46, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
@@ -994,12 +994,14 @@ reason `STUDIO-03041` is filed as a structural task rather than as a third guard
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **Dear ImGui is gone.** `STUDIO-07030` deleted every panel, `ImGuiStudioUi`, `StudioApplication`
-  and `CnaStudioHost` — `cna-studio` with no flag opens the native shell, and there is no longer a
-  `--ui=imgui` window to open instead; that name is kept only as one `--headless` still accepts,
-  landing on the same headless rendering `--headless` itself uses. What is left of that chain is
-  `STUDIO-07031` (the `CNA_STUDIO_WITH_IMGUI` option and the vendored source, still present and
-  unused) and `STUDIO-07099` behind it.
+- **Dear ImGui is gone, all the way down.** `STUDIO-07030` deleted every panel, `ImGuiStudioUi`,
+  `StudioApplication` and `CnaStudioHost` — `cna-studio` with no flag opens the native shell, and
+  there is no longer a `--ui=imgui` window to open instead; that name is kept only as one
+  `--headless` still accepts, landing on the same headless rendering `--headless` itself uses.
+  `STUDIO-07031` then removed the `CNA_STUDIO_WITH_IMGUI` option and the vendored
+  `third_party/imgui/` source, and `STUDIO-07099` widened the dependency guard from `ui-core` to
+  the whole tree plus the build files, so the option or the vendor target coming back would fail
+  the build again on its own.
 - **Studio still ships two UI render backends, and deleting the prototype did not settle it.** The
   modern CNAEXT backend is the default on any host that reports the modern API; the classic one is
   what `SOFTWARE` falls back to, loudly. The old justification — that CI could not run a
@@ -1083,12 +1085,13 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 Read from the phase files, not remembered. Ids, titles and blockers are copied from the rows.
 
-**The Dear ImGui chain is closed as far as the prototype goes.** `STUDIO-07042`–`07046` are done,
-and `STUDIO-07030` deleted the prototype itself: every panel, `ImGuiStudioUi`, `StudioApplication`
-and `CnaStudioHost`, along with the tests that existed only to exercise them. What is left of that
-chain is `STUDIO-07031` (retire the `CNA_STUDIO_WITH_IMGUI` option and the vendored source) and
-`STUDIO-07099` (the whole-tree guard behind it). `STUDIO-04027` is **not** fully unblocked by
-`07030` alone — see below.
+**The Dear ImGui chain is closed, all of it.** `STUDIO-07042`–`07046` are done, `STUDIO-07030`
+deleted the prototype itself, `STUDIO-07031` removed the `CNA_STUDIO_WITH_IMGUI` option and the
+vendored `third_party/imgui/` source (eleven files, 3.5 MB), and `STUDIO-07099` widened the guard
+that used to be scoped to `ui-core` alone to the whole tree, plus a check over `CMakeLists.txt` and
+`tests/CMakeLists.txt` for the option or the vendor target returning with no line of C++ to show
+for it. Nothing in this chain is open any more. `STUDIO-04027` is **still not** fully unblocked —
+see below.
 
 ### The chain: retire Dear ImGui, and the classic UI backend behind it
 
@@ -1099,8 +1102,8 @@ chain is `STUDIO-07031` (retire the `CNA_STUDIO_WITH_IMGUI` option and the vendo
 | `STUDIO-07044` | Audio preview in the native Details panel | `STUDIO-07041` ✅ — done |
 | `STUDIO-07046` | The material asset editor the prototype already has | `STUDIO-07041` ✅ — done |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | the four above, all ✅ — **done** |
-| `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | `07030` ✅ |
-| `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | `07031` |
+| `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | `07030` ✅ — **done** |
+| `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | `07031` ✅ — **done** |
 | `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | `STUDIO-04029` ✅, `STUDIO-07030` ✅ — see below |
 | `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | `STUDIO-04026` ✅ |
 

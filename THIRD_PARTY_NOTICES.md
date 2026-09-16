@@ -1,15 +1,5 @@
 # Third-party components
 
-## Dear ImGui
-
-`third_party/imgui/` contains Dear ImGui version 1.92.9b (docking branch), by Omar Cornut and
-contributors, licensed under the MIT License. See `third_party/imgui/LICENSE.txt`.
-
-Only Dear ImGui's core is vendored — `imgui.cpp`, `imgui_draw.cpp`, `imgui_tables.cpp`,
-`imgui_widgets.cpp` and their headers. None of Dear ImGui's own platform or renderer backends are
-included or built: cna-studio supplies its own, written against CNA's public API
-(`src/viewport/CnaUiRenderer.cpp` and `src/viewport/CnaUiPlatform.cpp`).
-
 ## cgltf
 
 `third_party/cgltf/` contains cgltf version 1.15, by Johannes Kuhlmann and contributors, licensed
@@ -36,11 +26,14 @@ SHA-256 `ecd30b05e0dd4fea3a13c26810dd9e1992dc379049482c393d5a19e6b5090aab`.
 
 It is the glyph rasterizer behind `CNA/Studio/UiCore/StudioFontAtlas.hpp`, and it is included by
 **exactly one** translation unit, `src/ui-core/StudioFontAtlas.cpp`, with `STBTT_STATIC` so that its
-symbols have internal linkage. Dear ImGui vendors its own copy at
-`third_party/imgui/imstb_truetype.h`, which `imgui_draw.cpp` includes inside `namespace ImStb`; the
-two therefore cannot collide even in a binary holding both. That was verified rather than assumed,
-because this repository has already paid once for a duplicate definition that compiled cleanly,
-linked cleanly and corrupted memory at run time.
+symbols have internal linkage. `STBTT_STATIC` earned its place rather than being a habit: Dear ImGui
+used to vendor its own copy at `third_party/imgui/imstb_truetype.h`, included by `imgui_draw.cpp`
+inside `namespace ImStb`, and the two were verified not to collide even in a binary holding both --
+verified rather than assumed, because this repository had already paid once for a duplicate
+definition that compiled cleanly, linked cleanly and corrupted memory at run time. Dear ImGui itself
+is gone (`STUDIO-07030`, `STUDIO-07031`), so there is no longer a second copy to collide with; the
+internal linkage stays regardless, since nothing about this translation unit's own reasons for it
+changed.
 
 Atlas packing, glyph caching, metrics, kerning lookup, UTF-8 decoding and text layout are Studio's
 own code. stb_truetype is used for outline rasterization and table lookup only.
