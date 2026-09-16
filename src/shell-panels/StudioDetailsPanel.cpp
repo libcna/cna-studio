@@ -554,7 +554,8 @@ namespace CNA::Studio
             // as a colour at all, and 0..255 is the range the value is stored in rather
             // than a normalised one the user would have to convert to.
             const StudioColor colour = value.get<StudioColor>();
-            UiRect control = control;
+            // `control` is taken by value precisely so the swatch can be split off it here without
+            // a copy: the caller's row is unaffected either way.
             const UiRect swatch = control.splitLeft(
                 std::min(metricOf(theme, StudioMetric::ControlHeight), control.width));
             control.splitLeft(std::min(spacing, control.width));

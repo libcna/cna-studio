@@ -5,6 +5,9 @@
  */
 
 #include "TestHarness.hpp"
+#include <unordered_map>
+#include <chrono>
+#include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -3265,4 +3268,132 @@ CNA_STUDIO_TEST(AMaterialAssignedToAPartTheModelDoesNotHaveIsReported)
     // "wrong", and a rule that fired mid-scan would report every model in the project.
     const MeshProvider none = [](const Uuid&) -> const MeshData* { return nullptr; };
     CNA_STUDIO_EXPECT(validateModelPartMaterials(scene, none).empty());
+}
+
+// ------------------------------------------------------------------------------------------------
+// Hierarchy lookup cost (STUDIO-30013)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(ChildrenByParentAgreesWithGetChildrenForEveryParent)
+{
+    // Two orderings of one hierarchy would show as an outliner whose rows moved when something
+    // unrelated rebuilt them, which is the kind of defect nobody can reproduce on demand. The
+    // grouped form exists for speed and must therefore be indistinguishable in every other way.
+    SceneDocument scene;
+    std::vector<Uuid> ids;
+    Uuid parent;
+    for (int i = 0; i < 60; ++i)
+    {
+        StudioEntity entity{Uuid::generate(), "Entity " + std::to_string((i * 7) % 60)};
+        entity.setSortOrder(i % 5);
+        if (i % 6 != 0) { entity.setParentId(parent); }
+        const Uuid id = entity.getId();
+        scene.addEntity(std::move(entity));
+        ids.push_back(id);
+        if (i % 6 == 0) { parent = id; }
+    }
+
+    const std::unordered_map<Uuid, std::vector<Uuid>> grouped = scene.getChildrenByParent();
+
+    // The roots live under the nil Uuid, so a walk needs no special case for them.
+    const auto roots = grouped.find(Uuid{});
+    CNA_STUDIO_EXPECT(roots != grouped.end());
+    if (roots != grouped.end())
+    {
+        CNA_STUDIO_EXPECT(roots->second == scene.getRootEntities());
+    }
+
+    std::size_t accountedFor = roots != grouped.end() ? roots->second.size() : 0;
+    for (const Uuid& id : ids)
+    {
+        const std::vector<Uuid> expected = scene.getChildren(id);
+        const auto found = grouped.find(id);
+        if (expected.empty())
+        {
+            // A parent with no children is absent rather than present-and-empty, which is what
+            // lets the map be sized by the hierarchy rather than by the entity count.
+            CNA_STUDIO_EXPECT(found == grouped.end());
+            continue;
+        }
+        CNA_STUDIO_EXPECT(found != grouped.end());
+        if (found != grouped.end())
+        {
+            CNA_STUDIO_EXPECT(found->second == expected);
+            accountedFor += found->second.size();
+        }
+    }
+
+    // Every entity appears exactly once, under exactly one parent.
+    CNA_STUDIO_EXPECT_EQ(accountedFor, scene.getEntityCount());
+}
+
+CNA_STUDIO_TEST(FlatteningTheOutlinerCostsLinearTimeInTheSceneRatherThanQuadratic)
+{
+    // The defect `--ui-benchmark` found: `getChildren` scans every entity, and the outliner's
+    // flatten called it once per row. 250 entities cost 9 ms a frame, 500 cost 25 ms, 1 000 cost
+    // 84 ms and 2 000 cost 309 ms -- four times the cost for twice the entities, and three frames
+    // a second on a scene that is not large.
+    //
+    // Rows are virtualised, so the *drawing* was already flat: the benchmark reported the same 20
+    // draw calls and 7 317 vertices at 5 entities and at 2 000. No capture, golden image or
+    // draw-call assertion could have shown this, which is why the guard is a timing one.
+    //
+    // A ratio rather than an absolute, because an absolute is a number about this machine. Four
+    // times the entities costs about four times as much when the walk is linear and about sixteen
+    // when it is quadratic; the threshold sits between them with room for a loaded machine.
+    const auto build = [](int count) {
+        SceneDocument scene;
+        Uuid parent;
+        for (int i = 0; i < count; ++i)
+        {
+            StudioEntity entity{Uuid::generate(), "Entity " + std::to_string(i)};
+            if (i % 8 != 0) { entity.setParentId(parent); }
+            const Uuid id = entity.getId();
+            scene.addEntity(std::move(entity));
+            if (i % 8 == 0) { parent = id; }
+        }
+        return scene;
+    };
+
+    const auto timeRows = [](const SceneDocument& scene) {
+        StudioTreeState state;
+        state.expandAll();
+        const std::vector<Uuid> selection;
+
+        // Warmed, then the best of several: a scheduler preemption can only make a sample slower,
+        // so the minimum is the closest thing to "what this costs" a shared machine can report.
+        (void)studioOutlinerRows(scene, selection, state);
+
+        double best = 1e18;
+        for (int attempt = 0; attempt < 5; ++attempt)
+        {
+            const auto start = std::chrono::steady_clock::now();
+            const std::vector<StudioTreeRow> rows = studioOutlinerRows(scene, selection, state);
+            const auto finish = std::chrono::steady_clock::now();
+            CNA_STUDIO_EXPECT(!rows.empty());
+            best = std::min(best,
+                            std::chrono::duration<double, std::micro>(finish - start).count());
+        }
+        return best;
+    };
+
+    const SceneDocument small = build(400);
+    const SceneDocument large = build(1600);
+
+    const double smallCost = timeRows(small);
+    const double largeCost = timeRows(large);
+
+    CNA_STUDIO_EXPECT(smallCost > 0.0);
+    if (smallCost <= 0.0) { return; }
+
+    const double ratio = largeCost / smallCost;
+    if (ratio > 8.0)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            "flattening 1600 entities cost " + std::to_string(ratio)
+            + " times what 400 did. Four times the entities should cost about four times as much; "
+              "sixteen means the walk asks the document for children once per node again. Derive "
+              "the hierarchy once with SceneDocument::getChildrenByParent (plan.md STUDIO-30013).");
+    }
+    CNA_STUDIO_EXPECT(ratio <= 8.0);
 }

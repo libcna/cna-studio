@@ -112,6 +112,32 @@ namespace CNA::Studio
         /** @brief Returns the ids of @p parentId's direct children, ordered by sort order then name. */
         [[nodiscard]] std::vector<Uuid> getChildren(const Uuid& parentId) const;
 
+        /**
+         * @brief Every parent's children at once, in the same order @ref getChildren gives.
+         *
+         * `plan.md` STUDIO-30013. **Use this for anything that walks the whole hierarchy.**
+         * `getChildren` scans every entity in the document, so calling it once per node makes a
+         * tree walk O(n²) — which is not a theoretical concern: the World Outliner's flatten did
+         * exactly that, and `--ui-benchmark` measured 9 ms a frame at 250 entities, 25 ms at 500,
+         * 84 ms at 1 000 and 309 ms at 2 000. Four times the cost for twice the entities is the
+         * signature, and at 2 000 entities — not a large scene — the whole editor ran at three
+         * frames a second.
+         *
+         * This is one pass and one sort per group: O(n log k) for the whole document, against
+         * O(n²) for n calls to `getChildren`.
+         *
+         * **Returned rather than cached**, deliberately. `findEntity` hands out a mutable
+         * `StudioEntity*` and `StudioEntity::setParentId` is public, so the document cannot know
+         * when a parent changes — a cached index would go stale silently, and a stale hierarchy
+         * index shows up as entities that vanish from the outliner rather than as a failure.
+         * Rebuilding is cheap enough that correctness wins: the caller holds it for one walk.
+         *
+         * The nil Uuid's entry holds the root entities, so a walk needs no special case for them.
+         *
+         * @return Parent id to its children, ordered. Parents with no children are absent.
+         */
+        [[nodiscard]] std::unordered_map<Uuid, std::vector<Uuid>> getChildrenByParent() const;
+
         /** @brief Returns the ids of every entity with no parent, ordered by sort order then name. */
         [[nodiscard]] std::vector<Uuid> getRootEntities() const;
 

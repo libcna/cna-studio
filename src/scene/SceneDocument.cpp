@@ -107,6 +107,37 @@ namespace CNA::Studio
         return true;
     }
 
+    std::unordered_map<Uuid, std::vector<Uuid>> SceneDocument::getChildrenByParent() const
+    {
+        std::unordered_map<Uuid, std::vector<const StudioEntity*>> grouped;
+        for (const StudioEntity& entity : entities_)
+        {
+            grouped[entity.getParentId()].push_back(&entity);
+        }
+
+        std::unordered_map<Uuid, std::vector<Uuid>> children;
+        children.reserve(grouped.size());
+        for (auto& [parent, group] : grouped)
+        {
+            // The same order getChildren gives, by the same comparison. Two orderings of one
+            // hierarchy would show as an outliner whose rows moved when something unrelated
+            // rebuilt them, which is the kind of defect nobody can reproduce on demand.
+            std::stable_sort(group.begin(), group.end(),
+                             [](const StudioEntity* lhs, const StudioEntity* rhs) {
+                                 if (lhs->getSortOrder() != rhs->getSortOrder())
+                                 {
+                                     return lhs->getSortOrder() < rhs->getSortOrder();
+                                 }
+                                 return lhs->getName() < rhs->getName();
+                             });
+
+            std::vector<Uuid>& ids = children[parent];
+            ids.reserve(group.size());
+            for (const StudioEntity* entity : group) { ids.push_back(entity->getId()); }
+        }
+        return children;
+    }
+
     std::vector<Uuid> SceneDocument::getChildren(const Uuid& parentId) const
     {
         std::vector<const StudioEntity*> children;

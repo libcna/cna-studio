@@ -14,6 +14,7 @@
 #include <memory>
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace CNA::Studio
 {
@@ -57,14 +58,29 @@ namespace CNA::Studio
             return StudioIcon::Entity;
         }
 
+        /** @brief The empty child list a leaf gets, so the walk needs no null check. */
+        const std::vector<Uuid>& noChildren()
+        {
+            static const std::vector<Uuid> empty;
+            return empty;
+        }
+
         /**
          * @brief Appends @p id and, when it is open, its children.
          *
          * Depth-limited rather than cycle-detecting. A scene document is kept acyclic by every
          * operation that can reparent, so a cycle here would be a bug elsewhere -- but it would
          * present as a hang, and a hang is the one failure a user cannot diagnose or report.
+         *
+         * `STUDIO-30013`: @p hierarchy is derived once by the caller rather than asked for per
+         * node. `SceneDocument::getChildren` scans every entity, so calling it here made the walk
+         * O(n²) -- 9 ms a frame at 250 entities and 309 ms at 2 000, measured by `--ui-benchmark`.
+         * Rows are virtualised, so the *drawing* was already flat and nothing in a capture or a
+         * draw-call assertion could have shown it.
          */
-        void flatten(const SceneDocument& scene, const Uuid& id, int depth,
+        void flatten(const SceneDocument& scene,
+                     const std::unordered_map<Uuid, std::vector<Uuid>>& hierarchy,
+                     const Uuid& id, int depth,
                      const std::vector<Uuid>& selection, const StudioTreeState& state,
                      std::vector<StudioTreeRow>& out)
         {
@@ -73,7 +89,9 @@ namespace CNA::Studio
             const StudioEntity* entity = scene.findEntity(id);
             if (entity == nullptr || depth > kMaxDepth) { return; }
 
-            const std::vector<Uuid> children = scene.getChildren(id);
+            const auto found = hierarchy.find(id);
+            const std::vector<Uuid>& children =
+                found == hierarchy.end() ? noChildren() : found->second;
 
             StudioTreeRow row;
             row.id = id.toString();
@@ -113,7 +131,7 @@ namespace CNA::Studio
             if (!state.isExpanded(id.toString())) { return; }
             for (const Uuid& child : children)
             {
-                flatten(scene, child, depth + 1, selection, state, out);
+                flatten(scene, hierarchy, child, depth + 1, selection, state, out);
             }
         }
     }
@@ -124,9 +142,16 @@ namespace CNA::Studio
     {
         std::vector<StudioTreeRow> rows;
         rows.reserve(scene.getEntityCount());
-        for (const Uuid& root : scene.getRootEntities())
+
+        // Once for the whole walk (STUDIO-30013). The nil Uuid's entry is the roots, so this also
+        // replaces getRootEntities() -- which is the same scan under another name.
+        const std::unordered_map<Uuid, std::vector<Uuid>> hierarchy = scene.getChildrenByParent();
+        const auto roots = hierarchy.find(Uuid{});
+        if (roots == hierarchy.end()) { return rows; }
+
+        for (const Uuid& root : roots->second)
         {
-            flatten(scene, root, 0, selection, state, rows);
+            flatten(scene, hierarchy, root, 0, selection, state, rows);
         }
         return rows;
     }
