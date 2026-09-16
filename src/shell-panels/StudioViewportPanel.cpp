@@ -272,6 +272,216 @@ namespace CNA::Studio
             }
             return false;
         }
+
+        // -----------------------------------------------------------------------------------
+        // The same three manipulators, over the 3D view (STUDIO-07050)
+        //
+        // `studioViewportPanel3D` picked and did not manipulate: `TransformGizmos3D.hpp` has
+        // carried the layout, hit-test and drag maths for all three since the 2D panel showed
+        // how a panel drives one, unit-tested in `SceneTests.cpp`, and reached by nothing.
+        // What follows is wiring, in the same shape as the three functions above it -- reusing
+        // `commitDragEdit` verbatim, since it takes no 2D type at all.
+        // -----------------------------------------------------------------------------------
+
+        /** @brief How much a 3D drag rounds by while the snap modifier is held. */
+        GizmoSnap snapFor3D(const StudioContext& context, bool held)
+        {
+            if (!held) { return {}; }
+
+            GizmoSnap snap;
+            // The project's own step when it declares one. Unlike the 2D gizmo, a 3D translate
+            // has no on-screen grid to fall back to -- the visible floor is a decision of
+            // STUDIO-35051, not of this one -- so an undeclared step lands on one world unit,
+            // which is the increment every one of this project's own example scenes is authored
+            // on.
+            const float projectStep = context.hasProject() ? context.getProject().getGridSnap() : 0.0f;
+            snap.translate = projectStep > 0.0f ? projectStep : 1.0f;
+            snap.rotate = kDefaultRotationSnap;
+            snap.scale = kDefaultScaleSnap;
+            return snap;
+        }
+
+        /**
+         * @brief Starts a 3D manipulator drag when the press landed on one of its handles.
+         * @return True when a drag began, meaning the press must not also orbit or select.
+         */
+        bool beginGizmoDrag3D(StudioContext& context, const StudioCamera3D& camera,
+                              StudioViewportState& state, const std::vector<Uuid>& selection,
+                              const StudioVector2& pointer)
+        {
+            const SceneDocument& scene = context.getScene();
+            const Uuid entityId = selection.back();
+
+            // The 3D layout functions take the pivot directly rather than being relocated after
+            // the fact, unlike the 2D ones: there is no equivalent of `placeGizmoAt` here because
+            // none is needed.
+            const std::optional<StudioVector3> pivot =
+                selection.size() > 1 ? computeSelectionPivot3D(scene, selection) : std::nullopt;
+
+            bool began = false;
+            switch (state.mode)
+            {
+                case GizmoMode::Translate:
+                {
+                    auto layout =
+                        computeTranslateGizmo3DLayout(scene, camera, entityId, state.space, pivot);
+                    if (!layout) { return false; }
+                    if (hitTestTranslateGizmo3D(*layout, pointer) == GizmoAxis3D::None)
+                    {
+                        return false;
+                    }
+                    began = state.translate3D.begin(scene, camera, *layout, entityId, pointer);
+                    break;
+                }
+                case GizmoMode::Rotate:
+                {
+                    auto layout =
+                        computeRotateGizmo3DLayout(scene, camera, entityId, state.space, pivot);
+                    if (!layout) { return false; }
+                    if (hitTestRotateGizmo3D(*layout, pointer) == GizmoAxis3D::None)
+                    {
+                        return false;
+                    }
+                    began = state.rotate3D.begin(scene, camera, *layout, entityId, pointer);
+                    break;
+                }
+                case GizmoMode::Scale:
+                {
+                    auto layout = computeScaleGizmo3DLayout(scene, camera, entityId, pivot);
+                    if (!layout) { return false; }
+                    if (hitTestScaleGizmo3D(*layout, pointer) == GizmoAxis3D::None) { return false; }
+                    began = state.scale3D.begin(scene, *layout, entityId, pointer);
+                    break;
+                }
+                case GizmoMode::None:
+                    break;
+            }
+
+            if (began && pivot)
+            {
+                // The roots only: a child moves when its parent does, and applying a drag to
+                // both would move it twice.
+                state.multi3D.begin(scene, selection, *pivot);
+                ++state.multiDragId;
+            }
+            return began;
+        }
+
+        /** @brief Applies one frame of a 3D multi-selection drag. @return True when it moved. */
+        bool updateMultiDrag3D(StudioContext& context, const StudioCamera3D& camera,
+                               StudioViewportState& state, const StudioVector2& pointer,
+                               const GizmoSnap& snap)
+        {
+            const SceneDocument& scene = context.getScene();
+            std::vector<EntityTransformEdit> edits;
+
+            if (state.translate3D.isActive())
+            {
+                const std::optional<StudioVector3> delta =
+                    state.translate3D.getWorldDelta(camera, pointer, snap);
+                if (!delta) { return false; }
+                edits = state.multi3D.translate(scene, *delta);
+            }
+            else if (state.rotate3D.isActive())
+            {
+                const std::optional<float> angle =
+                    state.rotate3D.getDeltaAngle(camera, pointer, snap);
+                if (!angle) { return false; }
+                edits = state.multi3D.rotate(scene, state.rotate3D.getNormal(), *angle);
+            }
+            else if (state.scale3D.isActive())
+            {
+                auto layout = computeScaleGizmo3DLayout(scene, camera, state.scale3D.getEntityId(),
+                                                         state.multi3D.getPivot());
+                if (!layout) { return false; }
+
+                const float factor = state.scale3D.getFactor(*layout, pointer, snap);
+                const GizmoAxis3D axis = state.scale3D.getAxis();
+                // The grabbed arm's own factor, one on the other two -- exactly the 2D scale
+                // gizmo's rule, generalised from two axes to three.
+                const StudioVector3 perAxis{axis == GizmoAxis3D::X ? factor : 1.0f,
+                                            axis == GizmoAxis3D::Y ? factor : 1.0f,
+                                            axis == GizmoAxis3D::Z ? factor : 1.0f};
+                edits = state.multi3D.scale(scene, layout->axes, perAxis);
+            }
+
+            if (edits.empty()) { return false; }
+
+            const auto changesSomething = [&scene](const EntityTransformEdit& edit) {
+                const StudioEntity* entity = scene.findEntity(edit.entityId);
+                const StudioComponent* transform =
+                    entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTransform)
+                                      : nullptr;
+                if (transform == nullptr) { return false; }
+                if (edit.position.has_value()
+                    && transform->getProperty("position") != PropertyValue{*edit.position})
+                {
+                    return true;
+                }
+                if (edit.rotation.has_value()
+                    && transform->getProperty("rotation") != PropertyValue{*edit.rotation})
+                {
+                    return true;
+                }
+                return edit.scale.has_value()
+                    && transform->getProperty("scale") != PropertyValue{*edit.scale};
+            };
+            if (std::none_of(edits.begin(), edits.end(), changesSomething)) { return false; }
+
+            context.execute(
+                std::make_unique<TransformEntitiesCommand>(
+                    context.getScene(), std::move(edits),
+                    "transform-many:" + std::to_string(state.multiDragId)),
+                state.dragHasEdited ? MergePolicy::MergeWithPrevious : MergePolicy::NewEntry);
+            state.dragHasEdited = true;
+            return true;
+        }
+
+        /** @brief Applies one frame of whichever 3D drag is in flight. @return True when moved. */
+        bool updateGizmoDrag3D(StudioContext& context, const StudioCamera3D& camera,
+                               StudioViewportState& state, const StudioVector2& pointer,
+                               const GizmoSnap& snap)
+        {
+            if (state.multi3D.isActive())
+            {
+                return updateMultiDrag3D(context, camera, state, pointer, snap);
+            }
+
+            const SceneDocument& scene = context.getScene();
+
+            if (state.translate3D.isActive())
+            {
+                if (const auto position = state.translate3D.update(scene, camera, pointer, snap))
+                {
+                    commitDragEdit(context, state, state.translate3D.getEntityId(), "position",
+                                   PropertyValue{*position});
+                    return true;
+                }
+                return false;
+            }
+            if (state.rotate3D.isActive())
+            {
+                if (const auto rotation = state.rotate3D.update(scene, camera, pointer, snap))
+                {
+                    commitDragEdit(context, state, state.rotate3D.getEntityId(), "rotation",
+                                   PropertyValue{*rotation});
+                    return true;
+                }
+                return false;
+            }
+            if (state.scale3D.isActive())
+            {
+                auto layout = computeScaleGizmo3DLayout(scene, camera, state.scale3D.getEntityId());
+                if (!layout) { return false; }
+                if (const auto scale = state.scale3D.update(*layout, pointer, snap))
+                {
+                    commitDragEdit(context, state, state.scale3D.getEntityId(), "scale",
+                                   PropertyValue{*scale});
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     std::string_view studioViewportToolName(StudioViewportTool tool)
@@ -733,6 +943,31 @@ namespace CNA::Studio
                 && (router.mousePressed(UiMouseButton::Middle)
                     || router.mousePressed(UiMouseButton::Right)));
 
+        // --- Manipulate (STUDIO-07050) ----------------------------------------------------------
+        //
+        // Checked first and, while active, exclusively: a manipulator drag owns the pointer for
+        // its whole gesture, the same rule the 2D viewport applies to its own gizmo. Left alone,
+        // Studio's own navigation scheme puts an orbit on the plain left button -- see
+        // `studioViewportGestureFor` below -- so a gizmo handle under the cursor has to be tried
+        // *before* a press is allowed to arm one, or an object could never be dragged without
+        // first switching schemes.
+        const GizmoSnap snap3D = snapFor3D(context, chord.control);
+        if (state.dragging3D())
+        {
+            if (!chord.left)
+            {
+                state.endDrag();
+            }
+            else
+            {
+                if (updateGizmoDrag3D(context, camera, state, pointer, snap3D))
+                {
+                    result.transformed = true;
+                }
+                return result;
+            }
+        }
+
         if (state.navigating && !anyButton)
         {
             state.navigating = false;
@@ -744,12 +979,21 @@ namespace CNA::Studio
         }
         else if (!state.navigating && anyButton && pressedHere)
         {
+            // A handle under the cursor takes the press before anything else is allowed to: a
+            // gizmo grab and an orbit are both, in Studio's own scheme, an unmodified left press,
+            // and the grab has to win the race or an object could never be dragged without first
+            // switching schemes.
+            const bool grabbedGizmo =
+                chord.left && state.mode != GizmoMode::None && !context.getSelection().empty()
+                && beginGizmoDrag3D(context, camera, state, context.getSelection(), pointer);
+
             // Resolved once, at the press, and kept for the length of the drag. Asked every frame,
             // a user who released Shift halfway through a pan would find the camera orbiting from
             // wherever the pan had got to -- and the gesture a drag *started* as is the one the
             // user is still making.
-            const StudioViewportGesture gesture =
-                studioViewportGestureFor(state.navigation, chord);
+            const StudioViewportGesture gesture = grabbedGizmo
+                ? StudioViewportGesture::None
+                : studioViewportGestureFor(state.navigation, chord);
             if (gesture != StudioViewportGesture::None)
             {
                 state.navigating = true;
@@ -758,11 +1002,13 @@ namespace CNA::Studio
                 state.navigationX = pointer.x;
                 state.navigationY = pointer.y;
             }
-            else if (chord.left)
+            else if (chord.left && !grabbedGizmo)
             {
                 // Under Maya and Blender an unmodified left drag is a selection rather than a
                 // gesture, and the release below has to report it as one. Tracked through the same
-                // state so a press that wanders off the panel still does not select.
+                // state so a press that wanders off the panel still does not select. Excluded here
+                // as everywhere else in this block: a press the gizmo already took must not also
+                // arm a pending click-to-select.
                 state.navigating = true;
                 state.navigationGesture = StudioViewportGesture::None;
                 state.navigationMoved = false;

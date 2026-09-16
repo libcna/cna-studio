@@ -508,3 +508,313 @@ CNA_STUDIO_TEST(EveryGestureHasAName)
         CNA_STUDIO_EXPECT(!studioViewportGestureName(gesture).empty());
     }
 }
+
+// ------------------------------------------------------------------------------------------------
+// Transform manipulators (STUDIO-07050)
+//
+// `studioViewportPanel3D` picked and did not manipulate: there was no gizmo drawn and none to
+// drag, so an entity could not be moved, turned or scaled in the 3D view at all. The maths was
+// never the gap -- `TransformGizmos3D.hpp` has carried it, unit-tested, since before this panel
+// existed -- what was missing was a caller.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AGizmoGrabTakesPriorityOverTheOrbitStudiosOwnSchemePutsOnThePlainLeftButton)
+{
+    // The subtle half of the wiring. Under Studio's own scheme an unmodified left press orbits
+    // the camera -- so a gizmo handle under the cursor has to be tried *before* a press is
+    // allowed to arm that orbit, or an object could never be dragged without switching schemes
+    // first. If this regressed, the drag below would turn into an orbit and the entity would not
+    // move at all.
+    Fixture fixture;
+    fixture.context.select(fixture.nearEntity);
+    fixture.state.mode = GizmoMode::Translate;
+
+    const auto layout = computeTranslateGizmo3DLayout(fixture.context.getScene(), fixture.camera,
+                                                       fixture.nearEntity);
+    CNA_STUDIO_EXPECT(layout.has_value());
+    CNA_STUDIO_EXPECT(layout->armVisible[0]);
+
+    const StudioVector2 grab = layout->screenTips[0];
+    const StudioVector3 before = fixture.context.getScene().findEntity(fixture.nearEntity)
+                                     ->findComponent("CNA.Transform")
+                                     ->getProperty("position")
+                                     .get<StudioVector3>();
+    const StudioCamera3D cameraBefore = fixture.camera;
+
+    fixture.dragTo(grab.x, grab.y, grab.x + 40.0f, grab.y);
+
+    const StudioVector3 after = fixture.context.getScene().findEntity(fixture.nearEntity)
+                                    ->findComponent("CNA.Transform")
+                                    ->getProperty("position")
+                                    .get<StudioVector3>();
+    CNA_STUDIO_EXPECT(after != before);
+
+    // And the camera did not move at all -- an orbit that grabbed the drag instead would have
+    // turned it, and the entity would still be exactly where it started.
+    CNA_STUDIO_EXPECT(cameraBefore.getYaw() == fixture.camera.getYaw());
+    CNA_STUDIO_EXPECT(cameraBefore.getPitch() == fixture.camera.getPitch());
+}
+
+CNA_STUDIO_TEST(ATranslateDragMovesTheEntityAlongTheGrabbedAxisAsOneUndoEntry)
+{
+    Fixture fixture;
+    fixture.context.select(fixture.nearEntity);
+    fixture.state.mode = GizmoMode::Translate;
+
+    const auto layout = computeTranslateGizmo3DLayout(fixture.context.getScene(), fixture.camera,
+                                                       fixture.nearEntity);
+    CNA_STUDIO_EXPECT(layout.has_value());
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+    const StudioVector2 grab = layout->screenTips[0];
+    fixture.dragTo(grab.x, grab.y, grab.x + 40.0f, grab.y);
+
+    const StudioComponent* transform =
+        fixture.context.getScene().findEntity(fixture.nearEntity)->findComponent("CNA.Transform");
+    const StudioVector3 moved = transform->getProperty("position").get<StudioVector3>();
+    CNA_STUDIO_EXPECT(moved.x != 0.0f);
+    CNA_STUDIO_EXPECT_EQ(moved.y, 0.0f);
+    CNA_STUDIO_EXPECT_EQ(moved.z, 0.0f);
+
+    // One entry for the whole drag, not one per frame -- `dragTo` moves the pointer in a single
+    // jump and releases, but the mechanism under test merges every frame of a real drag the same
+    // way, and a merge that failed would still show as more than one entry here.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(
+        fixture.context.getScene().findEntity(fixture.nearEntity)
+            ->findComponent("CNA.Transform")->getProperty("position").get<StudioVector3>().x,
+        0.0f);
+}
+
+CNA_STUDIO_TEST(ARotateDragTurnsTheEntityAboutTheGrabbedRingAsOneUndoEntry)
+{
+    Fixture fixture;
+    fixture.context.select(fixture.nearEntity);
+    fixture.state.mode = GizmoMode::Rotate;
+
+    const auto layout = computeRotateGizmo3DLayout(fixture.context.getScene(), fixture.camera,
+                                                    fixture.nearEntity);
+    CNA_STUDIO_EXPECT(layout.has_value());
+
+    // The Z ring: seen close to face-on from this camera's default orbit, so a drag around its
+    // circumference reads as a rotation rather than being dropped as edge-on.
+    const std::vector<StudioVector2>& ring = layout->rings[2];
+    CNA_STUDIO_EXPECT(!ring.empty());
+    const StudioVector2 grabPoint = ring.front();
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+
+    // A quarter of the way around the same ring, which is sampled at even angle steps -- along
+    // the ring's circumference rather than across it, so the drag reads as a turn rather than
+    // the same angle it started at.
+    const StudioVector2 quarterTurn = ring[ring.size() / 4];
+
+    fixture.dragTo(grabPoint.x, grabPoint.y, quarterTurn.x, quarterTurn.y);
+
+    const StudioComponent* transform =
+        fixture.context.getScene().findEntity(fixture.nearEntity)->findComponent("CNA.Transform");
+    const StudioQuaternion turned = transform->getProperty("rotation").get<StudioQuaternion>();
+    CNA_STUDIO_EXPECT(!(turned == StudioQuaternion{}));
+
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT(
+        fixture.context.getScene().findEntity(fixture.nearEntity)
+            ->findComponent("CNA.Transform")->getProperty("rotation").get<StudioQuaternion>()
+        == StudioQuaternion{});
+}
+
+CNA_STUDIO_TEST(AScaleDragResizesTheEntityAsOneUndoEntry)
+{
+    Fixture fixture;
+    fixture.context.select(fixture.nearEntity);
+    fixture.state.mode = GizmoMode::Scale;
+
+    const auto layout = computeScaleGizmo3DLayout(fixture.context.getScene(), fixture.camera,
+                                                   fixture.nearEntity);
+    CNA_STUDIO_EXPECT(layout.has_value());
+    CNA_STUDIO_EXPECT(layout->armVisible[0]);
+
+    const StudioVector2 grab = layout->screenHandles[0];
+    const StudioVector2 origin = layout->screenOrigin;
+    // Twice as far from the origin along the same direction, which is a factor of two however
+    // far the handle itself was grabbed at -- scale is a ratio of screen distances.
+    const StudioVector2 out{origin.x + (grab.x - origin.x) * 2.0f,
+                            origin.y + (grab.y - origin.y) * 2.0f};
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+    fixture.dragTo(grab.x, grab.y, out.x, out.y);
+
+    const StudioComponent* transform =
+        fixture.context.getScene().findEntity(fixture.nearEntity)->findComponent("CNA.Transform");
+    const StudioVector3 scaled = transform->getProperty("scale").get<StudioVector3>();
+    CNA_STUDIO_EXPECT(scaled.x > 1.0f);
+    CNA_STUDIO_EXPECT_EQ(scaled.y, 1.0f);
+    CNA_STUDIO_EXPECT_EQ(scaled.z, 1.0f);
+
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+}
+
+CNA_STUDIO_TEST(ATranslateDragOnAMultiSelectionMovesEveryEntityAsOneUndoEntry)
+{
+    // Over the shared pivot, which is the average of both entities' positions -- at (20, 0, 0)
+    // for Near (0,0,0) and Far (40,0,0) -- rather than over either one's own. Grabbed at the
+    // pivot's own gizmo, which is where the panel draws it for a multi-selection.
+    Fixture fixture;
+    const Uuid farEntity = [&] {
+        for (const StudioEntity& entity : fixture.context.getScene().getEntities())
+        {
+            if (entity.getName() == "Far") { return entity.getId(); }
+        }
+        return Uuid{};
+    }();
+    CNA_STUDIO_EXPECT(farEntity.isValid());
+
+    fixture.context.select(fixture.nearEntity);
+    fixture.context.toggleSelection(farEntity);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{2});
+    fixture.state.mode = GizmoMode::Translate;
+
+    // Framed on the pivot itself, and far back enough that both entities -- 20 world units either
+    // side of it -- land inside the viewport too. The default fixture camera looks at the world
+    // origin from only 20 units out, which puts a pivot at x=20 off the edge of the screen and a
+    // press there would never reach the panel at all.
+    fixture.camera.setPivot(StudioVector3{20.0f, 0.0f, 0.0f});
+    fixture.camera.setDistance(60.0f);
+
+    const StudioVector3 pivot{20.0f, 0.0f, 0.0f};
+    const auto layout = computeTranslateGizmo3DLayout(fixture.context.getScene(), fixture.camera,
+                                                       farEntity, GizmoSpace::World, pivot);
+    CNA_STUDIO_EXPECT(layout.has_value());
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+    const StudioVector2 grab = layout->screenTips[1];  // the Y arm: no risk of picking Near or Far.
+    fixture.dragTo(grab.x, grab.y, grab.x, grab.y + 40.0f);
+
+    const StudioVector3 nearAfter = fixture.context.getScene().findEntity(fixture.nearEntity)
+                                        ->findComponent("CNA.Transform")
+                                        ->getProperty("position")
+                                        .get<StudioVector3>();
+    const StudioVector3 farAfter = fixture.context.getScene().findEntity(farEntity)
+                                       ->findComponent("CNA.Transform")
+                                       ->getProperty("position")
+                                       .get<StudioVector3>();
+
+    // Both moved, and by the same amount: the whole point of a shared pivot is that a group drags
+    // as one arrangement rather than each member solving the cursor against its own gizmo.
+    CNA_STUDIO_EXPECT(nearAfter.y != 0.0f);
+    CNA_STUDIO_EXPECT_EQ(nearAfter.y, farAfter.y);
+    CNA_STUDIO_EXPECT_EQ(nearAfter.x, 0.0f);
+    CNA_STUDIO_EXPECT_EQ(farAfter.x, 40.0f);
+
+    // One entry for both entities, not one each -- undoing a group drag one member at a time
+    // would put the selection through arrangements it was never actually in.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(
+        fixture.context.getScene().findEntity(fixture.nearEntity)
+            ->findComponent("CNA.Transform")->getProperty("position").get<StudioVector3>().y,
+        0.0f);
+}
+
+CNA_STUDIO_TEST(ARotateDragOnAMultiSelectionTurnsEveryEntityAboutTheSharedPivot)
+{
+    // The rotate half of the same mechanism: a group turns as one arrangement, carried around its
+    // shared pivot rather than each member spinning in place where it already stands.
+    Fixture fixture;
+    const Uuid farEntity = [&] {
+        for (const StudioEntity& entity : fixture.context.getScene().getEntities())
+        {
+            if (entity.getName() == "Far") { return entity.getId(); }
+        }
+        return Uuid{};
+    }();
+    CNA_STUDIO_EXPECT(farEntity.isValid());
+
+    fixture.context.select(fixture.nearEntity);
+    fixture.context.toggleSelection(farEntity);
+    fixture.state.mode = GizmoMode::Rotate;
+
+    // Framed on the pivot, for the same reason the multi-select translate test is: the pivot sits
+    // at x=20, off the edge of the default fixture camera's view.
+    fixture.camera.setPivot(StudioVector3{20.0f, 0.0f, 0.0f});
+    fixture.camera.setDistance(60.0f);
+
+    const StudioVector3 pivot{20.0f, 0.0f, 0.0f};
+    const auto layout = computeRotateGizmo3DLayout(fixture.context.getScene(), fixture.camera,
+                                                    farEntity, GizmoSpace::World, pivot);
+    CNA_STUDIO_EXPECT(layout.has_value());
+    const std::vector<StudioVector2>& ring = layout->rings[2];
+    CNA_STUDIO_EXPECT(!ring.empty());
+    const StudioVector2 grabPoint = ring.front();
+    const StudioVector2 quarterTurn = ring[ring.size() / 4];
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+    fixture.dragTo(grabPoint.x, grabPoint.y, quarterTurn.x, quarterTurn.y);
+
+    const StudioComponent* nearTransform =
+        fixture.context.getScene().findEntity(fixture.nearEntity)->findComponent("CNA.Transform");
+    const StudioComponent* farTransform =
+        fixture.context.getScene().findEntity(farEntity)->findComponent("CNA.Transform");
+
+    // Carried around the pivot, not merely turned in place: each entity started 20 world units
+    // from (20,0,0) along X, so a turn about Z displaces both away from where they started.
+    const StudioVector3 nearAfter = nearTransform->getProperty("position").get<StudioVector3>();
+    const StudioVector3 farAfter = farTransform->getProperty("position").get<StudioVector3>();
+    CNA_STUDIO_EXPECT(nearAfter.x != 0.0f || nearAfter.y != 0.0f);
+    CNA_STUDIO_EXPECT(farAfter.x != 40.0f || farAfter.y != 0.0f);
+
+    // And turned by the same angle -- one gesture, not each member solving the cursor for itself.
+    const StudioQuaternion nearRotation = nearTransform->getProperty("rotation").get<StudioQuaternion>();
+    const StudioQuaternion farRotation = farTransform->getProperty("rotation").get<StudioQuaternion>();
+    CNA_STUDIO_EXPECT(!(nearRotation == StudioQuaternion{}));
+    CNA_STUDIO_EXPECT(nearRotation == farRotation);
+
+    // One entry for the whole turn, not one per member.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(
+        fixture.context.getScene().findEntity(fixture.nearEntity)
+            ->findComponent("CNA.Transform")->getProperty("position").get<StudioVector3>().x,
+        0.0f);
+}
+
+CNA_STUDIO_TEST(TheManipulatorTheToolbarNamesIsTheOneThatDragsRatherThanOrbits)
+{
+    // The last clause of the acceptance: with the mode set to Rotate, a press on the *translate*
+    // arm's position finds nothing to grab -- because there is no translate gizmo drawn while
+    // Rotate is armed -- and falls through to an ordinary orbit instead.
+    Fixture fixture;
+    fixture.context.select(fixture.nearEntity);
+    fixture.state.mode = GizmoMode::Rotate;
+
+    const auto translateLayout = computeTranslateGizmo3DLayout(
+        fixture.context.getScene(), fixture.camera, fixture.nearEntity);
+    CNA_STUDIO_EXPECT(translateLayout.has_value());
+
+    // Midway along where the translate arm would run, not at its very tip -- the rotate rings
+    // share the translate arms' length by construction, so the X arm's tip lands exactly on the
+    // Y and Z rings' own zero-angle samples, and a press there would find a rotate handle to grab
+    // for a genuine reason rather than proving the point this test is after.
+    const StudioVector2 wouldBeTranslateArm{
+        (translateLayout->screenOrigin.x + translateLayout->screenTips[0].x) * 0.5f,
+        (translateLayout->screenOrigin.y + translateLayout->screenTips[0].y) * 0.5f};
+
+    const StudioVector3 before = fixture.context.getScene().findEntity(fixture.nearEntity)
+                                     ->findComponent("CNA.Transform")
+                                     ->getProperty("position")
+                                     .get<StudioVector3>();
+    const float yawBefore = fixture.camera.getYaw();
+
+    fixture.dragTo(wouldBeTranslateArm.x, wouldBeTranslateArm.y,
+                   wouldBeTranslateArm.x + 40.0f, wouldBeTranslateArm.y);
+
+    const StudioVector3 after = fixture.context.getScene().findEntity(fixture.nearEntity)
+                                    ->findComponent("CNA.Transform")
+                                    ->getProperty("position")
+                                    .get<StudioVector3>();
+    CNA_STUDIO_EXPECT(after == before);
+    CNA_STUDIO_EXPECT(fixture.camera.getYaw() != yawBefore);
+}

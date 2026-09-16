@@ -836,10 +836,10 @@ namespace
             {"TheDigitsSelectTheViewAndKeepWorkingWhileFlying", "tests/StudioNativeParityTests.cpp", "TheDigitsSelectTheViewRatherThanOnlyTheMenu", nullptr, false},
             {"FramingAndPickingFollowWhicheverCameraIsOnScreen", "tests/StudioViewport3DTests.cpp", "TheFirstSwitchToThreeDimensionsFramesTheSceneAndLaterOnesDoNot", nullptr, false},
             {"AProjectsOwnSnapStepWinsOverTheVisibleGrid", "tests/StudioNativeParityTests.cpp", "AProjectsOwnSnapStepWinsOverTheVisibleGrid", nullptr, false},
-            {"AThreeDimensionalGizmoDragMovesTheEntityAndUndoesAsOneEntry", nullptr, nullptr, "STUDIO-07050", false},
-            {"AThreeDimensionalTurnCarriesAWholeSelectionAboutItsPivot", nullptr, nullptr, "STUDIO-07050", false},
-            {"AThreeDimensionalScaleDragResizesTheEntityAndUndoesAsOneEntry", nullptr, nullptr, "STUDIO-07050", false},
-            {"AThreeDimensionalDragMovesAWholeSelectionAsOneUndoEntry", nullptr, nullptr, "STUDIO-07050", false},
+            {"AThreeDimensionalGizmoDragMovesTheEntityAndUndoesAsOneEntry", "tests/StudioViewport3DTests.cpp", "ATranslateDragMovesTheEntityAlongTheGrabbedAxisAsOneUndoEntry", nullptr, false},
+            {"AThreeDimensionalTurnCarriesAWholeSelectionAboutItsPivot", "tests/StudioViewport3DTests.cpp", "ARotateDragOnAMultiSelectionTurnsEveryEntityAboutTheSharedPivot", nullptr, false},
+            {"AThreeDimensionalScaleDragResizesTheEntityAndUndoesAsOneEntry", "tests/StudioViewport3DTests.cpp", "AScaleDragResizesTheEntityAsOneUndoEntry", nullptr, false},
+            {"AThreeDimensionalDragMovesAWholeSelectionAsOneUndoEntry", "tests/StudioViewport3DTests.cpp", "ATranslateDragOnAMultiSelectionMovesEveryEntityAsOneUndoEntry", nullptr, false},
             {"APerPartMaterialRowIsEditedFieldByField", nullptr, nullptr, "STUDIO-07054", false},
 
             // `UiTests.cpp`: the Dear ImGui implementation of `StudioUi`, which is the one
@@ -973,7 +973,7 @@ CNA_STUDIO_TEST(EveryUnansweredPrototypeCaseNamesTheTaskThatWillCoverIt)
 
     // Stated so that closing one is a deliberate edit rather than something nobody notices, the
     // way the Inspector sections' count is. Seventeen when the accounting was taken.
-    CNA_STUDIO_EXPECT_EQ(gaps, std::size_t{15});
+    CNA_STUDIO_EXPECT_EQ(gaps, std::size_t{11});
 
     // And the seven that are genuinely about Dear ImGui: they are the only ones the deletion may
     // simply take with it.

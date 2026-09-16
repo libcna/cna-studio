@@ -967,12 +967,19 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
     # is stored, loaded, given a menu row and read by nothing produces two identical captures while
     # every unit test around it passes -- which is `STUDIO-11015` exactly, three viewport
     # preferences written to disk and read by nobody.
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set(_gridNeedsDisplay OFF)
+    else()
+        set(_gridNeedsDisplay ON)
+    endif()
+
     add_test(NAME CnaStudioGridPlaneChangesTheView
         COMMAND ${CMAKE_COMMAND}
             -DCNA_STUDIO_EXE=$<TARGET_FILE:cna-studio>
             -DCNA_STUDIO_PROJECT=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             -DCNA_STUDIO_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
             -DCNA_STUDIO_SIZE=1280x720
+            -DCNA_STUDIO_NEEDS_DISPLAY=${_gridNeedsDisplay}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GridPlaneTest.cmake)
 
     if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 39 of 46 complete `███████████░`
+**Progress:** 40 of 46 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -44,7 +44,7 @@
 | `STUDIO-07047` | Inventory the prototype's *tests*, and close what deleting them would lose | ✅ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
 | `STUDIO-07048` | `StudioOptions` moves out of the prototype application's header | ✅ | — |
 | `STUDIO-07049` | `--headless` and the 3D smoke flags run the native shell | ⬜ | `STUDIO-07048` |
-| `STUDIO-07050` | Transform manipulators in the native 3D view | ⬜ | `STUDIO-07009` |
+| `STUDIO-07050` | Transform manipulators in the native 3D view | ✅ | `STUDIO-07009` |
 | `STUDIO-07051` | The native shell reloads assets edited outside it | ✅ | `STUDIO-07008` |
 | `STUDIO-07052` | The native shell loads the project's plugins | ✅ | `STUDIO-07001` |
 | `STUDIO-07053` | `--scene` opens a scene on the native shell | ✅ | `STUDIO-07048` |
@@ -128,13 +128,37 @@ which is the same shape as the crash-recovery gap `STUDIO-07020`'s inventory mis
 same reason: they are not panels, menu items, toolbar controls or shortcuts, so no inventory of
 *surfaces* could see them.
 
-**`STUDIO-07050` — Transform manipulators in the native 3D view.** `studioViewportPanel3D` picks
-and it does not manipulate: there is no gizmo drawn and none to drag, so an entity cannot be moved,
-turned or scaled in the 3D view. The prototype does all three, the maths is unit-tested in
-`SceneTests.cpp` (`AThreeDimensionalDragFollowsTheCursorAlongTheGrabbedAxis` and its neighbours),
-and the 2D panel already shows how a panel drives it. **Acceptance.** Translate, rotate and scale in
-the 3D view, each one undo entry, over a multi-selection about its shared pivot, with the same
+**`STUDIO-07050` — Transform manipulators in the native 3D view.** ✅ `studioViewportPanel3D` picked
+and did not manipulate: there was no gizmo drawn and none to drag, so an entity could not be moved,
+turned or scaled in the 3D view. The maths — `TransformGizmos3D.hpp` — was already unit-tested and
+CNA-free; nothing on the native shell called it. **Acceptance.** Translate, rotate and scale in the
+3D view, each one undo entry, over a multi-selection about its shared pivot, with the same
 manipulator the toolbar names.
+
+**A grab has to win a race against Studio's own navigation scheme**, not merely be checked before
+it. Under Studio's own scheme an unmodified left press is Orbit — the same press a gizmo handle
+lives on — so `beginGizmoDrag3D` is now tried first and, only when it finds nothing to grab, does
+`studioViewportGestureFor` get to resolve a gesture at all. Reversing that order does not fail
+loudly: it silently turns every drag into an orbit, which is why `TheManipulatorTheToolbarNamesIsThe
+OneThatDragsRatherThanOrbits` asserts the *other* direction too — with Rotate armed, a press where
+the translate arm would have run finds no translate gizmo to grab, and still falls through to an
+ordinary orbit rather than being swallowed as a missed drag.
+
+**One set of drag objects per axis, not per mode.** `StudioViewportState` gained
+`TranslateGizmo3DDrag`, `RotateGizmo3DDrag`, `ScaleGizmo3DDrag` and a `MultiTransform3D`, mirroring
+the 2D viewport's own fields, and `dragging3D()`/`endDrag()` were extended to cover all three so a
+released button or a panel losing focus always closes whichever one is open. The multi-selection
+half runs *beside* the single-entity drags rather than instead of them: `MultiTransform3D::begin` is
+only called when the selection has more than one entity, and its pivot is the selection's own
+average world position, computed once at the grab rather than re-derived every frame.
+
+**Verified against the coincidence the maths itself predicts.** The rotate ring's radius and the
+translate arm's length are deliberately the same number of screen pixels, so a translate arm's tip
+sits exactly on another axis's rotate ring at that ring's own zero-angle sample — a real overlap a
+user could hit, not a test artifact. `AGizmoGrabTakesPriorityOverTheOrbitStudiosOwnSchemePutsOnThePlain
+LeftButton`'s partner test for the no-gizmo-drawn case grabs a point midway along where an arm would
+run rather than at its tip, so it proves the fall-through this task is actually about instead of
+proving a legitimate ring grab happened to exist there too.
 
 **`STUDIO-07051` — The native shell reloads assets edited outside it.** ✅ `AssetWatcher` was polled
 by `StudioApplication::pollAssets` and by nothing else, so on the default UI a texture edited in

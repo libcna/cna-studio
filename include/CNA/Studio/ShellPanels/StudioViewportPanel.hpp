@@ -27,6 +27,7 @@
 #include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/Scene/Tilemap.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
+#include "CNA/Studio/Scene/TransformGizmos3D.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
 #include "CNA/Studio/UiCore/StudioPreferences.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
@@ -261,6 +262,27 @@ namespace CNA::Studio
         MultiTransformDrag multi;
 
         /**
+         * @brief The same three manipulators, over the 3D view (STUDIO-07050).
+         *
+         * A separate set of drag objects rather than the 2D ones reused: `TranslateGizmo3DDrag`
+         * and its neighbours solve in the world against a camera ray, which is a different problem
+         * from the 2D gizmos' screen-space arithmetic, and sharing one drag object between two
+         * unrelated solvers would make "which math is this frame's `update()` doing" a question
+         * that depends on which view happened to be open last.
+         *
+         * `GizmoMode` and `GizmoSpace` above are shared: which manipulator is armed and which
+         * space it measures in are properties of the *selection*, not of the projection looking
+         * at it, and a mode that reset itself across a view switch would be a tool that forgets
+         * what it was doing every time a user pressed 2 or 3.
+         */
+        TranslateGizmo3DDrag translate3D;
+        RotateGizmo3DDrag rotate3D;
+        ScaleGizmo3DDrag scale3D;
+
+        /** @brief The 3D form of @ref multi, for the same reason. */
+        MultiTransform3D multi3D;
+
+        /**
          * @brief Distinguishes one multi-drag from the next in the undo stack's merge key.
          *
          * Without it, two consecutive group drags would merge into one undo entry — and undoing
@@ -276,19 +298,29 @@ namespace CNA::Studio
          */
         bool dragHasEdited = false;
 
-        /** @brief True while any manipulator is being dragged. */
+        /** @brief True while any 2D manipulator is being dragged. */
         [[nodiscard]] bool dragging() const
         {
             return translate.isActive() || rotate.isActive() || scale.isActive();
         }
 
-        /** @brief Ends whatever drag is in flight. */
+        /** @brief True while any 3D manipulator is being dragged. */
+        [[nodiscard]] bool dragging3D() const
+        {
+            return translate3D.isActive() || rotate3D.isActive() || scale3D.isActive();
+        }
+
+        /** @brief Ends whatever drag is in flight, in either view. */
         void endDrag()
         {
             translate.end();
             rotate.end();
             scale.end();
             multi.end();
+            translate3D.end();
+            rotate3D.end();
+            scale3D.end();
+            multi3D.end();
             dragHasEdited = false;
         }
     };

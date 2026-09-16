@@ -17,7 +17,8 @@
 # and the acceptance condition includes surviving a restart. XDG_CONFIG_HOME points each run at its
 # own directory, so neither can be contaminated by whatever is on the machine running this.
 #
-# Expected variables: CNA_STUDIO_EXE, CNA_STUDIO_PROJECT, CNA_STUDIO_OUT_DIR, CNA_STUDIO_SIZE.
+# Expected variables: CNA_STUDIO_EXE, CNA_STUDIO_PROJECT, CNA_STUDIO_OUT_DIR, CNA_STUDIO_SIZE,
+# CNA_STUDIO_NEEDS_DISPLAY.
 
 set(_sceneShot "${CNA_STUDIO_OUT_DIR}/grid-scene-plane.png")
 set(_groundShot "${CNA_STUDIO_OUT_DIR}/grid-ground-plane.png")
@@ -33,8 +34,18 @@ file(WRITE "${_groundHome}/cna-studio/preferences.json"
      "{\"formatVersion\": 1, \"viewport\": {\"gridOnGroundPlane\": true}}\n")
 
 function(_cna_studio_capture_grid home output)
+    # `dummy` draws nothing and is exactly what a renderer with no shader stage needs to capture a
+    # frame with no real display at all -- but it cannot create a GL context, so a backend that
+    # runs one needs an actual (here, virtual) display instead, and Mesa's software rasterizer in
+    # place of a GPU that a headless runner does not have.
+    if(CNA_STUDIO_NEEDS_DISPLAY)
+        set(_videoEnv "LIBGL_ALWAYS_SOFTWARE=1")
+    else()
+        set(_videoEnv "SDL_VIDEODRIVER=dummy")
+    endif()
+
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E env "XDG_CONFIG_HOME=${home}" "SDL_VIDEODRIVER=dummy"
+        COMMAND "${CMAKE_COMMAND}" -E env "XDG_CONFIG_HOME=${home}" "${_videoEnv}"
                 "${CNA_STUDIO_EXE}" "--ui=studio" "--project=${CNA_STUDIO_PROJECT}"
                 "--shell-invoke=studio.view.3d" "--window-size=${CNA_STUDIO_SIZE}"
                 "--frames=12" "--screenshot=${output}" "--screenshot-min-colors=16"
