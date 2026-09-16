@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 37 of 46 complete `██████████░░`
+**Progress:** 38 of 46 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -48,7 +48,7 @@
 | `STUDIO-07051` | The native shell reloads assets edited outside it | ✅ | `STUDIO-07008` |
 | `STUDIO-07052` | The native shell loads the project's plugins | ✅ | `STUDIO-07001` |
 | `STUDIO-07053` | `--scene` opens a scene on the native shell | ✅ | `STUDIO-07048` |
-| `STUDIO-07054` | Editors for list and structure properties | ⬜ | `STUDIO-07018` |
+| `STUDIO-07054` | Editors for list and structure properties | ✅ | `STUDIO-07018` |
 | `STUDIO-07055` | A numeric property field is dragged as well as typed | ✅ | `STUDIO-07018` |
 | `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ✅ | `STUDIO-07009` |
 | `STUDIO-07057` | The angles a user typed survive being read back | ⬜ | `STUDIO-07018` |
@@ -265,8 +265,36 @@ which scene opened — two copies of the same scene would have passed while prov
 AControlRatherThanASummary` already records those two as the kinds with no editor. What that costs
 is concrete: a sprite animation's frame list and a model renderer's per-part material overrides
 cannot be edited in the native shell at all. The prototype adds, removes and reorders both.
-**Acceptance.** A list element can be added, removed and moved, a structure's fields are edited like
-any other property, and each change is one undo entry.
+**Acceptance.** ✅ A list element can be added, removed and moved, a structure's fields are edited
+like any other property, and each change is one undo entry.
+
+**A pure function for the mutation, a wrapping editor for the drawing.** `studioApplyListEdit`
+decides what Add, Remove, Move Up and Move Down do to a `ListValue` and nothing else -- refusing
+rather than clamping, so a move off either end or a remove past the last element leaves the list
+untouched and returns false, and the caller does not push an undo entry for a change that did not
+happen. `compoundPropertyEditor` is the drawing: a summary row with a disclosure and, for a list,
+an Add button, expanding into one row per element with its own editor and, for a list, its own
+Up/Down/Remove.
+
+**Structures reuse the scalar editors rather than inventing their own.** A field of a `Structure` is
+an ordinary `PropertyValue` under a name, so each one is drawn through `studioPropertyEditor` like
+any top-level property -- a structure that needed a second set of controls for its own fields would
+be the drift `STUDIO-07045` extracted this code to avoid, repeated one level down.
+
+**Retained across frames by the row's own id, not by the value.** A list that stayed open only
+while its instance object was the same one would close itself the moment an edit above it rebuilt
+the component array -- which every edit in this panel does, because every edit goes through the
+history as a whole new `PropertyValue`.
+
+**One property push for the whole list, not one per element.** Add, Remove and the two moves all
+produce the *entire new list* and go through the same `SetPropertyCommand` every scalar edit does,
+with `MergePolicy::NewEntry` -- there is nothing continuous about pressing a button, so nothing here
+merges. Undoing an Add takes back the added element and nothing else, because undoing restores the
+list as it was, not the button that was pressed.
+
+**Asset-importer settings get the same editor through the same seam** `STUDIO-07045` built: one
+function, `compoundPropertyEditor`, called from both the component grid and the importer settings
+grid, so a list-typed importer setting is not a third implementation of the same three buttons.
 
 **`STUDIO-07055` — A numeric property field is dragged as well as typed.** ✅ The prototype's number
 fields scrub: press, move sideways, and the value follows, merging into one undo entry for the whole

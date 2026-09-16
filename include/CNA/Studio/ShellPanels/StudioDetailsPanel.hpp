@@ -44,6 +44,7 @@
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -238,6 +239,46 @@ namespace CNA::Studio
         /** @brief An entity that must not appear in an entity-reference picker -- itself. */
         Uuid excludeEntity;
     };
+
+    /**
+     * @brief One structural change to a list property.
+     *
+     * `STUDIO-07054`. Separated from the drawing because this is where the off-by-ones live: moving
+     * the first element up and removing the last one are the two operations that get written wrong,
+     * and neither is visible in a screenshot — a list that silently refused to move its first
+     * element looks exactly like a list whose first element is already where it should be.
+     */
+    enum class StudioListEdit : std::uint8_t
+    {
+        /** @brief Nothing was asked for. */
+        None,
+        /** @brief Append an element after the last one. */
+        Add,
+        /** @brief Remove the element at the index. */
+        Remove,
+        /** @brief Swap the element with the one before it. */
+        MoveUp,
+        /** @brief Swap the element with the one after it. */
+        MoveDown
+    };
+
+    /**
+     * @brief Applies @p edit to @p list at @p index.
+     *
+     * Refuses rather than clamps. An out-of-range index, a move off either end, or a remove from an
+     * empty list all leave the list alone and return false — because the caller pushes an undo
+     * entry on true, and an entry that changes nothing is one the user presses Ctrl+Z on and
+     * watches do nothing.
+     *
+     * @param list The list, modified in place on success.
+     * @param edit What to do.
+     * @param index Which element, ignored for @ref StudioListEdit::Add.
+     * @param prototype The value a new element starts as. Copied, so an element is added with the
+     *                  kind the list already holds rather than as an empty one nothing can read.
+     * @return Whether the list changed.
+     */
+    [[nodiscard]] bool studioApplyListEdit(PropertyValue::ListValue& list, StudioListEdit edit,
+                                           std::size_t index, const PropertyValue& prototype);
 
     /** @brief What one property row's editor produced. */
     struct StudioPropertyEditResult

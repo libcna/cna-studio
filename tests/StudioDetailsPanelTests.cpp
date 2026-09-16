@@ -34,6 +34,11 @@ using namespace CNA::Studio;
 
 namespace
 {
+    float metricOf(const StudioTheme& theme, StudioMetric metric)
+    {
+        return static_cast<float>(theme.metric(metric));
+    }
+
     UiInputState at(float x, float y, bool leftDown = false)
     {
         UiInputState input;
@@ -375,8 +380,10 @@ CNA_STUDIO_TEST(EveryPropertyKindTheSchemaDeclaresGetsAControlRatherThanASummary
     CNA_STUDIO_EXPECT_EQ(harness.last.componentCount, std::size_t{2});
     CNA_STUDIO_EXPECT_EQ(harness.last.readOnlyProperties, std::size_t{0});
 
-    // And the two kinds that genuinely have no editor yet still say what they hold, rather than
-    // being left out of the panel entirely.
+    // And a list is no longer one of them (STUDIO-07054). It used to fall through to "1 item" and
+    // be counted here; it now gets a row that expands into its elements, so the count stays at
+    // zero. This assertion is kept rather than deleted because it is the one that would notice a
+    // kind quietly *losing* its editor again.
     StudioComponent nested{"Test.Nested"};
     PropertyValue::ListValue list;
     list.items.push_back(PropertyValue{1});
@@ -384,7 +391,7 @@ CNA_STUDIO_TEST(EveryPropertyKindTheSchemaDeclaresGetsAControlRatherThanASummary
     fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
 
     Harness second{fixture.context};
-    CNA_STUDIO_EXPECT_EQ(second.last.readOnlyProperties, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(second.last.readOnlyProperties, std::size_t{0});
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -726,4 +733,213 @@ CNA_STUDIO_TEST(DraggingANumericFieldScrubsTheValueWithoutTypingIntoIt)
     CNA_STUDIO_EXPECT(fixture.context.getHistory().canUndo());
     CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
     CNA_STUDIO_EXPECT_EQ(fixture.position().y, before.y);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Lists and structures (STUDIO-07054)
+//
+// `studioPropertyEditor` draws *a control in a rect*, which is the right shape for every scalar
+// kind and the wrong shape for these two: a list of four frames needs four rows, and a rect cannot
+// grow. What that cost was concrete -- a sprite animation's frame list and a model renderer's
+// per-part material overrides could not be edited in the native shell at all.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AddingToAListAppendsAnElementOfTheKindItAlreadyHolds)
+{
+    // A copy of the last element rather than a default-constructed value. A list holds one kind,
+    // and an element that arrived as `monostate` would be a row with no editor in a list of rows
+    // that have one -- which reads as the list having been broken by pressing Add.
+    PropertyValue::ListValue list;
+    list.items.push_back(PropertyValue{7});
+    list.items.push_back(PropertyValue{9});
+
+    CNA_STUDIO_EXPECT(studioApplyListEdit(list, StudioListEdit::Add, 0, list.items.back()));
+    CNA_STUDIO_EXPECT_EQ(list.items.size(), std::size_t{3});
+    CNA_STUDIO_EXPECT(list.items.back().getType() == PropertyType::Integer);
+    CNA_STUDIO_EXPECT_EQ(list.items.back().get<std::int64_t>(), std::int64_t{9});
+}
+
+CNA_STUDIO_TEST(RemovingTakesTheNamedElementAndNotTheLastOne)
+{
+    // The off-by-one that is invisible in a screenshot: removing the *wrong* element still leaves a
+    // list one shorter, and on a list of identical values it cannot be told from the right one.
+    PropertyValue::ListValue list;
+    for (std::int64_t i = 0; i < 4; ++i) { list.items.push_back(PropertyValue{i}); }
+
+    CNA_STUDIO_EXPECT(studioApplyListEdit(list, StudioListEdit::Remove, 1, PropertyValue{}));
+    CNA_STUDIO_EXPECT_EQ(list.items.size(), std::size_t{3});
+    CNA_STUDIO_EXPECT_EQ(list.items[0].get<std::int64_t>(), std::int64_t{0});
+    CNA_STUDIO_EXPECT_EQ(list.items[1].get<std::int64_t>(), std::int64_t{2});
+    CNA_STUDIO_EXPECT_EQ(list.items[2].get<std::int64_t>(), std::int64_t{3});
+
+    // Past the end, and on an empty list: refused rather than clamped. The caller pushes an undo
+    // entry on true, and an entry that changes nothing is one a user presses Ctrl+Z on and watches
+    // do nothing.
+    CNA_STUDIO_EXPECT(!studioApplyListEdit(list, StudioListEdit::Remove, 3, PropertyValue{}));
+    PropertyValue::ListValue empty;
+    CNA_STUDIO_EXPECT(!studioApplyListEdit(empty, StudioListEdit::Remove, 0, PropertyValue{}));
+}
+
+CNA_STUDIO_TEST(MovingStopsAtEitherEndRatherThanWrapping)
+{
+    // Wrapping is never what somebody pressing Up at the top meant, and it is silent when it
+    // happens -- the element they were looking at is suddenly at the other end of the list.
+    PropertyValue::ListValue list;
+    for (std::int64_t i = 0; i < 3; ++i) { list.items.push_back(PropertyValue{i}); }
+
+    CNA_STUDIO_EXPECT(!studioApplyListEdit(list, StudioListEdit::MoveUp, 0, PropertyValue{}));
+    CNA_STUDIO_EXPECT_EQ(list.items[0].get<std::int64_t>(), std::int64_t{0});
+
+    CNA_STUDIO_EXPECT(!studioApplyListEdit(list, StudioListEdit::MoveDown, 2, PropertyValue{}));
+    CNA_STUDIO_EXPECT_EQ(list.items[2].get<std::int64_t>(), std::int64_t{2});
+
+    // And in the middle it swaps with its neighbour, both ways, returning to where it started.
+    CNA_STUDIO_EXPECT(studioApplyListEdit(list, StudioListEdit::MoveUp, 1, PropertyValue{}));
+    CNA_STUDIO_EXPECT_EQ(list.items[0].get<std::int64_t>(), std::int64_t{1});
+    CNA_STUDIO_EXPECT_EQ(list.items[1].get<std::int64_t>(), std::int64_t{0});
+
+    CNA_STUDIO_EXPECT(studioApplyListEdit(list, StudioListEdit::MoveDown, 0, PropertyValue{}));
+    CNA_STUDIO_EXPECT_EQ(list.items[0].get<std::int64_t>(), std::int64_t{0});
+    CNA_STUDIO_EXPECT_EQ(list.items[1].get<std::int64_t>(), std::int64_t{1});
+}
+
+CNA_STUDIO_TEST(AListPropertyGetsARowThatExpandsIntoItsElements)
+{
+    // The panel-level half. A list used to be a summary -- "4 items" -- and counting it as a
+    // read-only kind was the honest way to say so. It now claims a row per element, which is the
+    // only shape that can hold an editor for each of them.
+    Fixture fixture;
+    StudioComponent nested{"Test.Nested"};
+    PropertyValue::ListValue list;
+    list.items.push_back(PropertyValue{1});
+    list.items.push_back(PropertyValue{2});
+    nested.setProperty("items", PropertyValue{std::move(list)});
+    fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
+
+    Harness harness{fixture.context};
+
+    // Not counted as a kind without an editor any more, which is the assertion that would notice
+    // the editor being lost again.
+    CNA_STUDIO_EXPECT_EQ(harness.last.readOnlyProperties, std::size_t{0});
+
+    const std::size_t collapsed = harness.last.rowsDrawn;
+
+    // The disclosure is the first control in the row, at the left of the control column.
+    bool expandedIt = false;
+    for (float y = harness.bounds.top() + 20.0f;
+         y < harness.bounds.top() + 260.0f && !expandedIt; y += 6.0f)
+    {
+        const float columnLeft = harness.bounds.left() + harness.bounds.width * 0.38f;
+        harness.click(columnLeft + 16.0f, y);
+        expandedIt = harness.last.rowsDrawn > collapsed;
+    }
+
+    CNA_STUDIO_EXPECT(expandedIt);
+    // Two elements, so at least two rows more than the collapsed shape.
+    CNA_STUDIO_EXPECT(harness.last.rowsDrawn >= collapsed + 2);
+    CNA_STUDIO_EXPECT_EQ(harness.shell->frame().phaseViolations(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(AStructurePropertyGetsARowPerField)
+{
+    // A structure's fields are name/value pairs, each of which is an ordinary property -- so each
+    // gets the editor its own kind already has, rather than a second set written for structures.
+    Fixture fixture;
+    StudioComponent nested{"Test.Struct"};
+    PropertyValue::StructureValue structure;
+    structure.set("width", PropertyValue{4});
+    structure.set("label", PropertyValue{std::string{"left"}});
+    nested.setProperty("layout", PropertyValue{std::move(structure)});
+    fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
+
+    Harness harness{fixture.context};
+    CNA_STUDIO_EXPECT_EQ(harness.last.readOnlyProperties, std::size_t{0});
+
+    const std::size_t collapsed = harness.last.rowsDrawn;
+
+    bool expandedIt = false;
+    for (float y = harness.bounds.top() + 20.0f;
+         y < harness.bounds.top() + 260.0f && !expandedIt; y += 6.0f)
+    {
+        const float columnLeft = harness.bounds.left() + harness.bounds.width * 0.38f;
+        harness.click(columnLeft + 16.0f, y);
+        expandedIt = harness.last.rowsDrawn > collapsed;
+    }
+
+    CNA_STUDIO_EXPECT(expandedIt);
+    CNA_STUDIO_EXPECT(harness.last.rowsDrawn >= collapsed + 2);
+    CNA_STUDIO_EXPECT_EQ(harness.shell->frame().phaseViolations(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(RemovingAListElementIsOneUndoEntryThatPutsItBack)
+{
+    // Each change is one undo entry, which is the last clause of the acceptance and the one a
+    // user meets. A list edit rewrites the *whole* property -- the list is the value -- so the
+    // entry has to carry the list as it was rather than the element that went.
+    //
+    // A dedicated entity with nothing but the list on it, rather than the shared `Fixture`: the
+    // shared one also carries a Transform, and Transform's own three rows plus Name and Enabled
+    // put enough buttons above this property that a pixel search for one of *this* row's three
+    // (up, down, remove) risks landing on one of theirs on the way down. Fewer rows above means
+    // fewer wrong buttons to walk past.
+    StudioContext context;
+    StudioEntity subject{Uuid::generate(), "Widget"};
+    PropertyValue::ListValue list;
+    list.items.push_back(PropertyValue{1});
+    list.items.push_back(PropertyValue{2});
+    StudioComponent nested{"Test.Nested"};
+    nested.setProperty("items", PropertyValue{std::move(list)});
+    subject.getComponents().push_back(std::move(nested));
+    const Uuid entity = subject.getId();
+    context.getScene().addEntity(std::move(subject));
+    context.select(entity);
+
+    const auto component = [&]() -> const StudioComponent* {
+        const StudioEntity* found = context.getScene().findEntity(entity);
+        return found == nullptr ? nullptr : found->findComponent("Test.Nested");
+    };
+    const auto itemCount = [&]() -> std::size_t {
+        const StudioComponent* found = component();
+        return found == nullptr
+            ? std::size_t{0}
+            : found->getProperty("items").get<PropertyValue::ListValue>().items.size();
+    };
+    CNA_STUDIO_EXPECT_EQ(itemCount(), std::size_t{2});
+
+    Harness harness{context};
+    const std::size_t collapsed = harness.last.rowsDrawn;
+
+    // Expand, found the same way `AListPropertyGetsARowThatExpandsIntoItsElements` finds it.
+    for (float y = harness.bounds.top() + 8.0f;
+         y < harness.bounds.top() + 200.0f && harness.last.rowsDrawn == collapsed; y += 4.0f)
+    {
+        harness.click(harness.bounds.left() + harness.bounds.width * 0.38f + 16.0f, y);
+    }
+    CNA_STUDIO_EXPECT_EQ(harness.last.rowsDrawn, collapsed + 2);
+
+    // Captured only now: the sweep above may have clicked other rows on its way to the
+    // disclosure toggle -- an "Enabled" checkbox above it, say -- and each of those is a real
+    // push this test has no interest in. The one edit under test is the one after expansion.
+    const std::size_t before = context.getHistory().getCount();
+
+
+    // The two new rows are the last two the panel drew: with nothing else on this entity, the
+    // list's elements are the only rows an expand can add, and they are contiguous with the header
+    // and summary above them. `RowHeight` plus the spacing `nextRow` adds after each row is what
+    // one step down the panel costs.
+    const float rowStep =
+        metricOf(harness.shell->theme(), StudioMetric::RowHeight)
+        + metricOf(harness.shell->theme(), StudioMetric::SpacingXSmall);
+    const float removeX = harness.bounds.right()
+        - metricOf(harness.shell->theme(), StudioMetric::ControlHeight) * 0.5f;
+    const float element0Y =
+        harness.bounds.top() + (static_cast<float>(collapsed) + 0.5f) * rowStep;
+
+    harness.click(removeX, element0Y);
+
+    CNA_STUDIO_EXPECT_EQ(itemCount(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(context.getHistory().getCount(), before + 1);
+
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(itemCount(), std::size_t{2});
 }

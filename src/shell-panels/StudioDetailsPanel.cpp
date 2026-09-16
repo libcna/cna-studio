@@ -1109,6 +1109,271 @@ namespace CNA::Studio
         }
     }
 
+namespace
+{
+    /** @brief What an expanded compound row produced. */
+    struct CompoundEditResult
+    {
+        std::optional<PropertyValue> edited;
+        std::size_t rows = 0;
+    };
+
+    /**
+     * @brief Draws a list or a structure as a summary row that expands into one row per element.
+     *
+     * `STUDIO-07054`. `studioPropertyEditor` draws *a control in a rect*, which is the right shape
+     * for every scalar kind and the wrong shape for these two: a list of four frames needs four
+     * rows, and a rect cannot grow. So the caller's row allocator is handed in, and this claims as
+     * many rows as it needs.
+     *
+     * The expansion is retained state keyed on the row's id, so a list stays open across the frames
+     * in which somebody edits it -- a section that collapsed after every keystroke would make a
+     * four-element list four separate visits.
+     *
+     * @param frame The frame.
+     * @param summary The summary row's control rect: the disclosure, the count and Add.
+     * @param nextRow Allocates another full-width row, and is what the elements are drawn in.
+     * @param value The list or structure.
+     * @param editing The document, for the reference pickers inside the elements.
+     * @return The whole new value when anything changed, and how many extra rows were claimed.
+     */
+    CompoundEditResult compoundPropertyEditor(StudioFrame& frame, const UiRect& summary,
+                                              const std::function<UiRect()>& nextRow,
+                                              const PropertyValue& value,
+                                              const StudioPropertyEditContext& editing)
+    {
+        CompoundEditResult result;
+        const StudioTheme& theme = frame.theme();
+        const float spacing = metricOf(theme, StudioMetric::SpacingSmall);
+        const float buttonWidth = metricOf(theme, StudioMetric::ControlHeight);
+
+        const bool isList = value.getType() == PropertyType::List;
+        const PropertyValue::ListValue list =
+            isList ? value.get<PropertyValue::ListValue>() : PropertyValue::ListValue{};
+        const PropertyValue::StructureValue structure =
+            isList ? PropertyValue::StructureValue{} : value.get<PropertyValue::StructureValue>();
+
+        const std::size_t count = isList ? list.items.size() : structure.fields.size();
+
+        WidgetState& state = frame.state().get(frame.ids().make("compound"));
+
+        UiRect head = summary;
+
+        // The disclosure, then the count, then Add. Add is on the *summary* rather than under the
+        // last element, because a list with nothing in it has no last element -- and an empty list
+        // that cannot be added to is the state a user meets first.
+        StudioButtonOptions disclosure;
+        disclosure.icon = state.expanded ? StudioIcon::ChevronDown : StudioIcon::ChevronRight;
+        disclosure.iconOnly = true;
+        disclosure.kind = StudioButtonKind::Ghost;
+        disclosure.focusable = false;
+        disclosure.tooltip = state.expanded ? "Collapse" : "Expand";
+
+        const UiRect toggle = head.splitLeft(std::min(buttonWidth, head.width));
+        if (studioButton(frame, frame.ids().make("expand"), toggle, "", disclosure).activated)
+        {
+            state.expanded = !state.expanded;
+        }
+        head.splitLeft(std::min(spacing, head.width));
+
+        StudioListEdit pending = StudioListEdit::None;
+        std::size_t pendingIndex = 0;
+
+        if (isList)
+        {
+            StudioButtonOptions add;
+            add.icon = StudioIcon::Add;
+            add.iconOnly = true;
+            add.kind = StudioButtonKind::Ghost;
+            add.tooltip = "Add an element";
+            const UiRect addBox =
+                head.splitRight(std::min(buttonWidth, head.width));
+            if (studioButton(frame, frame.ids().make("add"), addBox, "", add).activated)
+            {
+                pending = StudioListEdit::Add;
+            }
+            head.splitRight(std::min(spacing, head.width));
+        }
+
+        if (frame.isDrawPass())
+        {
+            const std::string text = isList
+                ? (count == 1 ? std::string{"1 item"} : std::to_string(count) + " items")
+                : (count == 1 ? std::string{"1 field"} : std::to_string(count) + " fields");
+            studioDrawText(frame, head,
+                           studioTruncateText(frame, theme.font(StudioFontRole::BodySmall), text,
+                                              head.width),
+                           StudioFontRole::BodySmall,
+                           theme.color(StudioColorRole::TextSecondary));
+        }
+
+        if (!state.expanded)
+        {
+            // Add still works while collapsed, because the button is on the summary. The list
+            // opens itself so the new element is visible -- an Add whose result is hidden is one
+            // the user presses twice.
+            if (pending == StudioListEdit::Add)
+            {
+                state.expanded = true;
+                PropertyValue::ListValue edited = list;
+                const PropertyValue prototype =
+                    edited.items.empty() ? PropertyValue{} : edited.items.back();
+                if (studioApplyListEdit(edited, pending, 0, prototype))
+                {
+                    result.edited = PropertyValue{std::move(edited)};
+                }
+            }
+            return result;
+        }
+
+        // One row per element, indented past the label column so the nesting reads.
+        std::optional<PropertyValue> elementEdit;
+        std::size_t elementIndex = 0;
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            UiRect row = nextRow();
+            ++result.rows;
+
+            row.splitLeft(std::min(buttonWidth, row.width));
+            PropertyRow parts = splitRow(theme, row);
+
+            if (frame.isDrawPass())
+            {
+                const std::string name = isList
+                    ? "[" + std::to_string(i) + "]"
+                    : structure.fields[i].first;
+                studioDrawText(frame, parts.label,
+                               studioTruncateText(frame, theme.font(StudioFontRole::Body), name,
+                                                  parts.label.width),
+                               StudioFontRole::Body,
+                               theme.color(StudioColorRole::TextSecondary));
+            }
+
+            if (isList)
+            {
+                // Up, down and remove, at the right of the row. Three buttons rather than a
+                // context menu: a list is rearranged by eye and a menu per element would make
+                // moving three elements nine interactions.
+                const auto button = [&](const char* id, StudioIcon icon, const char* tip,
+                                        bool enabled, StudioListEdit action) {
+                    StudioButtonOptions options;
+                    options.icon = icon;
+                    options.iconOnly = true;
+                    options.kind = StudioButtonKind::Ghost;
+                    options.tooltip = tip;
+                    options.enabled = enabled;
+                    const UiRect box = parts.control.splitRight(
+                        std::min(buttonWidth, parts.control.width));
+                    if (studioButton(frame, frame.ids().make(id), box, "", options).activated)
+                    {
+                        pending = action;
+                        pendingIndex = i;
+                    }
+                    parts.control.splitRight(std::min(spacing * 0.5f, parts.control.width));
+                };
+
+                frame.ids().push("element");
+                frame.ids().push(std::to_string(i));
+                button("remove", StudioIcon::Delete, "Remove this element", true,
+                       StudioListEdit::Remove);
+                button("down", StudioIcon::ChevronDown, "Move down", i + 1 < count,
+                       StudioListEdit::MoveDown);
+                button("up", StudioIcon::ChevronRight, "Move up", i > 0, StudioListEdit::MoveUp);
+                frame.ids().pop();
+                frame.ids().pop();
+            }
+
+            frame.ids().push(isList ? ("item" + std::to_string(i)) : structure.fields[i].first);
+            const StudioPropertyEditResult edited = studioPropertyEditor(
+                frame, parts.control,
+                isList ? list.items[i] : structure.fields[i].second, {}, editing);
+            frame.ids().pop();
+
+            // Collected rather than applied here, because applying would rewrite the very vectors
+            // this loop is reading -- the same reason the prototype's hierarchy defers a reparent
+            // until after its tree is drawn.
+            if (edited.edited.has_value() && !elementEdit.has_value())
+            {
+                elementEdit = edited.edited;
+                elementIndex = i;
+            }
+        }
+
+        if (pending != StudioListEdit::None && isList)
+        {
+            PropertyValue::ListValue edited = list;
+            const PropertyValue prototype =
+                edited.items.empty() ? PropertyValue{} : edited.items.back();
+            if (studioApplyListEdit(edited, pending, pendingIndex, prototype))
+            {
+                result.edited = PropertyValue{std::move(edited)};
+            }
+            return result;
+        }
+
+        if (elementEdit.has_value())
+        {
+            if (isList)
+            {
+                PropertyValue::ListValue edited = list;
+                if (elementIndex < edited.items.size())
+                {
+                    edited.items[elementIndex] = *elementEdit;
+                    result.edited = PropertyValue{std::move(edited)};
+                }
+            }
+            else
+            {
+                PropertyValue::StructureValue edited = structure;
+                if (elementIndex < edited.fields.size())
+                {
+                    edited.fields[elementIndex].second = *elementEdit;
+                    result.edited = PropertyValue{std::move(edited)};
+                }
+            }
+        }
+
+        return result;
+    }
+}
+
+    bool studioApplyListEdit(PropertyValue::ListValue& list, StudioListEdit edit,
+                             std::size_t index, const PropertyValue& prototype)
+    {
+        switch (edit)
+        {
+            case StudioListEdit::None:
+                return false;
+
+            case StudioListEdit::Add:
+                // A copy of the prototype rather than a default-constructed value. A list holds one
+                // kind, and an element that arrived as `monostate` would be a row with no editor in
+                // a list of rows that have one -- which reads as the list having been corrupted by
+                // pressing Add.
+                list.items.push_back(prototype);
+                return true;
+
+            case StudioListEdit::Remove:
+                if (index >= list.items.size()) { return false; }
+                list.items.erase(list.items.begin() + static_cast<std::ptrdiff_t>(index));
+                return true;
+
+            case StudioListEdit::MoveUp:
+                // Refused at the top rather than wrapping to the bottom. Wrapping is never what
+                // somebody pressing Up meant, and it is silent when it happens.
+                if (index == 0 || index >= list.items.size()) { return false; }
+                std::swap(list.items[index - 1], list.items[index]);
+                return true;
+
+            case StudioListEdit::MoveDown:
+                if (index + 1 >= list.items.size()) { return false; }
+                std::swap(list.items[index], list.items[index + 1]);
+                return true;
+        }
+        return false;
+    }
+
     StudioPropertyEditResult studioPropertyEditor(StudioFrame& frame, UiRect control,
                                                   const PropertyValue& value,
                                                   const std::vector<std::string>& enumOptions,
@@ -2031,6 +2296,18 @@ namespace CNA::Studio
                 edit.readOnlyKind = true;
                 label(parts.control, describeValue(value), StudioColorRole::TextDisabled);
             }
+            else if (value.getType() == PropertyType::List
+                     || value.getType() == PropertyType::Structure)
+            {
+                // The same expanding editor the component grid uses (STUDIO-07054), through the
+                // same row allocator. An importer setting that is a list is a list, and giving it
+                // a second editor here would be the drift `STUDIO-07045` extracted this code to
+                // avoid.
+                const StudioPropertyEditContext editing{&context, Uuid{}};
+                const CompoundEditResult compound =
+                    compoundPropertyEditor(frame, parts.control, nextRow, value, editing);
+                edit.edited = compound.edited;
+            }
             else
             {
                 const StudioPropertyEditContext editing{&context, Uuid{}};
@@ -2454,8 +2731,22 @@ namespace CNA::Studio
                 frame.ids().push(property.name);
 
                 const StudioPropertyEditContext editing{&context, entityId};
-                const StudioPropertyEditResult editResult = studioPropertyEditor(
-                    frame, parts.control, value, property.enumOptions, editing);
+
+                // Lists and structures claim rows of their own (STUDIO-07054). Everything else is
+                // a control in the one rect the row already gave it.
+                StudioPropertyEditResult editResult;
+                if (value.getType() == PropertyType::List
+                    || value.getType() == PropertyType::Structure)
+                {
+                    const CompoundEditResult compound =
+                        compoundPropertyEditor(frame, parts.control, nextRow, value, editing);
+                    editResult.edited = compound.edited;
+                }
+                else
+                {
+                    editResult = studioPropertyEditor(frame, parts.control, value,
+                                                      property.enumOptions, editing);
+                }
                 if (editResult.readOnlyKind) { ++result.readOnlyProperties; }
                 const std::optional<PropertyValue>& edited = editResult.edited;
                 frame.ids().pop();
