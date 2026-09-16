@@ -17,6 +17,7 @@
  * complaining.
  */
 
+#include "SourceScan.hpp"
 #include "TestHarness.hpp"
 
 #include <algorithm>
@@ -31,142 +32,11 @@
 
 namespace
 {
-    /** @brief The repository root, supplied by CMake so the scan does not guess. */
-    std::filesystem::path sourceRoot()
-    {
-#ifdef CNA_STUDIO_SOURCE_ROOT
-        return std::filesystem::path{CNA_STUDIO_SOURCE_ROOT};
-#else
-        return std::filesystem::path{};
-#endif
-    }
-
-    /** @brief One source file's path and contents. */
-    struct SourceFile
-    {
-        std::filesystem::path path;
-        std::string relativePath;
-        std::string text;
-    };
-
-    /**
-     * @brief Collects Studio's own C++ sources, excluding vendored third-party code.
-     *
-     * `third_party/` is excluded on purpose: these rules are about how *Studio* is written, and
-     * holding a vendored library to them would be both meaningless and unfixable.
-     *
-     * @param subdirectories Directories under the repository root to scan.
-     * @return Every `.cpp` and `.hpp` found.
-     */
-    std::vector<SourceFile> collectSources(const std::vector<std::string>& subdirectories)
-    {
-        std::vector<SourceFile> files;
-        const std::filesystem::path root = sourceRoot();
-        if (root.empty()) { return files; }
-
-        for (const std::string& subdirectory : subdirectories)
-        {
-            const std::filesystem::path directory = root / subdirectory;
-            std::error_code ec;
-            if (!std::filesystem::exists(directory, ec)) { continue; }
-
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, ec))
-            {
-                if (!entry.is_regular_file()) { continue; }
-                const std::filesystem::path& path = entry.path();
-                const std::string extension = path.extension().string();
-                if (extension != ".cpp" && extension != ".hpp" && extension != ".h") { continue; }
-                if (path.string().find("third_party") != std::string::npos) { continue; }
-
-                std::ifstream stream(path, std::ios::binary);
-                if (!stream) { continue; }
-                std::string text{std::istreambuf_iterator<char>(stream),
-                                 std::istreambuf_iterator<char>()};
-                files.push_back(SourceFile{path,
-                                           std::filesystem::relative(path, root).generic_string(),
-                                           std::move(text)});
-            }
-        }
-        return files;
-    }
-
-    /**
-     * @brief Strips line comments, block comments and string literals.
-     *
-     * Without this, a check for a forbidden symbol fires on the comment explaining why the symbol
-     * is forbidden -- which teaches people to delete the explanation.
-     *
-     * @param text Source text.
-     * @return The text with comments and string contents blanked, preserving newlines so that line
-     *         numbers still line up.
-     */
-    std::string stripCommentsAndStrings(std::string_view text)
-    {
-        std::string out;
-        out.reserve(text.size());
-
-        enum class Mode { Code, LineComment, BlockComment, String, Char, RawString };
-        Mode mode = Mode::Code;
-
-        for (std::size_t i = 0; i < text.size(); ++i)
-        {
-            const char c = text[i];
-            const char next = (i + 1 < text.size()) ? text[i + 1] : '\0';
-
-            switch (mode)
-            {
-                case Mode::Code:
-                    if (c == '/' && next == '/') { mode = Mode::LineComment; out += "  "; ++i; continue; }
-                    if (c == '/' && next == '*') { mode = Mode::BlockComment; out += "  "; ++i; continue; }
-                    if (c == 'R' && next == '"') { mode = Mode::RawString; out += "  "; ++i; continue; }
-                    if (c == '"') { mode = Mode::String; out += ' '; continue; }
-                    if (c == '\'') { mode = Mode::Char; out += ' '; continue; }
-                    out += c;
-                    continue;
-
-                case Mode::LineComment:
-                    if (c == '\n') { mode = Mode::Code; out += '\n'; continue; }
-                    out += ' ';
-                    continue;
-
-                case Mode::BlockComment:
-                    if (c == '*' && next == '/') { mode = Mode::Code; out += "  "; ++i; continue; }
-                    out += (c == '\n') ? '\n' : ' ';
-                    continue;
-
-                case Mode::String:
-                    if (c == '\\') { out += "  "; ++i; continue; }
-                    if (c == '"') { mode = Mode::Code; out += ' '; continue; }
-                    out += (c == '\n') ? '\n' : ' ';
-                    continue;
-
-                case Mode::Char:
-                    if (c == '\\') { out += "  "; ++i; continue; }
-                    if (c == '\'') { mode = Mode::Code; out += ' '; continue; }
-                    out += ' ';
-                    continue;
-
-                case Mode::RawString:
-                    // Approximate: raw strings here are JSON fixtures, and ending at the first
-                    // `)"` is correct for every one of them.
-                    if (c == ')' && next == '"') { mode = Mode::Code; out += "  "; ++i; continue; }
-                    out += (c == '\n') ? '\n' : ' ';
-                    continue;
-            }
-        }
-        return out;
-    }
-
-    /** @brief Returns the 1-based line number of a byte offset. */
-    int lineOf(std::string_view text, std::size_t offset)
-    {
-        int line = 1;
-        for (std::size_t i = 0; i < offset && i < text.size(); ++i)
-        {
-            if (text[i] == '\n') { ++line; }
-        }
-        return line;
-    }
+    using CnaStudioTest::Scan::SourceFile;
+    using CnaStudioTest::Scan::collectSources;
+    using CnaStudioTest::Scan::lineOf;
+    using CnaStudioTest::Scan::sourceRoot;
+    using CnaStudioTest::Scan::stripCommentsAndStrings;
 
     /**
      * @brief Fails the current test for every occurrence of @p needle in Studio's own code.

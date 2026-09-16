@@ -369,6 +369,54 @@ Important boundaries are enforced by machinery, not by comments. The guards, eac
 | Files are byte-deterministic across saves | Version-control churn |
 | `plan.md`'s status breakdown matches the phase files | A ledger that is quoted and wrong |
 | The two UI render backends draw the same frame | A rewritten GPU path drifting from the one it replaces |
+| No service reaches another through a locator or a singleton | Services that were separated on paper and still talk through globals |
+
+### 10.1 Dependencies are constructor arguments
+
+The rule the shell decomposition (§5, `STUDIO-02050`) is built on:
+
+> **The set of things a service can reach is the set visible in its constructor.**
+
+There is no service locator and no registry. `StudioPlayService` takes a context, a log and a
+notification sink; that is the whole of what it can touch, which is why its rules can be exercised
+with two doubles and a lambda rather than by constructing the object that binds every panel in
+Studio.
+
+A locator would undo that one `get<T>()` at a time, and it would arrive the way
+`StudioShellPanels` reached 1421 lines: by a sequence of individually reasonable additions, each
+one saving a constructor argument in a hurry. Review does not catch it, because a locator added
+later looks exactly like the code around it. So `STUDIO-02059` catches it instead, by scanning for
+the four structures every locator and every singleton is actually built from — renaming
+`instance()` to `shared()` evades none of them:
+
+1. a mutable `static` holding a Studio type — the storage, whether function-local, a class static
+   member, or file-scope;
+2. a `static` function handing out a reference or pointer to a Studio type — the accessor.
+   Returning **by value** is a factory (`Uuid::generate`, `Project::createDefault`) and is fine:
+   the caller gets a thing rather than *the* thing;
+3. a mutable namespace-scope variable of a Studio type — the same storage without the keyword;
+4. `static T& get()` — the generic locator, which rules 1–3 miss because `T` names nothing.
+
+`std::type_index` and `typeid` are refused too: a registry keyed on runtime type identity is a
+locator with an extra step, and Studio has no other use for runtime type identity.
+
+**What it deliberately does not ban.** A mutable `static` that holds no Studio type — a CRC lookup
+table, a thread-local random engine — is a cache of a pure function, not a dependency anybody has.
+Failing those would make the guard painful enough to be switched off, which is the only way a guard
+actually dies. The discriminator is whether the static holds one of Studio's own *published* types:
+a type declared inside a single `.cpp` cannot be what one part of Studio reaches another through,
+because nothing outside that file can name it.
+
+The guard is proved against fixtures rather than against a committed violation: it is fed each
+prohibited shape and required to flag it, and fed the by-value factories, constants, members and
+parameters that surround the real code and required to stay silent. An absence assertion that has
+never been shown to fail is an assertion about nothing.
+
+**Exceptions are sites, not patterns.** One construct is recorded as accepted — the Dear ImGui
+prototype's clipboard adapter, whose hooks have nowhere instance-shaped to live because ImGui's
+clipboard callbacks are C function pointers reached through a global context. It is named by file
+and declaration with the task that deletes it (`STUDIO-07030`), and a second test requires every
+recorded exception to still match something, so an exception cannot outlive the thing it excused.
 
 ---
 

@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 29 of 38 complete `███████░░░░░`
+**Progress:** 30 of 38 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -37,7 +37,7 @@
 | `STUDIO-02056` | Extract `StudioComparisonService` | ⬜ | `STUDIO-02050` |
 | `STUDIO-02057` | Extract `StudioPreferencesService` | ⬜ | `STUDIO-02050` |
 | `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | ⬜ | `STUDIO-02050` |
-| `STUDIO-02059` | Guard test: no service reaches another through a locator or a singleton | ⬜ | `STUDIO-02055` |
+| `STUDIO-02059` | Guard test: no service reaches another through a locator or a singleton | ✅ | `STUDIO-02055` |
 | `STUDIO-02060` | Restore the CNA-backed build against current CNA | ✅ | `STUDIO-02001` |
 | `STUDIO-02061` | Screenshot success is reported honestly | ✅ | `STUDIO-02060` |
 | `STUDIO-02051` | Early guard: an exported project configures and builds with Studio unavailable | ✅ | `STUDIO-02040` |
@@ -456,3 +456,39 @@ failed and a package that was written looked identical to the caller.
 **Acceptance.** A test fails the build on a static instance accessor or a global registry lookup in
 any service, naming the file and line. The rule is only worth stating if it is enforced: a locator
 added later would look exactly like the code around it.
+
+**Done, and written *before* `02056`–`02058` rather than after.** A guard added last is a guard
+that has to be made to pass; a guard added first is a rule the next three services are written
+against. `tests/ServiceBoundaryGuardTests.cpp`, four cases, documented in `docs/ARCHITECTURE.md`
+§10.1.
+
+**It matches structures, not names.** `instance()` renamed to `shared()` evades a name check and
+nothing else, so the scan looks for the four things every locator is actually built from: a mutable
+`static` holding a Studio type, a `static` function handing out a reference or pointer to one, a
+mutable namespace-scope variable of one, and `static T& get()` — plus `typeid`/`std::type_index`,
+which is how a heterogeneous registry is keyed and which Studio otherwise has no use for. Returning
+**by value** is a factory and is allowed: `Uuid::generate` and `Project::createDefault` hand the
+caller a thing rather than *the* thing.
+
+**What it does not ban, deliberately.** A mutable `static` holding no Studio type — the CRC table
+in `UiSoftwareRasterizer`, the thread-local engine in `Uuid` — is a cache of a pure function rather
+than a dependency anybody has. Failing those would make the guard painful enough to switch off. The
+type vocabulary is read from Studio's own headers rather than listed, so a service added tomorrow is
+covered without anyone remembering; types declared inside a single `.cpp` are excluded because
+nothing outside that file can name them, which is also what stopped `MessageChannel`'s Winsock
+initialisation guard being a false positive.
+
+**Proved against fixtures, and against the real tree.** `TheGuardSeesEveryShapeOfLocatorItClaimsTo`
+feeds the scanner each prohibited shape and requires it flagged;
+`TheGuardDoesNotFireOnTheThingsThatLookLikeOne` feeds it the by-value factories, constants, members,
+parameters and out-of-line `operator=` that surround the real code and requires silence. Both run
+the same function the tree is scanned with, because a guard whose test path differs from its
+production path proves nothing about the production path. It was additionally verified end to end by
+putting a real singleton into `StudioBuildService.cpp` and watching the suite name the file and the
+line.
+
+**One exception is recorded**, as a site rather than a pattern: the Dear ImGui prototype's clipboard
+adapter, whose hooks have nowhere instance-shaped to live because ImGui's clipboard callbacks are C
+function pointers reached through a global context. `EveryRecordedExceptionIsStillARealViolation`
+requires it to still match something, so the entry fails the suite the day `STUDIO-07030` deletes
+the file — an allowlist that can outlive what it excused is a licence.
