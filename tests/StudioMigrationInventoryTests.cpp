@@ -778,8 +778,8 @@ namespace
             {"ARequiredComponentGetsNoRemoveButton", "tests/StudioNativeParityTests.cpp", "ARequiredComponentGetsNoRemoveButton", nullptr, false},
             {"RemovingAComponentThroughTheInspectorIsUndoable", "tests/StudioDetailsPanelTests.cpp", "AComponentIsRemovedFromItsOwnHeaderAndUndone", nullptr, false},
             {"RotationIsEditedAsDegreesAndStoredAsAQuaternion", "tests/StudioDetailsPanelTests.cpp", "AQuaternionIsEditedAsAnglesRatherThanAsFourRawNumbers", nullptr, false},
-            {"TheInspectorKeepsTheAnglesTheUserTypedAtGimbalLock", nullptr, nullptr, "STUDIO-07057", false},
-            {"TheAngleCacheStopsApplyingOnceSomethingElseChangesTheRotation", nullptr, nullptr, "STUDIO-07057", false},
+            {"TheInspectorKeepsTheAnglesTheUserTypedAtGimbalLock", "tests/StudioDetailsPanelTests.cpp", "TheAnglesTheUserTypedSurviveGimbalLock", nullptr, false},
+            {"TheAngleCacheStopsApplyingOnceSomethingElseChangesTheRotation", "tests/StudioDetailsPanelTests.cpp", "TheAngleCacheIsAbandonedTheInstantSomethingElseProducesADifferentQuaternion", nullptr, false},
             {"DoubleClickingAHierarchyNodeRenamesItInPlace", "tests/StudioRenameTests.cpp", "F2RenamesTheSelectionAndRaisesTheOutlinerToDoIt", nullptr, false},
             {"AnEmptyRenameIsTreatedAsASlipAndKeepsTheOldName", "tests/StudioRenameTests.cpp", "AnEmptyNameIsRefusedRatherThanApplied", nullptr, false},
             {"DraggingAnEntityOntoAnotherReparentsIt", nullptr, nullptr, "STUDIO-07058", false},
@@ -973,7 +973,7 @@ CNA_STUDIO_TEST(EveryUnansweredPrototypeCaseNamesTheTaskThatWillCoverIt)
 
     // Stated so that closing one is a deliberate edit rather than something nobody notices, the
     // way the Inspector sections' count is. Seventeen when the accounting was taken.
-    CNA_STUDIO_EXPECT_EQ(gaps, std::size_t{17});
+    CNA_STUDIO_EXPECT_EQ(gaps, std::size_t{15});
 
     // And the seven that are genuinely about Dear ImGui: they are the only ones the deletion may
     // simply take with it.

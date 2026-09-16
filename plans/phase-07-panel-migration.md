@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 38 of 46 complete `███████████░`
+**Progress:** 39 of 46 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -51,7 +51,7 @@
 | `STUDIO-07054` | Editors for list and structure properties | ✅ | `STUDIO-07018` |
 | `STUDIO-07055` | A numeric property field is dragged as well as typed | ✅ | `STUDIO-07018` |
 | `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ✅ | `STUDIO-07009` |
-| `STUDIO-07057` | The angles a user typed survive being read back | ⬜ | `STUDIO-07018` |
+| `STUDIO-07057` | The angles a user typed survive being read back | ✅ | `STUDIO-07018` |
 | `STUDIO-07058` | Reparenting by dragging in the World Outliner | ✅ | `STUDIO-07006` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
@@ -91,10 +91,16 @@ case, the file and symbol that covers the same behaviour without it — checked 
 way the Inspector-section table is — and a count that has to be edited deliberately.
 
 **Done, and it cost more than it looked like it would.** All 112 cases are accounted for: 88
-covered elsewhere, 17 recorded as gaps with the task that closes each, and 7 that really are about
-Dear ImGui and go with it. Eight files changed shape on the way — the command-line cases, the
-plugin-host cases and the `UiDrawData` boundary cases were in the prototype's files by habit and are
-files of their own now, so the deletion is a deletion rather than a rescue operation.
+covered elsewhere at the time, 17 recorded as gaps with the task that closes each, and 7 that really
+are about Dear ImGui and go with it. Eight files changed shape on the way — the command-line cases,
+the plugin-host cases and the `UiDrawData` boundary cases were in the prototype's files by habit and
+are files of their own now, so the deletion is a deletion rather than a rescue operation.
+
+**The gap count falls as each row is closed.** `STUDIO-07057` closed two of the seventeen —
+`TheInspectorKeepsTheAnglesTheUserTypedAtGimbalLock` and its cache-invalidation companion, both now
+pointing at real native tests rather than at this task. Fifteen remain, tracked by
+`EveryUnansweredPrototypeCaseNamesTheTaskThatWillCoverIt`'s own count, which is edited by hand for
+exactly this reason: a number nobody has to touch is a number nobody notices go stale.
 
 **What it found first was not a missing test.** Writing the native cases that were missing turned up
 things the native shell cannot do at all, and five defects in what it can:
@@ -368,12 +374,33 @@ around it passes, because each half works — `STUDIO-11015` was exactly that, t
 preferences written to disk and read by nobody. Verified by cutting the host's one line that passes
 the option: the test fails, and passes again when it is restored.
 
-**`STUDIO-07057` — The angles a user typed survive being read back.** A rotation is stored as a
+**`STUDIO-07057` — The angles a user typed survive being read back.** ✅ A rotation is stored as a
 quaternion and edited as Euler angles, and the conversion is not injective: at gimbal lock, typing
 90 into one field and reading the extraction back gives different numbers in the other two. The
-prototype keeps what was typed until something else changes the rotation. The native editor converts
-afresh every frame. **Acceptance.** The angles a user typed stay in the fields, and stop applying the
-moment the rotation changes from anywhere else.
+prototype kept what was typed until something else changed the rotation. The native editor
+converted afresh every frame. **Acceptance.** The angles a user typed stay in the fields, and stop
+applying the moment the rotation changes from anywhere else.
+
+**The cache compares its own output, not a dirty flag.** Three retained scalars (pitch, yaw, roll),
+keyed under this property's own widget-id path, hold the last degrees committed. They apply only
+while `quaternionFromEulerDegrees(cached) == stored` — which is what picks up an undo, a gizmo drag,
+a reload or a selection change the instant any of them lands, with nothing having to notice or say
+so: none of those happen to reproduce this editor's own rounding, so the comparison simply fails and
+the cache is abandoned. The prototype reaches the same property with an explicit dirty check
+(`eulerEdit_.matches(...) && eulerEdit_.produced == stored`); this reaches it by recomputing the one
+side that can drift rather than tracking a second flag that could disagree with it.
+
+**Tested at two levels, because the panel's own row geometry cannot isolate the interesting half.**
+`studioPropertyEditor` is called directly, over a value held outside any document, to drive the
+gimbal-lock entry and the cache-invalidation exactly — reading each field's own displayed text
+rather than recomputing independently, which is the mistake that made the first draft of this test
+pass whether or not the cache existed. A second, panel-level test goes through a real entity, a real
+`SetPropertyCommand` and a real undo stack, proving the three typed fields commit as three separate
+entries — nothing here is continuous input, so nothing merges.
+
+**`docs/MIGRATION-INVENTORY.md`'s test-level table update with it.** Both of the prototype's own
+gimbal-lock cases now point at the tests above instead of at this task; the running gap count in
+`StudioMigrationInventoryTests.cpp` drops from seventeen to fifteen.
 
 **`STUDIO-07058` — Reparenting by dragging in the World Outliner.** ✅ The prototype reparents by
 dragging one row onto another, refuses a parent dropped onto its own child, and keeps drawing while

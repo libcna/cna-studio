@@ -17,6 +17,7 @@
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Core/NumberText.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -942,4 +943,263 @@ CNA_STUDIO_TEST(RemovingAListElementIsOneUndoEntryThatPutsItBack)
 
     CNA_STUDIO_EXPECT(context.getHistory().undo());
     CNA_STUDIO_EXPECT_EQ(itemCount(), std::size_t{2});
+}
+
+// ------------------------------------------------------------------------------------------------
+// Angles surviving gimbal lock (STUDIO-07057)
+//
+// A rotation is stored as a quaternion and edited as Euler angles, and the conversion is not
+// injective: at gimbal lock, several triples of angles produce the same rotation, so recomputing
+// fresh from the quaternion every frame can show a *different* triple from the one just typed --
+// the field a user is looking at changes under them while they are still looking at it. The
+// prototype keeps what was typed for as long as the stored value is still exactly the one it
+// produced; the native editor converted afresh every frame.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief Drives `studioPropertyEditor` directly, over a value held outside any document. */
+    struct AngleFixture
+    {
+        StudioFrame frame;
+        UiRect bounds{100.0f, 100.0f, 240.0f, 24.0f};
+        PropertyValue value{StudioQuaternion{}};
+
+        AngleFixture() { frame.setTheme(StudioTheme::dark()); }
+
+        /** @brief One full frame with no input, so retained state settles between gestures. */
+        void settle()
+        {
+            frame.beginFrame(at(-1.0f, -1.0f));
+            frame.beginInput();
+            (void)studioPropertyEditor(frame, bounds, value, {}, {});
+            frame.beginDraw();
+            (void)studioPropertyEditor(frame, bounds, value, {}, {});
+            frame.endFrame();
+        }
+
+        /**
+         * @brief Types @p degrees into the pitch, yaw and roll fields in turn and commits each.
+         *
+         * The three fields divide `bounds` into equal thirds with `SpacingSmall` between them,
+         * matching `numericComponents`' own layout exactly -- computed rather than guessed, so a
+         * metric change moves this test's clicks along with the fields it is clicking.
+         */
+        void typeDegrees(const StudioVector3& degrees)
+        {
+            const float spacing = static_cast<float>(frame.theme().metric(StudioMetric::SpacingSmall));
+            const float fieldWidth = (bounds.width - spacing * 2.0f) / 3.0f;
+            const float values[3] = {degrees.x, degrees.y, degrees.z};
+
+            for (int i = 0; i < 3; ++i)
+            {
+                const float x = bounds.left() + (static_cast<float>(i) + 0.5f) * fieldWidth
+                              + static_cast<float>(i) * spacing;
+                const float y = bounds.centerY();
+
+                click(x, y);
+                selectAll(x, y);
+                const std::string text = studioFormatFloat(values[i]);
+                std::vector<char16_t> characters(text.begin(), text.end());
+                typeText(characters, x, y);
+                pressEnter(x, y);
+            }
+        }
+
+        /**
+         * @brief The text actually displayed in the field named @p axis, after a `settle()`.
+         *
+         * Peeks the field's own retained buffer rather than recomputing anything, because
+         * recomputing is exactly the defect under test -- a helper that re-derived the angle from
+         * the quaternion would report the honest reading every time, whether or not the cache was
+         * consulted, and the two are indistinguishable except at gimbal lock.
+         *
+         * @param axis One of "pitch", "yaw", "roll", matching `numericComponents`' own names.
+         */
+        [[nodiscard]] std::string shownText(const char* axis)
+        {
+            settle();
+            return frame.state().get(frame.ids().make(axis)).text;
+        }
+
+    private:
+        void oneFrame(const UiInputState& input)
+        {
+            frame.beginFrame(input);
+            frame.beginInput();
+            const StudioPropertyEditResult result = studioPropertyEditor(frame, bounds, value, {}, {});
+            if (result.edited.has_value()) { value = *result.edited; }
+            frame.beginDraw();
+            (void)studioPropertyEditor(frame, bounds, value, {}, {});
+            frame.endFrame();
+        }
+
+        void click(float x, float y)
+        {
+            oneFrame(at(x, y, false));
+            oneFrame(at(x, y, true));
+            oneFrame(at(x, y, false));
+        }
+
+        void selectAll(float x, float y)
+        {
+            UiInputState input = at(x, y);
+            input.modifiers.control = true;
+            input.setKeyDown(UiKey::A, true);
+            oneFrame(input);
+            oneFrame(at(x, y));
+        }
+
+        void typeText(const std::vector<char16_t>& characters, float x, float y)
+        {
+            UiInputState input = at(x, y);
+            input.characters = characters;
+            oneFrame(input);
+        }
+
+        void pressEnter(float x, float y)
+        {
+            UiInputState input = at(x, y);
+            input.setKeyDown(UiKey::Enter, true);
+            oneFrame(input);
+            oneFrame(at(x, y));
+        }
+    };
+}
+
+CNA_STUDIO_TEST(TheAnglesTheUserTypedSurviveGimbalLock)
+{
+    // A pitch of 90 degrees is a pole: yaw and roll are no longer separable, and reading the
+    // quaternion back reports the same rotation as a *different* (yaw, roll) pair.
+    AngleFixture fixture;
+    const StudioVector3 typed{90.0f, 40.0f, 25.0f};
+
+    fixture.typeDegrees(typed);
+
+    // Recomputing from the quaternion would show a folded yaw and roll 0, so the two fields
+    // beside the one being edited would jump the instant pitch reached 90. Read from each
+    // field's own displayed text, not re-derived from the quaternion: a helper that recomputed
+    // would report the honest reading either way, and the two are indistinguishable except at
+    // gimbal lock.
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("yaw"), studioFormatFloat(40.0f));
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("roll"), studioFormatFloat(25.0f));
+
+    // And the honest reading really does differ, which is what makes the cache worth having --
+    // a test that never entered gimbal lock would pass whether the cache existed or not.
+    CNA_STUDIO_EXPECT(eulerDegreesOf(quaternionFromEulerDegrees(typed)).z != 25.0f);
+}
+
+CNA_STUDIO_TEST(EachTypedAngleFieldCommitsThroughTheHistoryAsItsOwnEntry)
+{
+    // The panel-level half: through a real entity, a real `SetPropertyCommand` and a real
+    // undo stack, rather than `studioPropertyEditor` called directly the way the gimbal-lock
+    // case above is. What the cache itself does when something else changes the rotation is
+    // covered more precisely by `TheAngleCacheIsAbandonedTheInstantSomethingElseProducesA-
+    // DifferentQuaternion`, which drives that case without a row to find.
+    // Through the full panel and a real entity, because the acceptance is about the *document*
+    // changing the rotation out from under a cached edit -- undo, specifically -- and that is not
+    // something a bare `studioPropertyEditor` call can exercise.
+    StudioContext context;
+    StudioEntity subject{Uuid::generate(), "Widget"};
+    StudioComponent transform{"CNA.Transform"};
+    transform.setProperty("rotation", PropertyValue{StudioQuaternion{}});
+    subject.getComponents().push_back(std::move(transform));
+    const Uuid entity = subject.getId();
+    context.getScene().addEntity(std::move(subject));
+    context.select(entity);
+
+    const auto rotation = [&]() -> StudioQuaternion {
+        const StudioEntity* found = context.getScene().findEntity(entity);
+        const StudioComponent* component = found->findComponent("CNA.Transform");
+        return component->getProperty("rotation").get<StudioQuaternion>();
+    };
+
+    Harness harness{context};
+    const float spacing = metricOf(harness.shell->theme(), StudioMetric::SpacingSmall);
+    const float columnLeft = harness.bounds.left() + harness.bounds.width * 0.40f;
+    const float fieldWidth = (harness.bounds.right() - columnLeft - spacing * 2.0f) / 3.0f;
+
+    const auto typeInto = [&](float y, int index, float degrees) {
+        const float x = columnLeft + (static_cast<float>(index) + 0.5f) * fieldWidth
+                      + static_cast<float>(index) * spacing;
+        harness.click(x, y);
+        UiInputState select = at(x, y);
+        select.modifiers.control = true;
+        select.setKeyDown(UiKey::A, true);
+        harness.shell->renderFrame(select);
+        harness.shell->renderFrame(at(x, y));
+        const std::string text = studioFormatFloat(degrees);
+        harness.type(std::vector<char16_t>(text.begin(), text.end()), x, y);
+        harness.press(UiKey::Enter, x, y);
+    };
+
+    // The rotation row's y is found rather than computed: a row count says how many rows there
+    // are, not which one this is, and a fixed offset guessed from that count is exactly what broke
+    // this test the first two times it was written. Swept the full height of the panel, pressing
+    // 90 into the first field at each candidate and keeping the one that actually turned the
+    // rotation -- any candidate that pressed something else is undone before the next is tried,
+    // the same discipline `RemovingAListElementIsOneUndoEntryThatPutsItBack` uses for the same
+    // reason.
+    float rotationRowY = -1.0f;
+    for (float y = harness.bounds.top() + 8.0f; y < harness.bounds.bottom(); y += 4.0f)
+    {
+        const std::size_t countBefore = context.getHistory().getCount();
+        typeInto(y, 0, 90.0f);
+        if (rotation() != StudioQuaternion{})
+        {
+            rotationRowY = y;
+            break;
+        }
+        if (context.getHistory().getCount() != countBefore)
+        {
+            CNA_STUDIO_EXPECT(context.getHistory().undo());
+        }
+    }
+    CNA_STUDIO_EXPECT(rotationRowY > 0.0f);
+
+    typeInto(rotationRowY, 1, 40.0f);
+    typeInto(rotationRowY, 2, 25.0f);
+
+    CNA_STUDIO_EXPECT(rotation() == quaternionFromEulerDegrees(StudioVector3{90.0f, 40.0f, 25.0f}));
+    CNA_STUDIO_EXPECT(context.getHistory().canUndo());
+
+    // One entry per field committed -- pitch, then yaw, then roll each replace the whole
+    // quaternion in turn, and none of the three is continuous input, so nothing here merges.
+    // Three undoes is the round trip back to where the entity started.
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT(rotation() == StudioQuaternion{});
+}
+
+CNA_STUDIO_TEST(TheAngleCacheIsAbandonedTheInstantSomethingElseProducesADifferentQuaternion)
+{
+    // The other half of the acceptance, and the one the panel-level test above cannot isolate
+    // cleanly: an undo through the real command history reverts one *field's* edit, which is a
+    // different rotation from the one three individually-typed fields produce, but it is not the
+    // specific "something entirely unrelated changed it" case the cache exists to be honest
+    // about. This drives that case directly, the way `TheAnglesTheUserTypedSurviveGimbalLock`
+    // drives entering it: through `studioPropertyEditor` itself, with no row to find.
+    AngleFixture fixture;
+    const StudioVector3 typed{90.0f, 40.0f, 25.0f};
+    fixture.typeDegrees(typed);
+
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("yaw"), studioFormatFloat(40.0f));
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("roll"), studioFormatFloat(25.0f));
+
+    // Something else -- a gizmo drag, an undo, a reload -- replaces the value directly, the way
+    // every one of those actually reaches this editor: as a new `PropertyValue` from outside,
+    // never as a call into this cache. Chosen so that it is not the rotation the cache holds.
+    const StudioQuaternion external =
+        quaternionFromEulerDegrees(StudioVector3{10.0f, 0.0f, 0.0f});
+    CNA_STUDIO_EXPECT(external != quaternionFromEulerDegrees(typed));
+    fixture.value = PropertyValue{external};
+
+    // The cache must stop applying at once: `quaternionFromEulerDegrees(cachedDegrees)` no
+    // longer equals the stored value, so the comparison that gates the cache fails on the very
+    // next frame, with nothing else having to notice or say so.
+    const StudioVector3 honest = eulerDegreesOf(external);
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("pitch"), studioFormatFloat(honest.x));
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("yaw"), studioFormatFloat(honest.y));
+    CNA_STUDIO_EXPECT_EQ(fixture.shownText("roll"), studioFormatFloat(honest.z));
 }

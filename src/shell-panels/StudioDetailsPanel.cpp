@@ -1515,14 +1515,44 @@ namespace
             // to turn something thirty degrees, and typing four independent numbers is how
             // you produce a rotation that is not a rotation at all.
             static const char* const kAngles[] = {"pitch", "yaw", "roll"};
-            const StudioVector3 euler = eulerDegreesOf(value.get<StudioQuaternion>());
+            const StudioQuaternion stored = value.get<StudioQuaternion>();
+
+            // `STUDIO-07057`. The conversion is not injective: at gimbal lock, several triples
+            // of angles produce the same rotation, so recomputing fresh from the quaternion every
+            // frame can show a different triple from the one just typed -- the field the user is
+            // looking at changes under them while they are still looking at it.
+            //
+            // Retained across frames by this property's own widget-id path, and valid for as long
+            // as the stored quaternion is still exactly the one the cached degrees produce.
+            // Comparing our own output rather than a dirty flag is what picks up an undo, a gizmo
+            // drag, a reload or a selection change the instant any of them lands: none of those
+            // happen to reproduce this editor's own rounding, so the comparison fails and the
+            // cache is abandoned without having to be told to.
+            frame.ids().push("eulerCache");
+            WidgetState& cacheX = frame.state().get(frame.ids().make("x"));
+            WidgetState& cacheY = frame.state().get(frame.ids().make("y"));
+            WidgetState& cacheZ = frame.state().get(frame.ids().make("z"));
+            frame.ids().pop();
+
+            const StudioVector3 cachedDegrees{cacheX.scalar, cacheY.scalar, cacheZ.scalar};
+            const bool cacheValid =
+                cacheX.checked && quaternionFromEulerDegrees(cachedDegrees) == stored;
+
+            const StudioVector3 euler = cacheValid ? cachedDegrees : eulerDegreesOf(stored);
             float components[3] = {euler.x, euler.y, euler.z};
 
             if (numericComponents(frame, control, kAngles, components, 3, /*integral=*/false,
                                   /*labelled=*/true, &result.dragging))
             {
-                result.edited = PropertyValue{quaternionFromEulerDegrees(
-                    StudioVector3{components[0], components[1], components[2]})};
+                const StudioVector3 typed{components[0], components[1], components[2]};
+                result.edited = PropertyValue{quaternionFromEulerDegrees(typed)};
+
+                // What was typed, not what it round-trips to: the whole point is to show the
+                // number the user entered rather than the equivalent one the extraction prefers.
+                cacheX.scalar = typed.x;
+                cacheY.scalar = typed.y;
+                cacheZ.scalar = typed.z;
+                cacheX.checked = true;
             }
         }
         else if (value.getType() == PropertyType::Rectangle)
