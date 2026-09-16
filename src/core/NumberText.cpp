@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>
+#include <stdexcept>
 
 namespace CNA::Studio
 {
@@ -58,5 +60,57 @@ namespace CNA::Studio
             best = buffer;
         }
         return best;
+    }
+
+    bool studioParseFloat(std::string_view text, float& out)
+    {
+        // `std::stof` over a string rather than `from_chars` over the view, because libstdc++ 13's
+        // floating-point `from_chars` is there but this keeps one implementation of "is the whole
+        // of this a number" rather than two that disagree about `1e400` at the edges.
+        try
+        {
+            const std::string owned{text};
+            std::size_t consumed = 0;
+            const float parsed = std::stof(owned, &consumed);
+            while (consumed < owned.size()
+                   && std::isspace(static_cast<unsigned char>(owned[consumed])) != 0)
+            {
+                ++consumed;
+            }
+            if (consumed != owned.size()) { return false; }
+            out = parsed;
+            return true;
+        }
+        catch (const std::exception&)
+        {
+            // Out of range and not-a-number both land here, and both mean the same thing to a
+            // caller: the field does not hold a value it can use.
+            return false;
+        }
+    }
+
+    bool studioParseInteger(std::string_view text, std::int64_t& out)
+    {
+        try
+        {
+            const std::string owned{text};
+            std::size_t consumed = 0;
+            const long long parsed = std::stoll(owned, &consumed);
+            while (consumed < owned.size()
+                   && std::isspace(static_cast<unsigned char>(owned[consumed])) != 0)
+            {
+                ++consumed;
+            }
+            // `"3.5"` stops at the dot, so `consumed` is short and the whole text was not an
+            // integer. Refused rather than truncated: a field that silently turns a typed 3.5 into
+            // 3 is one the user has to check after every edit.
+            if (consumed != owned.size()) { return false; }
+            out = static_cast<std::int64_t>(parsed);
+            return true;
+        }
+        catch (const std::exception&)
+        {
+            return false;
+        }
     }
 }

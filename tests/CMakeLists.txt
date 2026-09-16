@@ -74,6 +74,7 @@ add_executable(cna-studio-tests
     StudioDiagnosticsPanelTests.cpp
     StudioVisualQualityTests.cpp
     StudioViewportPanelTests.cpp
+    StudioNumericFieldTests.cpp
     StudioNativeParityTests.cpp
     ArchitectureGuardTests.cpp
     ServiceBoundaryGuardTests.cpp
@@ -261,6 +262,21 @@ add_test(NAME CnaStudioVisualScenarioDetailsTransform
                        --screenshot-min-colors=256
                        --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
 set_tests_properties(CnaStudioVisualScenarioDetailsTransform PROPERTIES TIMEOUT 120)
+
+# The scrub affordance reaches a real capture (STUDIO-07055). A numeric field that scrubs and looks
+# exactly like a plain text box is one whose best feature nobody finds, and the cursor is the only
+# affordance available -- the field has to go on looking like the field it also is.
+#
+# This point is inside the Position row's X field at this size. The assertion is the *cursor*, which
+# the preview reports because a captured PNG cannot show one: a screenshot of a hovered field and a
+# screenshot of an ignored one are the same picture.
+add_test(NAME CnaStudioNumericFieldOffersTheScrubCursor
+    COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/scenario-scrub-cursor.png
+                       --shell-size=1600x900 --panel=details --select=Player
+                       --shell-pointer=1440,202 --screenshot-min-colors=256
+                       --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+set_tests_properties(CnaStudioNumericFieldOffersTheScrubCursor PROPERTIES
+    PASS_REGULAR_EXPRESSION "cursor ResizeHorizontal" TIMEOUT 120)
 
 add_test(NAME CnaStudioVisualScenarioContextMenu
     COMMAND cna-studio --shell-preview=${CMAKE_CURRENT_BINARY_DIR}/scenario-context.png

@@ -24,7 +24,9 @@
  * returns the exact float it came from, so a field the user does not touch cannot drift.
  */
 
+#include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace CNA::Studio
 {
@@ -45,4 +47,32 @@ namespace CNA::Studio
      * @return Its shortest exact decimal text.
      */
     [[nodiscard]] std::string studioFormatFloat(float value);
+
+    /**
+     * @brief Parses a float from @p text, refusing anything with characters left over.
+     *
+     * "3abc" is not three. Accepting a prefix is how a typo silently becomes a value the user did
+     * not enter and cannot see is wrong — which is worse than a rejected edit, because the field
+     * then shows a number they did not type and have no reason to doubt.
+     *
+     * Trailing whitespace is allowed, because it is what a paste brings with it and is not a typo.
+     *
+     * @param text The text to read.
+     * @param out Receives the value; untouched when the text is not a number.
+     * @return Whether the whole of @p text was one number.
+     */
+    [[nodiscard]] bool studioParseFloat(std::string_view text, float& out);
+
+    /**
+     * @brief Parses an integer from @p text, refusing anything with characters left over.
+     *
+     * The same contract as @ref studioParseFloat and for the same reason. Refuses `"3.5"`
+     * outright rather than truncating it: a field that silently turns a typed 3.5 into 3 is a
+     * field the user has to check after every edit.
+     *
+     * @param text The text to read.
+     * @param out Receives the value; untouched when the text is not an integer.
+     * @return Whether the whole of @p text was one integer.
+     */
+    [[nodiscard]] bool studioParseInteger(std::string_view text, std::int64_t& out);
 }

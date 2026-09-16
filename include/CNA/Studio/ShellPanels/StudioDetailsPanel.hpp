@@ -252,6 +252,16 @@ namespace CNA::Studio
          * the answer a caller counting editable rows needs and is invisible in a capture.
          */
         bool readOnlyKind = false;
+
+        /**
+         * @brief A numeric scrub is in flight this frame.
+         *
+         * `STUDIO-07055`. What tells the caller to push its change as
+         * `MergePolicy::MergeWithPrevious`, so a drag across forty pixels is one undo entry rather
+         * than forty — which is the difference between an undo stack a user can navigate and one
+         * they give up on.
+         */
+        bool dragging = false;
     };
 
     /**

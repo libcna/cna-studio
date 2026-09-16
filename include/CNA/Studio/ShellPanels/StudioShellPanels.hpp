@@ -484,6 +484,9 @@ namespace CNA::Studio
         void closeStudio();
 
         /** @brief Rebuilds the plugin menus when the extension registry has moved on. */
+        /** @brief Closes the undo merge chain on the first frame nothing is being dragged. */
+        void pollInteractionEnd();
+
         void pollPlugins();
 
 

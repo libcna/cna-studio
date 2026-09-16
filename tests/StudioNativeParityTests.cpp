@@ -738,3 +738,50 @@ CNA_STUDIO_TEST(TheGridPlanePreferenceRoundTripsThroughItsFile)
     CNA_STUDIO_EXPECT(loaded.gridOnGroundPlane);
     CNA_STUDIO_EXPECT(loaded == saved);
 }
+
+CNA_STUDIO_TEST(TwoSeparateScrubsOfOneFieldAreTwoUndoEntries)
+{
+    // `STUDIO-07055`. A merge key answers "is this the same *edit*" -- entity, component, property
+    // -- and cannot answer "is this the same *interaction*", because two drags of one field are
+    // identical by every property the key can see and differ only in that the user let go in
+    // between. So the boundary has to be marked from outside, on a frame where nothing is being
+    // dragged.
+    //
+    // The prototype has done that since gizmo drags existed (`isAnyItemActive`). The native shell
+    // never did, because until now nothing on it merged -- except the material editor, which was
+    // already pushing `MergeWithPrevious`, so two separate material edits were already folding into
+    // one. A live defect with nothing to report it.
+    ShellFixture fixture;
+
+    const auto setPosition = [&](float y) {
+        fixture.context.execute(
+            std::make_unique<SetPropertyCommand>(
+                fixture.context.getScene(), fixture.parent, "CNA.Transform", "position",
+                PropertyValue{StudioVector3{0.0f, y, 0.0f}}),
+            MergePolicy::MergeWithPrevious);
+    };
+
+    // One gesture: three pushes with no quiet frame between them.
+    setPosition(1.0f);
+    setPosition(2.0f);
+    setPosition(3.0f);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{1});
+
+    // The frame the button came up on. `poll` is what the host runs every frame, and it is where
+    // the chain is closed -- reading the frame the shell drew last, because poll runs before the
+    // next one.
+    fixture.panels.poll(0.0);
+
+    // A second gesture, which must not fold into the first.
+    setPosition(4.0f);
+    setPosition(5.0f);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{2});
+
+    // And undoing once takes back the second gesture in full rather than one of its steps.
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    const StudioEntity* entity = fixture.context.getScene().findEntity(fixture.parent);
+    CNA_STUDIO_EXPECT(entity != nullptr);
+    const StudioComponent* transform = entity->findComponent("CNA.Transform");
+    CNA_STUDIO_EXPECT(transform != nullptr);
+    CNA_STUDIO_EXPECT_EQ(transform->getProperty("position").get<StudioVector3>().y, 3.0f);
+}

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 36 of 46 complete `█████████░░░`
+**Progress:** 37 of 46 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -49,7 +49,7 @@
 | `STUDIO-07052` | The native shell loads the project's plugins | ✅ | `STUDIO-07001` |
 | `STUDIO-07053` | `--scene` opens a scene on the native shell | ✅ | `STUDIO-07048` |
 | `STUDIO-07054` | Editors for list and structure properties | ⬜ | `STUDIO-07018` |
-| `STUDIO-07055` | A numeric property field is dragged as well as typed | ⬜ | `STUDIO-07018` |
+| `STUDIO-07055` | A numeric property field is dragged as well as typed | ✅ | `STUDIO-07018` |
 | `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ✅ | `STUDIO-07009` |
 | `STUDIO-07057` | The angles a user typed survive being read back | ⬜ | `STUDIO-07018` |
 | `STUDIO-07058` | Reparenting by dragging in the World Outliner | ✅ | `STUDIO-07006` |
@@ -268,11 +268,49 @@ cannot be edited in the native shell at all. The prototype adds, removes and reo
 **Acceptance.** A list element can be added, removed and moved, a structure's fields are edited like
 any other property, and each change is one undo entry.
 
-**`STUDIO-07055` — A numeric property field is dragged as well as typed.** The prototype's number
+**`STUDIO-07055` — A numeric property field is dragged as well as typed.** ✅ The prototype's number
 fields scrub: press, move sideways, and the value follows, merging into one undo entry for the whole
-gesture. The native field commits on Enter and nothing else, so setting a position means typing it.
+gesture. The native field committed on Enter and nothing else, so setting a position meant typing it.
 **Acceptance.** A horizontal drag on a numeric field changes the value proportionally, is one undo
 entry, and a click without movement still places the caret for typing.
+
+**A widget, not an option on the text field.** `studioNumericField` wraps `studioTextField` and adds
+the scrub. A text field stays about text; a numeric field is the thing a property grid actually
+wants, and it is where the formatting, the parsing and the step belong.
+
+**Anchored to the value at the press, not accumulated per frame.** A scrub that summed frame deltas
+would round every increment, so dragging out and back would not return to where it started — which
+is the first thing anybody tries. The value at the press is kept for the whole gesture and the
+offset is computed from it.
+
+**A threshold, so a click is still a click.** Four pixels, the same as `studioDragSource` and for
+the same reason: a trackpad click wobbles, and a field that changes when you click it is one nobody
+dares click. Below the threshold the press belongs to the text field and places the caret.
+
+**Two defects the first attempt had, both invisible except in the one way that mattered.**
+
+The scrub used `WidgetState::active` to mean "a drag is in flight". That is the field
+`studioTextField` uses to mean "an edit session is open", so clearing it after each frame's drag
+check cleared the session — **every keystroke in every numeric field in Studio was discarded on the
+next frame**, while the field still drew, still focused and still reported hover. Retained state is
+shared by whatever shares the id, and a wrapper is one of those things. The scrub has its own flag
+now, and `TheScrubDoesNotShareRetainedStateWithTheEditSession` is the case.
+
+Then, with that fixed, the drag *reverted itself on release*: the press opens an edit session
+holding the text as it was, and on the frame focus goes away the session commits its buffer over
+the value the drag had just produced. The buffer is kept in step with the value while scrubbing.
+Found by three cases all reporting the value unchanged after an unmistakable forty-pixel drag.
+
+**And the undo chain was never closed on this shell.** `MergePolicy::MergeWithPrevious` needs
+`endInteraction` on a frame where nothing is being dragged, or two gestures a minute apart fold
+into one entry and Ctrl+Z throws away both. The prototype has called it since gizmo drags existed;
+the native shell never did — and the material editor was *already* pushing `MergeWithPrevious`, so
+two separate material edits were already folding into one. A live defect with nothing to report it.
+`StudioShellPanels::poll` closes the chain now, and `TwoSeparateScrubsOfOneFieldAreTwoUndoEntries`
+fails without it.
+
+**`studioParseFloat` and `studioParseInteger` moved into `NumberText`**, beside the formatter they
+are the inverse of. Both were duplicated in two panels; the widget would have been a third copy.
 
 **`STUDIO-07056` — The 3D view's grid plane.** ✅ The prototype offers *Grid on Ground Plane* in the
 View menu, and offers it only in the 3D view, where it changes something. The native shell had no

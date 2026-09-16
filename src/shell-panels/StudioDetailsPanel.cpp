@@ -167,9 +167,18 @@ namespace CNA::Studio
             return name;
         }
 
+        /**
+         * @brief A row of numeric fields, each typed into or dragged sideways to scrub.
+         *
+         * `STUDIO-07055`. Returns whether any value changed, and sets @p outDragging while a scrub
+         * is in flight -- which is what tells the caller to push its change as
+         * `MergePolicy::MergeWithPrevious` so the whole gesture is one undo entry rather than one
+         * per pixel.
+         */
         bool numericComponents(StudioFrame& frame, const UiRect& bounds, const char* const* names,
                                float* values, int count, bool integral = false,
-                               bool labelled = true)
+                               bool labelled = true, bool* outDragging = nullptr,
+                               float step = 0.0f)
         {
             const float spacing = metricOf(frame.theme(), StudioMetric::SpacingSmall);
             UiRect fields = bounds;
@@ -182,43 +191,30 @@ namespace CNA::Studio
                 const UiRect box = fields.splitLeft(std::min(fieldWidth, fields.width));
                 if (i + 1 < count) { fields.splitLeft(std::min(spacing, fields.width)); }
 
-                std::string text = integral
-                    ? std::to_string(static_cast<std::int64_t>(values[i]))
-                    : formatFloat(values[i]);
-
-                StudioTextFieldOptions options;
-                options.font = StudioFontRole::Monospace;
-                options.selectAllOnFocus = true;
+                StudioNumericFieldOptions options;
+                options.integral = integral;
+                // An integer scrubs one per pixel and a float a hundredth, unless the caller knows
+                // better. Not a fraction of a range, because a position has no range -- and a step
+                // proportional to the current value would make a field at zero unmovable, which is
+                // exactly where a user most often starts.
+                options.step = step > 0.0f ? step : (integral ? 1.0f : 0.01f);
+                options.text.font = StudioFontRole::Monospace;
+                options.text.selectAllOnFocus = true;
                 // The component's own letter, inside the field, always. It was on `placeholder`,
                 // which shows only while a field is *empty* -- so every populated Position,
                 // Rotation and Scale in Studio was three unlabelled boxes, which is precisely the
                 // case the letters exist for.
                 if (labelled)
                 {
-                    options.prefix = axisLabelFor(names[i]);
-                    options.prefixRole = axisRoleFor(names[i]);
+                    options.text.prefix = axisLabelFor(names[i]);
+                    options.text.prefixRole = axisRoleFor(names[i]);
                 }
 
-                if (!studioTextField(frame, frame.ids().make(names[i]), box, text, options)
-                         .committed)
-                {
-                    continue;
-                }
+                const StudioNumericFieldResult field =
+                    studioNumericField(frame, frame.ids().make(names[i]), box, values[i], options);
 
-                if (integral)
-                {
-                    std::int64_t parsed = 0;
-                    if (parseInteger(text, parsed))
-                    {
-                        values[i] = static_cast<float>(parsed);
-                        changed = true;
-                    }
-                }
-                else
-                {
-                    float parsed = 0.0f;
-                    if (parseFloat(text, parsed)) { values[i] = parsed; changed = true; }
-                }
+                if (field.changed) { changed = true; }
+                if (field.dragging && outDragging != nullptr) { *outDragging = true; }
             }
             return changed;
         }
@@ -1228,7 +1224,8 @@ namespace CNA::Studio
                 count = 4;
             }
 
-            if (numericComponents(frame, control, kAxes, components, count))
+            if (numericComponents(frame, control, kAxes, components, count, /*integral=*/false,
+                                  /*labelled=*/true, &result.dragging))
             {
                 if (count == 2)
                 {
@@ -1256,7 +1253,8 @@ namespace CNA::Studio
             const StudioVector3 euler = eulerDegreesOf(value.get<StudioQuaternion>());
             float components[3] = {euler.x, euler.y, euler.z};
 
-            if (numericComponents(frame, control, kAngles, components, 3))
+            if (numericComponents(frame, control, kAngles, components, 3, /*integral=*/false,
+                                  /*labelled=*/true, &result.dragging))
             {
                 result.edited = PropertyValue{quaternionFromEulerDegrees(
                     StudioVector3{components[0], components[1], components[2]})};
@@ -1271,7 +1269,7 @@ namespace CNA::Studio
                 static_cast<float>(rectangle.width), static_cast<float>(rectangle.height)};
 
             if (numericComponents(frame, control, kEdges, components, 4,
-                                  /*integral=*/true))
+                                  /*integral=*/true, /*labelled=*/true, &result.dragging))
             {
                 result.edited = PropertyValue{StudioRectangle{
                     static_cast<int>(components[0]), static_cast<int>(components[1]),
@@ -1305,7 +1303,7 @@ namespace CNA::Studio
                 static_cast<float>(colour.b), static_cast<float>(colour.a)};
 
             if (numericComponents(frame, control, kChannels, components, 4,
-                                  /*integral=*/true, /*labelled=*/false))
+                                  /*integral=*/true, /*labelled=*/false, &result.dragging))
             {
                 result.edited = PropertyValue{StudioColor{
                     toChannel(components[0]), toChannel(components[1]),
@@ -2468,9 +2466,16 @@ namespace CNA::Studio
                     // Through the history, always. Showing a scene wrong is a bad afternoon and
                     // editing one wrong is a lost afternoon's work, so nothing here touches an
                     // entity directly.
+                    //
+                    // Merged while a scrub is in flight (STUDIO-07055), so a drag across forty
+                    // pixels is one undo entry rather than forty. The chain is closed by
+                    // `endInteraction` on the first frame nothing is being dragged, which is what
+                    // stops two separate drags of the same field from folding into each other.
                     context.execute(std::make_unique<SetPropertyCommand>(
                         context.getScene(), entityId, component.getTypeId(), property.name,
-                        *edited));
+                        *edited),
+                        editResult.dragging ? MergePolicy::MergeWithPrevious
+                                            : MergePolicy::NewEntry);
                     result.edited = true;
                     result.editedProperty = component.getTypeId() + "." + property.name;
 

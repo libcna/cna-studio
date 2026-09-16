@@ -6,6 +6,7 @@
 
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
+#include "CNA/Studio/Core/NumberText.hpp"
 #include "CNA/Studio/UiCore/StudioFontAtlas.hpp"
 #include "CNA/Studio/UiCore/StudioTextEdit.hpp"
 #include "CNA/Studio/UiCore/StudioTextMeasure.hpp"
@@ -1166,6 +1167,146 @@ namespace CNA::Studio
     // ---------------------------------------------------------------------------------------
     // Drag and drop
     // ---------------------------------------------------------------------------------------
+
+    StudioNumericFieldResult studioNumericField(StudioFrame& frame, WidgetId id,
+                                                const UiRect& bounds, float& value,
+                                                const StudioNumericFieldOptions& options)
+    {
+        StudioNumericFieldResult result;
+        WidgetState& state = frame.state().get(id);
+
+        // `state.integer` rather than `state.active`, and the reason is worth stating because the
+        // first attempt got it wrong: `studioTextField` uses `active` for its *edit session*, so a
+        // scrub that cleared it cleared the session -- every keystroke was discarded on the next
+        // frame and no field in Studio could be typed into. Retained state is shared by whatever
+        // shares the id, and a wrapper is one of those things.
+        bool scrubbing = state.integer != 0;
+
+        // The scrub is decided *before* the text field runs, because what it decides changes what
+        // the text field is handed.
+        if (options.draggable && options.text.enabled)
+        {
+            // Threshold first, exactly like `studioDragSource` and for the same reason: without it
+            // a click that wobbled by one pixel on a trackpad nudges the value, and a field that
+            // changes when you click it is a field nobody dares click. Below the threshold the
+            // press belongs to the text field and does what it always did.
+            constexpr float kThreshold = 4.0f;
+
+            // Both: the router still names this widget active on the frame the button comes up --
+            // that is how it delivers the release to whoever captured the press -- so `activeId`
+            // alone would report a drag that has already ended, and the caller watching for the
+            // gesture to finish would never see it.
+            const bool held = frame.router().activeId() == id
+                           && frame.input().isMouseDown(UiMouseButton::Left);
+            if (held)
+            {
+                const float dx = frame.input().mouseX - frame.router().pressX();
+
+                if (!scrubbing && std::fabs(dx) >= kThreshold)
+                {
+                    // The value as it was when the press began, kept for the whole gesture. Scrubs
+                    // that accumulated frame deltas instead would drift: every frame would round
+                    // its own increment, and dragging out and back would not return to where it
+                    // started -- which is the one thing a user checks.
+                    scrubbing = true;
+                    state.scalar = value;
+                }
+
+                if (scrubbing)
+                {
+                    float next = state.scalar + dx * options.step;
+                    if (options.integral) { next = std::round(next); }
+
+                    if (frame.isInputPass() && next != value)
+                    {
+                        value = next;
+                        result.changed = true;
+                    }
+                    result.dragging = true;
+                }
+            }
+            else if (scrubbing)
+            {
+                // Released. Cleared here rather than on the press, so the frame the button comes
+                // up still reports `dragging` as false and the caller can see the gesture end.
+                scrubbing = false;
+            }
+        }
+        else if (scrubbing)
+        {
+            scrubbing = false;
+        }
+
+        // Written back once, after the branch above, because `state` is a reference into a store
+        // that `studioTextField` also reaches into -- and because the flag is *this* widget's, not
+        // the frame's.
+        state.integer = scrubbing ? 1 : 0;
+
+        // The text, rendered from whatever the value now is -- including a value this function just
+        // scrubbed, so the field reads back what the drag is doing while it is doing it.
+        std::string text = options.integral
+            ? std::to_string(static_cast<std::int64_t>(value))
+            : studioFormatFloat(value);
+
+        StudioTextFieldOptions textOptions = options.text;
+        if (result.dragging)
+        {
+            // A scrub is not an edit session, but the press that started it opened one -- the text
+            // field begins editing on the press, which is what places the caret where the user
+            // clicked. So the session is open for the whole drag, holding the text as it was when
+            // the button went down.
+            //
+            // Left alone, that session *reverts the drag*: on the frame focus goes away it sees its
+            // buffer differ from the value and commits the buffer, putting back the number the user
+            // had just dragged away from. So the buffer is kept in step with the value instead.
+            // Found by the first three cases in `StudioNumericFieldTests` all reporting the value
+            // unchanged after an unmistakable drag.
+            state.text = text;
+            state.caret = text.size();
+            state.selectionAnchor = text.size();
+
+            // And select-all is off, or the field would highlight itself the moment the drag ends,
+            // which reads as the value having been selected for replacement when the user only let
+            // go of it.
+            textOptions.selectAllOnFocus = false;
+        }
+
+        result.text = studioTextField(frame, id, bounds, text, textOptions);
+
+
+        if (result.text.committed && !result.dragging)
+        {
+            if (options.integral)
+            {
+                std::int64_t parsed = 0;
+                if (studioParseInteger(text, parsed))
+                {
+                    value = static_cast<float>(parsed);
+                    result.changed = true;
+                }
+            }
+            else
+            {
+                float parsed = 0.0f;
+                if (studioParseFloat(text, parsed))
+                {
+                    value = parsed;
+                    result.changed = true;
+                }
+            }
+        }
+
+        // The pointer says what it does. A field that scrubs and looks like a plain text box is one
+        // whose best feature nobody finds -- and the cursor is the only affordance available,
+        // because the field has to go on looking like the field it also is.
+        if (options.draggable && options.text.enabled
+            && (result.dragging || result.text.interaction.hovered))
+        {
+            frame.requestCursor(id, StudioCursor::ResizeHorizontal);
+        }
+
+        return result;
+    }
 
     void studioDrawDragPreview(StudioFrame& frame)
     {

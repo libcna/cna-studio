@@ -84,10 +84,13 @@ namespace CNA::Studio
     {
         pollPlugins();
         pollRecovery(nowSeconds);
-        build_.poll();
+        // Once. It was called twice, which was harmless only because the service reports a
+        // *transition* and the second call always saw the state it had just recorded -- a duplicate
+        // that survived because the thing it duplicated is idempotent.
         (void)build_.poll();
         counts_.playerMessages += play_.poll();
         (void)comparison_.poll(nowSeconds);
+        pollInteractionEnd();
         publishStatus();
     }
 
@@ -157,6 +160,30 @@ namespace CNA::Studio
         // host that forgot the seam -- and a Quit that silently does nothing reads as a broken menu.
         log_.append(LogSeverity::Warning,
                     "Nothing here can close CNA Studio: this build has no window to close.");
+    }
+
+    void StudioShellPanels::pollInteractionEnd()
+    {
+        if (shell_ == nullptr) { return; }
+
+        // `STUDIO-07055`. A merge key answers "is this the same edit" -- entity, component,
+        // property -- and cannot answer "is this the same *interaction*", because two drags of one
+        // field are identical by every property the key can see and differ only in that the user
+        // let go in between. Without this, scrubbing a position, going for coffee and scrubbing it
+        // again would be *one* undo entry, and Ctrl+Z would throw away both.
+        //
+        // The prototype has done this since gizmo drags existed (`isAnyItemActive`); the native
+        // shell never did, because until now nothing on it merged. The material editor was already
+        // pushing `MergeWithPrevious`, so two separate material edits were already folding into
+        // one -- a live defect that had nothing to report it.
+        //
+        // Read from the frame the shell drew *last* time, because poll runs before the next one.
+        // That closes the chain one frame after the button comes up, which is a frame in which
+        // nothing was pushed.
+        if (!shell_->frame().router().activeId().isValid())
+        {
+            context_.getHistory().endInteraction();
+        }
     }
 
     void StudioShellPanels::pollPlugins()

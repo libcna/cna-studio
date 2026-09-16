@@ -124,6 +124,24 @@ namespace
             shell->renderFrame(input);
             shell->renderFrame(at(x, y));
         }
+
+        /**
+         * @brief Presses at (@p x, @p y) and drags @p dx pixels sideways, then releases.
+         *
+         * `STUDIO-07055`. The move is delivered in one frame rather than several on purpose: a
+         * scrub is anchored to the value at the press, so a gesture that arrives in one jump and
+         * one that arrives in twenty have to end at the same number. A test that only ever moved a
+         * pixel at a time would pass for an implementation that accumulated frame deltas, which is
+         * the implementation this widget deliberately is not.
+         */
+        void drag(float x, float y, float dx)
+        {
+            shell->renderFrame(at(x, y, false));
+            shell->renderFrame(at(x, y, true));
+            shell->renderFrame(at(x + dx, y, true));
+            shell->renderFrame(at(x + dx, y, false));
+            shell->renderFrame(at(x + dx, y, false));
+        }
     };
 }
 
@@ -668,4 +686,44 @@ CNA_STUDIO_TEST(TheAssetInspectorsHeadingIsActuallyVisibleAndNotPaintedOver)
               "click before the surface, and draw it after (plan.md STUDIO-35063).");
     }
     CNA_STUDIO_EXPECT(colours.size() >= 8);
+}
+
+CNA_STUDIO_TEST(DraggingANumericFieldScrubsTheValueWithoutTypingIntoIt)
+{
+    // `STUDIO-07055`. The prototype's vector fields scrub; the native field committed on Enter and
+    // nothing else, so setting a position meant selecting the text and typing four characters --
+    // for a value a user usually wants to *feel* their way to rather than know in advance.
+    Fixture fixture;
+    Harness harness{fixture.context};
+
+    const StudioVector3 before = fixture.position();
+    CNA_STUDIO_EXPECT_EQ(before.y, 2.0f);
+
+    // The same sweep the typing case uses, for the same reason: found by walking the rows rather
+    // than by computing a pixel, so a metric change does not turn this into a test that drags
+    // empty space and passes.
+    bool scrubbed = false;
+    for (float y = harness.bounds.top() + 20.0f;
+         y < harness.bounds.top() + 200.0f && !scrubbed; y += 6.0f)
+    {
+        const float columnLeft = harness.bounds.left() + harness.bounds.width * 0.40f;
+        const float x = columnLeft + (harness.bounds.right() - columnLeft) * 0.5f;
+
+        harness.drag(x, y, 40.0f);
+        scrubbed = fixture.position().y != before.y;
+    }
+
+    CNA_STUDIO_EXPECT(scrubbed);
+
+    // Rightwards, so upwards. The exact number depends on which row the sweep landed on and on the
+    // step that row's kind uses; what this asserts is the direction and that the other two axes
+    // were not touched -- the classic property-grid defect, asked of a drag rather than of typing.
+    CNA_STUDIO_EXPECT(fixture.position().y > before.y);
+    CNA_STUDIO_EXPECT_EQ(fixture.position().x, before.x);
+    CNA_STUDIO_EXPECT_EQ(fixture.position().z, before.z);
+
+    // And it went through the history like every other edit, so it can be taken back.
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().canUndo());
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(fixture.position().y, before.y);
 }

@@ -551,6 +551,76 @@ namespace CNA::Studio
                                           std::string& value,
                                           const StudioTextFieldOptions& options = {});
 
+    /** @brief How a numeric field scrubs, on top of how its text field behaves. */
+    struct StudioNumericFieldOptions
+    {
+        /** @brief Everything a text field understands; the number is rendered into it. */
+        StudioTextFieldOptions text;
+
+        /**
+         * @brief Units the value moves per pixel of horizontal drag.
+         *
+         * Not a fraction of a range, because a position has no range. A step is what makes the
+         * gesture mean the same thing on a coordinate in the hundreds and on a scale around one —
+         * which is why a caller sets it per property rather than inheriting one number.
+         */
+        float step = 1.0f;
+
+        /** @brief Round to whole numbers, for a count or an index. */
+        bool integral = false;
+
+        /** @brief False to leave the value alone and behave as a plain text field. */
+        bool draggable = true;
+    };
+
+    /** @brief What a numeric field did this frame. */
+    struct StudioNumericFieldResult
+    {
+        /** @brief What the underlying text field did. */
+        StudioTextFieldResult text;
+
+        /** @brief The value changed, by typing or by dragging. Input pass only. */
+        bool changed = false;
+
+        /**
+         * @brief A scrub is in flight this frame. Both passes.
+         *
+         * What tells a caller to push its change as `MergePolicy::MergeWithPrevious` rather than
+         * as a new entry — and, on the frame it goes false, that the interaction has ended.
+         */
+        bool dragging = false;
+    };
+
+    /**
+     * @brief A numeric field that is typed into *or* dragged sideways to scrub.
+     *
+     * `STUDIO-07055`. Every 3D tool scrubs its number fields, and a property grid without it is one
+     * where setting a position means selecting the text and typing four characters — for a value
+     * the user wants to *feel* their way to rather than know in advance.
+     *
+     * ### A click still places the caret
+     *
+     * The drag only begins once the pointer has actually moved, exactly like `studioDragSource`'s
+     * threshold and for the same reason: without it, clicking a field on a trackpad would nudge the
+     * value, and a field that changes when you click it is a field nobody dares click. Below the
+     * threshold the press is the text field's, and it does what it always did.
+     *
+     * ### It does not fight the keyboard
+     *
+     * A field being typed into is not scrubbed. The two would otherwise race over the same string —
+     * the drag writing a value in while the user is halfway through typing another.
+     *
+     * @param frame The frame.
+     * @param id Identity of the field.
+     * @param bounds Area it occupies.
+     * @param value Read for the displayed value; written on commit or on a scrub.
+     * @param options Behaviour.
+     * @return What happened.
+     */
+    StudioNumericFieldResult studioNumericField(StudioFrame& frame, WidgetId id,
+                                                const UiRect& bounds, float& value,
+                                                const StudioNumericFieldOptions& options = {});
+
     // ---------------------------------------------------------------------------------------
     // Drag and drop
     // ---------------------------------------------------------------------------------------
