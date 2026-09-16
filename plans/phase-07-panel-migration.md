@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 35 of 46 complete `█████████░░░`
+**Progress:** 36 of 46 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -52,7 +52,7 @@
 | `STUDIO-07055` | A numeric property field is dragged as well as typed | ⬜ | `STUDIO-07018` |
 | `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ✅ | `STUDIO-07009` |
 | `STUDIO-07057` | The angles a user typed survive being read back | ⬜ | `STUDIO-07018` |
-| `STUDIO-07058` | Reparenting by dragging in the World Outliner | ⬜ | `STUDIO-07006` |
+| `STUDIO-07058` | Reparenting by dragging in the World Outliner | ✅ | `STUDIO-07006` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
 
@@ -309,12 +309,38 @@ prototype keeps what was typed until something else changes the rotation. The na
 afresh every frame. **Acceptance.** The angles a user typed stay in the fields, and stop applying the
 moment the rotation changes from anywhere else.
 
-**`STUDIO-07058` — Reparenting by dragging in the World Outliner.** The prototype reparents by
+**`STUDIO-07058` — Reparenting by dragging in the World Outliner.** ✅ The prototype reparents by
 dragging one row onto another, refuses a parent dropped onto its own child, and keeps drawing while
-the change is pending. The native outliner has no drag at all — `StudioOutlinerPanel.cpp` mentions
+the change is pending. The native outliner had no drag at all — `StudioOutlinerPanel.cpp` mentioned
 reparenting only to say that a cycle would be a bug elsewhere. **Acceptance.** A row dragged onto
 another reparents it as one undo entry; a drop that would make a cycle is refused without an entry;
 the tree keeps drawing throughout.
+
+**Nothing in the widget needed building.** `StudioTreeRow` has carried `dragType`, `dragValue` and
+`dropType` since the Content Browser needed them, and `StudioTreeView` has carried `dropped` and
+`droppedValue` since the Problems panel did. The outliner simply never filled them in — which makes
+this the cheapest of the five gaps and says something about the seam: a facility built for one
+panel turned out to be the whole of what a second one needed.
+
+**The dragged value is the entity's id, not its name.** Two entities may share a name, and a
+reparent that picked whichever the walk found first would be a rearrangement the user did not ask
+for and cannot undo into the one they wanted.
+
+**A drop returns rather than falling through to the click.** A drop lands on the row it was
+released over, and treating that as a press as well would reparent an entity and select the thing
+it was dropped onto in one gesture — the same reason the visibility toggle returns early.
+
+**The cycle is checked before the command is pushed, not after.** `SceneDocument::reparentEntity`
+rejects it and leaves the scene untouched, so pushing anyway would be *harmless* — and would put an
+entry on the undo stack that undoes nothing. A history with entries that do nothing is a history a
+user stops trusting, which costs more than the move they were refused. The refusal is said out
+loud, because a refused drop and a successful one onto a collapsed parent are the same picture:
+in both, the tree does not visibly change.
+
+**One undo entry for the whole move.** The children travel with their parent because they are found
+*through* it, so there is nothing else to record — and an undo that put the parent back while
+leaving its children behind would be worse than no undo at all. Asserted both ways: the entry count
+goes up by exactly one, and after the undo the two children are still on the entity that had them.
 
 ### `STUDIO-07048` — `StudioOptions` moves out of the prototype application's header
 

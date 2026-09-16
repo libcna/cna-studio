@@ -636,6 +636,15 @@ namespace CNA::Studio
                 counts_.outlinerRowsDrawn = outliner.rowsDrawn;
                 counts_.outlinerRowsTotal = outliner.rowsTotal;
             }
+            // Said out loud, because a refused drop is a tree that did not change and a successful
+            // one on a collapsed parent can be too -- the row moves inside something the user
+            // cannot see. Without a line here the two are the same picture (STUDIO-07058).
+            if (outliner.reparentRefused)
+            {
+                log_.append(LogSeverity::Warning,
+                            "An entity cannot be moved inside one of its own children.");
+            }
+
             if (!outliner.selectionChanged) { return; }
 
             const std::vector<Uuid>& selection = context_.getSelection();

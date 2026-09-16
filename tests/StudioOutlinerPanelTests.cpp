@@ -14,6 +14,7 @@
 
 #include "TestHarness.hpp"
 
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -316,4 +317,180 @@ CNA_STUDIO_TEST(EveryOutlinerRowCarriesAVisibilityToggle)
     CNA_STUDIO_EXPECT(!rowFor(hidden)->toggleOn);
     CNA_STUDIO_EXPECT_EQ(rowFor(visible)->toggleTooltip, std::string{"Hide this entity"});
     CNA_STUDIO_EXPECT_EQ(rowFor(hidden)->toggleTooltip, std::string{"Show this entity"});
+}
+
+CNA_STUDIO_TEST(EveryOutlinerRowIsBothADragSourceAndADropTarget)
+{
+    // `STUDIO-07058`. Rearranging a hierarchy is dragging one entity onto another, so both roles
+    // belong to every row -- there is no such thing as an entity that can be moved but cannot be
+    // moved into, or the other way round.
+    //
+    // The dragged value is the entity's *id*, not its name. Two entities may share a name, and a
+    // reparent that picked whichever one the walk found first would be a rearrangement the user did
+    // not ask for and cannot undo into the one they wanted.
+    Fixture fixture;
+    StudioTreeState state;
+
+    const std::vector<StudioTreeRow> rows =
+        studioOutlinerRows(fixture.context.getScene(), {}, state);
+    CNA_STUDIO_EXPECT(!rows.empty());
+
+    for (const StudioTreeRow& row : rows)
+    {
+        CNA_STUDIO_EXPECT_EQ(row.dragType, std::string{kStudioEntityDragType});
+        CNA_STUDIO_EXPECT_EQ(row.dropType, std::string{kStudioEntityDragType});
+        CNA_STUDIO_EXPECT_EQ(row.dragValue, row.id);
+        CNA_STUDIO_EXPECT(Uuid::parse(row.dragValue).isValid());
+    }
+
+    // And it is a *different* type from the one the Content Browser drags, so a texture dropped on
+    // a row does not read as a reparent.
+    CNA_STUDIO_EXPECT(kStudioEntityDragType != kStudioAssetDragType);
+}
+
+CNA_STUDIO_TEST(DroppingARowOnAnotherReparentsItAsOneUndoEntry)
+{
+    // One entry for the whole move. The children come with their parent because they are found
+    // *through* it, so there is nothing else to record -- and an undo that put the parent back
+    // while leaving its children behind would be worse than no undo at all.
+    Fixture fixture;
+    StudioTreeState state;
+
+    CNA_STUDIO_EXPECT(fixture.context.getScene().getChildren(fixture.camera).empty());
+    const std::size_t before = fixture.context.getHistory().getCount();
+
+    const std::unique_ptr<StudioShell> shell = shellShowingTheOutliner();
+
+    std::vector<StudioTreeRow> rows;
+    StudioOutlinerResult last;
+    UiRect panelBounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("outliner",
+        [&](StudioFrame& frame, const UiRect& bounds) {
+            const StudioOutlinerResult result =
+                studioOutlinerPanel(frame, bounds, fixture.context, state);
+            if (frame.isInputPass()) { last = result; }
+            if (frame.isDrawPass())
+            {
+                panelBounds = bounds;
+                rows = studioOutlinerRows(fixture.context.getScene(),
+                                          fixture.context.getSelection(), state);
+            }
+        }));
+
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(!panelBounds.isEmpty());
+
+    // Main Camera is the row to drop onto. Found by label rather than by index, because the order
+    // is the document's and a test that hard-coded a row number would move a different entity the
+    // day something is renamed.
+    const auto rowY = [&](std::string_view label) {
+        const float rowHeight =
+            static_cast<float>(shell->theme().metric(StudioMetric::RowHeight));
+        for (std::size_t i = 0; i < rows.size(); ++i)
+        {
+            if (rows[i].label == label)
+            {
+                return panelBounds.top() + (static_cast<float>(i) + 0.5f) * rowHeight;
+            }
+        }
+        return -1.0f;
+    };
+
+    const float onto = rowY("Main Camera");
+    CNA_STUDIO_EXPECT(onto > 0.0f);
+
+    // Driven through the frame's own drag, because "does a drop reparent" is the thing under test
+    // rather than "does a row start a drag", which the case above covers.
+    StudioFrame::StudioDragPayload payload;
+    payload.type = std::string{kStudioEntityDragType};
+    payload.value = fixture.player.toString();
+    payload.label = "Player";
+
+    shell->renderFrame(at(panelBounds.centerX(), onto, /*leftDown=*/true));
+    CNA_STUDIO_EXPECT(shell->frame().beginDrag(shell->frame().ids().make("source"), payload));
+
+    shell->renderFrame(at(panelBounds.centerX(), onto, /*leftDown=*/true));
+    shell->renderFrame(at(panelBounds.centerX(), onto));
+
+    CNA_STUDIO_EXPECT(last.reparented);
+    CNA_STUDIO_EXPECT(!last.reparentRefused);
+
+    const std::vector<Uuid> children = fixture.context.getScene().getChildren(fixture.camera);
+    CNA_STUDIO_EXPECT_EQ(children.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(children.front() == fixture.player);
+
+    // Exactly one entry, and undoing it puts the entity back where it was.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT(fixture.context.getScene().getChildren(fixture.camera).empty());
+
+    // And the children travelled with it and are still there afterwards.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getScene().getChildren(fixture.player).size(),
+                         std::size_t{2});
+}
+
+CNA_STUDIO_TEST(ADropThatWouldMakeACycleIsRefusedWithoutAnUndoEntry)
+{
+    // `reparentEntity` rejects the cycle itself and leaves the scene untouched, so pushing the
+    // command would be *harmless* -- and would put an entry on the undo stack that undoes nothing.
+    // A history with entries that do nothing is a history a user stops trusting, which costs more
+    // than the move they were refused.
+    Fixture fixture;
+    StudioTreeState state;
+
+    // Player is Weapon's parent, so dropping Player onto Weapon would make the tree a ring.
+    CNA_STUDIO_EXPECT(fixture.context.getScene().isAncestorOf(fixture.player, fixture.weapon));
+    const std::size_t before = fixture.context.getHistory().getCount();
+
+    const std::unique_ptr<StudioShell> shell = shellShowingTheOutliner();
+
+    std::vector<StudioTreeRow> rows;
+    StudioOutlinerResult last;
+    UiRect panelBounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("outliner",
+        [&](StudioFrame& frame, const UiRect& bounds) {
+            const StudioOutlinerResult result =
+                studioOutlinerPanel(frame, bounds, fixture.context, state);
+            if (frame.isInputPass()) { last = result; }
+            if (frame.isDrawPass())
+            {
+                panelBounds = bounds;
+                rows = studioOutlinerRows(fixture.context.getScene(),
+                                          fixture.context.getSelection(), state);
+            }
+        }));
+
+    // Expanded, or Weapon is not a row on screen to drop onto.
+    state.setExpanded(fixture.player.toString(), true);
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(!panelBounds.isEmpty());
+
+    const float rowHeight = static_cast<float>(shell->theme().metric(StudioMetric::RowHeight));
+    float onto = -1.0f;
+    for (std::size_t i = 0; i < rows.size(); ++i)
+    {
+        if (rows[i].label == "Weapon")
+        {
+            onto = panelBounds.top() + (static_cast<float>(i) + 0.5f) * rowHeight;
+        }
+    }
+    CNA_STUDIO_EXPECT(onto > 0.0f);
+
+    StudioFrame::StudioDragPayload payload;
+    payload.type = std::string{kStudioEntityDragType};
+    payload.value = fixture.player.toString();
+    payload.label = "Player";
+
+    shell->renderFrame(at(panelBounds.centerX(), onto, /*leftDown=*/true));
+    CNA_STUDIO_EXPECT(shell->frame().beginDrag(shell->frame().ids().make("source"), payload));
+
+    shell->renderFrame(at(panelBounds.centerX(), onto, /*leftDown=*/true));
+    shell->renderFrame(at(panelBounds.centerX(), onto));
+
+    CNA_STUDIO_EXPECT(last.reparentRefused);
+    CNA_STUDIO_EXPECT(!last.reparented);
+
+    // Nothing moved and nothing was recorded.
+    CNA_STUDIO_EXPECT(fixture.context.getScene().isAncestorOf(fixture.player, fixture.weapon));
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before);
 }

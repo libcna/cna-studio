@@ -33,6 +33,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace CNA::Studio
@@ -57,7 +58,33 @@ namespace CNA::Studio
 
         /** @brief Whether an entity was shown or hidden from its row this frame. Input pass only. */
         bool visibilityChanged = false;
+
+        /**
+         * @brief Whether an entity was reparented by a drag this frame. Input pass only.
+         *
+         * `STUDIO-07058`.
+         */
+        bool reparented = false;
+
+        /**
+         * @brief Whether a drop was refused because it would have made a cycle. Input pass only.
+         *
+         * Reported rather than swallowed, and reported *separately* from a reparent that happened:
+         * a refusal that looked like success would leave the user watching a tree that did not
+         * change and wondering which of the two they were looking at.
+         */
+        bool reparentRefused = false;
     };
+
+    /**
+     * @brief The payload type an entity is dragged as, within the outliner.
+     *
+     * One constant rather than a literal at each end: a source and a target that disagree about
+     * the spelling produce a drag that silently does nothing, which is the hardest failure to see.
+     * Distinct from the asset type, so a texture dragged from the Content Browser onto a row does
+     * not read as a reparent.
+     */
+    inline constexpr std::string_view kStudioEntityDragType = "entity";
 
     /**
      * @brief Starts renaming @p entityId in the outliner, if it is in the scene.

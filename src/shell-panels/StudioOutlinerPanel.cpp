@@ -115,6 +115,17 @@ namespace CNA::Studio
             row.toggleOn = entity->isEnabled();
             row.toggleTooltip = entity->isEnabled() ? "Hide this entity" : "Show this entity";
 
+            // `STUDIO-07058`. Every row is both a drag source and a drop target, because
+            // rearranging a hierarchy is dragging one entity onto another and both roles belong to
+            // every row -- the prototype's outliner has said so since it was written.
+            //
+            // The value is the entity's id rather than its name: two entities may share a name,
+            // and a reparent that picked whichever one the walk found first would be a rearrangement
+            // the user did not ask for and cannot undo into the one they wanted.
+            row.dragType = std::string{kStudioEntityDragType};
+            row.dragValue = id.toString();
+            row.dropType = std::string{kStudioEntityDragType};
+
             // The component list is what tells a camera from a sprite at a glance, and it is the
             // first thing anybody looks for in an outliner. One name reads; five is a wall.
             if (entity->getComponents().size() == 1)
@@ -210,6 +221,38 @@ namespace CNA::Studio
                 context.execute(std::make_unique<SetEntityEnabledCommand>(
                     context.getScene(), id, !entity->isEnabled()));
                 result.visibilityChanged = true;
+            }
+            return result;
+        }
+
+        // Before the click, and returning rather than falling through: a drop lands on the row it
+        // was released over, and treating that as a press as well would reparent an entity and
+        // select the thing it was dropped onto in one gesture.
+        if (tree.dropped.has_value() && *tree.dropped < rows.size())
+        {
+            const Uuid parent = Uuid::parse(rows[*tree.dropped].id);
+            const Uuid child = Uuid::parse(tree.droppedValue);
+
+            if (child.isValid() && parent.isValid() && child != parent)
+            {
+                // Checked here rather than left to the document. `reparentEntity` rejects a cycle
+                // and leaves the scene untouched, so pushing the command would be *harmless* --
+                // and would put an undo entry on the stack that undoes nothing, which is the kind
+                // of history that makes a user stop trusting Ctrl+Z.
+                if (context.getScene().isAncestorOf(child, parent))
+                {
+                    result.reparentRefused = true;
+                }
+                else if (context.getScene().findEntity(child) != nullptr
+                         && context.getScene().findEntity(parent) != nullptr)
+                {
+                    // Through the history, like every other edit. One entry for the whole move:
+                    // the children come with their parent because they are found through it, so
+                    // there is nothing else to record.
+                    context.execute(std::make_unique<ReparentEntityCommand>(
+                        context.getScene(), child, parent));
+                    result.reparented = true;
+                }
             }
             return result;
         }
