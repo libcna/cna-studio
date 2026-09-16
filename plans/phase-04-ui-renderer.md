@@ -41,7 +41,7 @@
 | `STUDIO-04024` | `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect` | ✅ | `STUDIO-04023` |
 | `STUDIO-04025` | A/B verification: both backends draw the same frame | ✅ | `STUDIO-04024` |
 | `STUDIO-04026` | Default the native host to the modern backend | ✅ | `STUDIO-04025` |
-| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04026` |
+| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04029`, `STUDIO-07030` |
 | `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ✅ | `STUDIO-04001` |
 
 ## Acceptance and verification
@@ -141,10 +141,56 @@ cannot run it.
 **Acceptance.** Either `CnaUiRenderer` is deleted, or the reason it stays is written down on this
 task with the renderers it serves named. Two full UI GPU stacks are not kept by default.
 
-**Blocked on more than `STUDIO-04026`.** CNA's `SOFTWARE` renderer cannot execute a shader, and it
-is the only renderer this project's CI can build (gap G-10). Deleting the classic path before a
-modern-capable renderer runs in CI would delete the only automated graphical coverage Studio has.
-`STUDIO-02074` retires the host profile that goes with it.
+**The blocker that was recorded here has expired, and a different one was found in its place.**
+
+**Expired.** This task used to say: "CNA's `SOFTWARE` renderer cannot execute a shader, and it is
+the only renderer this project's CI can build (gap G-10). Deleting the classic path before a
+modern-capable renderer runs in CI would delete the only automated graphical coverage Studio has."
+`STUDIO-04029` closed that, and the cost of deletion was then measured rather than assumed: the
+`OPENGL4` leg's CTest set is a **strict superset** of the `SOFTWARE` leg's — 79 suites against 78,
+the extra being `CnaStudioUiRenderBackendsAgree`, which only a renderer that can run both backends
+can declare at all. Deleting the classic path costs **no** automated coverage.
+
+```
+$ comm -23 <(ctest --test-dir build-cna -N) <(ctest --test-dir build-gl -N)
+(nothing)
+```
+
+**And the case for deleting is stronger than "two stacks is one too many".** `STUDIO-04028`
+measured the classic path at **17–18× the modern one's geometry submission**, on every one of eight
+frame shapes, for structural reasons that get worse as the UI is batched more finely. It also
+cannot draw material, shader or post-process previews, which Phases 19, 20 and 22 are built on — so
+it is a path that will stop being able to draw the editor rather than merely being slower at it.
+
+**The real blocker: the Dear ImGui host draws through it, unconditionally.**
+`CnaStudioHost::LoadContent` — the `--ui=imgui` host — does `std::make_unique<CnaUiRenderer>()` with
+no chooser and no alternative. `STUDIO-04026` defaulted *the native host* to the modern backend and
+left the prototype's host where it was, which was right at the time and is why this went unrecorded.
+The native shell host picks through `resolveStudioUiBackend`; the prototype's host does not pick at
+all.
+
+So deleting `CnaUiRenderer` today would delete the renderer the Dear ImGui prototype draws with, and
+the prototype is still shipped and still reachable — it is `STUDIO-07030`'s to remove, which is in
+turn blocked on `STUDIO-07042`–`07046`. **This task now depends on `STUDIO-07030`.** Porting the
+prototype's host to the modern backend was considered and rejected: it is work spent on a host whose
+own task is deletion, and it would make `--ui=imgui` refuse to start on `SOFTWARE`, which is where
+the prototype's remaining coverage runs.
+
+**The renderers the classic path serves, named as the acceptance asks.** Not a list of renderer
+identities — Studio never decides this by name, and `STUDIO-02030`'s guard exists to keep it that
+way — but a capability class: **every CNA renderer that reports `ShaderEffects` or
+`ShaderEffectSourceExecution` as unsupported.** Of the two this project builds, `SOFTWARE` is in that
+class and `OPENGL4` is not; `HEADLESS` and `STUB` are CPU rasterisers and are in it by the same
+reasoning. When this path goes, Studio stops being hostable on a renderer that cannot execute a
+shader — which its own capability contract (`STUDIO-02070`, Cases A–D) already says is the intended
+answer, and which `STUDIO-02074` then finishes by retiring the compatibility profile.
+
+**One thing was done now rather than waiting**, because it is what made the dependency visible:
+`CnaUiRenderer::getBackendName()` — a static on the classic backend that answered *which CNA
+renderer this build was compiled against*, layer 3 rather than layer 2 — is
+`studioHostCnaRendererName()` in its own header. `src/player` linked the editor's UI renderer for
+that one string and now links no UI render backend at all, which
+`ThePlayerDependsOnNoUiRenderBackend` keeps true.
 
 ### `STUDIO-04028` — UI render benchmarks: CPU time, upload bytes, counts, state changes
 

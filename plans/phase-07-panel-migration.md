@@ -43,6 +43,13 @@
 | `STUDIO-07046` | The material asset editor the prototype already has | ⬜ | `STUDIO-07041` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
+
+> **`STUDIO-07030` blocks more than this phase.** `CnaStudioHost` — the `--ui=imgui` host — creates
+> a `CnaUiRenderer` unconditionally, with no chooser, so the Dear ImGui prototype is the last
+> consumer of the classic UI render backend. `STUDIO-04027` cannot delete that backend until this
+> row is closed, and now records the dependency. Found by attempting the deletion, not by reading
+> the graph: `STUDIO-04026` defaulted *the native host* to the modern backend and left the
+> prototype's host where it was, which was correct then and is why nothing recorded it.
 | `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | ⬜ | `STUDIO-07031` |
 
 ## Acceptance and verification
