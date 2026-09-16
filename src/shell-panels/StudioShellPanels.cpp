@@ -60,6 +60,12 @@ namespace CNA::Studio
               if (shell_ != nullptr) { shell_->setTheme(std::move(theme)); }
           })
     {
+        // Every command that lands, mirrored to a running game exactly as it happens to the
+        // document -- an inspector edit, a gizmo drag, an undo -- so Play shows what the editor
+        // shows without every editing surface having to know a player might be listening.
+        context_.setCommandObserver(
+            [this](const StudioCommand& command) { mirrorCommandToPlayer(command); });
+
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_.process());
 
         // A toast is ephemeral by design, which makes it the wrong place to keep anything. Wired
@@ -107,6 +113,27 @@ namespace CNA::Studio
         std::string line = notification.title;
         if (!notification.detail.empty()) { line += " -- " + notification.detail; }
         log_.append(studioNotificationLogSeverity(notification.severity), line);
+    }
+
+    void StudioShellPanels::mirrorCommandToPlayer(const StudioCommand& command)
+    {
+        // A dynamic_cast rather than a virtual on StudioCommand: asking a command to describe
+        // itself in protocol terms would put the wire format into cna-studio-scene, which links
+        // neither the bridge nor anything that knows a player exists.
+        const auto* setProperty = dynamic_cast<const SetPropertyCommand*>(&command);
+        if (setProperty == nullptr) { return; }
+
+        // The document's own value, not the command's: after an undo the live value is the old
+        // one, and the document is the only thing that is right in both directions.
+        const StudioEntity* entity = context_.getScene().findEntity(setProperty->getEntityId());
+        if (entity == nullptr) { return; }
+
+        const StudioComponent* component = entity->findComponent(setProperty->getComponentTypeId());
+        if (component == nullptr) { return; }
+
+        play_.mirrorEdit(setProperty->getEntityId(), setProperty->getComponentTypeId(),
+                         setProperty->getPropertyName(),
+                         component->getProperty(setProperty->getPropertyName()));
     }
 
     void StudioShellPanels::requestQuit()

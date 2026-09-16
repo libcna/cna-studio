@@ -12,6 +12,7 @@
 
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/ShellPanels/StudioPlayService.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -427,6 +428,72 @@ CNA_STUDIO_TEST(PausingARealPlayerFollowsItRatherThanAnnouncingIt)
     CNA_STUDIO_EXPECT(harness.panels.setPlayPaused(false));
     CNA_STUDIO_EXPECT(harness.panels.playState() == StudioPlayState::Playing);
     CNA_STUDIO_EXPECT(!harness.panels.setPlayPaused(false));
+
+    harness.shell.invoke("studio.play.stop");
+}
+
+CNA_STUDIO_TEST(ALiveEditReachesARunningPlayerAsASetPropertyMessage)
+{
+    // The other end-to-end rule: an inspector edit -- any command through the one hook every edit
+    // goes through -- reaches a running game as the property it now holds. StudioContext's
+    // command observer is what carries it there; before STUDIO-07030 nothing on the native shell
+    // had ever installed one, so a game kept running the arrangement it started with no matter
+    // what the editor showed.
+    const std::vector<PlayerBuild> builds =
+        discoverPlayerBuilds(std::filesystem::path{CNA_STUDIO_TEST_PLAYER_DIR}.generic_string());
+    if (builds.empty()) { return; }
+
+    Harness harness;
+    const ScopedProject project{"liveedit"};
+    CNA_STUDIO_EXPECT(harness.context.openProject(project.file()));
+
+    // The startup scene the project names does not exist on disk yet -- opening it failed and
+    // left the scene empty, silently, which is its own small trap. A fresh one is populated and
+    // known-good, and this is what actually puts something at the path the player will load.
+    harness.context.newScene();
+    CNA_STUDIO_EXPECT(harness.context.saveScene(project.scene()));
+    harness.panels.setPlayerBuilds(builds);
+    harness.frame();
+
+    CNA_STUDIO_EXPECT(!harness.context.getScene().getEntities().empty());
+    const Uuid entityId = harness.context.getScene().getEntities().front().getId();
+
+    harness.shell.invoke("studio.play.play");
+    if (!harness.panels.isPlaying()) { return; }
+
+    const std::string expected =
+        "set " + harness.context.getScene().findEntity(entityId)->getName()
+        + ".CNA.Transform.position";
+
+    // The player has to be listening before a message can reach it, same as any other real-player
+    // test -- so the edit is retried across frames rather than sent once and hoped for. Repeating
+    // it is harmless: every attempt sets the same value, so a retry before the first one lands
+    // changes nothing a running game would show.
+    //
+    // Drained from the process directly rather than through the service's own poll(): the
+    // confirmation is a trace-level ReportLog, which is not one of the message types poll()
+    // interprets for the toolbar, and asserting through a path that would silently drop it is
+    // exactly the mistake that would let this regress unnoticed a second time. Draining this way
+    // is also what actually accepts the player's incoming connection -- the service's own poll()
+    // would do the same thing and then throw the reply away.
+    bool sawIt = false;
+    for (int attempt = 0; attempt < 400 && !sawIt; ++attempt)
+    {
+        harness.context.execute(std::make_unique<SetPropertyCommand>(
+            harness.context.getScene(), entityId, BuiltinComponentIds::kTransform, "position",
+            PropertyValue{StudioVector3{40.0f, 8.0f, 0.0f}}));
+
+        for (const StudioMessage& message : harness.panels.play().process().poll())
+        {
+            if (message.type == StudioMessageType::ReportLog
+                && message.payload["text"].asString() == expected)
+            {
+                sawIt = true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CNA_STUDIO_EXPECT(sawIt);
 
     harness.shell.invoke("studio.play.stop");
 }

@@ -38,6 +38,7 @@
  * on". It stops the running player through this service, which is the only overlap there is.
  */
 
+#include "CNA/Studio/Core/PropertyValue.hpp"
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioNotifications.hpp"
@@ -180,6 +181,23 @@ namespace CNA::Studio
          * @return Whether a message was sent.
          */
         bool reloadAsset(const Uuid& assetId);
+
+        /**
+         * @brief Tells a running game that one of its own entities' properties just changed.
+         *
+         * The document's own value at @p entityId / @p componentTypeId / @p propertyName, not a
+         * copy handed in by the caller: after an undo the edit that produced this call is not the
+         * value that is actually live any more, and the document is the only thing that is right
+         * both ways. Only while a game is running, for the same reason `reloadAsset` checks it.
+         *
+         * @param entityId The entity whose property changed.
+         * @param componentTypeId Which of its components.
+         * @param propertyName Which property on that component.
+         * @param value The document's current value of that property.
+         * @return Whether a message was sent.
+         */
+        bool mirrorEdit(const Uuid& entityId, const std::string& componentTypeId,
+                        const std::string& propertyName, const PropertyValue& value);
 
         /**
          * @brief Drains the player's messages and notices an ending exactly once.

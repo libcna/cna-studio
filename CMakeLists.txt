@@ -209,8 +209,8 @@ target_link_libraries(cna-studio-ui PUBLIC cna-studio-core)
 
 # cna-studio-ui-core -- the foundations of the native CNA Studio UI (plan.md Phase 3).
 #
-# This is the module that will replace the Dear ImGui presentation, and the most important thing
-# about it is what it does NOT link: no CNA, no toolkit, no window system. Layout, widget identity,
+# This is the module that replaced the Dear ImGui presentation (STUDIO-07030), and the most
+# important thing about it is what it does NOT link: no CNA, no toolkit, no window system. Layout, widget identity,
 # retained state, focus and styling are all decided by code that runs in CI with no GPU, which is
 # what keeps the UI workstream testable rather than only lookable-at. Only the pixels need a
 # device, and those are cna-studio-ui-renderer's problem (Phase 4).
@@ -286,6 +286,11 @@ target_include_directories(cna-studio-ui-core PRIVATE "${CMAKE_CURRENT_SOURCE_DI
 
 # Dear ImGui itself. Vendored core only -- none of ImGui's own platform or renderer backends are
 # built, because cna-studio supplies its own through CNA's public API (ANALYSIS.md decision D-14).
+#
+# The implementation that used to sit on top of this -- cna-studio-ui-imgui, built from
+# src/ui/imgui/ImGuiStudioUi.cpp -- is gone (STUDIO-07030). Nothing links this library any more;
+# it stays buildable, unused, until STUDIO-07031 removes the option and the vendored source
+# together.
 if(CNA_STUDIO_WITH_IMGUI)
     add_library(cna-studio-imgui-vendor STATIC
         third_party/imgui/imgui.cpp
@@ -300,12 +305,6 @@ if(CNA_STUDIO_WITH_IMGUI)
     if(NOT MSVC)
         target_compile_options(cna-studio-imgui-vendor PRIVATE -w)
     endif()
-
-    # cna-studio-ui-imgui -- the ImGui implementation of StudioUi. Needs ImGui and nothing else:
-    # no window system, no graphics API, no CNA. That is what makes it testable headless.
-    add_library(cna-studio-ui-imgui STATIC
-        src/ui/imgui/ImGuiStudioUi.cpp)
-    target_link_libraries(cna-studio-ui-imgui PUBLIC cna-studio-ui PRIVATE cna-studio-imgui-vendor)
 endif()
 
 # cna-studio-runtime-bridge -- the editor/player wire protocol, its loopback TCP transport, and
@@ -413,13 +412,6 @@ if(CNA_STUDIO_WITH_CNA)
         src/viewport/CnaCapabilityBridge.cpp
         src/viewport/CnaStudioShellHost.cpp)
 
-    # The window host needs both CNA and Dear ImGui, so it only exists when both are built.
-    # Without it the editor still compiles and runs headless -- the CNA-linked renderer and
-    # platform layer are independently useful, and the tests exercise them.
-    if(CNA_STUDIO_WITH_IMGUI)
-        list(APPEND _cna_studio_viewport_sources src/viewport/CnaStudioHost.cpp)
-    endif()
-
     add_library(cna-studio-viewport STATIC ${_cna_studio_viewport_sources})
     # cna-studio-player is here for the player's window host: it draws a PlayerHost's scene, and
     # PlayerHost is the CNA-free half that owns it. The dependency runs one way only -- the player
@@ -432,11 +424,6 @@ if(CNA_STUDIO_WITH_CNA)
                cna-studio-ui-renderer
         PRIVATE CNA)
     target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_CNA=1)
-
-    if(CNA_STUDIO_WITH_IMGUI)
-        target_link_libraries(cna-studio-viewport PUBLIC cna-studio-ui-imgui)
-        target_compile_definitions(cna-studio-viewport PUBLIC CNA_STUDIO_HAS_HOST=1)
-    endif()
 endif()
 
 # cna-studio-shell-panels -- the panels ported onto the Studio UI.
@@ -473,27 +460,9 @@ target_link_libraries(cna-studio-shell-panels PUBLIC cna-studio-ui-core cna-stud
 # Application
 # ---------------------------------------------------------------------------------------------
 
-# Listed once and reused by the test target, which builds the panels alongside the application so
-# the tests drive the real ones (plan.md ED-210).
-set(CNA_STUDIO_PANEL_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/MainMenuBar.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/HierarchyPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/InspectorPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/AssetBrowserPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/ViewportPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/ValidationPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/HistoryPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/ConsolePanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/DiagnosticsPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/BuildPanel.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/panels/ComparisonPanel.cpp
-    CACHE INTERNAL "Studio panel sources")
-
 add_executable(cna-studio
     src/app/Main.cpp
-    src/app/StudioApplication.cpp
-    src/app/StudioOptions.cpp
-    ${CNA_STUDIO_PANEL_SOURCES})
+    src/app/StudioOptions.cpp)
 target_link_libraries(cna-studio PRIVATE
     cna-studio-ui-core
     cna-studio-context
@@ -511,11 +480,6 @@ set_target_properties(cna-studio PROPERTIES ENABLE_EXPORTS ON)
 
 if(CNA_STUDIO_WITH_CNA)
     target_link_libraries(cna-studio PRIVATE cna-studio-viewport)
-endif()
-
-if(CNA_STUDIO_WITH_IMGUI)
-    target_link_libraries(cna-studio PRIVATE cna-studio-ui-imgui)
-    target_compile_definitions(cna-studio PRIVATE CNA_STUDIO_HAS_IMGUI=1)
 endif()
 
 # ---------------------------------------------------------------------------------------------

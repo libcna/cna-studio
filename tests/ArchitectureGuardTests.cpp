@@ -179,9 +179,10 @@ CNA_STUDIO_TEST(OnlyTheTwoCnaLinkedModulesIncludeCnaHeaders)
 CNA_STUDIO_TEST(TheNativeStudioUiHasNoDearImGuiDependency)
 {
     // The end state of the UI migration is that production Studio UI does not depend on Dear
-    // ImGui at all (STUDIO-07099). That cannot be asserted for the whole application yet -- the
-    // legacy panels are still ImGui -- but it can be asserted for the new UI from its first
-    // commit, which is what stops the dependency creeping back in as panels are ported.
+    // ImGui at all (STUDIO-07099). The panel implementations that depended on it are gone
+    // (STUDIO-07030), but the vendored source and the option that builds it are still here for
+    // STUDIO-07031 to remove deliberately -- so this stays scoped to ui-core rather than widening
+    // to the whole tree, which is STUDIO-07099's own job once that option is gone too.
     std::size_t violations = 0;
     for (const SourceFile& file : collectSources({"src/ui-core", "include/CNA/Studio/UiCore"}))
     {
@@ -198,60 +199,6 @@ CNA_STUDIO_TEST(TheNativeStudioUiHasNoDearImGuiDependency)
                       "acquire a dependency on it.");
             }
         }
-    }
-    CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
-}
-
-CNA_STUDIO_TEST(OnlyThePrototypesOwnFilesIncludeThePrototypesApplication)
-{
-    // `plan.md` STUDIO-07048. `StudioApplication` is the prototype's application object and is
-    // being deleted (STUDIO-07030). Until it goes, the rule that makes that deletion a deletion
-    // rather than a deletion plus a refactor is that nothing outside the prototype's own files
-    // depends on its header.
-    //
-    // It used to declare `StudioOptions` as well, so *every* entry point included it -- the native
-    // shell and the headless shell preview among them -- in order to read a parsed command line
-    // that has nothing to do with the prototype. That struct is `CNA/Studio/StudioOptions.hpp`
-    // now, and this is what stops the dependency coming back.
-    //
-    // The list is the prototype: `main` dispatches to it, the Dear ImGui window host runs it, and
-    // its own source. When those go, this test goes with them -- and the header it names goes
-    // first, so it cannot quietly pass by scanning for something that no longer exists.
-    const std::vector<std::string> allowed = {
-        "src/app/Main.cpp",
-        "src/app/StudioApplication.cpp",
-        "include/CNA/Studio/StudioApplication.hpp",
-        "include/CNA/Studio/StudioOptions.hpp",       // names it in a comment, for the history
-        "include/CNA/Studio/Viewport/CnaStudioHost.hpp",
-        "src/viewport/CnaStudioHost.cpp",
-    };
-
-    // The header has to be there, or this passes by finding nothing.
-    bool headerExists = false;
-    for (const SourceFile& file : collectSources({"include"}))
-    {
-        if (file.relativePath == "include/CNA/Studio/StudioApplication.hpp")
-        {
-            headerExists = true;
-            break;
-        }
-    }
-    CNA_STUDIO_EXPECT(headerExists);
-
-    std::size_t violations = 0;
-    for (const SourceFile& file : collectSources({"src", "include"}))
-    {
-        if (std::find(allowed.begin(), allowed.end(), file.relativePath) != allowed.end())
-        {
-            continue;
-        }
-        if (file.text.find("StudioApplication.hpp") == std::string::npos) { continue; }
-
-        ++violations;
-        CnaStudioTest::reportFailure(__FILE__, __LINE__,
-            file.relativePath + " includes CNA/Studio/StudioApplication.hpp. That header is the "
-            "prototype's application and is being deleted (STUDIO-07030). A parsed command line "
-            "is CNA/Studio/StudioOptions.hpp.");
     }
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }

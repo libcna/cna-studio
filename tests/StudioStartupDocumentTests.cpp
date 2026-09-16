@@ -11,13 +11,14 @@
  * project's own startup scene opened, which is what happens when the flag is absent, so a user
  * passing it saw a plausible Studio containing the wrong scene.
  *
- * A flag that stops existing on the way to the second UI is invisible to every test that exercises
- * one UI at a time. `NoParsedFlagIsReadByThePrototypeAlone` below is the one that would have caught
- * it, and it is written over the parser rather than over a list somebody maintains.
+ * The guard that would have caught it, `NoParsedFlagIsReadByThePrototypeAlone`, scanned the
+ * prototype's own source for exactly this shape: a flag the parser set that only `StudioApplication`
+ * read. STUDIO-07030 deleted that file along with the rest of the prototype, so the guard went with
+ * it -- there is only one UI left for a parsed flag to go unread by, and that is a lone caller, not
+ * a divergence between two.
  */
 
 #include "TestHarness.hpp"
-#include "SourceScan.hpp"
 
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -25,10 +26,8 @@
 
 #include <filesystem>
 #include <fstream>
-#include <set>
 #include <string>
 #include <string_view>
-#include <vector>
 
 using namespace CNA::Studio;
 
@@ -171,114 +170,4 @@ CNA_STUDIO_TEST(AProjectThatWillNotOpenStopsBeforeTheSceneOverride)
     CNA_STUDIO_EXPECT(context.getScene().getName() != std::string{"BossArena"});
 
     std::filesystem::remove_all(directory);
-}
-
-// ------------------------------------------------------------------------------------------------
-// The guard that would have caught it
-// ------------------------------------------------------------------------------------------------
-
-CNA_STUDIO_TEST(NoParsedFlagIsReadByThePrototypeAlone)
-{
-    // `--scene` was parsed, documented and consumed by `StudioApplication` alone. Every test that
-    // exercised it exercised the prototype, so every one of them passed; the native shell -- the
-    // default UI -- ignored the flag in silence, and there was nothing to see because ignoring it
-    // produces exactly what not passing it produces.
-    //
-    // Written over the *parser* rather than over a list of flags somebody maintains. A guard with
-    // its own inventory is a guard that goes stale the first time a flag is added, and this project
-    // has already paid for one of those: the migration inventory was complete over panels, menus,
-    // toolbars and shortcuts, and missed `Add Component` because a button inside a panel is none of
-    // those things.
-    //
-    // A flag the native shell genuinely has no use for is allowed, but only by name and only with
-    // the task that will close it named beside it. That is the point of the allow-list: it turns
-    // "nobody wired this up" into a decision somebody had to write down.
-    const std::set<std::string, std::less<>> prototypeOnlyByDesign = {
-        // `--compare-backends` tolerance. The comparison itself is a shell panel on both UIs; the
-        // *flag* drives the prototype's batch mode, which the native shell has no equivalent of.
-        // STUDIO-02056 extracts the comparison service, and the flag follows it.
-        "comparisonTolerance",
-        // `--recovery-dir`. The native shell runs crash recovery through `StudioRecoverySession`
-        // with the default directory; the override has not been threaded through.
-        "recoveryDirectory",
-    };
-
-    const std::vector<CnaStudioTest::Scan::SourceFile> sources =
-        CnaStudioTest::Scan::collectSources({"src", "include"});
-    CNA_STUDIO_EXPECT(!sources.empty());
-
-    const std::string parserPath = "src/app/StudioOptions.cpp";
-    const std::string prototypePath = "src/app/StudioApplication.cpp";
-    const std::string optionsHeader = "include/CNA/Studio/StudioOptions.hpp";
-
-    std::string parser;
-    for (const CnaStudioTest::Scan::SourceFile& file : sources)
-    {
-        if (file.relativePath == parserPath)
-        {
-            parser = CnaStudioTest::Scan::stripCommentsAndStrings(file.text);
-        }
-    }
-    CNA_STUDIO_EXPECT(!parser.empty());
-
-    // Every `options.<field> =` the parser performs. Reading the assignments rather than the
-    // struct's members on purpose: a member nothing parses is not a flag, and holding an internal
-    // field to this rule would be noise.
-    std::set<std::string> parsed;
-    for (std::size_t at = parser.find("options."); at != std::string::npos;
-         at = parser.find("options.", at + 1))
-    {
-        std::size_t end = at + 8;
-        while (end < parser.size()
-               && (std::isalnum(static_cast<unsigned char>(parser[end])) != 0 || parser[end] == '_'))
-        {
-            ++end;
-        }
-        std::size_t equals = end;
-        while (equals < parser.size() && parser[equals] == ' ') { ++equals; }
-        if (equals >= parser.size() || parser[equals] != '=') { continue; }
-        if (equals + 1 < parser.size() && parser[equals + 1] == '=') { continue; }
-
-        parsed.insert(parser.substr(at + 8, end - at - 8));
-    }
-
-    // The parser sets dozens of fields; a handful would mean the extraction above broke rather
-    // than that the parser shrank.
-    CNA_STUDIO_EXPECT(parsed.size() >= 30);
-
-    std::size_t checked = 0;
-    for (const std::string& field : parsed)
-    {
-        // Errors and help are the parser reporting on itself, not flags anything downstream reads.
-        if (field == "hasError" || field == "errorMessage") { continue; }
-
-        bool prototypeReads = false;
-        bool anythingElseReads = false;
-
-        for (const CnaStudioTest::Scan::SourceFile& file : sources)
-        {
-            if (file.relativePath == parserPath || file.relativePath == optionsHeader) { continue; }
-
-            const std::string code = CnaStudioTest::Scan::stripCommentsAndStrings(file.text);
-            if (code.find("." + field) == std::string::npos) { continue; }
-
-            if (file.relativePath == prototypePath) { prototypeReads = true; }
-            else { anythingElseReads = true; }
-        }
-
-        if (!prototypeReads) { continue; }
-        ++checked;
-
-        if (!anythingElseReads && prototypeOnlyByDesign.find(field) == prototypeOnlyByDesign.end())
-        {
-            CnaStudioTest::reportFailure(__FILE__, __LINE__,
-                "`--" + field + "` is parsed and read by " + prototypePath
-                + " alone, so the default UI ignores it in silence. Wire it into the native shell, "
-                  "or name it in this test's allow-list with the task that will.");
-        }
-    }
-
-    // A run in which nothing was examined would pass every assertion above by examining nothing --
-    // which is the state this guard would fall into the day someone renames the prototype's file.
-    CNA_STUDIO_EXPECT(checked >= 4);
 }

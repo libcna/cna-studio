@@ -145,11 +145,11 @@ namespace CNA::Studio
         // command is folded into the previous entry and destroyed, and the entry is what now holds
         // the change. They target the same property either way, because a merge only happens when
         // the merge keys match.
-        if (commandObserver_ && history_.getCursor() > 0)
+        if (history_.getCursor() > 0)
         {
             if (const StudioCommand* entry = history_.getCommandAt(history_.getCursor() - 1))
             {
-                commandObserver_(*entry);
+                announceCommand(*entry);
             }
         }
         pruneSelection();

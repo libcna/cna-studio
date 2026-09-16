@@ -101,10 +101,10 @@ a control whose width depends on what was drawn before it, cannot happen.
 
 | Capability | Native | Proven by | Status |
 |------------|--------|-----------|--------|
-| `log` | `StudioLog::append` — one model, read by both consoles | `TheConsoleScrollLockIsRememberedAcrossFrames` | ✅ |
+| `log` | `StudioLog::append` — one model, read by both consoles | `TheOutputLogDrawsItsMessagesThroughTheShell` | ✅ |
 | `drawLogView` | `studioLogPanel` | `FollowingNewOutputStopsTheMomentTheUserScrollsAway` | ✅ |
 | `getLogText` | `StudioLog` and the panel's Copy | `TheClipboardWorksWithoutAPlatformAndDefersToOneWhenThereIs` | ✅ |
-| `clearLog` | `StudioLog::clear` and the panel's Clear | `TheConsoleScrollLockIsRememberedAcrossFrames` | ✅ |
+| `clearLog` | `StudioLog::clear` and the panel's Clear | `ClearingTheLogIsReportedRatherThanDoneBehindTheOwnersBack` | ✅ |
 
 ---
 

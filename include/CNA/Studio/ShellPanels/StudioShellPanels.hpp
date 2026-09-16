@@ -57,6 +57,7 @@
 namespace CNA::Studio
 {
     class StudioAudio;
+    class StudioCommand;
     class StudioContext;
 
     /** @brief What a host can offer the panels that the panels cannot do themselves. */
@@ -465,6 +466,15 @@ namespace CNA::Studio
          * somewhere that is not there -- which is what a preview and a headless test both are.
          */
         void notify(StudioNotification notification);
+
+        /**
+         * @brief Mirrors a property edit to a running game, if @p command is one and one is.
+         *
+         * The document's context registers this once, in the constructor, against every command
+         * that lands -- an inspector edit, a gizmo drag, an undo -- so a running game reflects
+         * what the editor shows without every editing surface having to remember to say so.
+         */
+        void mirrorCommandToPlayer(const StudioCommand& command);
 
         /**
          * @brief Drives crash recovery: the snapshot timer, and the offer after a project opens.

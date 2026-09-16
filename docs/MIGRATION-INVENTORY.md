@@ -2,12 +2,17 @@
 
 `plan.md` STUDIO-00014.
 
-Every panel, menu item, toolbar control and keyboard shortcut the Dear ImGui prototype offers, with
-the source file that owns it and what the native Studio shell does about it. Phase 7 proves parity
-**against this list**, item by item, rather than by impression — and the list is checked by the test
-suite in both directions (`STUDIO-00014`, `STUDIO-07020`), so neither an item that quietly loses its
-native counterpart nor a piece of the prototype nobody wrote down can survive to be noticed by
-somebody a year later.
+Every panel, menu item, toolbar control and keyboard shortcut the Dear ImGui prototype offered, with
+the source file that owned it and what the native Studio shell does about it. Phase 7 proved parity
+**against this list**, item by item, rather than by impression — and while the prototype still
+existed, the list was checked by the test suite in both directions (`STUDIO-00014`, `STUDIO-07020`),
+so neither an item that quietly lost its native counterpart nor a piece of the prototype nobody wrote
+down survived to be noticed by somebody a year later.
+
+`STUDIO-07030` deleted the prototype once every row here answered ✅, so the second of those
+directions — the one below that read the prototype's own source — went with it: there is no longer a
+prototype for it to read. This file is what is left, now the record of what the prototype was
+replaced by rather than a live check against it.
 
 ## How to read it
 
@@ -21,18 +26,20 @@ action id must exist in the registry. That is what makes this a checklist rather
 intentions. An item with ⬜ carries the reason it has none, in the same discipline as the
 unimplemented-command and empty-panel guards.
 
-The other direction matters more and is easier to forget. The tests read the prototype's own source
-— its panel files, its menu bar, its two toolbars and its shortcut dispatcher — and require every
-item they find to appear here. Without that, a control nobody listed passes every check above, for
-the reason that the list is what those checks read. That is how the tile-index control was found:
-drawn a hundred lines below the rest of the toolbar, under a condition, and in no list at all.
+The other direction mattered more and was easier to forget, while it still existed. The tests read
+the prototype's own source — its panel files, its menu bar, its two toolbars and its shortcut
+dispatcher — and required every item they found to appear here. Without that, a control nobody listed
+would have passed every check above, for the reason that the list is what those checks read. That is
+how the tile-index control was found: drawn a hundred lines below the rest of the toolbar, under a
+condition, and in no list at all. `STUDIO-07030` deleted the source those tests read, and the tests —
+there being nothing left for them to scan — were deleted with it.
 
 What none of it can check is whether the two *behave* the same. That is `STUDIO-07021` for input,
 `STUDIO-07022` for docking and `STUDIO-07023` against the reference screenshots.
 
-The prototype is `src/panels/*.cpp` and `src/app/StudioApplication.cpp`; it is a *temporary*
-compatibility fallback and is deleted by `STUDIO-07030`, at which point this file becomes the record
-of what was replaced.
+The prototype was `src/panels/*.cpp` and `src/app/StudioApplication.cpp`, a *temporary* compatibility
+fallback that `STUDIO-07030` deleted once every row below answered ✅. This file is that record of
+what it was replaced by.
 
 ---
 
@@ -245,8 +252,9 @@ to live. Each goes through the command history, so Ctrl+Z reaches them like ever
 
 ## Keyboard shortcuts
 
-Taken from `StudioApplication::handleShortcuts`. Each must resolve to a native action bound to the
-**same** chord: a shortcut that moved is a shortcut every existing user has to relearn.
+Taken from the prototype's `StudioApplication::handleShortcuts`, before `STUDIO-07030` deleted it.
+Each must resolve to a native action bound to the **same** chord: a shortcut that moved is a shortcut
+every existing user has to relearn.
 
 | Chord | Prototype action | Native | Status |
 |-------|------------------|--------|--------|
@@ -300,7 +308,7 @@ Rows leave this table by being answered, and the prose below says which, because
 ever shrinks is one nobody can tell the difference between "done" and "quietly dropped" in.
 
 **This table is empty.** Every row that was ever in it has been answered, and the prose below says
-by what. `STUDIO-07030` — deleting the Dear ImGui panel implementations — is unblocked.
+by what. `STUDIO-07030` — deleting the Dear ImGui panel implementations — is done.
 
 | What | Prototype home | What it needs |
 |------|----------------|---------------|
@@ -359,27 +367,26 @@ under *Toolbar controls* above.
 
 `STUDIO-07041` found that this document accounted for **surfaces** — panels, menu items, toolbar
 controls, shortcuts — and that the level below it was unaccounted for: the controls inside a panel.
-`STUDIO-07047` found the level below *that*, and it is the one deleting the prototype actually
-costs.
+`STUDIO-07047` found the level below *that*, and it was the one deleting the prototype actually cost.
 
-`tests/ApplicationTests.cpp` and `tests/UiTests.cpp` are 112 end-to-end cases run over the
-prototype's application. Almost all of them are about **shared** code reached through the
+`tests/ApplicationTests.cpp` and `tests/UiTests.cpp` were 112 end-to-end cases run over the
+prototype's application. Almost all of them were about **shared** code reached through the
 prototype's panels — gizmo drags and their undo merging, prefab revert and apply, the tilemap
-brush, asset drops onto typed slots, 3D navigation, crash recovery — and almost none of them is
-about Dear ImGui. Deleting those files without accounting for them would have deleted a third of
-the suite, and nothing would have said which third.
+brush, asset drops onto typed slots, 3D navigation, crash recovery — and almost none of them was
+about Dear ImGui. Deleting those files without accounting for them first would have deleted a third
+of the suite, and nothing would have said which third.
 
-The accounting is a table in `tests/StudioMigrationInventoryTests.cpp`, checked against the files
-the way the Inspector-section table is: every case is covered elsewhere by a named test that must
-exist, or recorded as a gap with the task that closes it, or marked as going away with the
-prototype. It fails in both directions — a case added to the prototype with no row, and a row
-naming a case that has gone.
+The accounting was a table in `tests/StudioMigrationInventoryTests.cpp`, checked against the files
+the way the Inspector-section table still is: every case had to be covered elsewhere by a named test
+that actually existed, or recorded as a gap with the task that would close it, or marked as going
+away with the prototype. It failed in both directions — a case added to the prototype with no
+matching row, and a row naming a case that had already gone.
 
-**What it found first was not a missing test.** It was eight things the native shell cannot do at
-all, each of them shared code that nobody is running:
+**What it found first was not a missing test.** It was eight things the native shell could not do at
+all, each of them shared code that nobody was running:
 
-| What the prototype does and the native shell does not | Task |
-|-------------------------------------------------------|------|
+| What the prototype did and the native shell did not, at the time | Task |
+|--------------------------------------------------------------------|------|
 | Move, turn or scale an entity in the 3D view | `STUDIO-07050` |
 | Notice an asset edited outside the editor | `STUDIO-07051` |
 | Load the project's plugins | `STUDIO-07052` |
@@ -390,9 +397,17 @@ all, each of them shared code that nobody is running:
 | Keep the angles a user typed at gimbal lock | `STUDIO-07057` |
 | Reparent by dragging one outliner row onto another | `STUDIO-07058` |
 
-That is the same shape as the crash-recovery gap this document missed before, and for the same
-reason: none of them is a panel, a menu item, a toolbar control or a shortcut, so no inventory of
+That was the same shape as the crash-recovery gap this document missed before, and for the same
+reason: none of them was a panel, a menu item, a toolbar control or a shortcut, so no inventory of
 surfaces could see any of them.
+
+**All nine are done**, which is what let `STUDIO-07030` delete the prototype. It took
+`tests/ApplicationTests.cpp`, `tests/UiTests.cpp` and the accounting table above with it: with no
+prototype cases left to check against native ones, a check that only ever compared the two sides of a
+list has nothing left to compare. What is still checked in `tests/StudioMigrationInventoryTests.cpp`
+is the level below *this* one, the one `STUDIO-07041` found and described under *What this inventory
+could not see, and the correction* below: the prototype's Inspector sections, which outlive the
+prototype's own tests because they were never about its source, only about what it drew.
 
 ---
 
@@ -424,11 +439,14 @@ against the file — or recorded as a gap with the task that closes it, checked 
 counts the gaps and asserts the number, so closing the last one is a deliberate edit rather than
 something nobody notices.
 
-**Dear ImGui cannot be deleted while that number is above zero.** `STUDIO-07030` now depends on all
-five, which is the dependency that should have been there from the start.
+**Dear ImGui could not be deleted while that number was above zero.** `STUDIO-07030` depended on all
+five, which was the dependency that should have been there from the start. It reached zero, and
+`STUDIO-07030` deleted the prototype.
 
 **And the level below that one is behaviour**, which no inventory reaches: `STUDIO-07021`–`07023`
-are for that, and `tests/ApplicationTests.cpp` holds twenty-eight cases that exercise the
-prototype's panels and have no native counterpart yet. They are not a gap in the *product* — they
-test document behaviour through whichever panel was available — but they are coverage that would be
-deleted with the prototype, and the deletion should say so rather than discover it.
+are for that. `tests/ApplicationTests.cpp` held twenty-eight cases of that kind at the time this was
+written — exercising document behaviour through whichever panel happened to be available, not a gap
+in the *product* — which would have been coverage deleted with the prototype and nothing saying so.
+`STUDIO-07047`, described above under *The level below the controls*, is the task that went looking
+for exactly that before the prototype came down, and accounted for all of it rather than only these
+twenty-eight.

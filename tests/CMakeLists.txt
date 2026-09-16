@@ -12,10 +12,8 @@ add_executable(cna-studio-tests
     CommandTests.cpp
     ProjectAndAssetTests.cpp
     ModelImportTests.cpp
-    ApplicationTests.cpp
     StudioOptionsTests.cpp
     PluginHostTests.cpp
-    UiTests.cpp
     UiDrawDataTests.cpp
     UiCoreTests.cpp
     StudioShellTests.cpp
@@ -139,12 +137,10 @@ add_dependencies(cna-studio-tests cna-player)
 target_compile_definitions(cna-studio-tests PRIVATE
     CNA_STUDIO_TEST_PLAYER_DIR="$<TARGET_FILE_DIR:cna-player>")
 
-# The application's panel layer is exercised end-to-end by ApplicationTests.cpp, so the test
-# binary compiles StudioApplication.cpp directly rather than linking the cna-studio executable.
+# StudioOptions has no library of its own (STUDIO-07048 moved it out precisely so it would not
+# need one), so the test binary compiles it directly rather than linking the cna-studio executable.
 target_sources(cna-studio-tests PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioApplication.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioOptions.cpp"
-    ${CNA_STUDIO_PANEL_SOURCES})
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioOptions.cpp")
 
 # The one module that links CNA. Linked into the tests so the seam itself -- the key map, the
 # capability bridge -- has unit coverage rather than only being exercised through the window smoke
@@ -162,12 +158,6 @@ endif()
 if(CNA_STUDIO_WITH_CNA AND EXISTS "${CNA_STUDIO_CNA_ROOT}/cmake/RendererSelection.cmake")
     target_compile_definitions(cna-studio-tests PRIVATE
         CNA_STUDIO_TEST_CNA_ROOT="${CNA_STUDIO_CNA_ROOT}")
-endif()
-
-if(CNA_STUDIO_WITH_IMGUI)
-    # The ImGui cases run the real editor UI headless and assert on the geometry it produces.
-    target_link_libraries(cna-studio-tests PRIVATE cna-studio-ui-imgui)
-    target_compile_definitions(cna-studio-tests PRIVATE CNA_STUDIO_HAS_IMGUI=1)
 endif()
 
 add_test(NAME CnaStudioTests COMMAND cna-studio-tests)
@@ -840,65 +830,7 @@ if(NOT CNA_STUDIO_WITH_CNA)
     set_tests_properties(CnaStudioNativeShellNeedsCna PROPERTIES WILL_FAIL TRUE TIMEOUT 60)
 endif()
 
-if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
-    # The legacy editor, named explicitly. It was the default when these cases were written and is
-    # not one since `STUDIO-06015`; asking for it by name is what keeps the migration fallback
-    # covered rather than quietly retired, and is also what keeps these cases about the editor they
-    # were written for rather than silently becoming a second set of native-shell tests.
-    #
-    # The real thing: open a window, draw the editor through CNA's public API, and write a PNG of
-    # the result. A run that merely exits cleanly cannot tell a working editor from one that opened
-    # a blank window, so the screenshot is the assertion -- if the editor drew nothing, the file
-    # never appears and the test fails.
-    #
-    add_test(NAME CnaStudioWindowSmoke
-        COMMAND cna-studio --ui=imgui
-            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
-            --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke.png
-            --screenshot-min-colors=16)
-
-    # How this test reaches a display depends on the backend, and getting it wrong makes the test
-    # fail for reasons that have nothing to do with the editor.
-    #
-    # SOFTWARE and HEADLESS render without a window at all, so SDL's dummy video driver is enough
-    # and the test runs anywhere. Every other backend needs a real graphics context: the dummy
-    # driver cannot provide one, and forcing it there produces a failure that looks like a bug in
-    # the editor and is not. Those get a DISPLAY instead, following the same CNA_TEST_DISPLAY
-    # convention CNA itself uses for its window-creating ctests -- point it at an Xvfb server on a
-    # build machine with no desktop.
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioWindowSmoke PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy"
-            TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioWindowSmoke PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
-            LABELS "needs-display"
-            TIMEOUT 180)
-    endif()
-
-    # The 3D viewport against a real device. It draws through a different path from the 2D one --
-    # every line is a rotated quad rather than a sprite -- so a backend that cannot do that would
-    # pass the smoke test above and fail here.
-    add_test(NAME CnaStudioWindowSmoke3D
-        COMMAND cna-studio --ui=imgui --view=3d
-            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
-            --frames=20
-            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/editor-smoke-3d.png
-            --screenshot-min-colors=16)
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE")
-        set_tests_properties(CnaStudioWindowSmoke3D PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy"
-            TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioWindowSmoke3D PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
-            LABELS "needs-display"
-            TIMEOUT 180)
-    endif()
-
+if(CNA_STUDIO_WITH_CNA)
     # The scene loader, exercised the way a shipped game would use it: a real device, the real
     # example project, and a check that the world transforms match what the editor's own code
     # produces. A loader that parsed correctly but composed a child's transform differently would

@@ -188,6 +188,14 @@ namespace CNA::Studio
         return player_.send(StudioMessage::makeReloadAsset(assetId));
     }
 
+    bool StudioPlayService::mirrorEdit(const Uuid& entityId, const std::string& componentTypeId,
+                                       const std::string& propertyName, const PropertyValue& value)
+    {
+        if (!player_.isRunning() || state_ == StudioPlayState::Stopped) { return false; }
+
+        return player_.send(StudioMessage::makeSetProperty(entityId, componentTypeId, propertyName, value));
+    }
+
     bool StudioPlayService::stepFrame()
     {
         if (state_ != StudioPlayState::Paused) { return false; }

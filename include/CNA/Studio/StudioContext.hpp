@@ -147,6 +147,19 @@ namespace CNA::Studio
          */
         void setCommandObserver(CommandObserver observer) { commandObserver_ = std::move(observer); }
 
+        /**
+         * @brief Fires the command observer for @p command, as execute() does for anything it pushes.
+         *
+         * Undo and redo bypass execute() -- they act directly on the history, since there is no new
+         * command to run through it -- so a caller mirroring live edits to a running player calls
+         * this explicitly with whichever entry undo or redo just made current, or a reversed edit
+         * would show up in the document and nowhere else.
+         */
+        void announceCommand(const StudioCommand& command)
+        {
+            if (commandObserver_) { commandObserver_(command); }
+        }
+
         /** @brief Runs @p command through the undo stack. */
         void execute(std::unique_ptr<StudioCommand> command, MergePolicy policy = MergePolicy::NewEntry);
 

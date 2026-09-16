@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 41 of 46 complete `███████████░`
+**Progress:** 42 of 46 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -53,15 +53,17 @@
 | `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ✅ | `STUDIO-07009` |
 | `STUDIO-07057` | The angles a user typed survive being read back | ✅ | `STUDIO-07018` |
 | `STUDIO-07058` | Reparenting by dragging in the World Outliner | ✅ | `STUDIO-07006` |
-| `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
+| `STUDIO-07030` | Remove the Dear ImGui panel implementations | ✅ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
 
-> **`STUDIO-07030` blocks more than this phase.** `CnaStudioHost` — the `--ui=imgui` host — creates
-> a `CnaUiRenderer` unconditionally, with no chooser, so the Dear ImGui prototype is the last
-> consumer of the classic UI render backend. `STUDIO-04027` cannot delete that backend until this
-> row is closed, and now records the dependency. Found by attempting the deletion, not by reading
-> the graph: `STUDIO-04026` defaulted *the native host* to the modern backend and left the
-> prototype's host where it was, which was correct then and is why nothing recorded it.
+> **`STUDIO-07030` blocked more than this phase, and closing it only closed part of that.**
+> `CnaStudioHost` — the `--ui=imgui` host — created a `CnaUiRenderer` unconditionally, with no
+> chooser, so the Dear ImGui prototype was one consumer of the classic UI render backend.
+> `STUDIO-07030` deleted `CnaStudioHost` along with the rest of the prototype, which removes that
+> consumer. It does not by itself unblock `STUDIO-04027`: `CnaStudioShellHost` — the *native* host —
+> still constructs a `CnaUiRenderer` of its own, as a compatibility fallback and behind
+> `--ui-renderer=compat`, so the classic backend has a second, native consumer that this task never
+> touched. `STUDIO-04027`'s own entry records the current state of that dependency.
 | `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | ⬜ | `STUDIO-07031` |
 
 ## Acceptance and verification
@@ -469,10 +471,11 @@ shell preview included, and it is declared in the header of the object being del
 mechanical and makes `STUDIO-07030` a deletion rather than a deletion plus a refactor — which is
 the difference between a diff a reviewer can read and one they have to take on trust.
 
-**Done.** `CNA/Studio/StudioOptions.hpp` and `src/app/StudioOptions.cpp`, and
-`OnlyThePrototypesOwnFilesIncludeThePrototypesApplication` is what keeps the dependency from coming
-back: the allowed list is `main`, the Dear ImGui window host and the prototype's own source, and it
-checks the header still exists so it cannot pass by scanning for something that has gone.
+**Done.** `CNA/Studio/StudioOptions.hpp` and `src/app/StudioOptions.cpp`.
+`OnlyThePrototypesOwnFilesIncludeThePrototypesApplication` kept the dependency from coming back until
+`STUDIO-07030` deleted `StudioApplication.hpp` itself, at which point — exactly as its own comment
+said it would — the guard went with it: there was nothing left for `main` or anything else to depend
+on.
 
 ### `STUDIO-07049` — `--headless` and the 3D smoke flags run the native shell
 
@@ -509,9 +512,71 @@ path into `renderShellPreview` itself, checked first: comparing means decoding c
 needs a device, and that has nothing to do with which path got `--headless` there.
 
 **The guard that would have caught this untangled itself.** `threeDimensionalView` and
-`orbitDegrees` come off `NoParsedFlagIsReadByThePrototypeAlone`'s allow-list now that `Main.cpp`
-reads them too — the same guard that found `--orbit` was not on a hand-typed list of four flags
-when `STUDIO-07053` wrote it over the parser instead.
+`orbitDegrees` came off `NoParsedFlagIsReadByThePrototypeAlone`'s allow-list once `Main.cpp` read
+them too — the same guard that found `--orbit` was not on a hand-typed list of four flags when
+`STUDIO-07053` wrote it over the parser instead. The guard itself did not outlive what it was
+guarding: it read the prototype's own source for a flag the parser set that only `StudioApplication`
+read, so `STUDIO-07030` deleted it along with that file — there is only one UI left for a parsed flag
+to go unread by, and that is a lone caller, not a divergence between two.
+
+### `STUDIO-07030` — Remove the Dear ImGui panel implementations
+
+**Acceptance.** `src/panels/*.cpp` and their headers, `src/ui/imgui/ImGuiStudioUi.cpp`,
+`src/app/StudioApplication.cpp` and `src/viewport/CnaStudioHost.cpp` are gone, together with every
+test that existed only to exercise them, and the full six-configuration matrix (Debug, Release with
+`-Werror`, ASan+UBSan, CNA on SOFTWARE, CNA on OPENGL4 and a build with `CNA_STUDIO_WITH_IMGUI=OFF`)
+is green.
+
+**Why now.** Every row this one depended on had reached ✅: `STUDIO-07047`'s accounting of the
+prototype's own test suite, and the nine gaps `STUDIO-07050`–`07058` found while writing it. Nothing
+was left that only the prototype could still do.
+
+**Done.** Eleven panel `.cpp` files and the twelve headers under `include/CNA/Studio/Panels`, the
+Dear ImGui presentation layer (`ImGuiStudioUi`), the prototype's application object
+(`StudioApplication`) and its window host (`CnaStudioHost`) are deleted, along with
+`tests/ApplicationTests.cpp` and `tests/UiTests.cpp`. `Main.cpp`'s UI dispatch now recognises exactly
+two shapes: `studio` (the native shell, in a real window or headless) and everything else, which
+lands on the same headless rendering `--headless` itself uses. `imgui` is kept as a name only because
+`CnaStudioFallsBackToImGuiWhenAsked` still exercises it under `--headless`; asked for a real window
+under that name, the binary says plainly that the Dear ImGui UI was removed, rather than either
+opening the native shell under a name that did not ask for it or opening nothing and leaving the
+reason to be guessed at.
+
+**The scaffolding that tracked the migration had to be retired along with what it tracked.**
+`tests/StudioMigrationInventoryTests.cpp` lost the `PrototypeCase` mechanism and the four tests that
+scanned the prototype's own source for panels, menu items, toolbar controls and shortcuts — there is
+no longer a prototype for them to read, and a check that only ever compared two sides of a list has
+nothing left to compare once one side is gone. The Inspector-section checklist next to it stays: it
+was never about the prototype's source, only about what its Inspector drew, and that comparison still
+means something. `tests/ArchitectureGuardTests.cpp` lost
+`OnlyThePrototypesOwnFilesIncludeThePrototypesApplication`, whose own comment said it would when
+`StudioApplication.hpp` went. The `ServiceBoundaryGuardTests.cpp` exception recorded for
+`ImGuiStudioUi.cpp`'s clipboard hooks came out empty for the same reason —
+`EveryRecordedExceptionIsStillARealViolation` exists precisely so an entry cannot outlive the file it
+excused. `docs/MIGRATION-INVENTORY.md` is now what its own introduction always said it would become:
+the record of what the prototype was replaced by, rather than a live check against it.
+
+**Two genuine gaps surfaced only while deleting `tests/PlayerTests.cpp`**, which neither the panel
+inventory nor `STUDIO-07047`'s test inventory had reason to cover: it tested the *player*, not the
+editor. Four of its cases duplicated native `StudioPlayModeTests.cpp` coverage of
+`StudioApplication`'s own play/pause/stop wrapper and were deleted outright. A fifth proved something
+the native shell had never actually done: mirroring a live property edit to a running game.
+`StudioContext` gained `announceCommand`, fired from `execute()` and, explicitly, from the undo and
+redo action handlers that act on the history directly and so bypass it; `StudioPlayService` gained
+`mirrorEdit`; `StudioShellPanels` now registers a command observer in its constructor that forwards
+every `SetPropertyCommand` to whichever game is running. `ALiveEditReachesARunningPlayerAsASetPropertyMessage`
+proves it against a real player process: the confirmation is a trace-level `ReportLog` the play
+service's own `poll()` does not interpret and would silently drop, so the test drains the process
+directly rather than through that filter, and retries the edit across polled frames rather than
+sending it once — the same shape `PausingARealPlayerFollowsItRatherThanAnnouncingIt` already used to
+wait out the player actually connecting.
+
+**`CNA_STUDIO_HAS_HOST` retired in favour of `CNA_STUDIO_HAS_CNA`.** It used to mean
+`CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI` — a real window needed both a graphics device and the
+ImGui host that drew into it. The native shell needs only the device, so `--host-capabilities`'s
+live-device check moved to the flag that still means something; the old one would otherwise have
+stayed permanently undefined and made that check always report the binary as headless, even on a
+build with a real window to ask.
 
 ### `STUDIO-07001` — Compatibility adapter so unported panels keep working during the migration
 
@@ -596,8 +661,8 @@ only one of them is a reason to stop looking.
 ### `STUDIO-07005` — Port the Console / Output Log
 
 **Acceptance.** The Output Log on the Studio UI, at feature parity with the ImGui Console: copy,
-clear, a severity filter, and following new output. The legacy panel keeps working, unchanged, until
-`STUDIO-07030` deletes it
+clear, a severity filter, and following new output. The legacy panel kept working, unchanged, until
+`STUDIO-07030` deleted it
 
 **Why this panel first.** It is the simplest panel that is still a real one — a filtered, scrolling
 list with a toolbar — so it exercises what a panel actually needs from the new UI (scrolling,
@@ -666,7 +731,8 @@ lines below the rest of the toolbar and only when the paint or fill tool is acti
 **What this does not establish.** That the answered items *behave* the same. Coverage is what this
 task proves: every item accounted for, with a reason attached to each that is not. Behaviour is
 `STUDIO-07021` for input, `STUDIO-07022` for docking and `STUDIO-07023` against the reference
-screenshots, and the ⬜ rows are what keeps `STUDIO-06015` and `STUDIO-07030` from being true.
+screenshots. The ⬜ rows were what kept `STUDIO-06015` and `STUDIO-07030` from being true; both are
+✅ now that every row above answers ✅ as well.
 
 **Since.** Crash recovery was the first of those rows to close, and closing it showed what the
 inventory is worth: everything *about* recovery already worked and was shared — the snapshot format,

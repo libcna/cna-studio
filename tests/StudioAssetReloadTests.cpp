@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MS-PL
 /**
  * @file StudioAssetReloadTests.cpp
- * @brief Noticing an asset edited outside Studio, and the guard that keeps both UIs noticing.
+ * @brief Noticing an asset edited outside Studio.
  *
  * `plan.md` STUDIO-07051.
  *
@@ -10,13 +10,9 @@
  * that is the default a texture edited in another program was never noticed: the editor went on
  * drawing the art from before the edit, the mesh cache kept the old model, and a running game was
  * never told.
- *
- * That is the third time this exact shape has appeared in one phase (`--scene`, plugins, this), and
- * the last test in this file is about the shape rather than about assets.
  */
 
 #include "TestHarness.hpp"
-#include "SourceScan.hpp"
 
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
@@ -224,75 +220,4 @@ CNA_STUDIO_TEST(APollWithNothingToReportDoesNotSaySo)
 
     CNA_STUDIO_EXPECT(!result.any());
     CNA_STUDIO_EXPECT(fixture.messages.empty());
-}
-
-// ------------------------------------------------------------------------------------------------
-// The shape, rather than the asset
-// ------------------------------------------------------------------------------------------------
-
-CNA_STUDIO_TEST(EveryStartUpRoutineBothUisNeedIsCalledByBothOfThem)
-{
-    // Three times in one phase, the same shape: a thing the prototype did, that the native shell --
-    // the *default* UI -- did not, where nothing failed because not doing it produces exactly what
-    // having nothing to do produces. `--scene` opened the project's own startup scene. The Plugins
-    // menu was empty. An edited texture went on being drawn from the version before the edit.
-    //
-    // Each was fixed by extracting the decision into one routine and calling it from both. This
-    // asserts the second half, which is the half that goes stale: an extraction that only one
-    // caller uses is a refactor, not a fix, and it looks identical in a diff.
-    //
-    // A hand-written list, and it is worth being honest about why that is acceptable here where it
-    // was not for the flag guard. This is not an inventory of everything the two UIs must share --
-    // no such list can be complete. It is the set of routines that were extracted *because* they
-    // had gone out of step, and its job is to keep those three in step. A fourth that is added and
-    // not listed is exactly as guarded as it was before this test existed.
-    const std::vector<std::string> shared = {
-        "openStudioStartupDocument",  // STUDIO-07053
-        "studioLoadPlugins",          // STUDIO-07052
-        "studioPollAssetChanges",     // STUDIO-07051
-    };
-
-    const std::vector<std::string> callers = {
-        "src/app/StudioApplication.cpp",        // the Dear ImGui prototype
-        "src/viewport/CnaStudioShellHost.cpp",  // the native shell, which is the default
-    };
-
-    const std::vector<CnaStudioTest::Scan::SourceFile> sources =
-        CnaStudioTest::Scan::collectSources({"src"});
-    CNA_STUDIO_EXPECT(!sources.empty());
-
-    std::size_t checked = 0;
-    for (const std::string& caller : callers)
-    {
-        std::string code;
-        bool found = false;
-        for (const CnaStudioTest::Scan::SourceFile& file : sources)
-        {
-            if (file.relativePath != caller) { continue; }
-            code = CnaStudioTest::Scan::stripCommentsAndStrings(file.text);
-            found = true;
-        }
-
-        if (!found)
-        {
-            CnaStudioTest::reportFailure(__FILE__, __LINE__,
-                caller + " is not in the source tree. If it was renamed, rename it here too -- a "
-                         "caller this guard cannot find is a caller it stops guarding.");
-            continue;
-        }
-
-        for (const std::string& routine : shared)
-        {
-            ++checked;
-            if (code.find(routine + "(") == std::string::npos)
-            {
-                CnaStudioTest::reportFailure(__FILE__, __LINE__,
-                    caller + " does not call `" + routine
-                        + "`, so that UI silently does without it. Both UIs call it, or it is not "
-                          "a shared start-up routine.");
-            }
-        }
-    }
-
-    CNA_STUDIO_EXPECT_EQ(checked, shared.size() * callers.size());
 }

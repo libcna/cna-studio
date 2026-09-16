@@ -542,13 +542,11 @@ namespace
 
     const std::vector<AcceptedException>& acceptedExceptions()
     {
-        static const std::vector<AcceptedException> accepted{
-            {"src/ui/imgui/ImGuiStudioUi.cpp", 0, "static UiClipboardHooks hooks",
-             "The Dear ImGui prototype's clipboard adapter. ImGui's clipboard callbacks are C "
-             "function pointers reached through a global ImGui context, so the hooks have nowhere "
-             "instance-shaped to live on that path. The native shell does not have this: "
-             "CnaStudioHost passes its hooks in. Removed with the prototype by STUDIO-07030."},
-        };
+        // Empty: the Dear ImGui clipboard adapter this once excused (src/ui/imgui/ImGuiStudioUi.cpp)
+        // was deleted with the rest of the prototype by STUDIO-07030, and no other site in the tree
+        // has needed an exception since. Add an entry here only for a specific site that cannot be
+        // fixed yet, never for a whole file or directory.
+        static const std::vector<AcceptedException> accepted{};
         return accepted;
     }
 

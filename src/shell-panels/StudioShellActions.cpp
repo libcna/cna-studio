@@ -53,6 +53,14 @@ namespace CNA::Studio
                  if (context.getHistory().undo())
                  {
                      log.append(LogSeverity::Info, "Undid " + what + ".");
+
+                     // A reversal is a document change like any other: a running game that saw the
+                     // edit but not its undo would be showing a state that exists nowhere any more.
+                     if (const StudioCommand* entry =
+                             context.getHistory().getCommandAt(context.getHistory().getCursor()))
+                     {
+                         context.announceCommand(*entry);
+                     }
                  }
              });
 
@@ -60,9 +68,14 @@ namespace CNA::Studio
              [&context] { return context.getHistory().canRedo(); },
              [&context, &log] {
                  const std::string what = context.getHistory().getRedoDescription();
+                 const std::size_t beforeRedo = context.getHistory().getCursor();
                  if (context.getHistory().redo())
                  {
                      log.append(LogSeverity::Info, "Redid " + what + ".");
+                     if (const StudioCommand* entry = context.getHistory().getCommandAt(beforeRedo))
+                     {
+                         context.announceCommand(*entry);
+                     }
                  }
              });
 
