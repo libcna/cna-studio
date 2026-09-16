@@ -145,8 +145,6 @@ namespace CNA::Studio
         /** @brief Returns the number of textures currently held. */
         [[nodiscard]] std::size_t getTextureCount() const override;
 
-        /** @brief Returns the name of the CNA backend this build was compiled against. */
-        [[nodiscard]] static std::string getBackendName();
 
     private:
         struct Impl;

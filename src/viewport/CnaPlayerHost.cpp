@@ -20,7 +20,7 @@
 
 #include "CNA/Studio/Scene/GameCamera.hpp"
 #include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
-#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/StudioHostRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
@@ -268,7 +268,7 @@ namespace CNA::Studio
                                           const PlayerMessageSink& sink)
     {
         CnaPlayerHostResult result;
-        result.backend = CnaUiRenderer::getBackendName();
+        result.backend = studioHostCnaRendererName();
 
         try
         {

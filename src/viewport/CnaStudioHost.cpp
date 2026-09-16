@@ -24,6 +24,7 @@
 #include "CNA/Studio/Viewport/StudioAudio.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
 #include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/StudioHostRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
@@ -282,7 +283,7 @@ namespace CNA::Studio
 
         impl_->application->getContext().log(
             LogSeverity::Info,
-            "Studio window ready on the " + CnaUiRenderer::getBackendName() + " backend");
+            "Studio window ready on the " + studioHostCnaRendererName() + " backend");
 
         Game::LoadContent();
     }
@@ -451,7 +452,7 @@ namespace CNA::Studio
                                           std::unique_ptr<StudioApplication> application)
     {
         CnaStudioHostResult result;
-        result.backend = CnaUiRenderer::getBackendName();
+        result.backend = studioHostCnaRendererName();
 
         if (!application)
         {
@@ -498,5 +499,5 @@ namespace CNA::Studio
         return result;
     }
 
-    std::string getHostBackendName() { return CnaUiRenderer::getBackendName(); }
+    std::string getHostBackendName() { return studioHostCnaRendererName(); }
 }

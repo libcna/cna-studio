@@ -390,6 +390,7 @@ if(CNA_STUDIO_WITH_CNA)
     # impossible to write.
     add_library(cna-studio-ui-renderer STATIC
         src/ui-renderer/CnaUiRenderer.cpp
+    src/ui-renderer/StudioHostRenderer.cpp
         src/ui-renderer/StudioModernUiRenderer.cpp
         src/ui-renderer/StudioUiShaderSource.cpp)
     target_include_directories(cna-studio-ui-renderer PUBLIC include)

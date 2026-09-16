@@ -202,6 +202,29 @@ CNA_STUDIO_TEST(TheNativeStudioUiHasNoDearImGuiDependency)
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
 
+CNA_STUDIO_TEST(ThePlayerDependsOnNoUiRenderBackend)
+{
+    // `plan.md` STUDIO-04027. The player runs the user's game and draws no editor UI at all, so it
+    // has no business linking one of Studio's UI render backends -- and for six phases it linked
+    // the classic one, for a single static that answered a different question: which *CNA*
+    // renderer the binary was compiled against.
+    //
+    // That is the conflation `docs/UI-RENDER-PATH.md` exists to name. It matters beyond tidiness:
+    // a UI backend is choosable and deletable (this is the task that deletes one), and a game
+    // runtime that depends on which one Studio picked is a game runtime that has to be rebuilt
+    // when the editor changes its mind. `studioHostCnaRendererName()` answers layer 3 and nothing
+    // else, which is why the player can call it and this can forbid the rest.
+    const std::size_t violations =
+        expectAbsent({"src/player"}, "CnaUiRenderer",
+                     "The player draws no editor UI. If it needs which CNA renderer this build "
+                     "uses, that is studioHostCnaRendererName() in UiRenderer/StudioHostRenderer.hpp.")
+        + expectAbsent({"src/player"}, "StudioModernUiRenderer",
+                       "The player draws no editor UI.")
+        + expectAbsent({"src/player"}, "StudioUiRenderBackend",
+                       "The player draws no editor UI.");
+    CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
+}
+
 CNA_STUDIO_TEST(TheNativeStudioUiIsCnaFree)
 {
     // The property that keeps the UI workstream testable: layout, identity, focus and hit-testing

@@ -28,7 +28,7 @@
 // (ANALYSIS.md decision D-03) checkable by the build graph.
 #if defined(CNA_STUDIO_HAS_CNA)
 #    include "CNA/Studio/Viewport/CnaPlayerHost.hpp"
-#    include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#    include "CNA/Studio/UiRenderer/StudioHostRenderer.hpp"
 #endif
 
 namespace
@@ -156,7 +156,7 @@ namespace
     std::string compiledBackendName()
     {
 #if defined(CNA_STUDIO_HAS_CNA)
-        return CNA::Studio::CnaUiRenderer::getBackendName();
+        return CNA::Studio::studioHostCnaRendererName();
 #else
         // Built without CNA: the protocol and state machine are exercised, nothing is drawn.
         // This is the configuration the editor's own tests run against.

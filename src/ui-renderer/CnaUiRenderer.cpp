@@ -237,13 +237,6 @@ namespace CNA::Studio
         impl_->borrowedByKey.erase(found);
     }
 
-    std::string CnaUiRenderer::getBackendName()
-    {
-        // Compile-time, because CNA resolves its backend at compile time -- there is exactly one
-        // in this binary and it cannot change. See ANALYSIS.md finding F-01.
-        return std::string{CNA::getCurrentGraphicsRendererName()};
-    }
-
     UiRenderStats CnaUiRenderer::applyTextureRequests(const UiDrawData& drawData)
     {
         UiRenderStats stats;

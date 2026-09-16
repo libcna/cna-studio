@@ -47,6 +47,7 @@
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
 #include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/StudioHostRenderer.hpp"
 #include "CNA/Studio/UiRenderer/StudioModernUiRenderer.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
@@ -384,7 +385,7 @@ namespace CNA::Studio
                 }
 
                 shell_->status().renderer =
-                    CnaUiRenderer::getBackendName() + " on " + getHostPlatformName();
+                    studioHostCnaRendererName() + " on " + getHostPlatformName();
 
                 // The same facts About shows, set here because this is where they are known: a
                 // shell that carried its own copy of the renderer name would be a second place it
@@ -398,7 +399,7 @@ namespace CNA::Studio
                 // is which renderer this build actually got, and the Output Log is where somebody
                 // looks for it.
                 log_.append(LogSeverity::Info,
-                            "CNA Studio on the " + CnaUiRenderer::getBackendName()
+                            "CNA Studio on the " + studioHostCnaRendererName()
                             + " renderer, " + getHostPlatformName() + " platform.");
                 log_.append(LogSeverity::Info,
                             "Modern graphics API: " + assessment_.modernApi.detail + ".");
@@ -864,7 +865,7 @@ namespace CNA::Studio
     CnaStudioShellHostResult runStudioShellInWindow(const CnaStudioShellHostOptions& options)
     {
         CnaStudioShellHostResult result;
-        result.renderer = CnaUiRenderer::getBackendName();
+        result.renderer = studioHostCnaRendererName();
 
         CnaStudioShellGame game{options};
         game.Run();
