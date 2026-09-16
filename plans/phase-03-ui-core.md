@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 30 of 33 complete `███████████░`
+**Progress:** 30 of 34 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -43,6 +43,7 @@
 | `STUDIO-03035` | Editable single-line text field over the selection model | ✅ | `STUDIO-03024`, `STUDIO-03025` |
 | `STUDIO-03036` | Drop-down selection over a deferred popup | ✅ | `STUDIO-03022`, `STUDIO-03033` |
 | `STUDIO-03040` | Modal dialogs: a window that owns the frame until it is answered | ✅ | `STUDIO-03022` |
+| `STUDIO-03041` | Make paint order separable from input order, so a widget cannot describe itself under its own background | ⬜ | `STUDIO-03009` |
 
 ## Acceptance and verification
 
@@ -527,3 +528,44 @@ layer raised and lowered, a click behind reaching nothing, a button answering, E
 a dialog that refuses Escape, Tab unable to leave, a field taking the keyboard on open, Enter
 carrying the text out, an empty required field refusing the affirmative button while Cancel still
 works, a menu closing when a dialog opens, and About being a real dialog whose text the host sets
+
+### `STUDIO-03041` — Make paint order separable from input order
+
+**Acceptance.** A widget can be *described* before a surface and *drawn* after it without its author
+splitting the code by hand, and the shape that used to be a trap is either impossible or fails a
+test naming the widget.
+
+**Not a preference. It has happened three times, and twice in one session.** A tree row is one
+widget covering the whole line, so anything that has to win the click against the row must be
+described *before* the row — and is therefore drawn before it, and painted over by it.
+
+| | How it presented |
+|---|---|
+| The disclosure triangle | Expandable rows lost their triangle **on alternate lines only**, because the alternating fill is what covered it. Read as a data problem |
+| The outliner's visibility toggle (`STUDIO-35060`) | As **nothing at all**. The click toggled, the tooltip appeared, two unit tests passed, and the eye was never once on screen |
+| The Details panel's asset inspector (`STUDIO-07045`) | Written correctly, and covered only because the earlier two had made it a thing to check |
+
+The second is the one that matters: a feature that works and cannot be seen is worse than a missing
+one, because nothing reports it. It was found by reading a 1920×1080 capture while writing a handoff.
+
+**The fix so far is a rule and two guards, which is one guard per *instance*.** `STUDIO-35063` asserts
+the outliner's toggle ordering on emitted geometry, and `STUDIO-07045` added a rasterising one for
+the asset inspector. Both are real and both are retrospective: they defend the two places somebody
+already got wrong, and the next widget on a row starts from the same trap.
+
+**What this task is for**, stated as a question rather than a design: the draw list is emitted in
+call order and that is also description order, so the two are the same thing. Separating them is
+probably a deferred-draw facility — a widget asks for a paint that happens at the end of the
+enclosing row, the way a deferred popup escapes the panel it was opened in (`STUDIO-03033`) — and
+that facility already exists for popups, which is the argument that this is a small change rather
+than a renderer rewrite.
+
+**Deliberately not attempted yet.** The obvious alternatives are worse: reordering the row widget so
+the background is described first breaks input precedence, and asking every author to split their
+widget by hand is what is happening now. This wants design rather than an edit, which is why it is
+a task rather than a commit.
+
+**A test that generalises is part of the acceptance.** Both existing guards name one widget. What is
+missing is the one that fails for *any* interactive element drawn under an opaque fill that covers
+it, without having to know which widgets exist — probably by rasterising a frame with every
+interactive rectangle known to the frame, and requiring each hovered one to change some pixel.

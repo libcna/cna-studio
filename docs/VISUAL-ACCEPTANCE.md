@@ -136,6 +136,44 @@ The same goes for its 2D/3D dropdown: natively those are two exclusive commands 
 
 The captures are of the 2D view on both sides, which is what each opens on.
 
+## Reviewed again, at the end of the service-extraction and benchmark session
+
+Looked at rather than assumed, at 1920×1080 with the example project open and `Player` selected, and
+separately at the surfaces this session changed. What follows is what the capture actually shows.
+
+**Holding.** The visibility toggle `STUDIO-35060` added and `STUDIO-35063` guards **is still on
+screen**: hovering a row draws the eye at its right-hand end, checked on a 700×220 capture of the
+outliner alone rather than inferred from the test passing. That is worth re-checking by eye each
+session precisely because the failure mode is a feature that works, passes its tests, and is
+invisible.
+
+**New this session and reviewed.** The Details panel's asset inspector (`STUDIO-07045`) reads as a
+panel about a file: the name in the heading face beside its kind's icon, then path, type and id, then
+the importer's own heading and its settings as real controls — two drop-downs, two checkboxes and a
+read-only pixel size. Two things were wrong on first look and are fixed: a property the importer
+declares read-only rendered as "(not editable yet)", which is the message for a kind with no editor
+and reads as an unimplemented feature, where the honest answer is `32, 32`; and a `.cnamaterial` said
+"No importer handles this file type", which is true, useless, and reads as a fault — it names
+`STUDIO-07046` now.
+
+**Still below the bar, and visible in the capture.**
+
+| What | Task |
+|------|------|
+| The Content Browser is a single folder card in a very large empty area at 1920 wide; no thumbnails | `STUDIO-35041` |
+| The property grid's label column is a fixed 38%, so at panel width the labels and their values are separated by a gap wider than either | `STUDIO-35033` |
+| The viewport grid is a flat lattice rather than a ground plane, and there is no orientation widget | `STUDIO-35051`, `STUDIO-35052` |
+| Nothing marks the selected entity in the viewport | `STUDIO-35053` |
+| The outliner cannot be searched or filtered | `STUDIO-35061` |
+
+None of these is new and all of them are `Phase 35` rows already. They are repeated here because a
+review that only lists what improved is a review that stops being read.
+
+**What this session did not change.** No new reference capture was added to `docs/reference/`. The
+shell's visual language is where `STUDIO-35060` left it; this session's work was architecture,
+measurement and one panel section, and adding a third pair of "current state" captures that differ
+from the last by one panel would make the directory harder to read rather than more honest.
+
 ## The verdict
 
 The native shell is ahead of the prototype on everything a user sees first, and was behind it on one
@@ -144,15 +182,16 @@ screen's worth of scene-level settings — which this review found and which are
 What `STUDIO-07030` — deleting the Dear ImGui panels — is still waiting for is the inventory's *Not
 yet answered* table, repeated here so the two can be compared by a test rather than by eye.
 
-**The list grew.** It was one row — material editing — and `STUDIO-07041` found five, because this
-review and that inventory were both looking at the level of *panels* and the gap was a level below:
-the controls inside one. The prototype's Inspector draws eight sections and the native Details panel
-had three. `docs/MIGRATION-INVENTORY.md` has the correction and what changed so it cannot recur.
+**The list grew, then began to shrink.** It was one row — material editing — and `STUDIO-07041`
+found five, because this review and that inventory were both looking at the level of *panels* and
+the gap was a level below: the controls inside one. The prototype's Inspector draws eight sections
+and the native Details panel had three. `docs/MIGRATION-INVENTORY.md` has the correction and what
+changed so it cannot recur. The asset inspector has since been answered (`STUDIO-07045`), leaving
+four:
 
 - Prefab overrides
 - Sprite animation preview
 - Audio preview
-- Asset inspector
 - Material asset editor
 
 **This review is a judgement and says so.** No test can assert that one editor looks better than

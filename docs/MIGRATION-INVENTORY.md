@@ -303,10 +303,16 @@ ever shrinks is one nobody can tell the difference between "done" and "quietly d
 | Prefab overrides | `InspectorPanel::drawPrefabSection` | Report, revert and apply, in the native Details panel (`STUDIO-07042`) |
 | Sprite animation preview | `InspectorPanel::drawAnimationPreview` | A preview that does not put the frame it is showing into the document (`STUDIO-07043`) |
 | Audio preview | `InspectorPanel::drawAudioPreview` | The audio seam the native Details panel does not reach yet (`STUDIO-07044`) |
-| Asset inspector | `InspectorPanel::drawAssetInspector` | ✅ Answered by `studioAssetInspector` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07045`): identity, kind, and the importer's settings edited through the history |
 | Material asset editor | `InspectorPanel::drawMaterialAsset` | The editor the prototype already has, ported (`STUDIO-07046`) |
 
-Three rows have left this table since it was written. **The 3D view** is answered by
+Four rows have left this table since it was written. **The asset inspector** is answered by
+`studioAssetInspector` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07045`): the asset's
+identity and kind, and its importer's declared settings edited through the command history. It was
+not only a missing section — the native Content Browser and the native Details panel had *different*
+ideas of which asset was selected, because the browser wrote into a member of `StudioShellPanels`
+while `StudioContext::selectedAsset_` was only ever written by the prototype. The selection is the
+context's now, which also brings the exclusivity rule with it: selecting an asset clears the entity
+selection. **The 3D view** is answered by
 `studioViewportPanel3D` and the host's `renderSceneIn3D`, described under *Toolbar controls* above.
 **Plugin menus** are answered by
 `bindStudioPluginMenus`: a plugin registers commands under `studio.plugin.` and the menus draw them
