@@ -1,0 +1,93 @@
+{
+ "formatVersion": 1,
+ "sceneId": "5d0c7a18-9b34-4f62-a7e5-2c81b6390fd4",
+ "name": "Level02",
+ "entities": [
+  {
+   "id": "8f1c2d34-5e6a-4b7c-8d9e-0f1a2b3c4d5e",
+   "name": "Main Camera",
+   "components": {
+    "CNA.Transform": {
+     "position": [
+      400,
+      300,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "CNA.Camera": {
+     "clearColor": [
+      100,
+      149,
+      237,
+      255
+     ],
+     "farPlane": 1000,
+     "fieldOfView": 45,
+     "isPrimary": true,
+     "nearPlane": 0.1,
+     "orthographicSize": 600,
+     "projection": "Orthographic"
+    }
+   }
+  },
+  {
+   "id": "f392a1b2-c3d4-4e5f-a607-182930415263",
+   "name": "Player",
+   "components": {
+    "CNA.Transform": {
+     "position": [
+      100,
+      220,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    "CNA.SpriteRenderer": {
+     "layerDepth": 0.5,
+     "origin": [
+      0,
+      0
+     ],
+     "sourceRectangle": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "spriteEffects": "None",
+     "texture": "8d9fb62c-7447-4c22-a190-036691308c8a",
+     "tint": [
+      255,
+      255,
+      255,
+      255
+     ]
+    }
+   },
+   "editorState": {
+    "expanded": true
+   }
+  }
+ ]
+}

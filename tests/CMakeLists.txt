@@ -52,6 +52,7 @@ add_executable(cna-studio-tests
     StudioSceneSettingsTests.cpp
     StudioRenameTests.cpp
     StudioShortcutEditorTests.cpp
+    StudioStartupDocumentTests.cpp
     StudioStatusBarTests.cpp
     StudioSavedLayoutTests.cpp
     StudioFloatingPanelTests.cpp
@@ -652,6 +653,33 @@ if(CNA_STUDIO_WITH_CNA)
             ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
     else()
         set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # `--scene` overriding the project's startup scene, on the UI that is the default
+    # (STUDIO-07053). The flag was parsed and documented from the beginning and reached the Dear
+    # ImGui prototype alone, so this shell ignored it in silence -- and ignoring it produces
+    # exactly what not passing it produces, which is why no test noticed.
+    #
+    # Level02 rather than a second copy of Level01: the assertion is that the shell is showing the
+    # scene that was *asked for*, and two scenes with the same contents cannot tell that from the
+    # shell showing the one it would have opened anyway. Two entities against Level01's five, so
+    # the World Outliner has to agree with the status bar for this to pass.
+    add_test(NAME CnaStudioNativeShellSceneOverride
+        COMMAND cna-studio --ui=studio --workspace=none
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+            --scene=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/Scenes/Level02.cnascene
+            --frames=20
+            --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-scene.png
+            --screenshot-min-colors=16)
+    set_tests_properties(CnaStudioNativeShellSceneOverride PROPERTIES
+        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level02'.*outliner showing 2 of 2 entities")
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioNativeShellSceneOverride PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+    else()
+        set_tests_properties(CnaStudioNativeShellSceneOverride PROPERTIES
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
     endif()
 

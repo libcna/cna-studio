@@ -39,6 +39,7 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/StudioStartupDocument.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 #include "CNA/Studio/UiCore/StudioPreferences.hpp"
@@ -178,29 +179,32 @@ namespace CNA::Studio
                     log_.append(severity, message);
                 });
 
-                if (options.projectPath.empty())
+                // The project, and then `--scene` over the top of the project's own startup
+                // scene. Shared with the preview, the benchmark and the prototype, because this
+                // shell used to write it out itself and had left `--scene` out of it: the flag was
+                // parsed, documented and read by the prototype alone, so on the default UI it did
+                // nothing at all (STUDIO-07053).
+                const StudioStartupDocument opened = openStudioStartupDocument(
+                    *context_, options.projectPath, options.scenePath);
+
+                // Whatever *did* open goes in the status bar, including when the scene override
+                // did not: a failed `--scene` leaves the project open on its own startup scene,
+                // and a status bar that then said nothing would describe a Studio with no project
+                // while the panels showed one.
+                if (opened.projectOpened)
                 {
-                    // A scene with no camera renders nothing, which reads as "Studio is broken"
-                    // rather than "you have not added a camera yet" -- so a Studio opened with no
-                    // project starts with one, exactly as the prototype does (STUDIO-07047). The
-                    // native shell did not, and started on a completely empty document.
-                    context_->newScene("Untitled");
+                    shell_->setStatusLeft(context_->getProject().getName() + "  --  "
+                                          + context_->getScene().getName());
                 }
-                else
+
+                if (!opened.succeeded())
                 {
-                    if (context_->openProject(options.projectPath))
-                    {
-                        shell_->setStatusLeft(context_->getProject().getName() + "  --  "
-                                              + context_->getScene().getName());
-                    }
-                    else
-                    {
-                        // Reported, not fatal. An editor that refused to open because one project
-                        // would not load leaves the user with no way to open a different one.
-                        log_.append(LogSeverity::Error,
-                                    "Could not open '" + options.projectPath + "'.");
-                        shell_->status().problem = "Could not open " + options.projectPath;
-                    }
+                    // Reported, not fatal. An editor that refused to open because one project
+                    // would not load leaves the user with no way to open a different one -- and
+                    // the same goes for a scene: the project is open and usable behind the
+                    // message.
+                    log_.append(LogSeverity::Error, opened.error);
+                    shell_->status().problem = opened.error;
                 }
 
                 (void)bindStudioShellActions(*shell_, *context_, log_);

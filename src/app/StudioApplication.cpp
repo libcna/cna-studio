@@ -13,6 +13,7 @@
 #include "CNA/Studio/Assets/AssetImporters.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/StudioStartupDocument.hpp"
 
 namespace CNA::Studio
 {
@@ -90,18 +91,13 @@ namespace CNA::Studio
                      std::string{"cna-studio starting (ui="} + ui_->getBackendName()
                          + ", viewport=" + viewport_->getBackendName() + ")");
 
-        if (!options.projectPath.empty())
+        // Through the same function the native shell and the preview call, so `--project` and
+        // `--scene` cannot mean one thing on one UI and something else on another -- which is
+        // exactly what they did until `STUDIO-07053`.
+        if (!openStudioStartupDocument(context_, options.projectPath, options.scenePath)
+                 .succeeded())
         {
-            if (!context_.openProject(options.projectPath)) { return false; }
-        }
-        else
-        {
-            context_.newScene("Untitled");
-        }
-
-        if (!options.scenePath.empty())
-        {
-            if (!context_.openScene(options.scenePath)) { return false; }
+            return false;
         }
 
         if (!options.executablePath.empty())

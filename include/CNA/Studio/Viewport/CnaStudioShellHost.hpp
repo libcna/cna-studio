@@ -121,6 +121,18 @@ namespace CNA::Studio
         std::string projectPath;
 
         /**
+         * @brief A `.cnascene` to open instead of the project's startup scene. Empty uses the
+         *        project's own.
+         *
+         * `STUDIO-07053`. `--scene` was parsed and documented from the beginning and reached the
+         * Dear ImGui prototype alone, so on the default UI it did nothing: this struct had no field
+         * to carry it in. That is the shape of the defect the flag inventory was looking for -- not
+         * a flag that behaves differently on two UIs, but one that stops existing on the way to the
+         * second.
+         */
+        std::string scenePath;
+
+        /**
          * @brief This executable's own path, so the player builds beside it can be found.
          *
          * "Run this on Vulkan" means "launch cna-player-vulkan", and whether that binary exists is

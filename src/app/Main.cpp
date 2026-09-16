@@ -33,6 +33,7 @@
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/StudioStartupDocument.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
@@ -284,6 +285,12 @@ namespace
     /** @brief Adds @p count entities to @p scene under a shallow hierarchy. */
     void fillScene(CNA::Studio::SceneDocument& scene, int count)
     {
+        // Cleared first, so `outliner-2000` holds two thousand entities rather than two thousand
+        // and whatever the starting document had. The benchmark now opens the same document the
+        // shell opens -- a scene with a camera in it -- and a scenario whose name is a count has
+        // to be able to be read as one.
+        scene.clear();
+
         CNA::Studio::Uuid parent;
         for (int i = 0; i < count; ++i)
         {
@@ -466,9 +473,12 @@ namespace
                 log.append(severity, message);
             });
 
-            if (!options.projectPath.empty() && !context.openProject(options.projectPath))
+            const CNA::Studio::StudioStartupDocument opened =
+                CNA::Studio::openStudioStartupDocument(context, options.projectPath,
+                                                       options.scenePath);
+            if (!opened.succeeded())
             {
-                std::cerr << "cna-studio: could not open '" << options.projectPath << "'.\n";
+                std::cerr << "cna-studio: " << opened.error << "\n";
                 return 2;
             }
 
@@ -616,16 +626,16 @@ namespace
             log.append(severity, message);
         });
 
-        if (options.projectPath.empty())
+        // The same document a Studio with no project opens (STUDIO-07047): a scene with a camera
+        // in it, because one with no camera renders nothing and reads as a broken editor. The
+        // preview photographs what the editor shows, so it opens what the editor opens -- through
+        // the same function the editor calls, `--scene` included (STUDIO-07053).
+        const CNA::Studio::StudioStartupDocument opened =
+            CNA::Studio::openStudioStartupDocument(context, options.projectPath,
+                                                   options.scenePath);
+        if (!opened.succeeded())
         {
-            // The same document a Studio with no project opens (STUDIO-07047): a scene with a
-            // camera in it, because one with no camera renders nothing and reads as a broken
-            // editor. The preview photographs what the editor shows, so it opens the same thing.
-            context.newScene("Untitled");
-        }
-        else if (!context.openProject(options.projectPath))
-        {
-            std::cerr << "cna-studio: could not open '" << options.projectPath << "'.\n";
+            std::cerr << "cna-studio: " << opened.error << "\n";
             return 2;
         }
 
@@ -1227,6 +1237,7 @@ int main(int argc, char** argv)
         // meant to isolate itself would silently write over the developer's layout.
         hostOptions.focusPanel = options.focusPanel;
         hostOptions.projectPath = options.projectPath;
+        hostOptions.scenePath = options.scenePath;
         hostOptions.selectEntity = options.selectEntity;
         hostOptions.invokeAction = options.shellPreviewInvoke;
         if (options.windowWidth > 0 && options.windowHeight > 0)

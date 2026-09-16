@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 31 of 46 complete `███████░░░░░`
+**Progress:** 32 of 46 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -47,7 +47,7 @@
 | `STUDIO-07050` | Transform manipulators in the native 3D view | ⬜ | `STUDIO-07009` |
 | `STUDIO-07051` | The native shell reloads assets edited outside it | ⬜ | `STUDIO-07008` |
 | `STUDIO-07052` | The native shell loads the project's plugins | ⬜ | `STUDIO-07001` |
-| `STUDIO-07053` | `--scene` opens a scene on the native shell | ⬜ | `STUDIO-07048` |
+| `STUDIO-07053` | `--scene` opens a scene on the native shell | ✅ | `STUDIO-07048` |
 | `STUDIO-07054` | Editors for list and structure properties | ⬜ | `STUDIO-07018` |
 | `STUDIO-07055` | A numeric property field is dragged as well as typed | ⬜ | `STUDIO-07018` |
 | `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ⬜ | `STUDIO-07009` |
@@ -144,11 +144,43 @@ loaded to register any, so the menu is empty on every native run. **Acceptance.*
 and the default `plugins/` beside the executable are discovered and loaded on the native shell,
 each failure named per plugin, and unloaded while the context is still alive.
 
-**`STUDIO-07053` — `--scene` opens a scene on the native shell.** The flag is parsed, documented in
-the usage text, and read by `StudioApplication::initialize` alone. On the native shell — which is
-the default UI — it is silently ignored and the project's startup scene opens instead.
+**`STUDIO-07053` — `--scene` opens a scene on the native shell.** ✅ The flag was parsed, documented
+in the usage text, and read by `StudioApplication::initialize` alone. On the native shell — which is
+the default UI — it was silently ignored and the project's startup scene opened instead.
 **Acceptance.** `--scene=PATH` opens that scene, and a path that will not open is reported rather
 than swallowed.
+
+**Done by deleting the decision three times rather than by adding it a fourth.** Four things start a
+Studio context from a command line — the native shell, the headless preview, the UI benchmark and
+the prototype — and each had written out the same "project, or a new scene; then the override" by
+hand. Three had written it out without the override. `openStudioStartupDocument` is that decision,
+once, in the context module; it takes two paths rather than `StudioOptions`, because the module that
+owns projects and scenes has no business knowing there is a command line.
+
+**The field was missing from the struct, not from the logic.** `CnaStudioShellHostOptions` had no
+`scenePath` at all, so the flag did not survive the journey from the parser to the shell. That is
+the shape worth naming: not a flag that behaves differently on two UIs, but one that *stops
+existing* on the way to the second, where there is nothing to observe because ignoring it produces
+exactly what not passing it produces.
+
+**A failed `--scene` leaves the project open**, and says so in the Output Log and the status bar
+rather than refusing to start. The project is behind the message and is usable; an editor that
+refused to open over one bad path would leave the user with no way to open a good one.
+
+**Guarded by `NoParsedFlagIsReadByThePrototypeAlone`**, which reads the *parser* for every
+`options.<field> =` it performs and fails any field whose only reader is the prototype. Written over
+the parser rather than over a list, because a guard with its own inventory goes stale the first time
+a flag is added — and this project has already paid for that once, when a migration inventory
+complete over panels, menus, toolbars and shortcuts missed `Add Component` for being a button inside
+a panel. It found `--orbit` on its first run, which is four more than the flag list would have had.
+Four flags are allow-listed by name with the task that will close each: `--compare-backends`'
+tolerance, `--plugin-dir` (`STUDIO-07052`), `--recovery-dir` and the two 3D smoke flags
+(`STUDIO-07049`).
+
+**`examples/HelloSprites` gained `Scenes/Level02.cnascene`**, because a project with one scene
+cannot demonstrate a scene override at all. Two entities against Level01's five, so
+`CnaStudioNativeShellSceneOverride` fails unless the status bar and the World Outliner agree about
+which scene opened — two copies of the same scene would have passed while proving nothing.
 
 ### `STUDIO-07054` … `STUDIO-07058` — Four more, and a fifth the inventory found on the way
 

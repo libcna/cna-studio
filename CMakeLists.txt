@@ -347,6 +347,7 @@ target_link_libraries(cna-studio-plugins PUBLIC cna-studio-core)
 # stay acyclic and the layering stay checkable by the build system rather than by review.
 add_library(cna-studio-context STATIC
     src/context/StudioContext.cpp
+    src/context/StudioStartupDocument.cpp
     src/context/ProjectCommands.cpp
     src/context/PrefabWorkflow.cpp
     src/context/StudioRecovery.cpp)
