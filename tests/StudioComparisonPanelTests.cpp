@@ -12,6 +12,7 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioComparisonService.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -496,4 +497,107 @@ CNA_STUDIO_TEST(PressingARendererReportsTheChoiceRatherThanMakingItItself)
     }
 
     CNA_STUDIO_EXPECT(fixture.last.playBackendChosen.has_value());
+}
+
+// ------------------------------------------------------------------------------------------------
+// The comparison service on its own (STUDIO-02056)
+//
+// The same argument the play service's cases make, and the same reason the extraction is worth its
+// churn: every rule below used to need a StudioShell, a StudioShellPanels and therefore a binding
+// of every panel in Studio to reach. They need a context, a log and two lambdas now. A
+// decomposition whose parts still cannot be used apart has moved code rather than separated
+// concerns, so these construct the service directly and never mention a shell.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheComparisonServiceRunsWithNoShellAndNoPanels)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioComparisonService comparisons{context, log, nullptr, nullptr};
+
+    CNA_STUDIO_EXPECT(!comparisons.isRunning());
+    CNA_STUDIO_EXPECT(comparisons.run().getState() == ComparisonState::Idle);
+    CNA_STUDIO_EXPECT_EQ(comparisons.tolerance(), kDefaultImageTolerance);
+
+    // A request with no project names no project, rather than a path built from an empty string.
+    const ComparisonRequest request = comparisons.makeRequest();
+    CNA_STUDIO_EXPECT(request.projectPath.empty());
+    CNA_STUDIO_EXPECT(request.builds.empty());
+    CNA_STUDIO_EXPECT_EQ(request.tolerance, kDefaultImageTolerance);
+
+    // And starting refuses with the reason rather than launching several games at nothing.
+    CNA_STUDIO_EXPECT(!comparisons.start());
+    CNA_STUDIO_EXPECT(!comparisons.isRunning());
+    CNA_STUDIO_EXPECT(contains(log.entries().back().message, "Save the scene"));
+}
+
+CNA_STUDIO_TEST(TheComparisonAsksForTheBuildsRatherThanRememberingThem)
+{
+    // The provider is the point of the extraction's one interesting dependency. A snapshot taken
+    // at construction would go stale the moment Studio rescanned, and the panel would then offer a
+    // renderer Play will not use -- which is the disagreement the shared list exists to prevent.
+    StudioContext context;
+    StudioLog log;
+    std::vector<PlayerBuild> installed;
+    StudioComparisonService comparisons{
+        context, log, nullptr,
+        [&installed]() -> const std::vector<PlayerBuild>& { return installed; }};
+
+    CNA_STUDIO_EXPECT(comparisons.makeRequest().builds.empty());
+
+    installed.push_back(PlayerBuild{"software", "/nowhere/cna-player-software"});
+    installed.push_back(PlayerBuild{"opengl4", "/nowhere/cna-player-opengl4"});
+    CNA_STUDIO_EXPECT_EQ(comparisons.makeRequest().builds.size(), std::size_t{2});
+
+    installed.pop_back();
+    CNA_STUDIO_EXPECT_EQ(comparisons.makeRequest().builds.size(), std::size_t{1});
+
+    // The tolerance the next run uses travels with the request, so the panel's spinner and what
+    // the comparison actually does cannot drift apart.
+    comparisons.setTolerance(12);
+    CNA_STUDIO_EXPECT_EQ(comparisons.makeRequest().tolerance, 12);
+}
+
+CNA_STUDIO_TEST(TheComparisonRaisesItsOutcomeThroughASinkRatherThanAShell)
+{
+    // The sink is what lets this be asserted at all. Reported on the transition rather than on the
+    // state: a finished run stays finished, so a notification raised from the state would be
+    // raised again every frame for ever -- and nothing running must raise nothing at all.
+    std::vector<StudioNotification> raised;
+    StudioContext context;
+    StudioLog log;
+    StudioComparisonService comparisons{
+        context, log,
+        [&raised](StudioNotification note) { raised.push_back(std::move(note)); }, nullptr};
+
+    CNA_STUDIO_EXPECT(!comparisons.poll(0.0));
+    CNA_STUDIO_EXPECT(!comparisons.poll(1.0));
+    CNA_STUDIO_EXPECT(raised.empty());
+}
+
+CNA_STUDIO_TEST(TheShellStillSpeaksForTheComparisonServiceItOwns)
+{
+    // The forwarding half. `comparisons()` hands out the service rather than growing a method per
+    // operation, which is what STUDIO-02050 forbids -- and it must be the service the panel reads,
+    // not a copy, or the panel and the run would disagree within one frame.
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    StudioShellPanels panels{shell, context, log};
+
+    CNA_STUDIO_EXPECT(!panels.comparisons().isRunning());
+    panels.comparisons().setTolerance(31);
+    CNA_STUDIO_EXPECT_EQ(panels.comparisons().tolerance(), 31);
+
+    const StudioShellPanels& constPanels = panels;
+    CNA_STUDIO_EXPECT_EQ(constPanels.comparisons().tolerance(), 31);
+    CNA_STUDIO_EXPECT(&constPanels.comparisons() == &panels.comparisons());
+
+    // A status bar that had to be told separately would be a second place for the answer to be
+    // wrong, so it reads the service: nothing running means no comparison job on it.
+    panels.poll(0.0);
+    for (const StudioStatusJob& job : shell.status().jobs)
+    {
+        CNA_STUDIO_EXPECT(job.label.rfind("Comparing renderers", 0) != 0);
+    }
 }

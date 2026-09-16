@@ -31,6 +31,7 @@
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioComparisonService.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioHistoryPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
@@ -304,8 +305,15 @@ namespace CNA::Studio
         /** @brief Stops the running game and starts it again from the scene as it now stands. */
         void restartPlaying() { play_.restart(); }
 
-        /** @brief The backend comparison this Studio would run, for a caller to report on. */
-        [[nodiscard]] const BackendComparison& comparison() const { return comparison_; }
+        /**
+         * @brief The renderer comparison, whole.
+         *
+         * Handed out rather than forwarded to, like `play()` and `builds()`: a method per
+         * operation would be six that do nothing, which is what `STUDIO-02050` forbids.
+         */
+        [[nodiscard]] StudioComparisonService& comparisons() { return comparison_; }
+        /** @brief The renderer comparison. */
+        [[nodiscard]] const StudioComparisonService& comparisons() const { return comparison_; }
 
         /**
          * @brief The user's preferences, edited by the Preferences panel.
@@ -394,12 +402,6 @@ namespace CNA::Studio
         /** @brief The player binary Play would launch, or nullptr when none was found. */
 
 
-        /** @brief Runs the open scene on every discovered player build. */
-        void startComparison();
-
-        /** @brief The comparison this Studio would run, from the project and the discovered builds. */
-        [[nodiscard]] ComparisonRequest makeComparisonRequest() const;
-
         /** @brief Pumps the bridge once a frame and reports what the player said. */
 
         /**
@@ -430,13 +432,6 @@ namespace CNA::Studio
         /** @brief Rebuilds the plugin menus when the extension registry has moved on. */
         void pollPlugins();
 
-        /** @brief Announces a build that has just finished, either way. */
-
-        /**
-         * @brief Announces a comparison that has just finished.
-         * @param wasRunning Whether it was still launching or capturing before this poll.
-         */
-        void reportComparison(bool wasRunning);
 
         /**
          * @brief Tells the status bar what is open and what is running.
@@ -507,14 +502,13 @@ namespace CNA::Studio
         StudioPlayService play_;
 
         /**
-         * @brief The renderer comparison, and the tolerance the next run uses.
+         * @brief The renderer comparison.
          *
          * Owned here rather than by its panel, so a run started from the panel survives the panel
          * being closed — half an hour of launching several games is not something to abandon
          * because a user switched tabs.
          */
-        BackendComparison comparison_;
-        int comparisonTolerance_ = kDefaultImageTolerance;
+        StudioComparisonService comparison_;
 
         StudioDiagnosticsInfo diagnostics_;
         StudioShellPanelCounts counts_;

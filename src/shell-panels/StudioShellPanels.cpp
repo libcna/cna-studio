@@ -14,6 +14,7 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioComparisonService.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioDiagnosticsPanel.hpp"
@@ -45,7 +46,14 @@ namespace CNA::Studio
           // constructed and a test can read what it raised without one.
           play_(context, log, [this](StudioNotification notification) {
               notify(std::move(notification));
-          })
+          }),
+          // The builds arrive as a provider rather than as a copy or as the play service itself:
+          // the list changes when Studio rescans, and handing over the play service would hand
+          // over the player process and the input bridge with it.
+          comparison_(context, log,
+                      [this](StudioNotification notification) { notify(std::move(notification)); },
+                      [this]() -> const std::vector<PlayerBuild>& { return play_.builds(); },
+                      services_.readImage, services_.writeImage)
     {
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_.process());
 
@@ -74,10 +82,7 @@ namespace CNA::Studio
         build_.poll();
         (void)build_.poll();
         counts_.playerMessages += play_.poll();
-        const bool wasComparing = comparison_.getState() == ComparisonState::Launching
-                               || comparison_.getState() == ComparisonState::Capturing;
-        comparison_.poll(nowSeconds);
-        reportComparison(wasComparing);
+        (void)comparison_.poll(nowSeconds);
         publishStatus();
     }
 
@@ -209,38 +214,6 @@ namespace CNA::Studio
         recovery_.update(delta);
     }
 
-    void StudioShellPanels::reportComparison(bool wasRunning)
-    {
-        if (shell_ == nullptr || !wasRunning) { return; }
-
-        const ComparisonState now = comparison_.getState();
-        if (now == ComparisonState::Launching || now == ComparisonState::Capturing) { return; }
-
-        StudioNotification notification;
-        notification.id = "studio.comparison";
-        notification.actionId = StudioShell::showPanelActionId("comparison");
-
-        if (!comparison_.getError().empty())
-        {
-            notification.severity = StudioNotificationSeverity::Error;
-            notification.title = "Renderer comparison failed";
-            notification.detail = comparison_.getError();
-        }
-        else
-        {
-            // What the comparison is *for*: renderers that disagree. Saying "finished" and leaving
-            // the answer in a panel would be announcing the part the user already knew.
-            const bool agree = comparison_.allBackendsAgree();
-            notification.severity = agree ? StudioNotificationSeverity::Success
-                                          : StudioNotificationSeverity::Warning;
-            notification.title = agree ? "Every renderer drew the same frame"
-                                       : "Renderers disagree";
-            notification.detail = std::to_string(comparison_.getEntries().size())
-                                + " renderers compared";
-        }
-        notify(std::move(notification));
-    }
-
     void StudioShellPanels::applyPreferences()
     {
         if (shell_ == nullptr) { return; }
@@ -305,11 +278,10 @@ namespace CNA::Studio
             status.jobs.push_back(std::move(job));
         }
 
-        const ComparisonState comparison = comparison_.getState();
-        if (comparison == ComparisonState::Launching || comparison == ComparisonState::Capturing)
+        if (comparison_.isRunning())
         {
             StudioStatusJob job;
-            job.label = std::string{"Comparing renderers: "} + toString(comparison);
+            job.label = std::string{"Comparing renderers: "} + toString(comparison_.run().getState());
             // No progress: the run is waiting on several games to open windows, and a bar that
             // guessed at how long that takes would be inventing a number in the one place the
             // editor reports facts.
@@ -326,64 +298,6 @@ namespace CNA::Studio
             job.stopActionId = "studio.play.stop";
             status.jobs.push_back(std::move(job));
         }
-    }
-
-    void StudioShellPanels::startComparison()
-    {
-        // The scene on screen, not the project's startup scene: a comparison of something the user
-        // is not looking at answers a question nobody asked. And, like play mode, each player is a
-        // separate process reading from disk, so what is on screen has to be written there first.
-        if (context_.getScenePath().empty())
-        {
-            log_.append(LogSeverity::Warning,
-                        "Save the scene before comparing renderers: each player is a separate "
-                        "process and reads the scene from disk.");
-            return;
-        }
-        if (context_.getHistory().isDirty())
-        {
-            if (!context_.saveScene())
-            {
-                log_.append(LogSeverity::Error,
-                            "Could not save the scene; not comparing renderers.");
-                return;
-            }
-            log_.append(LogSeverity::Info, "Saved the scene before comparing renderers.");
-        }
-
-        ComparisonRequest request = makeComparisonRequest();
-
-        // Relative to the project, like play mode's: several processes need not agree on a working
-        // directory, and the project root is the one anchor all of them already have.
-        std::error_code relativeError;
-        const std::filesystem::path relativeScene = std::filesystem::relative(
-            std::filesystem::path{context_.getScenePath()},
-            std::filesystem::path{request.projectPath}.parent_path(), relativeError);
-        if (!relativeError) { request.scenePath = relativeScene.generic_string(); }
-
-        if (!comparison_.start(request, services_.readImage, services_.writeImage))
-        {
-            log_.append(LogSeverity::Error, "Cannot compare renderers: " + comparison_.getError());
-            return;
-        }
-
-        log_.append(LogSeverity::Info,
-                    "Comparing " + std::to_string(request.builds.size())
-                        + " renderers; captures go to " + request.outputDirectory + ".");
-    }
-
-    ComparisonRequest StudioShellPanels::makeComparisonRequest() const
-    {
-        ComparisonRequest request;
-        if (context_.hasProject())
-        {
-            request.projectPath = context_.getProject().getFilePath();
-            request.outputDirectory = getDefaultComparisonDirectory(request.projectPath);
-        }
-        // The same list Play chooses from, so the panel cannot offer a renderer Play will not use.
-        request.builds = play_.builds();
-        request.tolerance = comparisonTolerance_;
-        return request;
     }
 
     void StudioShellPanels::setViewportServices(StudioCamera2D& camera, StudioCamera3D& camera3D,
@@ -1016,17 +930,17 @@ namespace CNA::Studio
         shell.setPanelContent("comparison", [this](StudioFrame& frame, const UiRect& bounds) {
             StudioComparisonView view;
             view.hasProject = context_.hasProject();
-            view.tolerance = comparisonTolerance_;
-            view.state = comparison_.getState();
-            view.entries = &comparison_.getEntries();
-            view.error = comparison_.getError();
-            view.allAgree = comparison_.allBackendsAgree();
+            view.tolerance = comparison_.tolerance();
+            view.state = comparison_.run().getState();
+            view.entries = &comparison_.run().getEntries();
+            view.error = comparison_.run().getError();
+            view.allAgree = comparison_.run().allBackendsAgree();
             view.builds = &play_.builds();
             view.playBackendIsOverride = !play_.buildOverride().empty();
             if (const PlayerBuild* build = play_.chooseBuild()) { view.playBackend = build->backend; }
             if (view.hasProject)
             {
-                const ComparisonRequest probe = makeComparisonRequest();
+                const ComparisonRequest probe = comparison_.makeRequest();
                 view.outputDirectory = probe.outputDirectory;
                 view.problem = describeComparisonProblem(probe);
             }
@@ -1039,13 +953,9 @@ namespace CNA::Studio
             {
                 selectPlayerBuild(*panel.playBackendChosen);
             }
-            if (panel.toleranceChanged) { comparisonTolerance_ = panel.tolerance; }
-            if (panel.compareRequested) { startComparison(); }
-            if (panel.cancelRequested)
-            {
-                comparison_.cancel();
-                log_.append(LogSeverity::Warning, "Renderer comparison cancelled.");
-            }
+            if (panel.toleranceChanged) { comparison_.setTolerance(panel.tolerance); }
+            if (panel.compareRequested) { (void)comparison_.start(); }
+            if (panel.cancelRequested) { comparison_.cancel(); }
         });
 
         // The Preferences panel (STUDIO-06011): a panel rather than a modal, because preferences

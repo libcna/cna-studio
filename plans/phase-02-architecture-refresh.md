@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 30 of 38 complete `███████░░░░░`
+**Progress:** 31 of 38 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -34,7 +34,7 @@
 | `STUDIO-02050` | Define the service decomposition of the application shell | ✅ | — |
 | `STUDIO-02054` | Extract `StudioPlayService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
 | `STUDIO-02055` | Extract `StudioBuildService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
-| `STUDIO-02056` | Extract `StudioComparisonService` | ⬜ | `STUDIO-02050` |
+| `STUDIO-02056` | Extract `StudioComparisonService` | ✅ | `STUDIO-02050` |
 | `STUDIO-02057` | Extract `StudioPreferencesService` | ⬜ | `STUDIO-02050` |
 | `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | ⬜ | `STUDIO-02050` |
 | `STUDIO-02059` | Guard test: no service reaches another through a locator or a singleton | ✅ | `STUDIO-02055` |
@@ -407,7 +407,7 @@ application object takes just before it stops being reviewable.
 |---------|------|--------|
 | `StudioPlayService` | The player process, play state, installed builds, the session override, input forwarding | `STUDIO-02054` ✅ |
 | `StudioBuildService` | The build process, the finish transition, standalone packaging | `STUDIO-02055` ✅ |
-| `StudioComparisonService` | The renderer comparison run, its request and its report | `STUDIO-02056` |
+| `StudioComparisonService` | The renderer comparison run, its request and its report | `STUDIO-02056` ✅ |
 | `StudioPreferencesService` | The preferences model, its sink, and applying it to a live shell | `STUDIO-02057` |
 | per-panel binders | The 440-line `bind()` | `STUDIO-02058` |
 
@@ -450,6 +450,43 @@ owner; `StudioShellPanels::build()` still names the process every panel and test
 twice, and both carry "CNA Studio produces CNA games, not CNA Studio games". `poll()` and
 `packageProject()` return whether they did anything, which they previously did not — a package that
 failed and a package that was written looked identical to the caller.
+
+### `STUDIO-02056` — Extract `StudioComparisonService`
+
+**Acceptance.** The comparison's rules can be exercised without a shell, without panels and
+without a device; the panel reads the service rather than a copy of it.
+
+**A state machine, a report and failures of its own**, which is the three-part rule on
+`STUDIO-02050`: a run that outlives many frames, six operations with real preconditions, and ways
+to go wrong — a scene that was never saved, captures it cannot read back, renderers that finished
+and drew different pictures — that are nothing like a build failing or a player crashing.
+
+**Why it is not part of `StudioPlayService`, which also launches players.** Play starts one game
+because a user wants to play it and is looking at it. A comparison starts several, in sequence,
+over something closer to half an hour, to answer a question about renderers — and answers it with
+images rather than with a window. Folding them together would make one type "the things that start
+processes", which is a category rather than a responsibility.
+
+**The one interesting dependency is the installed builds**, and it arrives as a provider rather
+than as a `StudioPlayService&`. What the comparison needs from play is the list of renderers this
+Studio has a player for, which must be the same list Play chooses from or the panel would offer a
+renderer Play will not use. Taking the play service would hand this type the player process, the
+session override and the input bridge as well, all of which would then be reachable by anybody who
+noticed they were there. `STUDIO-02059` does not catch that — a constructor argument is a legal
+dependency however large it is — so it stays a judgement, and this is the judgement.
+`TheComparisonAsksForTheBuildsRatherThanRememberingThem` covers the other half: a snapshot taken at
+construction would go stale the moment Studio rescanned.
+
+**Verification.** `TheComparisonServiceRunsWithNoShellAndNoPanels`,
+`TheComparisonAsksForTheBuildsRatherThanRememberingThem`,
+`TheComparisonRaisesItsOutcomeThroughASinkRatherThanAShell`, and
+`TheShellStillSpeaksForTheComparisonServiceItOwns`, which checks the forwarding half — including
+that `comparisons()` returns the *service* rather than a copy, and that `comparisons()` hands out
+the whole service rather than growing a method per operation.
+
+**One behaviour changed on purpose.** The outcome used to be dropped entirely when there was no
+shell to raise it on. It goes through the sink unconditionally now, like the play service's crash
+notification, so a headless caller gets it in the log rather than not at all.
 
 ### `STUDIO-02059` — Guard test: no service reaches another through a locator or a singleton
 
