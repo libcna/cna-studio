@@ -637,6 +637,7 @@ namespace CNA::Studio
         shell.setPanelContent("details", [this](StudioFrame& frame, const UiRect& bounds) {
             StudioDetailsServices details_services;
             details_services.audio = services_.audio;
+            details_services.thumbnail = services_.assetThumbnail;
 
             const StudioDetailsResult details =
                 studioDetailsPanel(frame, bounds, context_, details_services);
@@ -644,6 +645,13 @@ namespace CNA::Studio
             {
                 counts_.detailsRowsDrawn = details.rowsDrawn;
                 counts_.audioPreviews = details.audio.controls;
+                counts_.animationFrames = details.animationFrames;
+
+                // Taken from the draw pass so the viewport draws what was on screen rather than
+                // what the input pass decided a moment before the transport buttons were read.
+                // Cleared when there is no preview, so a sprite goes back to its own frame the
+                // moment the selection moves off it.
+                animation_ = details.animation;
             }
             if (details.edited)
             {

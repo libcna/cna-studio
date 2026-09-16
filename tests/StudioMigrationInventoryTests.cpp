@@ -612,7 +612,8 @@ namespace
             {"drawProjectInspector", "src/shell-panels/StudioDetailsPanel.cpp",
              "Layers", nullptr},
             {"drawPrefabSection", nullptr, nullptr, "STUDIO-07042"},
-            {"drawAnimationPreview", nullptr, nullptr, "STUDIO-07043"},
+            {"drawAnimationPreview", "src/shell-panels/StudioDetailsPanel.cpp",
+             "studioAnimationPreview", nullptr},
             {"drawAudioPreview", "src/shell-panels/StudioDetailsPanel.cpp",
              "studioAudioPreviewRow", nullptr},
             {"drawAssetInspector", "src/shell-panels/StudioDetailsPanel.cpp",
@@ -677,6 +678,7 @@ CNA_STUDIO_TEST(EveryUnansweredInspectorSectionNamesTheTaskThatClosesIt)
     // something nobody notices. Dear ImGui cannot be deleted while this is above zero.
     //
     // Five when STUDIO-07041 took the inventory; four since STUDIO-07045 answered the asset
-    // inspector, three since STUDIO-07044 answered the audio preview.
-    CNA_STUDIO_EXPECT_EQ(unanswered, std::size_t{3});
+    // inspector, three since STUDIO-07044 answered the audio preview, two since STUDIO-07043
+    // answered the sprite animation preview.
+    CNA_STUDIO_EXPECT_EQ(unanswered, std::size_t{2});
 }

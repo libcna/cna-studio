@@ -37,6 +37,7 @@
 #include "CNA/Studio/ShellPanels/StudioLayersPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildService.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+#include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioPlayService.hpp"
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioPreferencesService.hpp"
@@ -107,6 +108,15 @@ namespace CNA::Studio
         StudioAudio* audio = nullptr;
 
         /**
+         * @brief Resolves an image asset to a UI texture for a preview, or `kUiTextureNone`.
+         *
+         * `STUDIO-07043`. The sprite animation preview needs the sheet's pixels, and only the
+         * module with a device can turn a file into a texture. Unset means this build shows the
+         * frame's box and its texel range rather than the picture.
+         */
+        std::function<UiTextureId(const Uuid&)> assetThumbnail;
+
+        /**
          * @brief Puts text on the system clipboard, returning whether it got there.
          *
          * A seam rather than a direct call, because the clipboard is behind a default-off CNA
@@ -144,6 +154,9 @@ namespace CNA::Studio
 
         /** @brief How many audio preview controls the Details panel drew. */
         std::size_t audioPreviews = 0;
+
+        /** @brief How many frames the sprite clip being previewed has, or zero. */
+        std::size_t animationFrames = 0;
     };
 
     /**
@@ -240,6 +253,16 @@ namespace CNA::Studio
         {
             return play_.lastForwardedInput();
         }
+
+        /**
+         * @brief Which sprite frame the Details panel is previewing, for the host to draw.
+         *
+         * `STUDIO-07043`. A snapshot the panel produced, not playback state this object owns: the
+         * Details panel keeps deciding when time passes, and the viewport only has to know what to
+         * draw. Inactive when nothing is being previewed, which is what makes a sprite go back to
+         * its own frame the moment the selection changes.
+         */
+        [[nodiscard]] const AnimationPreview& animationPreview() const { return animation_; }
 
         /** @brief Which projection the viewport is showing, so the host renders the same one. */
         [[nodiscard]] StudioViewportView viewportView() const { return viewportState_.view; }
@@ -452,6 +475,9 @@ namespace CNA::Studio
         StudioContext& context_;
         StudioLog& log_;
         StudioShellPanelServices services_;
+
+        /** @brief The frame the Details panel is previewing, for the host's scene render. */
+        AnimationPreview animation_;
 
         /**
          * @brief Whether the 3D camera has been placed over the scene.

@@ -387,10 +387,243 @@ namespace CNA::Studio
             return parts;
         }
 
+        /**
+         * @brief The sprite preview's box, in rows of the property grid.
+         *
+         * Expressed in rows rather than pixels so it scales with the theme like everything else,
+         * and so the scroll view's content height -- which is counted in rows -- can include it
+         * without a second unit.
+         */
+        constexpr std::size_t kAnimationPreviewRows = 4;
+
         /** @brief Whether a preview can be offered for an asset of this kind at all. */
         bool isAudibleAsset(AssetType type)
         {
             return type == AssetType::SoundEffect || type == AssetType::Song;
+        }
+
+        /** @brief What one sprite animation preview showed this frame. */
+        struct StudioAnimationPreviewResult
+        {
+            AnimationPreview preview;
+            std::size_t frames = 0;
+        };
+
+        /**
+         * @brief The sprite animation preview: transport, frame readout and the frame itself.
+         *
+         * `plan.md` STUDIO-07043. The prototype's version, with three differences that are all the
+         * same difference -- the native panel is a function called twice a frame rather than an
+         * object that owns its panel.
+         *
+         * **The playback lives in the widget state store**, keyed by the component's identity, so
+         * two animated entities each keep their own position and a panel that is not looked at for
+         * ten minutes has its state reclaimed like any other widget's. It is *not* in the document:
+         * a scene that recorded the frame an artist happened to be paused on would carry it into
+         * every save and every diff (`ANALYSIS.md` decision D-07), and the whole point of this task
+         * is a preview that puts nothing into the document.
+         *
+         * **Time advances on the input pass only.** The panel is described twice per frame and a
+         * clip advanced on both would run at double speed -- and, worse, the draw pass would show
+         * a different frame from the one the input pass decided, so a click on Next would step
+         * from a frame nobody saw.
+         *
+         * @param frame The frame.
+         * @param area The preview's whole block: one row of transport and @ref
+         *        kAnimationPreviewRows of picture.
+         * @param theme The theme the rows are measured from.
+         * @param services The thumbnail seam, which may be absent.
+         * @param assets Where the sheet's record and its recorded pixel size come from.
+         * @param clip The clip, read from the component.
+         * @param sheetId The sheet asset.
+         * @param entityId Whose preview this is, for the snapshot the viewport reads.
+         * @return The snapshot, and how many frames the clip has.
+         */
+        StudioAnimationPreviewResult studioAnimationPreview(
+            StudioFrame& frame, const UiRect& area, const StudioTheme& theme,
+            const StudioDetailsServices& services, const AssetDatabase& assets,
+            const SpriteAnimationClip& clip, const Uuid& sheetId, const Uuid& entityId)
+        {
+            StudioAnimationPreviewResult result;
+            result.frames = clip.getFrameCount();
+
+            const float rowHeight = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                             metricOf(theme, StudioMetric::MinimumHitTarget));
+            const float spacing = metricOf(theme, StudioMetric::SpacingXSmall);
+
+            UiRect remaining = area;
+            const PropertyRow parts = splitRow(theme, remaining.splitTop(rowHeight));
+            remaining.splitTop(spacing);
+
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, parts.label, "Preview", StudioFontRole::Body,
+                               theme.color(StudioColorRole::TextSecondary));
+            }
+
+            frame.ids().push("animpreview");
+            WidgetState& state = frame.state().get(frame.ids().make("playback"));
+
+            // Round-tripped through the value the clip's own helpers take, so the clamping,
+            // wrapping and loop rules are the prototype's tested ones rather than a second set
+            // written here.
+            AnimationPlayback playback;
+            playback.position = state.integer < 0 ? 0u : static_cast<std::size_t>(state.integer);
+            playback.elapsed = state.scalar;
+            playback.playing = state.checked;
+            playback.clampTo(clip);
+
+            if (frame.isInputPass())
+            {
+                // The frame list is editable while the preview runs, and shortening it can leave
+                // the position past the end -- which clampTo above has already dealt with.
+                playback.advance(clip, frame.input().deltaSeconds);
+            }
+
+            const float buttonWidth = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                               metricOf(theme, StudioMetric::MinimumHitTarget));
+
+            UiRect controls = parts.control;
+            const UiRect playBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+            controls.splitLeft(std::min(spacing, controls.width));
+            const UiRect backBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+            controls.splitLeft(std::min(spacing, controls.width));
+            const UiRect forwardBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+            controls.splitLeft(std::min(metricOf(theme, StudioMetric::SpacingSmall), controls.width));
+
+            const bool playable = !clip.isEmpty();
+
+            StudioButtonOptions play;
+            play.icon = playback.playing ? StudioIcon::Pause : StudioIcon::Play;
+            play.iconOnly = true;
+            play.enabled = playable;
+            play.tooltip = playable ? (playback.playing ? std::string_view{"Pause the preview"}
+                                                        : std::string_view{"Play the clip"})
+                                    : std::string_view{"This clip has no frames to play"};
+            if (studioButton(frame, frame.ids().make("play"),
+                             playBox, playback.playing ? "Pause" : "Play", play).activated)
+            {
+                playback.playing = !playback.playing;
+            }
+
+            StudioButtonOptions step;
+            step.iconOnly = true;
+            step.enabled = playable;
+
+            step.icon = StudioIcon::ChevronLeft;
+            step.tooltip = "Previous frame";
+            if (studioButton(frame, frame.ids().make("previous"), backBox, "Previous frame", step)
+                    .activated)
+            {
+                playback.step(clip, -1);
+            }
+
+            step.icon = StudioIcon::ChevronRight;
+            step.tooltip = "Next frame";
+            if (studioButton(frame, frame.ids().make("next"), forwardBox, "Next frame", step)
+                    .activated)
+            {
+                playback.step(clip, 1);
+            }
+
+            state.integer = static_cast<std::int64_t>(playback.position);
+            state.scalar = playback.elapsed;
+            state.checked = playback.playing;
+
+            if (frame.isDrawPass() && controls.width > 0.0f)
+            {
+                // The current frame and the clip's length. The frame's own hold is added only when
+                // the frames differ: repeating one number for every frame of a uniform clip is
+                // noise.
+                std::string heading =
+                    clip.frames.empty()
+                        ? std::string{"No frames yet."}
+                        : std::to_string(playback.position + 1) + " / "
+                              + std::to_string(clip.frames.size()) + "  "
+                              + std::to_string(static_cast<int>(clip.getDuration() * 1000.0f))
+                              + " ms";
+                if (clip.hasFrameDurations() && !clip.frames.empty())
+                {
+                    heading += "  (this "
+                             + std::to_string(static_cast<int>(
+                                   clip.getFrameDuration(playback.position) * 1000.0f))
+                             + " ms)";
+                }
+                studioDrawText(frame, controls,
+                               studioTruncateText(frame, theme.font(StudioFontRole::BodySmall),
+                                                  heading, controls.width),
+                               StudioFontRole::BodySmall,
+                               theme.color(clip.frames.empty() ? StudioColorRole::TextDisabled
+                                                               : StudioColorRole::TextSecondary));
+            }
+
+            // --- The picture ------------------------------------------------------------------
+            const PropertyRow pictureRow = splitRow(theme, remaining);
+            const float side = std::min(pictureRow.control.width, pictureRow.control.height);
+            UiRect box = pictureRow.control;
+            box.width = side;
+            box.height = side;
+
+            const AssetRecord* sheet = sheetId.isValid() ? assets.find(sheetId) : nullptr;
+            const StudioVector2 sheetSize =
+                sheet != nullptr
+                    ? PropertyValue::fromJson(sheet->importerSettings["pixelSize"],
+                                              PropertyType::Vector2).get<StudioVector2>()
+                    : StudioVector2{};
+            const UiTextureId texture =
+                (sheet != nullptr && services.thumbnail) ? services.thumbnail(sheetId)
+                                                         : kUiTextureNone;
+            const StudioRectangle source = clip.getFrameRectangle(playback.position);
+
+            if (frame.isDrawPass() && side > 0.0f)
+            {
+                frame.drawList().fillRect(box, theme.color(StudioColorRole::ControlBackground));
+
+                if (texture != kUiTextureNone && !source.isEmpty() && sheetSize.x > 0.0f
+                    && sheetSize.y > 0.0f)
+                {
+                    frame.drawList().drawImageRegion(
+                        box, texture,
+                        UiRect{static_cast<float>(source.x), static_cast<float>(source.y),
+                               static_cast<float>(source.width), static_cast<float>(source.height)},
+                        sheetSize.x, sheetSize.y);
+                }
+                else
+                {
+                    // Everything the frame is except its pixels. A build with no device cannot
+                    // show the picture and can still say exactly which texels it names, which is
+                    // what makes a headless capture of this panel worth looking at -- and what
+                    // tells a user with a device that the *sheet* is the problem rather than the
+                    // clip.
+                    const std::string said =
+                        sheet == nullptr
+                            ? std::string{"Assign a sheet."}
+                            : (source.isEmpty()
+                                   ? std::string{"No frame."}
+                                   : (sheetSize.x <= 0.0f
+                                          ? std::string{"The sheet's size is not recorded."}
+                                          : std::to_string(source.width) + "x"
+                                                + std::to_string(source.height) + " at "
+                                                + std::to_string(source.x) + ","
+                                                + std::to_string(source.y)));
+                    studioDrawText(frame, box.inset(UiEdges{metricOf(theme, StudioMetric::SpacingXSmall)}),
+                                   studioTruncateText(frame, theme.font(StudioFontRole::BodySmall),
+                                                      said, box.width),
+                                   StudioFontRole::BodySmall,
+                                   theme.color(StudioColorRole::TextDisabled));
+                }
+                frame.drawList().strokeRect(box, theme.color(StudioColorRole::Border));
+            }
+
+            frame.ids().pop();
+
+            // Published so the viewport draws the frame this preview is showing. Only ever the
+            // snapshot: the playback stays here.
+            if (!clip.frames.empty())
+            {
+                result.preview = AnimationPreview{entityId, playback.position};
+            }
+            return result;
         }
 
         /**
@@ -1340,6 +1573,11 @@ namespace CNA::Studio
                                               : component.getProperties().size();
                 // And its preview, which is a row of the grid like any other.
                 if (component.getTypeId() == BuiltinComponentIds::kAudioSource) { ++rows; }
+                // The sprite preview is a transport row and a picture.
+                if (component.getTypeId() == BuiltinComponentIds::kSpriteAnimation)
+                {
+                    rows += 1 + kAnimationPreviewRows;
+                }
             }
             return rows;
         }();
@@ -1524,6 +1762,21 @@ namespace CNA::Studio
                 isAudioSource ? component.getPropertyOrDefault("pan", descriptor).get<float>(0.0f)
                               : 0.0f;
 
+            // The same rule for the sprite clip, and for the same reason: an edit to any property
+            // of this component breaks out of the loop below, and the preview under it is drawn
+            // from values rather than from a reference that edit may have invalidated.
+            const bool isSpriteAnimation =
+                component.getTypeId() == BuiltinComponentIds::kSpriteAnimation;
+            const SpriteAnimationClip spriteClip =
+                isSpriteAnimation ? readSpriteAnimationClip(component, descriptor)
+                                  : SpriteAnimationClip{};
+            const Uuid sheetId =
+                isSpriteAnimation ? component.getPropertyOrDefault(SpriteAnimationKeys::kSheet,
+                                                                   descriptor)
+                                        .get<PropertyValue::AssetReference>()
+                                        .id
+                                  : Uuid{};
+
             for (const PropertyDescriptor& property : *properties)
             {
                 const PropertyRow parts = splitRow(theme, nextRow());
@@ -1592,6 +1845,33 @@ namespace CNA::Studio
                     result.audio.stopped = preview.stopped;
                     result.audio.started = preview.started;
                     result.audio.clip = preview.clip;
+                }
+            }
+
+            // The sprite animation preview (STUDIO-07043), under the properties it plays. Scoped
+            // the same way, because `CNA.SpriteAnimation` is non-unique too.
+            if (isSpriteAnimation)
+            {
+                UiRect block = cursor.splitTop((rowHeight + spacing)
+                                               * static_cast<float>(1 + kAnimationPreviewRows));
+                cursor.splitTop(spacing);
+                result.rowsDrawn += 1 + kAnimationPreviewRows;
+
+                frame.ids().push(component.getTypeId());
+                frame.ids().pushIndex(static_cast<std::int64_t>(componentIndex));
+                const StudioAnimationPreviewResult preview =
+                    studioAnimationPreview(frame, block, theme, services, context.getAssets(),
+                                           spriteClip, sheetId, entityId);
+                frame.ids().pop();
+                frame.ids().pop();
+
+                // The last one described wins, which is the same rule the panel already uses for
+                // which entity it is about: one preview travels to the viewport, because the
+                // viewport draws one scene.
+                if (preview.preview.isActive())
+                {
+                    result.animation = preview.preview;
+                    result.animationFrames = preview.frames;
                 }
             }
         }

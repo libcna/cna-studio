@@ -301,10 +301,16 @@ ever shrinks is one nobody can tell the difference between "done" and "quietly d
 | What | Prototype home | What it needs |
 |------|----------------|---------------|
 | Prefab overrides | `InspectorPanel::drawPrefabSection` | Report, revert and apply, in the native Details panel (`STUDIO-07042`) |
-| Sprite animation preview | `InspectorPanel::drawAnimationPreview` | A preview that does not put the frame it is showing into the document (`STUDIO-07043`) |
 | Material asset editor | `InspectorPanel::drawMaterialAsset` | The editor the prototype already has, ported (`STUDIO-07046`) |
 
-Five rows have left this table since it was written. **The audio preview** is answered by
+Six rows have left this table since it was written. **The sprite animation preview** is answered by
+`studioAnimationPreview` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07043`): transport,
+a frame readout, the frame itself sampled out of the sheet, and a snapshot published to the host so
+the viewport draws the frame the preview is showing. The playback lives in the widget state store,
+keyed by the component — never in the document, which is what this row asked for. The native panel
+also has a trap the prototype's object could not: it is a *function called twice a frame*, and a
+clip advanced on both passes runs at double speed with the picture a frame ahead of the transport.
+**The audio preview** is answered by
 `studioAudioPreviewRow` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07044`): Play and
 Stop under an audio source's own properties, playing that source's clip at its own volume, pan and
 pitch, and the same control on a selected sound asset with neutral settings. It differs from the

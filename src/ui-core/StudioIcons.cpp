@@ -144,17 +144,33 @@ namespace CNA::Studio
         }
 
         /** @brief A downward chevron, shared by the two chevron icons under a rotation. */
-        void chevron(StudioFrame& frame, const IconSpace& space, StudioColor color, bool down)
+        /** @brief Which way a chevron points. */
+        enum class ChevronDirection
         {
-            if (down)
+            Right,
+            Left,
+            Down,
+        };
+
+        void chevron(StudioFrame& frame, const IconSpace& space, StudioColor color,
+                     ChevronDirection direction)
+        {
+            switch (direction)
             {
-                line(frame, space, 4.0f, 6.0f, 8.0f, 10.0f, color, 1.8f);
-                line(frame, space, 8.0f, 10.0f, 12.0f, 6.0f, color, 1.8f);
-            }
-            else
-            {
-                line(frame, space, 6.0f, 4.0f, 10.0f, 8.0f, color, 1.8f);
-                line(frame, space, 10.0f, 8.0f, 6.0f, 12.0f, color, 1.8f);
+                case ChevronDirection::Down:
+                    line(frame, space, 4.0f, 6.0f, 8.0f, 10.0f, color, 1.8f);
+                    line(frame, space, 8.0f, 10.0f, 12.0f, 6.0f, color, 1.8f);
+                    break;
+                case ChevronDirection::Left:
+                    // The mirror of Right about the grid's centre, so the pair reads as one
+                    // control rather than as two icons that happen to point opposite ways.
+                    line(frame, space, 10.0f, 4.0f, 6.0f, 8.0f, color, 1.8f);
+                    line(frame, space, 6.0f, 8.0f, 10.0f, 12.0f, color, 1.8f);
+                    break;
+                case ChevronDirection::Right:
+                    line(frame, space, 6.0f, 4.0f, 10.0f, 8.0f, color, 1.8f);
+                    line(frame, space, 10.0f, 8.0f, 6.0f, 12.0f, color, 1.8f);
+                    break;
             }
         }
 
@@ -163,7 +179,7 @@ namespace CNA::Studio
             "none",   "save",     "folder",  "file",      "undo",   "redo",
             "delete", "duplicate", "translate", "rotate",  "scale",  "grid",
             "focus",  "play",     "pause",   "step",      "stop",    "build",     "package", "close",
-            "chevronRight", "chevronDown", "search", "warning", "error", "info",
+            "chevronRight", "chevronLeft", "chevronDown", "search", "warning", "error", "info",
             "entity", "camera", "light", "mesh", "sprite", "prefab",
             "texture", "material", "audio", "scene",
             "visible", "hidden", "lock", "unlock", "add", "select",
@@ -365,8 +381,15 @@ namespace CNA::Studio
                 line(frame, space, 11.5f, 4.5f, 4.5f, 11.5f, color, 1.6f);
                 break;
 
-            case StudioIcon::ChevronRight: chevron(frame, space, color, false); break;
-            case StudioIcon::ChevronDown: chevron(frame, space, color, true); break;
+            case StudioIcon::ChevronRight:
+                chevron(frame, space, color, ChevronDirection::Right);
+                break;
+            case StudioIcon::ChevronLeft:
+                chevron(frame, space, color, ChevronDirection::Left);
+                break;
+            case StudioIcon::ChevronDown:
+                chevron(frame, space, color, ChevronDirection::Down);
+                break;
 
             case StudioIcon::Search:
                 arc(frame, space, 7.0f, 7.0f, 4.0f, 0.0f, 360.0f, color, 1.4f);

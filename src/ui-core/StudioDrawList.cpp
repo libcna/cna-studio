@@ -190,6 +190,23 @@ namespace CNA::Studio
                   texture, tint);
     }
 
+    void StudioDrawList::drawImageRegion(const UiRect& rect, UiTextureId texture,
+                                        const UiRect& region, float sizeX, float sizeY,
+                                        bool flipVertically, StudioColor tint)
+    {
+        // No size, no coordinates. A build with no device knows neither the texture nor how big it
+        // is, and guessing 1x1 here would sample one texel and fill the box with it -- which looks
+        // like a preview that works and is showing the wrong thing.
+        if (sizeX <= 0.0f || sizeY <= 0.0f) { return; }
+
+        const float u0 = region.x / sizeX;
+        const float u1 = (region.x + region.width) / sizeX;
+        const float v0 = region.y / sizeY;
+        const float v1 = (region.y + region.height) / sizeY;
+
+        drawGlyph(rect, u0, flipVertically ? v1 : v0, u1, flipVertically ? v0 : v1, texture, tint);
+    }
+
     void StudioDrawList::addTextureRequest(const UiTextureRequest& request)
     {
         data_.textureRequests.push_back(request);

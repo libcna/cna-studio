@@ -38,10 +38,13 @@
 
 #include "CNA/Studio/Core/PropertyValue.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
+#include "CNA/Studio/Scene/SpriteAnimation.hpp"
+#include "CNA/Studio/Ui/UiDrawData.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -86,9 +89,9 @@ namespace CNA::Studio
     /**
      * @brief What the Details panel may reach beyond the document.
      *
-     * `plan.md` STUDIO-07044. The same shape as the viewport's services and for the same reason:
-     * playing a sound needs CNA, exactly one module may link CNA, and the panel has to keep
-     * working in a headless run where there is no audio device at all.
+     * `plan.md` STUDIO-07044, STUDIO-07043. The same shape as the viewport's services and for the
+     * same reason: playing a sound and sampling a texture both need CNA, exactly one module may
+     * link CNA, and the panel has to keep working in a headless run that has neither.
      */
     struct StudioDetailsServices
     {
@@ -100,6 +103,16 @@ namespace CNA::Studio
          * audio is a feature the user cannot tell from one that was never written.
          */
         StudioAudio* audio = nullptr;
+
+        /**
+         * @brief Resolves an image asset to a UI texture, or `kUiTextureNone`.
+         *
+         * `plan.md` STUDIO-07043. Unset means this build cannot show a picture of anything: the
+         * sprite preview then draws the frame's box and says which texels it names, which is
+         * everything the animation is except the pixels — and is what a build with no device
+         * honestly knows.
+         */
+        std::function<UiTextureId(const Uuid&)> thumbnail;
     };
 
     /** @brief What the Details panel did this frame. */
@@ -129,6 +142,18 @@ namespace CNA::Studio
 
         /** @brief What the audio preview controls did. */
         StudioAudioPreviewResult audio;
+
+        /**
+         * @brief Which sprite frame the preview is showing, for the viewport to draw the same one.
+         *
+         * `plan.md` STUDIO-07043. A *snapshot* travels, never the playback: a scene that recorded
+         * the frame an artist happened to be paused on would carry it into every save and every
+         * diff (`ANALYSIS.md` decision D-07). Inactive when nothing is being previewed.
+         */
+        AnimationPreview animation;
+
+        /** @brief How many frames the previewed clip has. Zero when there is no preview. */
+        std::size_t animationFrames = 0;
     };
 
     /**

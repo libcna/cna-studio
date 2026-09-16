@@ -193,6 +193,31 @@ far better than a letter can, and four letters cost exactly the width `255` need
 axis's own channel dominates" rather than against exact values, so the colours can be retuned for
 contrast without the test becoming a copy of the theme.
 
+### `STUDIO-35033` — Property grid alignment
+
+**Acceptance.** The label column is sized from what the labels need rather than from a fraction of
+the panel, values line up down the grid, nested properties are indented and a property that differs
+from its default is marked. A three-digit coordinate is legible at the Details panel's default
+width.
+
+**The evidence, measured rather than asserted.** The label column is `round(width * 0.38)`, fixed.
+At the default dock width that is 96 px for the word "Position" and 148 px for three numbers, an
+axis letter each and two gaps — and the moment the panel grows a scrollbar, which any entity with
+three components does, the ten pixels it takes turn a Position of `320, 240` into `3…, 2…`. The
+same panel one dock-width wider shows it perfectly, which is why this has been easy to miss:
+captures were taken of entities with two components.
+
+The fraction is also wrong in the other direction. A `Loop` checkbox gets 148 px of control column
+and sits 96 px from its own label, so a Transform block reads as two columns of unrelated things
+rather than as a grid. A column sized to the widest label in the *visible* set, clamped to a
+sensible range, is what every other property grid does — and the note on `splitRow` explains why the
+fraction was chosen (a column that resizes as the selection changes makes every control jump), which
+is a real problem that a clamp and a minimum solve without a fraction.
+
+**Verification.** A capture at the default Details width of an entity with a Transform, a Sprite
+Animation and an Audio Source on it — the case that produced the evidence above — plus a unit test
+that a three-digit coordinate is not truncated at that width.
+
 ### `STUDIO-35081` — Replace the prototype comparison
 
 **Acceptance.** `docs/VISUAL-ACCEPTANCE.md` states the professional-environment criterion, and the

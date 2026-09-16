@@ -208,6 +208,15 @@ namespace CNA::Studio
                 audio_ = createCnaStudioAudio(context_->getAssets());
                 services.audio = audio_.get();
 
+                // The sprite animation preview's pixels (STUDIO-07043). Through the member rather
+                // than captured directly, because the scene viewport is created later -- the
+                // panels are bound before there is a device, which is what lets the headless
+                // preview bind the same ones.
+                services.assetThumbnail = [this](const Uuid& assetId) {
+                    return sceneViewport_ != nullptr ? sceneViewport_->getAssetThumbnail(assetId)
+                                                     : kUiTextureNone;
+                };
+
                 services.setClipboardText = [](const std::string& text) {
                     if (!CnaUiPlatform::hasClipboard()) { return false; }
                     CnaUiPlatform::setClipboardText(text);
@@ -712,7 +721,8 @@ namespace CNA::Studio
                     // grab. Two sources of truth here would show a rotate ring and move the entity.
                     : sceneViewport_->render(context_->getScene(), width, height,
                                              context_->getSelection(), panels_->viewportMode(),
-                                             panels_->viewportSpace());
+                                             panels_->viewportSpace(),
+                                             panels_->animationPreview());
 
                 shell_->setViewportImage(texture,
                                          sceneViewport_->isRenderTextureFlippedVertically());
@@ -743,7 +753,7 @@ namespace CNA::Studio
                 // trapezoid a sprite becomes from an angle, which is why the 3D view has its own
                 // path for them rather than reusing the 2D one.
                 const SceneSpriteBatch3D sprites = buildSceneSpriteQuads(
-                    context_->getScene(), camera, sizes, AnimationPreview{},
+                    context_->getScene(), camera, sizes, panels_->animationPreview(),
                     context_->getSelection(), &context_->getComponentRegistry());
 
                 return sceneViewport_->renderScene3D(models, sprites, wireframe.segments, width,

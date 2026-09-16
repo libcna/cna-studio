@@ -215,6 +215,27 @@ namespace CNA::Studio
                        StudioColor tint = StudioColor{255, 255, 255, 255});
 
         /**
+         * @brief Draws part of a texture into a rectangle.
+         *
+         * `plan.md` STUDIO-07043. What @ref drawImage is to a whole texture, this is to a region
+         * of one: a frame of a sprite sheet, an icon out of an atlas, a crop of a thumbnail. The
+         * rectangle's aspect ratio is the caller's business — this stretches the region to fill
+         * it, which is what a fixed preview box wants.
+         *
+         * @param rect Where it goes.
+         * @param texture Texture to sample.
+         * @param region The part of the texture to sample, in **pixels** of @p size.
+         * @param size The texture's own pixel size. A zero width or height draws nothing, because
+         *        the region cannot be turned into coordinates without it — which is honest for a
+         *        build that has no device to ask.
+         * @param flipVertically Sample bottom-up, as @ref drawImage does and for the same reason.
+         * @param tint Multiplied into the sampled colour. White leaves it alone.
+         */
+        void drawImageRegion(const UiRect& rect, UiTextureId texture, const UiRect& region,
+                             float sizeX, float sizeY, bool flipVertically = false,
+                             StudioColor tint = StudioColor{255, 255, 255, 255});
+
+        /**
          * @brief Queues a texture creation or update for the renderer to perform before drawing.
          *
          * Requests are applied ahead of every draw command in the frame, so a glyph rasterised at

@@ -75,6 +75,9 @@ namespace CNA::Studio
         // Chrome
         Close,
         ChevronRight,
+        /** @brief The mirror of @ref ChevronRight. A set with a right and no left is a set that
+         *         cannot draw a "previous" button. */
+        ChevronLeft,
         ChevronDown,
         Search,
         Warning,
