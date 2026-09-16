@@ -2,51 +2,41 @@
 
 State of the work in progress, for whoever continues it. Updated at the end of each long session.
 
-**Last updated:** 2026-09-15
+**Last updated:** 2026-09-16
 
 ---
 
-## The milestone this branch was working towards
+## What this session did
 
-**Reached in the previous session, and this one went behind it.** `cna-studio` with no flags opens
-the native Studio shell in a real window on a current CNA renderer. What this session did was ask
-whether the architecture underneath that claim is what the architecture *documents* say it is.
+**It finished the guard, extracted the last two services, measured the renderer question that four
+tasks had been assuming an answer to, and attempted a deletion that turned out to be blocked by
+something nobody had written down.**
 
-Three of the four answers were no, and each is closed or recorded:
+Three dependency chains were in front of it. Here is what each one turned out to be.
 
-| Claim | Was it true? | Now |
-|-------|--------------|-----|
-| "The Studio UI is drawn through CNA's modern CNAEXT graphics API" | **No.** `BasicEffect` and `DrawUserIndexedPrimitives`, inherited from the prototype | True on a host that can run it (`STUDIO-04024`), with the classic path kept and justified |
-| "Hosting Studio requires a renderer capable of the modern API" | **No.** The flag was carried into the report and consulted by nothing, and was a hard-coded `true` | An enforced requirement with four named cases (`STUDIO-02070`, `STUDIO-02071`) |
-| "The migration inventory names nothing the prototype does that the native shell does not" | **No.** The native Details panel could not add a component | Five gaps recorded with tasks, one of them closed (`STUDIO-07040`, `STUDIO-07041`) |
-| "The native shell is the default UI" | Yes | Unchanged |
+| Chain | Where it stood | Where it stands |
+|-------|----------------|-----------------|
+| **Shell decomposition** | The guard was unblocked and unwritten; two of four services extracted | Guard written **first**, then `StudioComparisonService` and `StudioPreferencesService`. `STUDIO-02058` (per-panel binders) is the one left |
+| **Retire the classic UI backend** | Blocked on "CI cannot run a shader-capable renderer" | That blocker is **gone and proved gone**. A different one was found in its place: the Dear ImGui host draws through the classic backend unconditionally, so `STUDIO-04027` depends on `STUDIO-07030` |
+| **Retire Dear ImGui** | Five Inspector sections with no native answer | Four. `STUDIO-07045`, the asset inspector, is closed — and was not only a missing section |
 
-**And one unlock that was recorded as impossible.** `docs/CNA-GAPS.md` G-10 concluded that there is
-"simply no renderer available that both satisfies Studio's capability contract and needs a display",
-which made graphical CI unreachable. That search stopped at the GL *family* — `OPENGL2`, `OPENGL33` and `OPENGLES3` are all EasyGL and want sibling checkouts
-nothing names. **`OPENGL4` is a separate renderer**, configures from a plain CNA checkout with
-`libgl1-mesa-dev` alone, and runs under Xvfb on Mesa's llvmpipe with no GPU. Until this session
-Studio's only automated renderer was the one renderer its intended UI path cannot run on at all.
+**The benchmark is the piece with the longest shadow.** `STUDIO-04028` existed because
+`StudioModernUiRenderer` was written on the assumption that persistent GPU buffers beat per-draw user
+arrays, and that assumption had been repeated for four tasks without a number behind it. It is a
+number now — **the classic backend puts 17–18× as much geometry on the bus, on every one of eight
+frame shapes** — and it found three things nobody was looking for: the classic backend had been
+reporting zero upload bytes for its entire existence, a CNA UI vertex costs 56 bytes to carry 20
+bytes of data, and **the World Outliner was O(n²) in scene size**, which made the whole editor run at
+three frames a second on a 2 000-entity scene. The last of those is fixed and is 16× faster.
 
-**And the fourth objective, executed rather than deferred.** **CNA Studio Visual Quality 1.0** is a
-milestone inside Phase 35, brought forward from the end of the programme on the argument that every
-panel written after it inherits whatever visual language exists when it is written — six panels to
-restyle now against twenty-six later. Thirteen of its thirty-seven tasks are done: panel chrome and
-tab strips that read as chrome and tab strips, scene-content and asset-kind icons, list rows with
-zebra, hover and indent guides, axis colours on every vector field, a Content Browser card grid, a
-viewport toolbar, outliner visibility toggles, and a regression suite of ten captures across five
-resolutions and both themes. The acceptance criterion itself was replaced: comparing against the
-Dear ImGui prototype had stopped saying anything, and `docs/VISUAL-ACCEPTANCE.md` now asks whether
-Studio reads as a serious professional 3D game-development environment at 1920×1080 on first launch.
-It does not fully, yet — what is still plain is listed under "Known gaps".
-
-**One honest qualification carried forward.** "Professional text" still means Latin, Greek and
-Cyrillic. The shipped faces carry no CJK, Hangul or emoji outlines, so a scene named in Chinese
-still draws as replacement boxes. The caret steps over those correctly (`STUDIO-03026`) — the model
-is right and the glyph is absent, which are different failures. That is `STUDIO-04019`, and it is
-untouched by this session.
-
----
+**And an honest non-result.** `STUDIO-04027` was attempted, not deferred. The evidence for deleting
+the classic backend is now decisive — no CI coverage is lost (the `OPENGL4` leg's test set is a
+strict superset of the `SOFTWARE` leg's), it submits 17× the geometry, and it cannot draw the
+material and shader previews Phases 19, 20 and 22 are built on. It is still here because
+`CnaStudioHost::LoadContent` constructs it with no chooser, and that host is `STUDIO-07030`'s to
+delete. The task stays open rather than being closed over a justification: writing down "it stays
+because it cannot yet go" and calling that the acceptance would be closing a row over an obstacle
+rather than over a decision.
 
 ## Where things are
 
@@ -54,10 +44,10 @@ untouched by this session.
 |---|---|
 | Repository | <https://github.com/libcna/cna-studio> |
 | Branch | `claude/studio-baseline-audit-51dyxr` |
-| HEAD | commit **98** — `docs: the handoff after the renderer audit and Visual Quality 1.0` |
+| HEAD | commit **109** — `docs: the handoff after the service extraction and the renderer measurement` |
 | Working tree | Clean (everything below is committed and pushed) |
-| Commits on this branch | 98, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
-| Added this session | 14 |
+| Commits on this branch | 109, all authored `Robert Vokac <robertvokac@robertvokac.com>` |
+| Added this session | 11 |
 
 > **Why HEAD is recorded as a count and a subject rather than a hash.** The previous handoff named
 > `8fe23bf` and was two commits stale within the same session, because a file cannot contain the
@@ -66,14 +56,32 @@ untouched by this session.
 > commit is made, so they are correct the moment it lands. Check with
 > `git rev-list --count HEAD` and `git log -1 --format=%s`.
 
+### The eleven commits of this session
+
+| Commit | What |
+|--------|------|
+| `studio: refuse a service locator by test rather than by rule` | `STUDIO-02059`, written **before** the services it governs |
+| `studio: the renderer comparison is a service, not a corner of the shell` | `STUDIO-02056` |
+| `studio: preferences own their ordering rule rather than a shell method` | `STUDIO-02057` |
+| `studio-renderer: measure the two UI backends instead of assuming` | `STUDIO-04028` and `STUDIO-04029` |
+| `studio-renderer: which CNA renderer this build uses is not the UI backend's to say` | Layer 3 separated from layer 2; the player stops linking a UI renderer |
+| `docs: STUDIO-04027's blocker expired and a different one replaced it` | The deletion attempted, and what it found |
+| `studio-ui: the native Details panel shows the asset you selected` | `STUDIO-07045` |
+| `studio-scene: the World Outliner stops being quadratic in scene size` | `STUDIO-30013` |
+| `docs: the Content Browser stat-s every asset on every frame` | `STUDIO-30014`, and `STUDIO-30015` filed |
+| `docs: review the shell by eye again, and file the paint-order trap as a task` | `STUDIO-03041` filed |
+| `docs: the handoff after the service extraction and the renderer measurement` | This file |
+
 Read in this order to pick the work up:
 
 1. [`plan.md`](plan.md) — the master roadmap and the source of truth for what is done
 2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the current architecture; supersedes `ANALYSIS.md`
-3. [`docs/UI-RENDER-PATH.md`](docs/UI-RENDER-PATH.md) — **new**: what actually reaches the GPU, the
-   four layers the phrase "the Studio renderer" was used for, and the migration's stages
+3. [`docs/UI-RENDER-PATH.md`](docs/UI-RENDER-PATH.md) — what actually reaches the GPU, the four
+   layers the phrase "the Studio renderer" was used for, and the migration's stages. **"What the two
+   backends actually cost" is new** and is what `STUDIO-04027` decides on
 4. [`docs/ORIGIN.md`](docs/ORIGIN.md) — where this repository came from and its verified baseline
-5. [`docs/CNA-GAPS.md`](docs/CNA-GAPS.md) — CNA deficiencies Studio has found
+5. [`docs/CNA-GAPS.md`](docs/CNA-GAPS.md) — CNA deficiencies Studio has found; **G-11 is new**: a
+   UI vertex costs 56 bytes to carry 20 bytes of data
 6. [`plans/phase-35-polish.md`](plans/phase-35-polish.md) — **new milestone**: CNA Studio Visual
    Quality 1.0, and why it was brought forward from the end of the programme
 
@@ -89,8 +97,8 @@ cmake --build build -j4
 ctest --test-dir build --output-on-failure
 ```
 
-CI runs four of the five configurations below — everything except the `OPENGL4` one, which is
-`STUDIO-04029` and is the next infrastructure task. Run them all locally before a push: the CNA jobs
+CI runs all five configurations below, `OPENGL4` included as of `STUDIO-04029`. Run them all
+locally before a push anyway: the CNA jobs
 take the best part of an hour each, and these are where the latent defects have actually been
 found — an ignored `freopen` result, a dangling reference to a subobject of a temporary, an ODR
 violation that no compiler diagnosed, and a renderer that submitted every triangle correctly and
@@ -121,9 +129,15 @@ cmake -S . -B build-gl -G Ninja -DCNA_STUDIO_WITH_CNA=ON \
       -DCNA_ENABLE_NET=OFF -DCNA_ENABLE_DRACO=OFF -DCNA_CNAEXT=ON \
       -DCNA_STUDIO_TEST_DISPLAY=:99
 cmake --build build-gl -j4
-Xvfb :99 -screen 0 1920x1080x24 &
-DISPLAY=:99 ctest --test-dir build-gl
+
+# xvfb-run rather than a backgrounded Xvfb: --server-num must agree with
+# CNA_STUDIO_TEST_DISPLAY above, and this is what CI does.
+xvfb-run --server-num=99 --server-args="-screen 0 1920x1080x24" ctest --test-dir build-gl
 ```
+
+**`libgl1-mesa-dri` as well as `libgl1-mesa-dev` on a minimal image.** The `-dev` package is what
+the configure needs; llvmpipe, which is what actually answers at run time, is in `-dri`. Without it
+the build succeeds and the context creation fails.
 
 See which UI render backend a host gets, and force either:
 
@@ -196,6 +210,24 @@ viewport toolbar:
     --project=examples/HelloSprites/HelloSprites.cnaproject
 ```
 
+Measure what a frame of UI costs each render backend (`STUDIO-04028`). Needs no CNA, no GPU and no
+window; `=NAME` selects scenarios by substring:
+
+```bash
+./build/cna-studio --ui-benchmark --ui-benchmark-frames=60 \
+    --project=examples/HelloSprites/HelloSprites.cnaproject
+./build/cna-studio --ui-benchmark=outliner --ui-benchmark-frames=11
+```
+
+Put an asset in the Details panel, which is the only way a still capture reaches the asset inspector
+— it is otherwise opened by clicking a Content Browser row:
+
+```bash
+./build/cna-studio --shell-preview=asset.png --shell-size=900x420 --shell-panel-only=details \
+    --project=examples/HelloSprites/HelloSprites.cnaproject \
+    --select-asset=Assets/Textures/player.png
+```
+
 Collect the visual-test captures as CI artefacts:
 
 ```bash
@@ -209,19 +241,27 @@ project loaded, and the pointer on a row.
 
 ### Last measured result
 
+Measured on a quiet tree at commit 108, before this file was written.
+
 | Configuration | Result |
 |---------------|--------|
-| GCC 13.3 Debug, no CNA | **1281 test cases, 60 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Release `-Werror`, no CNA | **1281 test cases, 60 CTest suites, 0 failures, 0 warnings** |
-| GCC 13.3 Debug + ASan + UBSan, no CNA | **1281 test cases, 0 failures, no sanitizer reports** |
-| GCC 13.3 Debug, **against real CNA** (`next`, `SOFTWARE`, SDL3) | **1290 test cases, 78 CTest suites, 0 failures** |
-| GCC 13.3 Debug, **against real CNA** (`next`, `OPENGL4`, SDL3, under Xvfb) | **1290 test cases, 79 CTest suites, 0 failures** |
+| GCC 13.3 Debug, no CNA | **1311 test cases, 60 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Release `-Werror`, no CNA | **1311 test cases, 60 CTest suites, 0 failures, 0 warnings** |
+| GCC 13.3 Debug + ASan + UBSan, no CNA | **1311 test cases, 0 failures, no sanitizer reports** |
+| GCC 13.3 Debug, **against real CNA** (`next`, `SOFTWARE`, SDL3) | **1320 test cases, 78 CTest suites, 0 failures** |
+| GCC 13.3 Debug, **against real CNA** (`next`, `OPENGL4`, SDL3, under Xvfb) | **1320 test cases, 79 CTest suites, 0 failures** |
 
-**The fifth row is new and is the point of `STUDIO-04029`.** `OPENGL4` is the first renderer this
-project has automated that can execute a shader, which makes it the first on which the modern UI
-renderer runs at all. The extra CTest suite it has over `SOFTWARE` is
+**Thirty cases added this session**: five for the service-locator guard, nine for the UI benchmark's
+cost model, five for the asset inspector, two for the hierarchy grouping, four for the comparison
+service, four for the preferences service, and one guarding the player against a UI-backend
+dependency.
+
+**The `OPENGL4` row is `STUDIO-04029`, and it is in CI now** rather than only on this machine.
+`OPENGL4` is the first renderer this project has automated that can execute a shader, which makes it
+the first on which the modern UI renderer runs at all. Its extra CTest suite over `SOFTWARE` is
 `CnaStudioUiRenderBackendsAgree`, which cannot be declared on a renderer that can only run one of
-the two backends.
+the two backends — and the *set* difference is exactly that one suite, measured with `comm` over
+`ctest -N`, which is the evidence `STUDIO-04027` turns on.
 
 The nine extra *cases* in a CNA-backed run are `STUDIO-29007` (which reads CNA's own
 `RendererSelection.cmake`), `STUDIO-04020` (the host key map), and the seven in
@@ -242,8 +282,11 @@ a threshold a single filled rectangle can clear. The counts those
 cases already asserted separate "submitted no geometry" from "submitted some"; this separates
 "submitted some" from "drew something".
 
-**All four dependency-free and `SOFTWARE` configurations run in CI** as of `STUDIO-33022`/`STUDIO-33023`. They are still worth
-running locally before a push: the CNA job takes the best part of an hour.
+**All five configurations run in CI** — the four dependency-free and `SOFTWARE` ones as of
+`STUDIO-33022`/`STUDIO-33023`, and `OPENGL4` as of `STUDIO-04029`, which made the `cna` job a matrix
+over the two renderers rather than a second job that could drift from the first. They are still
+worth running locally before a push: each CNA leg takes the best part of an hour, and these are
+where the latent defects have actually been found.
 
 Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
@@ -277,10 +320,26 @@ modern and compatibility support does, including the two that say no. Two named 
 and `resolveStudioUiBackend` turns the two verdicts into a backend choice carrying the reason it
 was made — announced at start-up, and refusable with `--ui-renderer=modern`.
 
+**No service can reach another through a locator or a singleton, and that is a test.**
+`STUDIO-02059` scans for the four structures every locator is actually built from — a mutable
+`static` holding a Studio type, a `static` function handing out a reference or pointer to one, a
+mutable namespace-scope variable of one, and `static T& get()` — plus `typeid`/`std::type_index`,
+which is how a heterogeneous registry is keyed. It matches *structures*, so renaming `instance()` to
+`shared()` evades nothing, and it deliberately permits a mutable `static` that holds no Studio type,
+because a CRC table and a thread-local random engine are caches of pure functions and failing them
+is how a guard gets switched off. Proved against fixtures for each prohibited shape, against the
+things that look like one, and end to end by putting a real singleton into `StudioBuildService.cpp`.
+It was written *before* the services it governs, which is the point: a guard added last has to be
+made to pass, and one added first is a rule the next three services are written against.
+
 **The application shell is being decomposed into services** rather than growing into the object
 that knows everything: `StudioPlayService` owns the player process, the play state, the build
 lookup and the session renderer override; `StudioBuildService` owns the build process, its finish
-transition and packaging. Neither reaches back into the shell — each takes a notification *sink* and
+transition and packaging; `StudioComparisonService` owns the renderer comparison — a half-hour
+multi-process run with its own state machine and its own failures, which is why it is not folded
+into play although both launch players; and `StudioPreferencesService` owns the rule that a
+preference is *applied and then persisted*, so a write that fails still leaves the user looking at
+what they chose. Three of the four are testable with a context, a log and a lambda. Neither reaches back into the shell — each takes a notification *sink* and
 its dependencies explicitly, and there is no service locator to register with. That is the point:
 a locator would make every dependency invisible again, one `get<T>()` at a time.
 
@@ -315,6 +374,17 @@ draws the same shell through each on `OPENGL4` and compares the PNGs **byte for 
 asserting that each run used the backend it was asked for, so the test cannot quietly become a
 comparison of one renderer with itself. The classic backend still exists and still builds: deleting
 a working renderer before its replacement is proven is how a project ends up with neither.
+
+**And the phase has a measurement now instead of an assumption.** `STUDIO-04028` is
+`cna-studio --ui-benchmark`: eight representative frame shapes, reporting what each backend asks the
+device to do and what the frame costs to describe. **The classic backend puts 17–18× as much
+geometry on the bus, on every shape measured**, because `DrawUserIndexedPrimitives` takes user
+arrays the driver copies per call and the array runs from the command's base vertex to the end of
+its list — which, in any list under 65 535 vertices, is the whole array. The ratio is roughly the
+draw-call count and grows as the UI is batched more finely. It needs no CNA, no GPU and no window,
+and the model is checked against the real backends frame by frame on any run with a frame limit.
+`STUDIO-04029` put `OPENGL4` under Xvfb into CI as a second matrix leg, with an assertion that each
+leg gets the backend it exists to cover — a silent fallback would be a green tick over nothing.
 
 **Phase 5 — Docking** (14 of 15). The dock node tree, splits, draggable splitters with
 minimum sizes and cursor shapes, tab strips, opening and closing panels, serialization, restoring
@@ -387,6 +457,14 @@ like every other edit — and the other four are `STUDIO-07042`–`07046`, which
 depends on. That dependency is the deliverable of this part: "verify that independently" produced a
 blocking answer, and the blocking answer is written into the ledger rather than around it.
 
+**One of the five blocking Inspector sections is closed.** `STUDIO-07045`, the asset inspector:
+identity, kind and the importer's declared settings, edited through the command history. It was not
+only a missing section — the native Content Browser and the native Details panel had *different*
+ideas of which asset was selected, so it could not have worked even once written. The selection is
+`StudioContext`'s now, as the outliner's entity selection already was, which brings the
+one-thing-at-a-time rule with it. Four sections left, and they are the critical path for the classic
+UI render backend as well as for Dear ImGui.
+
 **Phase 11 — Viewport** (5 of 15). Perspective and orthographic cameras, orbit/fly/pan navigation,
 picking through the 3D projection, and the 2D workflow preserved beside it rather than replaced.
 **The navigation preference is read now** (`STUDIO-11015`): Studio's own scheme, Maya's and
@@ -412,6 +490,15 @@ host eligibility, target renderer validation, and the guard that keeps Studio's 
 CNA's configure rules from drifting.
 
 **Phase 30 — Large-project performance** (2 of 15).
+
+**Phase 30 — Large-project performance** (2 of 15). Neither was planned for this session and both
+came out of `STUDIO-04028`'s benchmark. `STUDIO-30013` made the World Outliner linear in scene size
+rather than quadratic — 309 ms a frame at 2 000 entities became 19 ms — through
+`SceneDocument::getChildrenByParent()`, which is a *grouping* rather than a cached index because
+`findEntity` hands out a mutable pointer and `setParentId` is public, so a cache would go stale
+silently and a stale hierarchy index shows up as entities vanishing from the outliner.
+`STUDIO-30014` attributed the Content Browser's 21.5 ms a frame at 1 500 assets to about 3 000
+synchronous `exists()` calls, measured by stubbing them out rather than by reading the code.
 
 **Phase 31 — Reliability** (1 of 13).
 
@@ -536,6 +623,30 @@ the headless preview, which is the only visual test this project has without a G
 empty rectangles. Nothing about binding a panel needs CNA.
 
 ---
+
+**A benchmark that runs only in the expensive configuration is a benchmark nobody runs.**
+`STUDIO-04028` computes everything from `UiDrawData` — the same bytes both backends are handed — so
+`--ui-benchmark` needs no CNA, no GPU and no window and runs in the dependency-free build on every
+push. What that costs is GPU time, which it does not measure and says so. What it buys is that the
+number exists at all.
+
+**A cost model is a second implementation, so it is checked against the thing it models.**
+`studioUiFrameCost` reimplements both backends' inner loops. `CnaStudioShellHost` therefore
+recomputes it against the backend's own counters on every frame of every run that carries a frame
+limit — every capture, every CTest smoke test, both CNA legs of CI — and fails the process naming the
+field, both numbers and the frame. Never in an interactive session: an editor should not spend a
+user's frame checking its own benchmark.
+
+**A "1500-asset content browser" scenario that measures the default layout is a number about the
+layout.** Each benchmark scenario names the panel it is about and the run *refuses* if that panel
+cannot be raised. Without that, `content-grid` and the baseline reported identical figures to the
+vertex — which was correct, because the Content Browser is already the active bottom tab, and would
+have gone on being reported as a measurement of the card grid.
+
+**The property editor is one function now, and that was a prerequisite rather than tidying.**
+`STUDIO-07045` needed the same editors — checkbox, drop-down, text, vectors, a quaternion edited as
+Euler angles, a colour swatch, a drag-target asset picker — over an *importer's* settings rather than
+a component's. `studioPropertyEditor` is used by both. `STUDIO-35033` wants the same seam.
 
 ## Things found that were not expected
 
@@ -798,59 +909,131 @@ same failure: a value that flows from a writer to a reader through a step nobody
 
 ---
 
+### Found this session, and none of it was being looked for
+
+**The classic UI render backend had been reporting zero upload bytes since it existed.**
+`UiRenderStats::geometryBytesUploaded` is a field both backends fill in — except `CnaUiRenderer`
+never touched it. So every comparison of the two on upload bytes was a number against a zero, which
+reads as "the classic path uploads nothing" rather than as "nobody counted". Fixing that is what made
+the 17× measurable at all, and it is a good example of a metric that is worse than no metric: a zero
+is an answer, and it was the flattering one for the path being argued for.
+
+**A CNA UI vertex is 56 bytes and carries 20 bytes of data.** `CNA::Color` alone is 24 — it has a
+vtable — and `VertexPositionColorTexture` carries a second one because `IVertexType` has a virtual
+destructor. CNA repacks it to a 24-byte stream before upload, so the bus is not charged, but every
+caller building a vertex array is. Found by a `static_assert` refusing the estimate of 32 that had
+been written into the benchmark, which is the argument for pinning a literal to the type it
+describes rather than commenting it. `docs/CNA-GAPS.md` G-11.
+
+**The World Outliner was O(n²) in scene size, and no capture could have shown it.**
+`SceneDocument::getChildren` scans every entity; the outliner's flatten called it once per row. 250
+entities cost 9.1 ms a frame, 2 000 cost 309 ms — three frames a second on a scene nobody would call
+large. Rows are *virtualised*, so the benchmark reported the same 20 draw calls and 7 317 vertices
+at five entities and at two thousand: the drawing was flat and the walk was not. Fixed
+(`STUDIO-30013`), 16× faster at 2 000, and linear. `SceneValidation` already knew — it derives its
+parent set once, with a comment saying `getChildren` is a scan — and that knowledge had stayed local
+while the outliner rediscovered the problem the hard way.
+
+**The Content Browser asks the operating system about every asset, every frame.** `isMissing` is a
+`std::filesystem::exists()` called once per row, and the missing *count* is a second full pass with
+another `exists()` per asset: about 3 000 synchronous stat calls a frame at 1 500 assets. Attributed
+by measurement rather than by reading — with both calls stubbed, the same scenario falls from 21.5 ms
+to 8.3 ms. And it is *worse* in real use than in the benchmark: with no project open the same assets
+cost 8.6 ms, because the paths resolve under a root that does not exist and the stat fails early.
+`STUDIO-30014` measured it; `STUDIO-30015` fixes it and waits on `STUDIO-30012`, because when a file
+deleted outside the editor becomes visible is a design decision rather than an optimisation.
+
+**The native Content Browser and the native Details panel had different ideas of which asset was
+selected.** The browser wrote into a member of `StudioShellPanels`; `StudioContext::selectedAsset_`
+existed and was written only by the *prototype*. So the native Details panel's answer was
+permanently "nothing", and the asset inspector could not have worked even once it was written. The
+same shape as the three preferences that were stored, loaded, given rows in a panel and read by
+nothing — except here the writer and the reader were never connected at all.
+
+**`CnaUiRenderer::getBackendName()` answered a question the class has no authority over.** It
+returned the *CNA renderer* this binary was compiled against — layer 3 of the four in
+`docs/UI-RENDER-PATH.md` — from a static on the *classic UI render backend*, which is layer 2. Five
+callers used it, including `src/player`, which draws no editor UI at all and was linking the editor's
+UI renderer for one string. That is not tidiness: `STUDIO-04027` deletes a UI backend, and a game
+runtime that depends on which one Studio picked has to be rebuilt when the editor changes its mind.
+
+**The `OPENGL4` CI leg's test set is a strict superset of the `SOFTWARE` leg's.** 79 suites against
+78, the extra being `CnaStudioUiRenderBackendsAgree`. Measured with `comm` over `ctest -N` rather than
+assumed, because it is the evidence `STUDIO-04027` turns on — and it says that deleting the classic
+path costs no automated coverage whatsoever, which is the opposite of what the task's recorded
+blocker said.
+
+**A `-Werror` build caught `UiRect control = control;`.** A self-initialisation, produced by the
+mechanical rename that extracted `studioPropertyEditor`. It compiled; 1 311 Debug cases passed; a
+clean ASan run passed. The compiler had reused the parameter's storage, so the value happened to be
+right. That is the third defect Release `-Werror` has caught that no other configuration could,
+after an ignored `freopen` result and a dangling reference to a subobject of a temporary.
+
+**A guard test that has never been shown to fail is an assertion about nothing, and I wrote one.**
+The asset inspector's paint-order case was first written over emitted quads, classified by texture
+coordinate and alpha. It passed — and went on passing when the defect it was written for was
+deliberately reintroduced, twice, in two different forms. It rasterises now and counts distinct
+colours in the band the identity rows occupy: text is dozens, a flat fill is one. Verified by putting
+the surface back *after* the rows it holds, where it reports "1 distinct colours" and fails. The
+lesson `STUDIO-35063` recorded was about the *defect*; this one is about the *test*, and it is the
+reason `STUDIO-03041` is filed as a structural task rather than as a third guard.
+
 ## Known gaps and failures
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
-- **Dear ImGui is still here, deliberately.** `cna-studio` with no flag opens the native shell and
-  `--ui=imgui` opens the prototype. Removing the prototype is `STUDIO-07030`, and it is blocked:
-  five sections of its Inspector had no native answer, four still do not (`STUDIO-07042`–`07046`),
-  and deleting it today would delete working features. See Phase 7 above.
-- **Studio still ships two UI render backends.** The modern CNAEXT one is the default on a host that
-  reports the modern API; the classic `BasicEffect` one is what `SOFTWARE` — the only renderer CI
-  can run without a display — falls back to, loudly. Removing the classic backend
-  (`STUDIO-04027`/`STUDIO-02074`) waits on `STUDIO-04029`, which is `OPENGL4` in CI rather than only
-  on this machine.
-- **The modern renderer has no benchmark.** It draws the same bytes as the classic one; whether it
-  draws them faster is unmeasured, and `StudioModernUiRenderer` was written on the assumption that
-  persistent GPU buffers beat per-draw user arrays. `STUDIO-04028` is where that assumption gets
-  tested rather than repeated.
-- **A floating window is inside the Studio window, not an OS window.** It moves, resizes, takes more
-  tabs and docks again; it cannot be dragged onto a second monitor. CNA *does* offer a second window
-  — `IPlatform::CreateWindow` behind a `MultipleWindows` capability, and `PresentationParameters`
-  carries a device window handle — so the open question is whether Studio can drive a second
-  `GraphicsDevice` at all, not whether the platform has windows. Recorded as `STUDIO-05015`,
-  research rather than work.
-- **New Project and Open Project are still unbound.** Both need a native file dialog, and CNA has
-  one — `IPlatformDialogs::ShowOpenFileDialog`, callback-shaped because a file dialog on every
-  platform CNA targets is asynchronous, plus `CNA::Devices::FileDialog` behind the same default-off
-  option as the clipboard (G-02). So this is Studio wiring and an async seam through `StudioShell`,
-  not a missing CNA API. `--project` opens one today.
-- **The caret does not blink.** Deliberate until there is an animation model (`STUDIO-03030`): a
-  caret that blinks off is one a golden image catches half the time.
-- **Non-Latin text is boxes.** The caret steps by grapheme cluster now, so it no longer walks into
-  the middle of a flag emoji — but there is only one font, and CJK, Hangul, Arabic and emoji have no
-  glyphs in it. `STUDIO-04019` is a font *fallback* problem, not a text-model one, and the
-  distinction matters because the text model was the part that looked broken.
-- **Visual Quality 1.0 is twelve of thirty-six, not finished.** The vocabulary exists — chrome,
-  icons, rows, axis colours, the card grid, the viewport toolbar — and the panels that will be
-  written next inherit it, which was the reason for doing it now. What is still plain: typography is
-  one face at one weight (`STUDIO-35022`/`35023`), the property grid has no label/value column
-  alignment or reset markers (`STUDIO-35033`), reference fields show an id rather than what it
-  points at (`STUDIO-35034`), the grid is not a ground plane and there is no orientation widget
-  (`STUDIO-35051`/`35052`), the viewport has no selection outline (`STUDIO-35053`), the Content
-  Browser cards carry icons rather than thumbnails (`STUDIO-35041`) and cannot be searched
-  (`STUDIO-35042`), and the outliner has no filter (`STUDIO-35061`).
+- **Dear ImGui is still here, and it is now the critical path for two chains rather than one.**
+  `cna-studio` with no flag opens the native shell; `--ui=imgui` opens the prototype. Removing it is
+  `STUDIO-07030`, blocked on four Inspector sections (`STUDIO-07042`–`07044`, `07046`). What is new
+  is that `STUDIO-04027` — deleting the classic UI render backend — now depends on it too, because
+  `CnaStudioHost::LoadContent` constructs `CnaUiRenderer` with no chooser.
+- **Studio still ships two UI render backends, and the reason is no longer the recorded one.** The
+  modern CNAEXT backend is the default on any host that reports the modern API; the classic one is
+  what `SOFTWARE` falls back to, loudly. The old justification — that CI could not run a
+  shader-capable renderer — is closed by `STUDIO-04029` and *measured* closed: deleting the classic
+  path costs no CI coverage. See the row above for what actually holds it.
+- **`STUDIO-04027` is open over an obstacle, not a decision.** Its acceptance allows "or the reason
+  it stays is written down", and that has deliberately **not** been used to close it. The reason it
+  stays is that it cannot yet go, which is not the same thing.
+- **The benchmark measures submission, not GPU time.** `--ui-benchmark` reports what each backend
+  asks the device to do — bytes, draw calls, texture binds, scissor changes — plus the CPU cost of
+  describing the frame. It does not time a driver, deliberately: a vendor's answer to the same
+  submission varies, and the question is a property of Studio. Whether the modern backend is faster
+  *in wall-clock on a real GPU* remains unmeasured, and there is no task for it because llvmpipe
+  cannot answer it either.
+- **The Content Browser does synchronous disk I/O in the render loop.** About 3 000 `exists()` calls
+  a frame at 1 500 assets, 61% of the panel's frame cost, and worse on a project that actually
+  exists on disk. `STUDIO-30015`, after `STUDIO-30012`.
+- **Paint order and description order are still the same order.** Three widgets have now been drawn
+  under their own backgrounds, and the defence is two guards that each name one widget.
+  `STUDIO-03041` is the structural task; it is filed and not started, on purpose.
+- **A floating window is inside the Studio window, not an OS window.** `STUDIO-05015`, research
+  rather than work.
+- **New Project and Open Project are still unbound.** Both need a native file dialog, which CNA has;
+  this is Studio wiring and an async seam, not a missing CNA API. `--project` opens one today.
+- **The caret does not blink.** Deliberate until there is an animation model (`STUDIO-03030`).
+- **Non-Latin text is boxes.** One font, no CJK, Hangul, Arabic or emoji. `STUDIO-04019` is a font
+  *fallback* problem; the text model steps by grapheme cluster and is not the reason.
+- **Visual Quality 1.0 is thirteen of thirty-seven.** What is still plain, verified by looking at a
+  1920×1080 capture this session rather than by reading the list: the Content Browser is one folder
+  card in a large empty area with no thumbnails (`STUDIO-35041`) and cannot be searched
+  (`STUDIO-35042`); the property grid's label column is a fixed 38%, so labels and values are
+  separated by a gap wider than either (`STUDIO-35033`); the viewport grid is a lattice rather than a
+  ground plane and there is no orientation widget (`STUDIO-35051`/`35052`); nothing marks the
+  selected entity in the viewport (`STUDIO-35053`); the outliner has no filter (`STUDIO-35061`);
+  typography is one face at one weight (`STUDIO-35022`/`35023`).
 - **The visual suite compares bytes, not appearance.** Ten captures across five resolutions and both
-  themes, each asserting at least 256 distinct colours, is enough to catch a blank frame, a dropped
-  primitive or a theme that did not apply. It is not enough to catch a panel that is ugly, and a
-  one-pixel layout change fails every golden at once. `STUDIO-35082` is the tolerant comparison and
-  the region-occupancy probes that would make it say something about *where* things are.
-- **No graphical CI on a GPU, but no longer no graphical CI at all.** `OPENGL4` under Xvfb with
-  Mesa's llvmpipe runs the whole suite on this machine, including the modern renderer and the A/B
-  comparison, which a previous session recorded as impossible. It is not in CI yet
-  (`STUDIO-04029`/`STUDIO-33010`), and llvmpipe is still not a GPU: anything a real driver does
-  differently is unobserved.
+  themes, each asserting at least 256 distinct colours. Enough to catch a blank frame, a dropped
+  primitive or a theme that did not apply; not enough to catch a panel that is ugly, and a one-pixel
+  layout change fails every golden at once. `STUDIO-35082`.
+- **No graphical CI on a real GPU.** `OPENGL4` under Xvfb on Mesa's llvmpipe now runs the whole suite
+  **and is in CI** (`STUDIO-04029`), which a previous session recorded as impossible. llvmpipe is a
+  correct GL implementation and not a driver: anything a vendor driver does differently is
+  unobserved. `STUDIO-33010`.
+- **`STUDIO-04029` is written but has not been observed running.** The workflow change is a matrix
+  leg with an assertion that the leg gets the backend it exists to cover, and every command in it was
+  run end to end on this machine — but nobody has watched GitHub Actions execute it. The first run on
+  the next push is the thing to look at.
 
 ### Building against a real CNA checkout
 
@@ -883,91 +1066,121 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 ## Next recommended tasks
 
-In dependency order, most-blocking first. Three chains matter, and the first two end in a
-*deletion* — which is the one kind of work that cannot be half-done, and the one most easily
-deferred forever.
+Read from the phase files, not remembered. Ids, titles and blockers are copied from the rows.
 
-**Chain one: retire Dear ImGui.** Blocked, and the block is the finding rather than an obstacle to
-it. `STUDIO-07041` inventoried the prototype's controls (not its panels — `Add Component` is a
-button inside one, which is how it was missed for six phases) and found five Inspector sections with
-no native answer. One is closed; four are not.
+**There is now one chain, not three.** Retiring Dear ImGui was one of three; it is the prerequisite
+for the second as well, because the prototype's host is the last consumer of the classic UI render
+backend. Everything else is independent work that can be picked up beside it.
+
+### The chain: retire Dear ImGui, and the classic UI backend behind it
+
+Do `STUDIO-07044` next — of the four, the audio preview is the one with a shape already proven in
+the prototype and no document format to invent. `STUDIO-07042` is the substantial one and should be
+last of the four.
 
 | Id | Task | Blocked by |
 |----|------|-----------|
-| `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | — |
-| `STUDIO-07043` | Sprite animation preview in the native Details panel | — |
-| `STUDIO-07044` | Audio preview in the native Details panel | — |
-| `STUDIO-07045` | The asset inspector: a selected asset's own properties | — |
-| `STUDIO-07046` | The material asset editor the prototype already has | — |
-| `STUDIO-07030` | Remove the Dear ImGui panel implementations | the five above |
+| `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | `STUDIO-07041` ✅ |
+| `STUDIO-07043` | Sprite animation preview in the native Details panel | `STUDIO-07041` ✅ |
+| `STUDIO-07044` | Audio preview in the native Details panel | `STUDIO-07041` ✅ |
+| `STUDIO-07046` | The material asset editor the prototype already has | `STUDIO-07041` ✅ |
+| `STUDIO-07030` | Remove the Dear ImGui panel implementations | the four above |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | `07030` |
-| `STUDIO-07099` | Guard test: the production Studio UI has no dependency on Dear ImGui | `07031` |
+| `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | `07031` |
+| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | `STUDIO-04029` ✅, `STUDIO-07030` |
+| `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | `STUDIO-04026` ✅ |
 
-Do `STUDIO-07045` first of the five: it is the smallest, and the other four all draw *into* an
-inspector that currently only knows about entities.
+**The evidence `STUDIO-04027` needs is already gathered** and is on the task: no CI coverage is lost,
+17–18× the geometry submitted, and a path that cannot draw the material and shader previews Phases
+19, 20 and 22 are built on. When `07030` lands, `04027` is an afternoon and `02074` follows it.
+`STUDIO-07099` should also refuse a UI-render-backend dependency in `src/player`, which
+`ThePlayerDependsOnNoUiRenderBackend` already does for that module.
 
-**Chain two: retire the classic UI render backend.** The modern renderer works and is proven equal;
-what keeps the classic one alive is that CI cannot run a renderer that executes a shader.
-
-| Id | Task | Blocked by |
-|----|------|-----------|
-| `STUDIO-04029` | Make `OPENGL4` under Xvfb a second tested configuration in CI | — |
-| `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | — |
-| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | `04029` |
-| `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | `04027` |
-
-`STUDIO-04029` is infrastructure and is *ready*: the recipe under "Verification commands" is the
-whole of it, and it has been run end to end on this machine. `STUDIO-04028` is not on the chain but
-should come before `STUDIO-04027`, so that the renderer that survives is the one measured rather
-than the one assumed.
-
-**Chain three: finish decomposing the shell.** `StudioPlayService` and `StudioBuildService` are out
-of `StudioShellPanels`; the renderer comparison, the preferences and the binding of every panel are
-still in it.
+### Finish the shell decomposition
 
 | Id | Task | Blocked by |
 |----|------|-----------|
-| `STUDIO-02056` | Extract `StudioComparisonService` | — |
-| `STUDIO-02057` | Extract `StudioPreferencesService` | — |
-| `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | — |
-| `STUDIO-02059` | Guard test: no service reaches another through a locator or a singleton | `02055` |
+| `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | `STUDIO-02050` ✅ |
 
-`STUDIO-02059` is the one that makes the rest hold, and it is unblocked *now* — `STUDIO-02055` is
-done. Write it before `02056`–`02058` rather than after: a guard added last is a guard that has to
-be made to pass, and one added first is a rule the next three services are written against.
+The last of four. `StudioShellPanels` is down from 1 421 lines to about 1 000, and what is left is
+mostly `bind()`. **Do not move the lambdas into methods that still take `StudioShellPanels&`** —
+that moves code rather than separating concerns, which is the failure `STUDIO-02054`'s note warns
+about. Each binder should name the few things its panel needs, the way the services do, and
+`STUDIO-02059` will not catch it if they do not, because a constructor argument is a legal dependency
+however large it is.
 
-**Visual Quality 1.0, in the order the panels are looked at.** Each is independent of the others.
+### Structural, and filed this session
+
+| Id | Task | Blocked by |
+|----|------|-----------|
+| `STUDIO-03041` | Make paint order separable from input order | `STUDIO-03009` ✅ |
+| `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | `STUDIO-30012`, `STUDIO-30014` ✅ |
+| `STUDIO-30012` | Caching strategy with explicit invalidation | `STUDIO-09004` |
+
+`STUDIO-03041` is the one worth doing sooner rather than later: three widgets have been drawn under
+their own backgrounds, the defence is one guard per instance, and every new widget on a row starts
+from the same trap. It wants design, not an edit.
+
+### Visual Quality 1.0, in the order the panels are looked at
+
+Each is independent. Verified as still open by looking at a 1920×1080 capture this session.
 
 | Id | Task |
 |----|------|
-| `STUDIO-35033` | Property grid alignment, nesting and reset markers — the Details panel is the densest surface in Studio |
+| `STUDIO-35033` | Property grid alignment: label column, value column, nesting, reset markers — and `studioPropertyEditor` is now the one seam it needs |
 | `STUDIO-35053` | Selection feedback in the viewport: outline, pivot, bounds |
-| `STUDIO-35051` | A viewport grid that reads as a ground plane, with origin axes |
+| `STUDIO-35051` | Viewport grid that reads as a ground plane, with origin axes |
 | `STUDIO-35041` | Real content thumbnails, cached and generated off the frame |
 | `STUDIO-35042` | Content Browser search and type filters |
-| `STUDIO-35061` | World Outliner search, filter and prefab indicators |
-| `STUDIO-35022` | Typographic scale: panel titles, section headers, body, secondary, status — started, 🔄 |
+| `STUDIO-35061` | World Outliner: search, filter and prefab indicators |
 | `STUDIO-35082` | Tolerant golden comparison and region-occupancy probes |
 
-**Not on any chain, and each worth doing on its own.**
+### Not on any chain, and each worth doing on its own
 
 | Id | Task |
 |----|------|
-| `STUDIO-04019` | Font fallback — CJK, Hangul, Arabic and emoji are boxes, and the caret is no longer the reason |
+| `STUDIO-04019` | Font fallback — CJK, Hangul, Arabic and emoji are boxes |
 | `STUDIO-04010` | Render-resource lifetime and recreation on device loss |
-| `STUDIO-04011` | Window resize handling without artefacts — the device half, 🔄 |
+| `STUDIO-02035` | Guard test: every document mutation goes through a command |
+| `STUDIO-02037` | Guard test: authored files are byte-deterministic across repeated saves |
 | `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state |
-| `STUDIO-03027` | IME support where the platform provides it |
 | `STUDIO-11003` … `11012` | Focus selection, standard views, adaptive grid, outlines, wireframe mode |
 
-**Blocked, not forgotten.** `STUDIO-33010` (graphical CI with a real display) is now *narrower* than
-it was: G-10 has gone from 🔴 to 🟢, because `OPENGL4` under Xvfb turned out to run the whole suite
-and the previous session's "every renderer that can host Studio needs a real GPU" was wrong.
-`STUDIO-05015` (a second OS window) is research rather than work. `STUDIO-15001` (the C++ reflection
-mechanism) is 🔬 blocked on an architectural decision that should be made *before* Phase 15 starts,
-not during it.
+**Blocked, not forgotten.** `STUDIO-33010` (graphical CI on a real GPU) is narrower than it was:
+llvmpipe under Xvfb is in CI now, so what is missing is a *driver* rather than any renderer.
+`STUDIO-05015` (a second OS window) is research. `STUDIO-15001` (the C++ reflection mechanism) is
+blocked on an architectural decision that should be made before Phase 15 starts.
 
----
+**One thing to check first, before picking any of this up.** `STUDIO-04029` added a second CI matrix
+leg and nobody has watched it run. Look at the first `Linux CNA-backed (OPENGL4)` job on GitHub
+Actions: it should take about the same time as the `SOFTWARE` one, print `UI renderer: modern`, and
+run 79 CTest suites to the `SOFTWARE` leg's 78.
+
+## What a reviewer should be sceptical about
+
+Written down because a handoff that only lists what went well is one the next person has to
+re-derive.
+
+- **`STUDIO-04029` has never been watched running.** Every command in the new CI leg was executed on
+  this machine, and the YAML parses, but GitHub Actions has not run it. The matrix expression
+  quoting (`--server-args="-screen 0 1920x1080x24"` inside a matrix value inside a `run:`) is the
+  part most likely to be wrong.
+- **The benchmark's absolute numbers are this machine's.** The 17–18× ratio is a property of the
+  code and will hold anywhere; the microsecond figures are not, and the two performance tasks filed
+  from them (`STUDIO-30014`, `STUDIO-30015`) quote both.
+- **`FlatteningTheOutlinerCostsLinearTimeInTheSceneRatherThanQuadratic` is a timing test**, which is
+  the one kind that can fail for reasons unrelated to the change. Its threshold is 8× where linear
+  is about 4× and quadratic about 16×, it takes the best of five samples, and it was verified to
+  fail at 13.2× with the defect restored — but if it ever flakes, widen the gap rather than deleting
+  it: the defect it guards cost 300 ms a frame and was invisible to every other kind of test.
+- **`studioPropertyEditor` was extracted mechanically**, and the mechanical rename produced one
+  self-initialisation that only Release `-Werror` caught. The golden images are unchanged, which is
+  good evidence and not proof: the editors for kinds no example project exercises — `List`,
+  `Structure`, `EntityReference` — are covered by unit tests but were not looked at on screen.
+- **The service-locator guard's vocabulary is types declared in headers.** A locator built entirely
+  out of `std::` types and function pointers would evade it. That is a deliberate trade for not
+  firing on a CRC table, and it is the kind of exemption worth re-reading if a locator ever does
+  appear.
 
 ## Rules this work is held to
 
