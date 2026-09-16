@@ -303,7 +303,7 @@ ever shrinks is one nobody can tell the difference between "done" and "quietly d
 | Prefab overrides | `InspectorPanel::drawPrefabSection` | Report, revert and apply, in the native Details panel (`STUDIO-07042`) |
 | Sprite animation preview | `InspectorPanel::drawAnimationPreview` | A preview that does not put the frame it is showing into the document (`STUDIO-07043`) |
 | Audio preview | `InspectorPanel::drawAudioPreview` | The audio seam the native Details panel does not reach yet (`STUDIO-07044`) |
-| Asset inspector | `InspectorPanel::drawAssetInspector` | A selected asset's own properties, rather than the selected entity's (`STUDIO-07045`) |
+| Asset inspector | `InspectorPanel::drawAssetInspector` | ✅ Answered by `studioAssetInspector` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07045`): identity, kind, and the importer's settings edited through the history |
 | Material asset editor | `InspectorPanel::drawMaterialAsset` | The editor the prototype already has, ported (`STUDIO-07046`) |
 
 Three rows have left this table since it was written. **The 3D view** is answered by

@@ -29,10 +29,15 @@
 
 #pragma once
 
+#include "CNA/Studio/Core/PropertyValue.hpp"
+#include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
+#include <optional>
+#include <string>
+#include <vector>
 #include <string>
 
 namespace CNA::Studio
@@ -73,6 +78,64 @@ namespace CNA::Studio
      * @param context The editor. Its selection decides what is shown; its history receives edits.
      * @return What happened.
      */
+    /**
+     * @brief What a property editor may reach beyond the value it is editing.
+     *
+     * `plan.md` STUDIO-07045. Only the reference pickers need anything: an asset reference offers
+     * every asset in the project and an entity reference every entity in the scene, so the editor
+     * has to be able to see them. A null context offers neither and falls back to showing the id,
+     * which is what an editor over a value with no document behind it can honestly do.
+     */
+    struct StudioPropertyEditContext
+    {
+        /** @brief The document, for the reference pickers. Null offers no picker. */
+        const StudioContext* context = nullptr;
+
+        /** @brief An entity that must not appear in an entity-reference picker -- itself. */
+        Uuid excludeEntity;
+    };
+
+    /** @brief What one property row's editor produced. */
+    struct StudioPropertyEditResult
+    {
+        /** @brief The new value, when the user committed one. */
+        std::optional<PropertyValue> edited;
+
+        /**
+         * @brief Whether this kind has no editor and was shown as text.
+         *
+         * Reported rather than silently drawn, because "this property cannot be edited here" is
+         * the answer a caller counting editable rows needs and is invisible in a capture.
+         */
+        bool readOnlyKind = false;
+    };
+
+    /**
+     * @brief Draws the control for one property value and reports an edit.
+     *
+     * Extracted from `studioDetailsPanel` by `STUDIO-07045`, which needed the same editors over an
+     * importer's settings rather than over a component's properties. It is the same code rather
+     * than a second copy on purpose: a property grid that edited a float one way for a component
+     * and another way for an asset would drift, and the drift would be invisible until somebody
+     * compared two panels side by side.
+     *
+     * It draws the *control* only. The label, the row and the command the edit goes through belong
+     * to the caller, because those are what differ: a component's edit is a `SetPropertyCommand`
+     * against the scene and an importer setting's is a `SetImporterSettingCommand` against the
+     * asset database.
+     *
+     * @param frame The frame.
+     * @param control The control's rectangle, to the right of the label.
+     * @param value The value to edit; its type chooses the control.
+     * @param enumOptions The closed set for an enumeration, or empty to fall back to typing.
+     * @param editing What the reference pickers may look at.
+     * @return The edit, if the user made one.
+     */
+    StudioPropertyEditResult studioPropertyEditor(StudioFrame& frame, UiRect control,
+                                                  const PropertyValue& value,
+                                                  const std::vector<std::string>& enumOptions,
+                                                  const StudioPropertyEditContext& editing);
+
     StudioDetailsResult studioDetailsPanel(StudioFrame& frame, const UiRect& bounds,
                                            StudioContext& context);
 }

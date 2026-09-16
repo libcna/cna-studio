@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 24 of 34 complete `███████░░░░░`
+**Progress:** 25 of 34 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -39,7 +39,7 @@
 | `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | ⬜ | `STUDIO-07041` |
 | `STUDIO-07043` | Sprite animation preview in the native Details panel | ⬜ | `STUDIO-07041` |
 | `STUDIO-07044` | Audio preview in the native Details panel | ⬜ | `STUDIO-07041` |
-| `STUDIO-07045` | The asset inspector: a selected asset's own properties | ⬜ | `STUDIO-07041` |
+| `STUDIO-07045` | The asset inspector: a selected asset's own properties | ✅ | `STUDIO-07041` |
 | `STUDIO-07046` | The material asset editor the prototype already has | ⬜ | `STUDIO-07041` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
@@ -847,6 +847,33 @@ zero — which is exactly the guarantee that was missing.
 Each is a section the prototype's Inspector draws that the native Details panel does not, found by
 `STUDIO-07041`. Prefab overrides and the material asset editor are the substantial ones; the two
 previews and the asset inspector are contained.
+
+**`STUDIO-07045` is done**, and it was not only a missing panel section. The native Content Browser
+wrote the clicked asset into a member of `StudioShellPanels`, while `StudioContext` had a
+`selectedAsset_` of its own that only the *prototype* ever wrote. So the native shell had two ideas
+of "the selected asset", neither of which could see the other, and the native Details panel's was
+permanently empty. It is the context's now, as the outliner's entity selection already was — which
+also brings the exclusivity rule with it: selecting an asset clears the entity selection, so the
+inspector shows one thing at a time.
+
+The inspector itself is identity (name with its kind's icon, path, type, id) and the importer's
+declared settings, edited through `SetImporterSettingCommand` with merging, like every other
+property field. An importer setting is persisted to a `.cnaasset` sidecar, which makes it the one
+edit in Studio that could plausibly have been written straight to disk; it goes through the history
+so `Ctrl+Z` reaches it.
+
+**The property editor is one function now, not two.** The component grid's editors — every kind
+from a checkbox to a quaternion edited as Euler angles to a drop-target asset picker — were 290
+lines inside `studioDetailsPanel`. They are `studioPropertyEditor`, used by both. A second copy for
+importer settings would have drifted, and a property grid that edited a float one way for a
+component and another way for an asset is a drift nobody notices until the two are looked at side by
+side, which is how three of this migration's gaps were found. `STUDIO-35033` wants the same seam.
+
+**Two smaller truths came out of looking at it.** A property the importer declares *read-only* used
+to render as "(not editable yet)", which is the answer for a kind with no editor and reads as an
+unimplemented feature — a texture's pixel size said that instead of `32, 32`. And a `.cnamaterial`
+said "No importer handles this file type", which is true and useless: a material is the editor's own
+document, and the honest answer names `STUDIO-07046`.
 
 **The material one corrects the inventory.** `docs/MIGRATION-INVENTORY.md` said "there is no
 `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19)". There is

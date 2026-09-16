@@ -617,7 +617,7 @@ namespace CNA::Studio
         // The Content Browser (STUDIO-07008), the fourth ported panel.
         shell.setPanelContent("content", [this](StudioFrame& frame, const UiRect& bounds) {
             const StudioContentBrowserResult content =
-                studioContentBrowser(frame, bounds, context_, contentState_, selectedAsset_);
+                studioContentBrowser(frame, bounds, context_, contentState_);
             if (frame.isDrawPass())
             {
                 counts_.contentRowsDrawn = content.rowsDrawn;

@@ -110,6 +110,7 @@ namespace CNA::Studio
                 if (name == "--export") { options.exportPath = value; continue; }
                 if (name == "--workspace") { options.workspacePath = value; continue; }
                 if (name == "--select") { options.selectEntity = value; continue; }
+                if (name == "--select-asset") { options.selectAsset = value; continue; }
                 if (name == "--shell-drag") { options.shellPreviewDragPanel = value; continue; }
                 if (name == "--scene") { options.scenePath = value; continue; }
                 if (name == "--ui") { options.uiBackend = value; continue; }
@@ -394,6 +395,7 @@ namespace CNA::Studio
             "                       preview. Needs --shell-pointer.\n"
             "  --shell-tooltip      Rest the pointer until a tooltip appears.\n"
             "  --ui=imgui         Run the legacy Dear ImGui editor instead of the native shell.\n"
+            "  --select-asset=P   Select the asset at project-relative path P.\n"
             "  --ui-benchmark[=S] Measure UI frame cost for scenarios matching S (default all)\n"
             "                     and exit. What each render backend is asked to submit.\n"
             "  --ui-benchmark-frames=N  Frames per scenario (default 120).\n"

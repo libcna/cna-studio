@@ -30,13 +30,12 @@ namespace CNA::Studio
         // then one of two presentations -- rather than as two large functions with a switch buried
         // at the bottom of the second.
         StudioContentBrowserResult studioContentList(StudioFrame& frame, const UiRect& bounds,
-                                                     const StudioContext& context,
-                                                     StudioTreeState& state, Uuid& selected,
+                                                     StudioContext& context,
+                                                     StudioTreeState& state,
                                                      StudioContentBrowserResult result);
         StudioContentBrowserResult studioContentGrid(StudioFrame& frame, const UiRect& bounds,
-                                                     const StudioContext& context,
+                                                     StudioContext& context,
                                                      StudioContentBrowserState& state,
-                                                     Uuid& selected,
                                                      StudioContentBrowserResult result);
 
         /** @brief Splits a project-relative path into its directory part and its file name. */
@@ -74,37 +73,6 @@ namespace CNA::Studio
             return folders;
         }
 
-        /**
-         * @brief The picture for an asset kind.
-         *
-         * Shared by the list and the grid, which is the point of it being a function: two
-         * presentations of one database that disagreed about what a texture looks like would be
-         * worse than either alone. The mapping is deliberately coarse -- a sound effect and a song
-         * get the same speaker, because the question a user asks of an icon is "is this audio", and
-         * the detail line already answers which.
-         */
-        StudioIcon iconForAssetType(AssetType type)
-        {
-            switch (type)
-            {
-                case AssetType::Texture2D:   return StudioIcon::Texture;
-                case AssetType::Model:       return StudioIcon::Mesh;
-                case AssetType::Material:    return StudioIcon::Material;
-                case AssetType::SoundEffect:
-                case AssetType::Song:        return StudioIcon::Audio;
-                case AssetType::Scene:       return StudioIcon::Scene;
-                case AssetType::Prefab:      return StudioIcon::Prefab;
-                case AssetType::Effect:      return StudioIcon::Material;
-                case AssetType::SpriteFont:  return StudioIcon::File;
-                case AssetType::RawData:
-                case AssetType::Unknown:     break;
-            }
-            // A tracked file no importer claims is still a file, and a blank where every other
-            // row has a picture reads as a row that failed to load rather than as one nobody
-            // imports.
-            return StudioIcon::File;
-        }
-
         /** @brief The last segment of a folder path, which is what a tree row shows. */
         std::string leafName(const std::string& folder)
         {
@@ -122,6 +90,37 @@ namespace CNA::Studio
             }
             return false;
         }
+    }
+
+    /**
+     * @brief The picture for an asset kind.
+     *
+     * Shared by the list, the grid and the Details panel's asset inspector (`STUDIO-07045`), which
+     * is the point of it being one function: two presentations of one database that disagreed
+     * about what a texture looks like would be worse than either alone. The mapping is
+     * deliberately coarse -- a sound effect and a song get the same speaker, because the question
+     * a user asks of an icon is "is this audio", and the detail line already answers which.
+     */
+    StudioIcon studioAssetIcon(AssetType type)
+    {
+        switch (type)
+        {
+            case AssetType::Texture2D:   return StudioIcon::Texture;
+            case AssetType::Model:       return StudioIcon::Mesh;
+            case AssetType::Material:    return StudioIcon::Material;
+            case AssetType::SoundEffect:
+            case AssetType::Song:        return StudioIcon::Audio;
+            case AssetType::Scene:       return StudioIcon::Scene;
+            case AssetType::Prefab:      return StudioIcon::Prefab;
+            case AssetType::Effect:      return StudioIcon::Material;
+            case AssetType::SpriteFont:  return StudioIcon::File;
+            case AssetType::RawData:
+            case AssetType::Unknown:     break;
+        }
+        // A tracked file no importer claims is still a file, and a blank where every other
+        // row has a picture reads as a row that failed to load rather than as one nobody
+        // imports.
+        return StudioIcon::File;
     }
 
     std::vector<StudioTreeRow> studioContentRows(const AssetDatabase& assets,
@@ -178,7 +177,7 @@ namespace CNA::Studio
                 row.id = record->id.toString();
                 row.label = splitPath(record->sourcePath).second;
                 row.detail = toString(record->type);
-                row.icon = iconForAssetType(record->type);
+                row.icon = studioAssetIcon(record->type);
                 row.depth = depth;
                 row.selected = record->id == selected;
                 // Draggable onto anything that takes an asset: a property slot in the inspector,
@@ -333,7 +332,7 @@ namespace CNA::Studio
             card.assetId = record->id;
             card.label = splitPath(record->sourcePath).second;
             card.detail = toString(record->type);
-            card.icon = iconForAssetType(record->type);
+            card.icon = studioAssetIcon(record->type);
             card.selected = record->id == selected;
 
             if (assets.isMissing(record->id))
@@ -353,9 +352,8 @@ namespace CNA::Studio
     }
 
     StudioContentBrowserResult studioContentBrowser(StudioFrame& frame, const UiRect& bounds,
-                                                    const StudioContext& context,
-                                                    StudioContentBrowserState& state,
-                                                    Uuid& selected)
+                                                    StudioContext& context,
+                                                    StudioContentBrowserState& state)
     {
         const StudioTheme& theme = frame.theme();
         const float spacing = metricOf(theme, StudioMetric::SpacingSmall);
@@ -445,21 +443,22 @@ namespace CNA::Studio
 
         if (state.view == StudioContentView::Grid)
         {
-            return studioContentGrid(frame, area, context, state, selected, result);
+            return studioContentGrid(frame, area, context, state, result);
         }
 
-        return studioContentList(frame, area, context, state.tree, selected, result);
+        return studioContentList(frame, area, context, state.tree, result);
     }
 
     namespace
     {
     StudioContentBrowserResult studioContentList(StudioFrame& frame, const UiRect& bounds,
-                                                 const StudioContext& context,
-                                                 StudioTreeState& state, Uuid& selected,
+                                                 StudioContext& context,
+                                                 StudioTreeState& state,
                                                  StudioContentBrowserResult result)
     {
         const AssetDatabase& assets = context.getAssets();
-        const std::vector<StudioTreeRow> rows = studioContentRows(assets, selected, state);
+        const std::vector<StudioTreeRow> rows =
+            studioContentRows(assets, context.getSelectedAsset(), state);
         result.rowsTotal = rows.size();
         result.missingCount = assets.getMissingAssets().size();
 
@@ -477,7 +476,12 @@ namespace CNA::Studio
             const Uuid clicked = Uuid::parse(rows[*tree.clicked].id);
             if (clicked.isValid())
             {
-                selected = clicked;
+                // Through the context, not into an out-parameter the shell keeps beside the one
+                // StudioContext already has. Two ideas of "the selected asset" meant the native
+                // Details panel could not see what the native Content Browser had selected --
+                // STUDIO-07045. Selecting an asset also clears the entity selection, which is what
+                // makes the inspector show one thing at a time.
+                context.selectAsset(clicked);
                 result.selectedAsset = clicked;
             }
         }
@@ -486,15 +490,15 @@ namespace CNA::Studio
     }
 
     StudioContentBrowserResult studioContentGrid(StudioFrame& frame, const UiRect& bounds,
-                                                 const StudioContext& context,
-                                                 StudioContentBrowserState& state, Uuid& selected,
+                                                 StudioContext& context,
+                                                 StudioContentBrowserState& state,
                                                  StudioContentBrowserResult result)
     {
         const StudioTheme& theme = frame.theme();
         const AssetDatabase& assets = context.getAssets();
 
         const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, selected);
+            studioContentCards(assets, state.folder, context.getSelectedAsset());
         result.rowsTotal = cards.size();
         result.missingCount = assets.getMissingAssets().size();
 
@@ -617,7 +621,7 @@ namespace CNA::Studio
                     if (entry.isFolder()) { state.folder = entry.folder; }
                     else
                     {
-                        selected = entry.assetId;
+                        context.selectAsset(entry.assetId);
                         result.selectedAsset = entry.assetId;
                     }
                 }

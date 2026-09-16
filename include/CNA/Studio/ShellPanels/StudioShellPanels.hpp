@@ -475,7 +475,6 @@ namespace CNA::Studio
         std::uint64_t pluginRevision_ = 0;
 
         StudioViewportState viewportState_;
-        Uuid selectedAsset_;
 
         StudioBuildService build_;
         std::unique_ptr<StudioBuildPanel> buildPanel_;

@@ -237,8 +237,6 @@ CNA_STUDIO_TEST(ClickingAFileSelectsItAndClickingAFolderDoesNot)
     // rather than on the folder above it. The grid has its own cases below.
     StudioContentBrowserState state;
     state.view = StudioContentView::List;
-    Uuid selected;
-
     auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
     shell->resetLayout();
     shell->renderFrame(at(-1.0f, -1.0f));
@@ -247,7 +245,7 @@ CNA_STUDIO_TEST(ClickingAFileSelectsItAndClickingAFolderDoesNot)
     UiRect bounds;
     CNA_STUDIO_EXPECT(shell->setPanelContent("content",
         [&](StudioFrame& frame, const UiRect& area) {
-            (void)studioContentBrowser(frame, area, context, state, selected);
+            (void)studioContentBrowser(frame, area, context, state);
             if (frame.isDrawPass()) { bounds = area; }
         }));
     shell->renderFrame(at(-1.0f, -1.0f));
@@ -262,7 +260,7 @@ CNA_STUDIO_TEST(ClickingAFileSelectsItAndClickingAFolderDoesNot)
         shell->renderFrame(at(x, y, false));
         shell->renderFrame(at(x, y, true));
         shell->renderFrame(at(x, y, false));
-        selectedTheFile = selected == file;
+        selectedTheFile = context.getSelectedAsset() == file;
     }
 
     CNA_STUDIO_EXPECT(selectedTheFile);
@@ -272,7 +270,6 @@ CNA_STUDIO_TEST(AProjectWithNoAssetsSaysSoRatherThanShowingNothing)
 {
     StudioContext context;
     StudioContentBrowserState state;
-    Uuid selected;
 
     auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
     shell->resetLayout();
@@ -283,7 +280,7 @@ CNA_STUDIO_TEST(AProjectWithNoAssetsSaysSoRatherThanShowingNothing)
     CNA_STUDIO_EXPECT(shell->setPanelContent("content",
         [&](StudioFrame& frame, const UiRect& area) {
             const StudioContentBrowserResult pass =
-                studioContentBrowser(frame, area, context, state, selected);
+                studioContentBrowser(frame, area, context, state);
             if (frame.isDrawPass()) { result = pass; }
         }));
     shell->renderFrame(at(-1.0f, -1.0f));

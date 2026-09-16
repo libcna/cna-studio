@@ -30,6 +30,7 @@
 
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
@@ -127,6 +128,19 @@ namespace CNA::Studio
     };
 
     /**
+     * @brief The icon that says what kind of asset this is.
+     *
+     * Public so that the Content Browser and the Details panel's asset inspector (`STUDIO-07045`)
+     * use one mapping rather than two: a file that reads as audio in one panel and as a generic
+     * file in the other is a drift nobody notices until they are looked at side by side, which is
+     * how three of this migration's gaps were found.
+     *
+     * @param type The asset's kind.
+     * @return Its icon; `StudioIcon::File` for a kind with no picture of its own.
+     */
+    [[nodiscard]] StudioIcon studioAssetIcon(AssetType type);
+
+    /**
      * @brief Flattens the asset database into tree rows, honouring @p state.
      *
      * Exposed separately so a test can assert on the shape of the tree without a frame — the two
@@ -209,13 +223,15 @@ namespace CNA::Studio
      *
      * @param frame The frame.
      * @param bounds The panel's content rectangle.
-     * @param context The editor, for its asset database.
+     * @param context The editor, for its asset database and for the selection. Not const: a click
+     *        selects, the way `studioOutlinerPanel` selects an entity. The selected asset used to
+     *        be an out-parameter the shell kept beside the one `StudioContext` already had, so the
+     *        native browser and the native Details panel could not see each other's idea of what
+     *        was selected -- see `STUDIO-07045`.
      * @param state The view, the folder, the expansion and the card size.
-     * @param selected The selected asset; updated when the user clicks a file.
      * @return What happened.
      */
     StudioContentBrowserResult studioContentBrowser(StudioFrame& frame, const UiRect& bounds,
-                                                    const StudioContext& context,
-                                                    StudioContentBrowserState& state,
-                                                    Uuid& selected);
+                                                    StudioContext& context,
+                                                    StudioContentBrowserState& state);
 }

@@ -14,13 +14,18 @@
 
 #include "TestHarness.hpp"
 
+#include "CNA/Studio/Assets/AssetCommands.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
+#include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <set>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -456,4 +461,211 @@ CNA_STUDIO_TEST(AComponentIsRemovedFromItsOwnHeaderAndUndone)
     CNA_STUDIO_EXPECT(fixture.context.getHistory().canUndo());
     CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
     CNA_STUDIO_EXPECT_EQ(componentCount(), before);
+}
+
+// ------------------------------------------------------------------------------------------------
+// The asset inspector (STUDIO-07045)
+//
+// One of the five Inspector sections `STUDIO-07041` found with no native answer, and therefore one
+// of the five things that stop Dear ImGui being deleted. The prototype shows a selected asset's
+// identity and its importer's settings; the native Details panel showed the scene settings, because
+// it could not see that an asset had been selected at all.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief A context with one texture asset whose importer declares settings. */
+    struct AssetFixture
+    {
+        StudioContext context;
+        Uuid textureId;
+
+        AssetFixture()
+        {
+            AssetRecord record;
+            record.id = Uuid::generate();
+            record.sourcePath = "Assets/Textures/hero.png";
+            record.type = AssetType::Texture2D;
+            record.importerId = AssetDatabase::defaultImporterFor(record.type);
+            textureId = record.id;
+            (void)context.getAssets().add(std::move(record));
+        }
+
+        /** @brief Runs one full frame of the asset inspector over @p area. */
+        StudioDetailsResult draw(StudioShell& shell, UiInputState input)
+        {
+            StudioDetailsResult last;
+            (void)shell.setPanelContent("details", [&](StudioFrame& frame, const UiRect& area) {
+                const StudioDetailsResult pass = studioDetailsPanel(frame, area, context);
+                if (frame.isDrawPass()) { last = pass; }
+            });
+            shell.renderFrame(input);
+            return last;
+        }
+    };
+}
+
+CNA_STUDIO_TEST(SelectingAnAssetShowsItRatherThanTheSceneSettings)
+{
+    // The defect this task closes, stated directly. The native Content Browser wrote the selected
+    // asset into a member of StudioShellPanels while StudioContext had a selectedAsset_ of its own
+    // that only the prototype ever wrote -- so the two native panels had different ideas of what
+    // was selected, and the Details panel's was always "nothing".
+    AssetFixture fixture;
+    StudioShell shell{StudioTheme::dark()};
+    shell.resetLayout();
+    CNA_STUDIO_EXPECT(shell.activatePanel("details"));
+
+    // Nothing selected and no project: the panel says so and draws no rows at all.
+    const StudioDetailsResult idle = fixture.draw(shell, at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT_EQ(idle.rowsDrawn, std::size_t{0});
+
+    fixture.context.selectAsset(fixture.textureId);
+    const StudioDetailsResult asset = fixture.draw(shell, at(-1.0f, -1.0f));
+
+    // Identity, a gap, the importer's heading, and one row per declared setting. An asset
+    // inspector that resolved to the project message would draw none of them.
+    CNA_STUDIO_EXPECT(asset.rowsDrawn > 4);
+    CNA_STUDIO_EXPECT_EQ(asset.componentCount, std::size_t{0});
+}
+
+CNA_STUDIO_TEST(AnAssetAndAnEntityAreNeverBothSelected)
+{
+    // The inspector shows one thing at a time, and which one is decided by what was clicked last.
+    // Two independent selections would leave the user unable to tell which the panel is about --
+    // and the answer would change as they clicked around without either selection being cleared.
+    AssetFixture fixture;
+    const Uuid entity = fixture.context.getScene().addEntity(
+        StudioEntity{Uuid::generate(), "Player"});
+
+    fixture.context.select(entity);
+    CNA_STUDIO_EXPECT(!fixture.context.getSelection().empty());
+
+    fixture.context.selectAsset(fixture.textureId);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+    CNA_STUDIO_EXPECT(fixture.context.getSelectedAsset() == fixture.textureId);
+}
+
+CNA_STUDIO_TEST(AnAssetDeletedWhileSelectedSaysSoRatherThanFallingBack)
+{
+    // Falling through to the scene settings would look exactly like the click never registered,
+    // which is the failure mode that costs somebody ten minutes of clicking the same row.
+    AssetFixture fixture;
+    StudioShell shell{StudioTheme::dark()};
+    shell.resetLayout();
+    CNA_STUDIO_EXPECT(shell.activatePanel("details"));
+
+    fixture.context.selectAsset(fixture.textureId);
+    const StudioDetailsResult shown = fixture.draw(shell, at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shown.rowsDrawn > 0);
+
+    CNA_STUDIO_EXPECT(fixture.context.getAssets().removeRecord(fixture.textureId));
+    const StudioDetailsResult gone = fixture.draw(shell, at(-1.0f, -1.0f));
+
+    // No rows: the message is not a row, and the panel is still about the asset rather than about
+    // the scene. The selection is deliberately left alone -- clearing it here would make the
+    // message flash for one frame and then vanish into the scene settings.
+    CNA_STUDIO_EXPECT_EQ(gone.rowsDrawn, std::size_t{0});
+    CNA_STUDIO_EXPECT(fixture.context.getSelectedAsset() == fixture.textureId);
+}
+
+CNA_STUDIO_TEST(AnImporterSettingIsEditedThroughTheHistoryLikeEveryOtherProperty)
+{
+    // An importer setting is persisted to a `.cnaasset` sidecar, which makes it the one edit in
+    // Studio that could plausibly have been written straight to disk. It goes through the command
+    // history like every other edit, so Ctrl+Z reaches it.
+    AssetFixture fixture;
+
+    const AssetRecord* before = fixture.context.getAssets().find(fixture.textureId);
+    CNA_STUDIO_EXPECT(before != nullptr);
+
+    auto command = std::make_unique<SetImporterSettingCommand>(
+        fixture.context.getAssets(), fixture.textureId, "generateMipmaps", PropertyValue{true});
+    CNA_STUDIO_EXPECT(command->isValid());
+    fixture.context.execute(std::move(command));
+
+    const AssetRecord* after = fixture.context.getAssets().find(fixture.textureId);
+    CNA_STUDIO_EXPECT(after != nullptr);
+    CNA_STUDIO_EXPECT(!after->importerSettings["generateMipmaps"].isNull());
+
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().canUndo());
+    fixture.context.getHistory().undo();
+    CNA_STUDIO_EXPECT(fixture.context.getAssets().find(fixture.textureId)
+                          ->importerSettings["generateMipmaps"].isNull());
+}
+
+CNA_STUDIO_TEST(TheAssetInspectorsHeadingIsActuallyVisibleAndNotPaintedOver)
+{
+    // STUDIO-35063's lesson, applied to a new panel rather than rediscovered on it. Anything
+    // described before the surface it sits on is drawn before that surface and painted over by it.
+    // It happened twice in one session -- the disclosure triangle, then the outliner's visibility
+    // toggle -- and both worked perfectly while being invisible, which is worse than missing
+    // because nothing reports it.
+    //
+    // Asserted by *rasterising*, not by reading the draw order. An ordering heuristic over emitted
+    // quads is a test of the heuristic: the first version of this case classified quads by texture
+    // coordinate and alpha, passed, and went on passing when the defect was deliberately put back.
+    // Rasterising asks the only question that matters -- are those pixels there -- and cannot be
+    // satisfied by geometry that is submitted and then covered.
+    AssetFixture fixture;
+    StudioShell shell{StudioTheme::dark()};
+    shell.resetLayout();
+    CNA_STUDIO_EXPECT(shell.activatePanel("details"));
+    fixture.context.selectAsset(fixture.textureId);
+
+    UiRect panel;
+    (void)shell.setPanelContent("details", [&](StudioFrame& frame, const UiRect& area) {
+        (void)studioDetailsPanel(frame, area, fixture.context);
+        if (frame.isDrawPass()) { panel = area; }
+    });
+
+    // Two frames and a texture table kept across them: the atlas is requested on the frame it is
+    // rasterised and never again, so a table built from the last frame alone would have no font and
+    // every glyph would draw as a solid rectangle -- which would pass this test for the wrong
+    // reason.
+    UiTextureTable textures;
+    shell.renderFrame(at(-1.0f, -1.0f));
+    textures.apply(shell.drawData());
+    shell.renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT(!panel.isEmpty());
+
+    const ImageBuffer image = rasterizeUiDrawData(
+        shell.drawData(), shell.theme().color(StudioColorRole::AppBackground), textures);
+    CNA_STUDIO_EXPECT(!image.isEmpty());
+    if (image.isEmpty()) { return; }
+
+    // The band the identity rows occupy: the top of the panel's content, two rows deep. The file
+    // name, the Path label and the Path value are all in here.
+    const int left = std::max(0, static_cast<int>(panel.x));
+    const int right = std::min(image.width, static_cast<int>(panel.right()));
+    const int top = std::max(0, static_cast<int>(panel.y));
+    const int bottom = std::min(image.height, top + 64);
+    CNA_STUDIO_EXPECT(right > left && bottom > top);
+
+    // Distinct colours in the band. A band holding text has many -- glyphs are antialiased, so a
+    // single letter contributes a dozen. A band that is nothing but the panel's own fill has one,
+    // which is exactly what "described, then painted over" looks like.
+    std::set<std::uint32_t> colours;
+    for (int y = top; y < bottom; ++y)
+    {
+        for (int x = left; x < right; ++x)
+        {
+            const std::size_t at = (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width)
+                                    + static_cast<std::size_t>(x)) * 4u;
+            colours.insert(static_cast<std::uint32_t>(image.pixels[at]) << 16
+                           | static_cast<std::uint32_t>(image.pixels[at + 1]) << 8
+                           | static_cast<std::uint32_t>(image.pixels[at + 2]));
+        }
+    }
+
+    if (colours.size() < 8)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            "the asset inspector's identity rows rasterise to " + std::to_string(colours.size())
+            + " distinct colours, which is a flat fill rather than text. The rows are being drawn "
+              "and then painted over by the surface they sit on -- describe what has to win the "
+              "click before the surface, and draw it after (plan.md STUDIO-35063).");
+    }
+    CNA_STUDIO_EXPECT(colours.size() >= 8);
 }

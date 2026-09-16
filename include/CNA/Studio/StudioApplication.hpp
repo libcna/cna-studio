@@ -268,6 +268,16 @@ namespace CNA::Studio
         std::string uiRenderer = "auto";
 
         /**
+         * @brief Select this asset by its project-relative path, for a capture or a smoke test.
+         *
+         * `STUDIO-07045`. The counterpart to `--select`, and needed for the same reason: the
+         * Details panel's asset inspector is only reachable by clicking a row in the Content
+         * Browser, and a still capture cannot click. A feature that can only be photographed by a
+         * human driving a mouse is a feature nothing regression-tests.
+         */
+        std::string selectAsset;
+
+        /**
          * @brief Run the UI render benchmark and exit, printing one row per scenario.
          *
          * `STUDIO-04028`. Empty means no; `all` runs every scenario, and any other value selects

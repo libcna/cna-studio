@@ -663,6 +663,21 @@ namespace
             context.select(wanted->getId());
         }
 
+        // `--select-asset=PATH` puts an asset in the Details panel, which is the only way a still
+        // capture can reach the asset inspector: it is opened by clicking a Content Browser row.
+        if (!options.selectAsset.empty())
+        {
+            const CNA::Studio::AssetRecord* wanted =
+                context.getAssets().findByPath(options.selectAsset);
+            if (wanted == nullptr)
+            {
+                std::cerr << "cna-studio: no asset at '" << options.selectAsset
+                          << "' in this project.\n";
+                return 2;
+            }
+            context.selectAsset(wanted->id);
+        }
+
         // What this build actually is, rather than what the UI core can say for itself.
         shell.setAboutLines({std::string{"CNA Studio "} + CNA_STUDIO_VERSION,
                              "An editor for CNA games.",
