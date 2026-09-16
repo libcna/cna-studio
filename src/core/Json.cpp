@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace CNA::Studio
 {
@@ -449,9 +450,59 @@ namespace CNA::Studio
                 out += std::to_string(static_cast<long long>(value));
                 return;
             }
-            char buffer[40];
-            std::snprintf(buffer, sizeof(buffer), "%.9g", value);
-            out += buffer;
+
+            // The **shortest** text that reads back as the same number, rather than a fixed
+            // precision (STUDIO-02042). `%.9g` round-trips every float and `%.17g` every double,
+            // and both print the noise of a binary representation rather than the number somebody
+            // authored: a `volume` of 0.6 was written as `0.600000024`, which is what every later
+            // diff of that scene then showed. Authored files are meant to be read and reviewed by
+            // people, and a number that does not look like what was typed is a number nobody
+            // trusts.
+            //
+            // A double that is exactly a float is round-tripped **as a float**, because that is
+            // what it is: everything Studio authors is a float, widened on the way into this
+            // value, and 0.6f needs one digit rather than nine to name it exactly. A double that
+            // is not exactly a float is a genuine double and keeps full precision.
+            //
+            // And shortest means shortest *text*, not fewest digits: `%.1g` of 200.5 is `2e+02`,
+            // which is wrong, but `%.1g` of 2000.5 is `2e+03`, which is a correct round-trip of
+            // nothing anybody typed. A plain decimal wins whenever one round-trips.
+            const bool exactlyAFloat =
+                std::isfinite(value) && static_cast<double>(static_cast<float>(value)) == value;
+            const int limit = exactlyAFloat ? 9 : 17;
+
+            std::string best;
+            bool bestIsScientific = true;
+            for (int precision = 1; precision <= limit; ++precision)
+            {
+                char buffer[40] = {};
+                std::snprintf(buffer, sizeof(buffer), "%.*g", precision, value);
+
+                const bool roundTrips =
+                    exactlyAFloat ? std::strtof(buffer, nullptr) == static_cast<float>(value)
+                                  : std::strtod(buffer, nullptr) == value;
+                if (!roundTrips) { continue; }
+
+                const bool scientific = std::strchr(buffer, 'e') != nullptr;
+                const std::string candidate{buffer};
+                if (best.empty() || (bestIsScientific && !scientific)
+                    || (bestIsScientific == scientific && candidate.size() < best.size()))
+                {
+                    best = candidate;
+                    bestIsScientific = scientific;
+                }
+            }
+
+            if (best.empty())
+            {
+                // An infinity or a NaN, neither of which is valid JSON. Written as the C library
+                // names them rather than silently turned into a number: a file with `nan` in it is
+                // rejected loudly by the next reader, which is what should happen.
+                char buffer[40] = {};
+                std::snprintf(buffer, sizeof(buffer), "%g", value);
+                best = buffer;
+            }
+            out += best;
         }
 
         void writeValue(std::string& out, const JsonValue& value, bool pretty, int depth)

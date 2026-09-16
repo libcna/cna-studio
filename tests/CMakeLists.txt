@@ -7,6 +7,7 @@
 add_executable(cna-studio-tests
     TestMain.cpp
     CoreTests.cpp
+    NumberTextTests.cpp
     SceneTests.cpp
     CommandTests.cpp
     ProjectAndAssetTests.cpp

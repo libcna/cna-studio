@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Core/PropertyValue.hpp"
 
+#include "CNA/Studio/Core/NumberText.hpp"
+
 #include <array>
 #include <cstdio>
 
@@ -57,9 +59,11 @@ namespace CNA::Studio
 
         std::string formatFloat(float value)
         {
-            char buffer[32];
-            std::snprintf(buffer, sizeof(buffer), "%g", static_cast<double>(value));
-            return buffer;
+            // `%g`'s six significant digits used to be enough here because this is a summary
+            // rather than a field -- and they are not: `33.3333` does not name the float
+            // `33.333332`, so a value shown read-only and a value shown in a field described the
+            // same number differently (STUDIO-35037).
+            return studioFormatFloat(value);
         }
     }
 

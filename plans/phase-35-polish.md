@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 13 of 37 complete `████░░░░░░░░`
+**Progress:** 14 of 38 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -59,6 +59,7 @@ truth rather than any one product's expression of it.
 | `STUDIO-35032` | Vector fields with always-visible axis letters in the gizmo's own colours | ✅ | — |
 | `STUDIO-35033` | Property grid alignment: label column, value column, nesting, reset markers | ⬜ | `STUDIO-35032` |
 | `STUDIO-35036` | Every primitive the draw list emits names a texture a backend can resolve | ✅ | — |
+| `STUDIO-35037` | A float field shows the number that was typed, not its binary representation | ✅ | — |
 | `STUDIO-35034` | Entity and asset reference fields that show what they point at | ⬜ | `STUDIO-35033` |
 | `STUDIO-35035` | Multi-selection state in the Details panel | ⬜ | `STUDIO-35033` |
 | `STUDIO-35040` | Content Browser card grid, with a list/grid switch | ✅ | `STUDIO-35030` |
@@ -223,6 +224,35 @@ work is — which projection, then what a drag does, then what it does it in, th
 **And it is measured before it is drawn.** A viewport too small for the strip gets none rather than
 a clipped one: the buttons a clipped toolbar did draw are still clickable, which is worse than no
 toolbar at all.
+
+### `STUDIO-35037` — A float field shows the number that was typed
+
+**Acceptance.** A property whose value is `0.6` reads `0.6`, in an editable field and in a
+read-only summary alike, and the text shown always parses back to the identical float — so a field
+nobody touches cannot drift. A plain decimal is preferred to shorter scientific notation.
+
+**Verification.** `NumberTextTests.cpp`, and a 1400×900 capture of the Details panel over an audio
+source with a volume of 0.6, a pan of -0.25 and a pitch of 0.1.
+
+**Found by looking at the panel**, not by reading the code. Verifying `STUDIO-07044` needed an
+entity with an audio source on it, and the first one written had a volume of 0.6 — which the
+Details panel showed as **`0.600000024`**, beside a pitch of `0.100000001`. Every value in the
+example project happens to be exactly representable (positions of 200, scales of 1), which is why
+a panel that has been captured at five resolutions in both themes had never shown it.
+
+`%.9g` is the precision that round-trips every binary32, which is why it was chosen. Nine
+significant digits of a float are nine digits of its *binary representation*, and the last three of
+them are noise. `PropertyValue::toString` had the same mistake in the other direction — `%g`'s six
+digits print `33.3333` for a float that is `33.333332`, so the summary named a different number
+from the field. Both are `studioFormatFloat` now: the shortest decimal that reads back as the same
+float.
+
+**And "shortest" turned out to be the wrong question on its own.** The first implementation
+answered 200 with `2e+02`, which is two characters shorter and reads back exactly — so the Position
+fields, which had been right all along, started showing scientific notation. A plain decimal wins
+whenever one round-trips; scientific notation is left to the values that have no other form.
+
+The same defect is in the *file* as well as on the screen, which is `STUDIO-02042`.
 
 ### `STUDIO-35036` — Every primitive names a resolvable texture
 

@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 32 of 38 complete `███████░░░░░`
+**Progress:** 33 of 39 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,6 +31,7 @@
 | `STUDIO-02039` | Guard test: no two public headers define the same type in one namespace | ✅ | — |
 | `STUDIO-02040` | Define the target-profile model: OS, platform, architecture, renderer, configuration, features | ✅ | `STUDIO-02020` |
 | `STUDIO-02041` | Separate the Studio host renderer from the game target renderer throughout | ✅ | `STUDIO-02040` |
+| `STUDIO-02042` | Authored numbers are written as the shortest text that reads back unchanged | ✅ | — |
 | `STUDIO-02050` | Define the service decomposition of the application shell | ✅ | — |
 | `STUDIO-02054` | Extract `StudioPlayService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
 | `STUDIO-02055` | Extract `StudioBuildService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
@@ -158,6 +159,24 @@ start buries its own point when padded with things that are not the reason
 ### `STUDIO-02037` — Guard test: authored files are byte-deterministic across repeated saves
 
 **Acceptance.** Saving the same document twice produces identical bytes; ordering is stable and no timestamps leak
+
+### `STUDIO-02042` — Authored numbers are written as the shortest text that reads back unchanged
+
+**Acceptance.** A scene, project or asset file holds the number that was authored: `0.6`, not
+`0.600000024`. The text read back produces the identical float, and a value that is genuinely a
+double rather than a float widened on the way in keeps full precision. Whole numbers stay whole,
+and a plain decimal is preferred to shorter scientific notation.
+
+**Verification.** `NumberTextTests.cpp`: round-trip and shortest-form cases over a table including
+the values that exposed this, an end-to-end assertion on a serialised scene, and
+`JsonAndTheFieldsAgreeAboutEveryFloat`, which holds the writer to the same rule the property grid
+uses. The two are separate implementations because `src/core/Json.cpp` is embedded verbatim into
+exported games and may include nothing but the standard library.
+
+**Found by**, rather than planned: putting a volume of `0.6` on an audio source while verifying
+`STUDIO-07044` and looking at the panel. `%.9g` is the precision that round-trips every binary32,
+which is why it was chosen — and nine significant digits of a float are nine digits of its binary
+representation.
 
 ### `STUDIO-02038` — Legacy renderer-name migration for projects written by the prototype
 

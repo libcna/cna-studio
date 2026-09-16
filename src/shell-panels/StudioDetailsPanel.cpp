@@ -10,6 +10,7 @@
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Core/NumberText.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
@@ -41,15 +42,15 @@ namespace CNA::Studio
          * @brief Formats a float the way a person would type it back.
          *
          * Not `%f`: a position of 3 should read "3", not "3.000000", and a scale of 0.5 should not
-         * read "0.500000" in a field somebody is about to edit. `%g` with enough significant
-         * figures round-trips a float without printing the noise of its binary representation.
+         * read "0.500000" in a field somebody is about to edit.
+         *
+         * And not `%.9g`, which is what this was and which is the same mistake one step further
+         * along (STUDIO-35037). Nine significant digits round-trip every float, and nine
+         * significant digits of a float are nine digits of its *binary representation*: a Volume
+         * set to 0.6 read as `0.600000024`. `studioFormatFloat` finds the shortest text that reads
+         * back as the same float, which is `0.6`.
          */
-        std::string formatFloat(float value)
-        {
-            char buffer[32] = {};
-            std::snprintf(buffer, sizeof(buffer), "%.9g", static_cast<double>(value));
-            return buffer;
-        }
+        std::string formatFloat(float value) { return studioFormatFloat(value); }
 
         /**
          * @brief Parses a float, refusing anything with characters left over.

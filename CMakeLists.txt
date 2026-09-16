@@ -92,6 +92,7 @@ add_library(cna-studio-core STATIC
     src/core/FormatMigration.cpp
     src/core/ImageDiff.cpp
     src/core/MeshData.cpp
+    src/core/NumberText.cpp
     src/core/StudioMatrix.cpp
     src/core/UserPaths.cpp)
 target_link_libraries(cna-studio-core PUBLIC cna-studio-settings)
