@@ -237,6 +237,17 @@ namespace CNA::Studio
          */
         bool screenshotTooFlat = false;
 
+        /**
+         * @brief Where the UI benchmark's cost model first disagreed with the render backend.
+         *
+         * `STUDIO-04028`. Empty when they agreed, which is the only acceptable answer: the model
+         * is what `--ui-benchmark` reports and what `STUDIO-04027` decides a renderer's fate on,
+         * and it runs with no device, so this is the only place it meets the thing it models.
+         * Checked on every frame of a run that has a frame limit -- a capture or a smoke test --
+         * and on none of an interactive session's.
+         */
+        std::string costModelMismatch;
+
         /** @brief The CNA renderer the session ran on. */
         std::string renderer;
 

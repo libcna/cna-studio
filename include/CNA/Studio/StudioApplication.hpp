@@ -268,6 +268,25 @@ namespace CNA::Studio
         std::string uiRenderer = "auto";
 
         /**
+         * @brief Run the UI render benchmark and exit, printing one row per scenario.
+         *
+         * `STUDIO-04028`. Empty means no; `all` runs every scenario, and any other value selects
+         * the scenarios whose names contain it. On the command line rather than only in a test
+         * because the number is for *comparing two runs* -- before and after a change, on two
+         * machines, on two renderers -- and a measurement reachable only from a test binary is one
+         * nobody takes twice.
+         */
+        std::string uiBenchmark;
+
+        /**
+         * @brief Frames per benchmark scenario.
+         *
+         * Enough that the timing is not one sample, and not so many that running the whole set
+         * becomes something people skip.
+         */
+        int uiBenchmarkFrames = 120;
+
+        /**
          * @brief Export the opened project as a standalone CNA game into this directory, and exit.
          *
          * On the command line because the invariant it serves has to be *provable* by a script:

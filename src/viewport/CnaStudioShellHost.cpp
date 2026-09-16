@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/Viewport/CnaStudioShellHost.hpp"
 
+#include "CNA/Studio/UiCore/StudioUiBenchmark.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -260,6 +262,9 @@ namespace CNA::Studio
 
             /** @brief Whether the capture was refused for holding too few colours. */
             [[nodiscard]] bool screenshotTooFlat() const { return screenshotTooFlat_; }
+
+            /** @brief Where the benchmark's cost model first disagreed with the backend. */
+            [[nodiscard]] const std::string& costModelMismatch() const { return costModelMismatch_; }
             [[nodiscard]] bool viewportComposited() const { return viewportComposited_; }
             [[nodiscard]] const StudioHostEvaluation& capabilities() const { return capabilities_; }
             [[nodiscard]] const std::vector<std::string>& invoked() const { return invoked_; }
@@ -590,6 +595,8 @@ namespace CNA::Studio
                     drawCalls_ += stats.drawCalls;
                     triangles_ += stats.triangles;
 
+                    checkCostModelAgrees(stats);
+
                     // Reported to the Diagnostics panel per frame rather than accumulated there:
                     // "how heavy is a frame" is the question, and a running total answers a
                     // different one.
@@ -606,6 +613,64 @@ namespace CNA::Studio
             }
 
         private:
+            /**
+             * @brief Requires `studioUiFrameCost` to predict what the backend just reported.
+             *
+             * `STUDIO-04028`. The benchmark's cost model is a second implementation of both
+             * backends' inner loops, written against the draw data so that it runs with no CNA and
+             * no GPU — which is what makes it useful and what makes it capable of being quietly
+             * wrong. Checked here, against the real renderer, on a real device, on every frame of
+             * every automated run: a model nobody compared with reality is a second implementation
+             * with no tests, and the number it produces is what `STUDIO-04027` decides on.
+             *
+             * Only while a frame limit is set, which is what a capture or a smoke test has and an
+             * interactive session does not. The pass is cheap — one walk of the commands — but an
+             * editor should not spend any of a user's frame checking its own benchmark.
+             *
+             * The first disagreement is kept rather than the last: after one, the rest are
+             * consequences, and a report naming the final frame sends the reader to the wrong one.
+             *
+             * @param stats What the backend reported for the frame just drawn.
+             */
+            void checkCostModelAgrees(const UiRenderStats& stats)
+            {
+                if (options_.frameLimit <= 0 || !costModelMismatch_.empty()) { return; }
+
+                if (!studioUiGpuVertexStrideMatches())
+                {
+                    costModelMismatch_ =
+                        "the GPU vertex stride: CNA's vertex declaration no longer names "
+                        + std::to_string(kStudioUiGpuVertexBytes)
+                        + " bytes, so every GPU byte count --ui-benchmark reports is wrong";
+                    return;
+                }
+
+                const StudioUiFrameCost predicted = studioUiFrameCost(shell_->drawData());
+                const bool modern = renderer_->name() == "modern";
+                const std::size_t predictedBytes =
+                    modern ? predicted.modernSubmittedBytes : predicted.classicSubmittedBytes;
+
+                const auto disagree = [this](std::string_view what, std::size_t model,
+                                             std::size_t reported) {
+                    if (model == reported) { return; }
+                    if (!costModelMismatch_.empty()) { return; }
+                    costModelMismatch_ = std::string{what} + ": the cost model says "
+                                       + std::to_string(model) + ", the "
+                                       + std::string{renderer_->name()} + " backend reported "
+                                       + std::to_string(reported)
+                                       + " (frame " + std::to_string(frames_) + ")";
+                };
+
+                disagree("draw calls", predicted.drawCalls, stats.drawCalls);
+                disagree("triangles", predicted.triangles, stats.triangles);
+                disagree("vertices", predicted.vertices, stats.vertices);
+                disagree("indices", predicted.indices, stats.indices);
+                disagree("clipped-away commands", predicted.clippedAway, stats.clippedAway);
+                disagree("texture changes", predicted.textureChanges, stats.textureChanges);
+                disagree("clip changes", predicted.clipChanges, stats.clipChanges);
+                disagree("geometry bytes uploaded", predictedBytes, stats.geometryBytesUploaded);
+            }
+
             /**
              * @brief Renders the scene into an offscreen target and hands it to the shell.
              *
@@ -759,6 +824,10 @@ namespace CNA::Studio
             bool screenshotAttempted_ = false;
             bool screenshotWritten_ = false;
             bool screenshotTooFlat_ = false;
+
+            /** @brief The first frame on which the benchmark's cost model and the backend
+             *         disagreed, or empty. See `checkCostModelAgrees`. */
+            std::string costModelMismatch_;
             bool viewportComposited_ = false;
             std::unique_ptr<StudioContext> context_;
             StudioLog log_;
@@ -807,6 +876,7 @@ namespace CNA::Studio
         result.displayHeight = game.displayHeight();
         result.screenshotWritten = game.screenshotWritten();
         result.screenshotTooFlat = game.screenshotTooFlat();
+        result.costModelMismatch = game.costModelMismatch();
         result.capabilityReport = game.capabilities().report();
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();

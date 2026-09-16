@@ -10,7 +10,7 @@
 > that section before reading the table: several tasks were ✅ against a classic XNA implementation
 > in a phase named for the modern one, and the corrections are recorded rather than quietly applied.
 
-**Progress:** 22 of 29 complete `████████░░░░`
+**Progress:** 24 of 29 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -29,7 +29,7 @@
 | `STUDIO-04013` | Screenshot and readback support for visual testing | ✅ | — |
 | `STUDIO-04014` | Rounded rectangles, borders and separators as first-class primitives | ✅ | `STUDIO-04002` |
 | `STUDIO-04015` | Per-renderer smoke test: draw a reference panel and assert non-empty output | 🔄 | `STUDIO-04013` |
-| `STUDIO-04029` | Make `OPENGL4` under Xvfb a second tested configuration in CI | ⬜ | `STUDIO-04026` |
+| `STUDIO-04029` | Make `OPENGL4` under Xvfb a second tested configuration in CI | ✅ | `STUDIO-04026` |
 | `STUDIO-04016` | Cull geometry that lies entirely outside the clip in force | ✅ | `STUDIO-04004` |
 | `STUDIO-04017` | Upload only the changed region of the atlas | ✅ | `STUDIO-04005` |
 | `STUDIO-04018` | Grow or evict when the glyph atlas fills | ✅ | `STUDIO-04005` |
@@ -42,7 +42,7 @@
 | `STUDIO-04025` | A/B verification: both backends draw the same frame | ✅ | `STUDIO-04024` |
 | `STUDIO-04026` | Default the native host to the modern backend | ✅ | `STUDIO-04025` |
 | `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04026` |
-| `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ⬜ | `STUDIO-04001` |
+| `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ✅ | `STUDIO-04001` |
 
 ## Acceptance and verification
 
@@ -153,6 +153,44 @@ a large content browser, a details panel with many properties, typing, atlas gro
 reporting CPU generation time, upload bytes, vertex and index counts, draw calls, texture changes
 and clip changes. Run before and after the migration, so "the modern renderer is not slower" is a
 number rather than an impression.
+
+**Done.** `cna-studio --ui-benchmark`, eight scenarios, all seven frame shapes above covered. The
+result and the reasoning are in `docs/UI-RENDER-PATH.md` ("What the two backends actually cost").
+
+**The headline: the classic backend puts 17–18× as much geometry on the bus, on every shape of
+frame measured.** Structural rather than incidental — `DrawUserIndexedPrimitives` takes user arrays
+and the driver copies them per call, and the array a command is handed runs from its base vertex to
+the end of its list, which in any list under 65 535 vertices is the whole array. The ratio is
+roughly the draw-call count and grows as the UI is batched more finely, which is the direction every
+added panel pushes it. That is what `STUDIO-04027` now decides on.
+
+**It needs no CNA, no GPU and no window.** Every figure is computed from the `UiDrawData` both
+backends are handed, so it runs on every push rather than only in the hour-long CNA job — a
+benchmark that only runs in the expensive configuration is a benchmark nobody runs.
+
+**What it does not measure is GPU time**, deliberately. A driver's answer to the same submission
+varies by vendor; the question here is whether one backend submits more work than the other, which
+is a property of Studio rather than of Mesa.
+
+**The model is held to account by the thing it models.** It is a second implementation of both
+inner loops and can therefore be quietly wrong, so `CnaStudioShellHost` recomputes it against the
+backend's own counters on every frame of every run that carries a frame limit — every capture, every
+CTest smoke test, both CNA legs of CI, and no interactive session. A disagreement fails the process
+naming the field, both numbers and the frame. Verified by making the model wrong on purpose.
+
+**Three things it found that it was not looking for.**
+
+- **`CnaUiRenderer` had been reporting zero upload bytes.** The field existed, the modern backend
+  filled it in, and the classic one never touched it — so every comparison of the two was a number
+  against a zero, which reads as "the classic path uploads nothing" rather than "nobody counted".
+  Fixing that is what made the 17× measurable.
+- **A UI vertex is 56 bytes for 20 bytes of data** — `CNA::Color` alone is 24, because it carries a
+  vtable. Found by a `static_assert` refusing the estimate of 32 that had been written down.
+  `docs/CNA-GAPS.md` G-11. The benchmark reports what is handed to CNA and what reaches the bus
+  separately, because they are 2.3× apart and only one of them is the bus.
+- **The World Outliner is O(n²) in scene size**, and the Content Browser costs 23 ms a frame at
+  1 500 assets. `STUDIO-30013` and `STUDIO-30014`. Neither is a rendering problem and neither would
+  be visible in a screenshot, which is the argument for reporting CPU time beside the counts.
 
 ### `STUDIO-04001` — Create the `cna-studio-ui-renderer` module inside the CNA-linking boundary
 
@@ -586,3 +624,26 @@ and configures from a plain CNA checkout with `libgl1-mesa-dev` alone.
 
 **Why this is the most valuable test task in the phase.** Until now Studio's only automated renderer
 was the one renderer its intended UI path cannot run on at all.
+
+**Done.** The `cna` job is a matrix over `SOFTWARE` and `OPENGL4` rather than a second job, so the
+twenty-odd steps of checkout, submodules, dependencies and export cannot drift between the two.
+`fail-fast: false`, because which renderer failed is the interesting half of the answer.
+
+**With an assertion, because a silent fallback would be a green tick over nothing.** The OPENGL4 leg
+exists to cover the *modern* UI render backend; a host that quietly fell back to the classic one
+would produce an identical pass while covering exactly what `SOFTWARE` already covers — the failure
+this job was added to close. So the leg reads `--host-capabilities` and fails unless the backend it
+names is the one that leg is for. **Both** legs are asserted, not only the new one: `SOFTWARE`
+reporting `modern` would mean the capability report is claiming a shader path a CPU rasteriser does
+not have, which is the class of defect `STUDIO-02070` exists for.
+
+**Two details that would each have made it pass while proving nothing.** The job must not set
+`SDL_VIDEODRIVER` — how a windowed case gets a surface is decided per test in `tests/CMakeLists`
+from the renderer, and a job-level `dummy` wins over the per-test `DISPLAY` and aborts an OPENGL4
+run with a message about SDL rather than about the test. And `CNA_CNAEXT` must be `ON`, because it
+is what decides whether the host reports the modern graphics API at all; off, the OPENGL4 leg would
+build, pass, and exercise the classic path it exists to stop being the only one tested.
+
+**Measured on this machine before it was written**, end to end under `xvfb-run --server-num=99`:
+79 CTest suites, 0 failures, including `CnaStudioUiRenderBackendsAgree` — which only a renderer that
+can run both backends can declare at all.

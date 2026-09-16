@@ -66,6 +66,7 @@ add_executable(cna-studio-tests
     StudioViewportPanelTests.cpp
     ArchitectureGuardTests.cpp
     ServiceBoundaryGuardTests.cpp
+    StudioUiBenchmarkTests.cpp
     StudioInteractionTests.cpp
     PlayerTests.cpp
     ViewportTests.cpp)

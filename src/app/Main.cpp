@@ -8,8 +8,12 @@
  * toolkit, under the null UI in CI, and under a future Qt implementation.
  */
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <functional>
+#include <iomanip>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -21,12 +25,14 @@
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioApplication.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioDrawList.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 #include "CNA/Studio/UiCore/StudioShellLayout.hpp"
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
+#include "CNA/Studio/UiCore/StudioUiBenchmark.hpp"
 #include "CNA/Studio/UiCore/StudioWorkspaceStore.hpp"
 #include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 #include "CNA/Studio/RuntimeBridge/BackendComparison.hpp"
@@ -232,6 +238,358 @@ namespace
      * @param options Parsed command line.
      * @return Process exit code.
      */
+    /**
+     * @brief One benchmark scenario: a name, a setup, and what each frame feeds the shell.
+     *
+     * `STUDIO-04028`. A scenario is a *shape of frame* rather than a screenshot: the question is
+     * what a real Studio frame costs a render backend, and the answers differ by an order of
+     * magnitude between an idle shell and a scrolling outliner over a large scene.
+     */
+    struct UiBenchmarkScenario
+    {
+        std::string name;
+        std::string what;
+
+        /** @brief Which panel this scenario is about. Raised before the timed frames, and the
+         *         run refuses if it cannot be: a scenario that quietly measured whichever panel
+         *         happened to be on top would be a number about the default layout. */
+        std::string panel;
+
+        /** @brief Arranges the document before the timed frames. */
+        std::function<void(CNA::Studio::StudioShell&, CNA::Studio::StudioContext&)> setUp;
+
+        /**
+         * @brief Adjusts the input for frame @p index, so a scenario can type, scroll or resize.
+         * @return The input for that frame.
+         */
+        std::function<CNA::Studio::UiInputState(CNA::Studio::UiInputState, int)> driveFrame;
+    };
+
+    /** @brief What one scenario measured. */
+    struct UiBenchmarkRow
+    {
+        std::string name;
+        std::string what;
+        int frames = 0;
+        CNA::Studio::StudioUiFrameCost total;
+        double medianMicroseconds = 0.0;
+        double minMicroseconds = 0.0;
+    };
+
+    /** @brief Adds @p count entities to @p scene under a shallow hierarchy. */
+    void fillScene(CNA::Studio::SceneDocument& scene, int count)
+    {
+        CNA::Studio::Uuid parent;
+        for (int i = 0; i < count; ++i)
+        {
+            CNA::Studio::StudioEntity entity{CNA::Studio::Uuid::generate(),
+                                             "Entity " + std::to_string(i)};
+            // Every eighth entity starts a new branch, so the outliner has real depth and real
+            // indent guides rather than one flat list -- which is cheaper to draw and would make
+            // the number flattering.
+            if (i % 8 != 0) { entity.setParentId(parent); }
+            const CNA::Studio::Uuid id = entity.getId();
+            scene.addEntity(std::move(entity));
+            if (i % 8 == 0) { parent = id; }
+        }
+    }
+
+    /** @brief Adds @p count assets to @p assets, spread across the kinds the grid has icons for. */
+    void fillAssets(CNA::Studio::AssetDatabase& assets, int count)
+    {
+        static const char* const kKinds[] = {".png", ".ogg", ".gltf", ".cnascene", ".cnaprefab",
+                                             ".ttf", ".frag", ".txt"};
+        for (int i = 0; i < count; ++i)
+        {
+            CNA::Studio::AssetRecord record;
+            record.id = CNA::Studio::Uuid::generate();
+            // Across folders, because the grid's breadcrumb and its per-folder culling are both
+            // part of what a large content browser costs and a flat directory exercises neither.
+            record.sourcePath = "Content/Folder" + std::to_string(i % 12) + "/asset"
+                              + std::to_string(i) + kKinds[static_cast<std::size_t>(i) % 8];
+            record.type = CNA::Studio::AssetDatabase::guessTypeFromExtension(record.sourcePath);
+            record.importerId = CNA::Studio::AssetDatabase::defaultImporterFor(record.type);
+            (void)assets.add(std::move(record));
+        }
+    }
+
+    /** @brief The scenarios, in the order they are reported. */
+    std::vector<UiBenchmarkScenario> uiBenchmarkScenarios(const CNA::Studio::StudioOptions& options)
+    {
+        using CNA::Studio::StudioContext;
+        using CNA::Studio::StudioShell;
+        using CNA::Studio::UiInputState;
+
+        std::vector<UiBenchmarkScenario> scenarios;
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "baseline", "the shell as it opens -- the floor every other row is read against",
+            "", [](StudioShell&, StudioContext&) {}, {}});
+        scenarios.push_back(UiBenchmarkScenario{
+            "outliner-2000", "a 2000-entity scene with the World Outliner raised",
+            "outliner",
+            [](StudioShell&, StudioContext& context) { fillScene(context.getScene(), 2000); },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "outliner-scrolling", "the same scene, scrolled a notch every frame",
+            "outliner",
+            [](StudioShell&, StudioContext& context) { fillScene(context.getScene(), 2000); },
+            [](UiInputState input, int frame) {
+                // Over the outliner, which is where the wheel has to be for the scroll to land.
+                input.mouseX = 160.0f;
+                input.mouseY = 300.0f;
+                input.mouseInWindow = true;
+                input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
+                return input;
+            }});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "content-grid", "1500 assets in the Content Browser's card grid",
+            "content",
+            [](StudioShell&, StudioContext& context) { fillAssets(context.getAssets(), 1500); },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "details-components", "an entity carrying eight components, in the Details panel",
+            "details",
+            [](StudioShell&, StudioContext& context) {
+                CNA::Studio::StudioEntity entity{CNA::Studio::Uuid::generate(), "Heavy"};
+                for (const char* kind : {"Transform", "SpriteRenderer", "Camera", "AudioSource",
+                                         "Rigidbody", "Collider", "Light", "Script"})
+                {
+                    CNA::Studio::StudioComponent component{kind};
+                    component.setProperty("enabled", CNA::Studio::PropertyValue{true});
+                    component.setProperty("name", CNA::Studio::PropertyValue{std::string{kind}});
+                    component.setProperty("weight", CNA::Studio::PropertyValue{1.5f});
+                    entity.addComponent(std::move(component));
+                }
+                const CNA::Studio::Uuid id = entity.getId();
+                context.getScene().addEntity(std::move(entity));
+                context.select(id);
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "keystrokes", "a character a frame with the Output Log raised and nothing focused "
+                          "-- the routing cost, which every frame of real typing also pays",
+            "output", [](StudioShell&, StudioContext&) {},
+            [](UiInputState input, int frame) {
+                input.characters.push_back(
+                    static_cast<char16_t>(u'a' + static_cast<char16_t>(frame % 26)));
+                return input;
+            }});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "atlas-growth", "text drawn in glyphs the atlas has not rasterised yet",
+            "outliner",
+            [](StudioShell&, StudioContext& context) {
+                // Latin, Greek and Cyrillic: the three scripts the shipped faces actually carry,
+                // so this exercises atlas growth rather than the replacement box.
+                static const char* const kScripts[] = {
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz",
+                    "\xce\x91\xce\x92\xce\x93\xce\x94\xce\x95\xce\x96\xce\x97\xce\x98",
+                    "\xd0\x90\xd0\x91\xd0\x92\xd0\x93\xd0\x94\xd0\x95\xd0\x96\xd0\x97",
+                    "0123456789!@#$%^&*()[]{}<>?/\\|~`"};
+                for (int i = 0; i < 120; ++i)
+                {
+                    CNA::Studio::StudioEntity entity{
+                        CNA::Studio::Uuid::generate(),
+                        std::string{kScripts[static_cast<std::size_t>(i) % 5]} + std::to_string(i)};
+                    context.getScene().addEntity(std::move(entity));
+                }
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "resize", "the window changing size every frame, which relayouts everything",
+            "outliner",
+            [](StudioShell&, StudioContext& context) { fillScene(context.getScene(), 300); },
+            [](UiInputState input, int frame) {
+                // A sweep rather than an alternation between two sizes, which any cache keyed on
+                // the last size would answer for free.
+                input.displayWidth = 1280.0f + static_cast<float>(frame % 64) * 10.0f;
+                input.displayHeight = 720.0f + static_cast<float>(frame % 48) * 8.0f;
+                return input;
+            }});
+
+        if (options.uiBenchmark.empty() || options.uiBenchmark == "all") { return scenarios; }
+
+        std::vector<UiBenchmarkScenario> selected;
+        for (UiBenchmarkScenario& scenario : scenarios)
+        {
+            if (scenario.name.find(options.uiBenchmark) != std::string::npos)
+            {
+                selected.push_back(std::move(scenario));
+            }
+        }
+        return selected;
+    }
+
+    /**
+     * @brief Runs the UI render benchmark and prints one row per scenario.
+     *
+     * `STUDIO-04028`. Needs no CNA, no GPU and no window, which is the point: a benchmark that
+     * only runs in the expensive CNA job is a benchmark nobody runs. What it measures is what each
+     * backend *asks the device to do* rather than how long the device takes -- see
+     * `StudioUiBenchmark.hpp` for why that is the right unit for the question `STUDIO-04027` asks.
+     *
+     * @param options Parsed command line.
+     * @return Process exit code: 0 measured; 2 the selection matched no scenario.
+     */
+    int runUiBenchmark(const CNA::Studio::StudioOptions& options)
+    {
+        const std::vector<UiBenchmarkScenario> scenarios = uiBenchmarkScenarios(options);
+        if (scenarios.empty())
+        {
+            std::cerr << "cna-studio: --ui-benchmark=" << options.uiBenchmark
+                      << " matched no scenario.\n";
+            return 2;
+        }
+
+        std::vector<UiBenchmarkRow> rows;
+        for (const UiBenchmarkScenario& scenario : scenarios)
+        {
+            // A fresh shell per scenario. Sharing one would carry the previous scenario's atlas,
+            // retained widget state and scroll offsets into the next, and the atlas alone would
+            // make whichever scenario ran second look free.
+            CNA::Studio::StudioTheme theme = CNA::Studio::StudioTheme::dark();
+            CNA::Studio::StudioShell shell{theme};
+            CNA::Studio::StudioContext context;
+            CNA::Studio::StudioLog log;
+            context.setLogSink([&log](CNA::Studio::LogSeverity severity, const std::string& message) {
+                log.append(severity, message);
+            });
+
+            if (!options.projectPath.empty() && !context.openProject(options.projectPath))
+            {
+                std::cerr << "cna-studio: could not open '" << options.projectPath << "'.\n";
+                return 2;
+            }
+
+            (void)CNA::Studio::bindStudioShellActions(shell, context, log);
+            CNA::Studio::StudioShellPanels panels{shell, context, log};
+            panels.poll(0.0);
+
+            if (scenario.setUp) { scenario.setUp(shell, context); }
+
+            // Raised, and refused loudly when it cannot be. A scenario named after a panel that
+            // silently measured whichever one the default layout puts on top would be a number
+            // about the layout -- and it would keep being one after the panel was renamed. This
+            // project has been here before: `--shell-invoke` read the return of `find()` and threw
+            // away the return of `invoke()`, and a whole session went looking for a tool overlay
+            // that had simply never been armed.
+            if (!scenario.panel.empty() && !shell.activatePanel(scenario.panel))
+            {
+                std::cerr << "cna-studio: scenario '" << scenario.name << "' wants the '"
+                          << scenario.panel << "' panel and this shell has no such panel open.\n";
+                return 2;
+            }
+
+            CNA::Studio::UiInputState base;
+            base.displayWidth = static_cast<float>(options.shellPreviewWidth);
+            base.displayHeight = static_cast<float>(options.shellPreviewHeight);
+            base.mouseInWindow = false;
+            base.mouseX = -1.0f;
+            base.mouseY = -1.0f;
+
+            // One untimed frame first. The first frame of any shell rasterises the whole font
+            // atlas and builds every retained-state entry, so timing it would measure start-up and
+            // report it as the steady-state cost of drawing a panel.
+            shell.renderFrame(base);
+
+            UiBenchmarkRow row;
+            row.name = scenario.name;
+            row.what = scenario.what;
+            row.frames = options.uiBenchmarkFrames;
+
+            std::vector<double> samples;
+            samples.reserve(static_cast<std::size_t>(options.uiBenchmarkFrames));
+
+            for (int frame = 0; frame < options.uiBenchmarkFrames; ++frame)
+            {
+                CNA::Studio::UiInputState input = base;
+                if (scenario.driveFrame) { input = scenario.driveFrame(input, frame); }
+
+                const auto start = std::chrono::steady_clock::now();
+                shell.renderFrame(input);
+                const auto finish = std::chrono::steady_clock::now();
+
+                samples.push_back(
+                    std::chrono::duration<double, std::micro>(finish - start).count());
+                CNA::Studio::studioUiAccumulateCost(
+                    row.total, CNA::Studio::studioUiFrameCost(shell.drawData()));
+            }
+
+            // Median rather than mean, and the minimum beside it. A scheduler preemption in one
+            // frame moves a mean and cannot move a median, and the minimum is the closest thing to
+            // "what this costs when nothing else is happening" that a shared machine can report.
+            std::sort(samples.begin(), samples.end());
+            row.medianMicroseconds = samples[samples.size() / 2];
+            row.minMicroseconds = samples.front();
+            rows.push_back(std::move(row));
+        }
+
+        std::cout << "cna-studio: UI render benchmark (STUDIO-04028), "
+                  << options.uiBenchmarkFrames << " frames per scenario at "
+                  << options.shellPreviewWidth << "x" << options.shellPreviewHeight << "\n"
+                  << "Per frame. 'classic KB' and 'modern KB' are the geometry bytes each UI "
+                     "render backend\nputs on the bus for the same frame -- what is submitted, "
+                     "not how long a GPU takes.\n\n";
+
+        std::cout << std::left << std::setw(20) << "scenario" << std::right
+                  << std::setw(10) << "us(med)" << std::setw(10) << "us(min)"
+                  << std::setw(10) << "draws" << std::setw(10) << "verts"
+                  << std::setw(9) << "tex" << std::setw(9) << "clip"
+                  << std::setw(12) << "classic KB" << std::setw(11) << "modern KB"
+                  << std::setw(8) << "ratio" << "\n";
+        std::cout << std::string(109, '-') << "\n";
+
+        for (const UiBenchmarkRow& row : rows)
+        {
+            const double frames = static_cast<double>(row.frames);
+            const double classicKb = static_cast<double>(row.total.classicGpuBytes) / frames / 1024.0;
+            const double modernKb = static_cast<double>(row.total.modernGpuBytes) / frames / 1024.0;
+
+            std::cout << std::left << std::setw(20) << row.name << std::right
+                      << std::setw(10) << std::fixed << std::setprecision(1) << row.medianMicroseconds
+                      << std::setw(10) << row.minMicroseconds
+                      << std::setw(10) << static_cast<double>(row.total.drawCalls) / frames
+                      << std::setw(10) << static_cast<double>(row.total.vertices) / frames
+                      << std::setw(9) << static_cast<double>(row.total.textureChanges) / frames
+                      << std::setw(9) << static_cast<double>(row.total.clipChanges) / frames
+                      << std::setw(12) << classicKb
+                      << std::setw(11) << modernKb
+                      << std::setw(7) << std::setprecision(2)
+                      << (modernKb > 0.0 ? classicKb / modernKb : 0.0) << "x"
+                      << "\n";
+        }
+
+        std::cout << "\n";
+        for (const UiBenchmarkRow& row : rows)
+        {
+            std::cout << "  " << row.name << " -- " << row.what << "\n";
+            if (row.total.texturesCreated + row.total.texturesUpdated > 0)
+            {
+                std::cout << "      " << row.total.texturesCreated << " texture creations, "
+                          << row.total.texturesUpdated << " updates, "
+                          << row.total.textureBytesUploaded / 1024 << " KB of pixels over the run\n";
+            }
+            // What Studio *hands CNA* rather than what reaches the bus: CNA repacks each 56-byte
+            // VertexPositionColorTexture into a 24-byte stream before uploading, so the copy
+            // Studio pays for is more than twice what the GPU sees. Both backends pay it and the
+            // ratio between them is the same, which is why the table reports the bus figure and
+            // this reports the other one rather than the table carrying four columns.
+            const double perFrame = static_cast<double>(row.frames);
+            std::cout << "      handed to CNA: "
+                      << static_cast<double>(row.total.classicSubmittedBytes) / perFrame / 1024.0
+                      << " KB classic, "
+                      << static_cast<double>(row.total.modernSubmittedBytes) / perFrame / 1024.0
+                      << " KB modern\n";
+        }
+        return 0;
+    }
+
     int renderShellPreview(const CNA::Studio::StudioOptions& options)
     {
         CNA::Studio::StudioTheme theme = options.shellPreviewTheme == "light"
@@ -784,6 +1142,13 @@ int main(int argc, char** argv)
         return renderShellPreview(options);
     }
 
+    // And neither does the benchmark, for the same reason and to more purpose: it is what decides
+    // whether `STUDIO-04027` deletes the classic UI render backend or keeps it (`STUDIO-04028`).
+    if (!options.uiBenchmark.empty())
+    {
+        return runUiBenchmark(options);
+    }
+
     // Which UI opens when the user asked for none (`STUDIO-06015`). The native shell, now that it
     // answers every row of `docs/MIGRATION-INVENTORY.md` that the prototype does -- every panel,
     // every menu, every shortcut, the toolbar, the 2D and 3D views, and input to a running game.
@@ -870,6 +1235,15 @@ int main(int argc, char** argv)
         if (!result.layoutProblem.empty())
         {
             std::cerr << "cna-studio: " << result.layoutProblem << "\n";
+        }
+        if (!result.costModelMismatch.empty())
+        {
+            // A benchmark that reports a number nobody has checked against the thing it measures
+            // is worse than no benchmark: it is a number people quote. STUDIO-04028's model runs
+            // with no device, so this run -- which has one -- is where it is held to account.
+            std::cerr << "cna-studio: the UI benchmark's cost model disagrees with the renderer -- "
+                      << result.costModelMismatch << ". See STUDIO-04028.\n";
+            return 6;
         }
         if (options.frameLimit > 0)
         {

@@ -17,7 +17,7 @@ reporting it.
 | `libcna/sharp-runtime` | `next` | `0c82d9b888bdf5f7d5663c77942f339bcb2a7445` | 2026-09-14 |
 
 The gaps numbered G-01 … G-05 were recorded against an **older** CNA revision by the CNA Editor
-prototype; G-06 through G-09 are new, filed by CNA Studio. All five of the inherited ones were
+prototype; G-06 through G-11 are new, filed by CNA Studio. All five of the inherited ones were
 re-verified against the commit above as part of the CNA Studio bootstrap; two have since been fixed
 upstream and are kept here, marked closed, so the record stays honest.
 
@@ -281,3 +281,31 @@ A gap is worth filing when Studio cannot do something through CNA's public API t
 ought to support. Record: the affected API, current behaviour, expected behaviour, Studio impact,
 the workaround if any, a suggested fix, and the test CNA would need. A gap with no reproduction is
 a complaint, not a report.
+
+---
+
+## 🔴 G-11 — A UI vertex costs 56 bytes to hand CNA and carries 20 bytes of data
+
+**New, filed by CNA Studio, measured by `STUDIO-04028`.**
+
+| Field | Value |
+|-------|-------|
+| Affected API | `Microsoft::Xna::Framework::Graphics::VertexPositionColorTexture`; `Microsoft::Xna::Framework::Color`; `IVertexType` |
+| Current behaviour | `sizeof(VertexPositionColorTexture)` is **56**. Its data is twenty bytes — a `Vector3` (12), a colour (4 as uploaded) and a `Vector2` (8). The other thirty-six are two vtable pointers and padding: eight for the vertex's own, because `IVertexType` has a virtual destructor, and `sizeof(Color)` is **24** rather than 4 for the same reason. CNA repacks the whole thing into a 24-byte `PositionColorTextureStream` before upload, so the bus is not charged — but every caller building a vertex array is |
+| Expected behaviour | A vertex type is a layout, and the type that describes a layout should *be* that layout. `IVertexType`'s `getVertexDeclarationProperty()` could be a static or a trait rather than a virtual, which is what removes the pointer from every vertex a program owns |
+| Studio impact | Measured, not estimated. Studio's UI builds a scratch array of these every frame in both render backends: at 1920×1080 an idle shell is about 6 000 vertices, so the scratch is 330 KB where 120 KB would do, and the classic backend re-hands that array to the driver once per draw call. `--ui-benchmark` prints both figures per scenario — "handed to CNA" against "on the bus" — and the first is 2.3× the second on every row |
+| Workaround | None taken, deliberately. A Studio-local packed vertex would be a second layout to keep in step with CNA's `VertexDeclaration`, and a layout that drifts from its declaration draws garbage rather than failing |
+| Suggested fix | Make the vertex declaration accessor non-virtual (a static, or a trait specialised per vertex type), and give `Color` no vtable. Both are source-compatible for callers that use the types as values |
+| Test needed in CNA | `static_assert(sizeof(VertexPositionColorTexture) == vertexDeclaration.getVertexStrideProperty())` for each built-in vertex type — the C++ type and the layout it declares should not be able to disagree |
+
+**How it was found.** Not by reading the header. `STUDIO-04028` needed a bytes-per-vertex constant
+for the benchmark's cost model, the estimate written down was 32 — a vptr plus the three members —
+and the `static_assert` pinning it to the real type refused to compile and printed 56. The extra
+twenty-four bytes are `Color`, which nobody would think to measure.
+
+**Why the benchmark reports both numbers.** They answer different questions and only one of them is
+the bus. What Studio *hands CNA* is the cost of the conversion loop and the copy, and is real CPU
+work Studio does on every frame; what reaches the GPU is 24 bytes a vertex after CNA repacks. The
+ratio between the two render backends is the same under either measure, because both build the same
+array and differ only in how often they hand it over — which is why this gap changes the absolute
+numbers in `docs/UI-RENDER-PATH.md` and not the conclusion drawn from them.

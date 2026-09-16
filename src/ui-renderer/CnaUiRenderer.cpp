@@ -10,6 +10,9 @@
 
 #include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 
+#include "CNA/Studio/UiCore/StudioUiBenchmark.hpp"
+
+#include <cstdint>
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -36,6 +39,35 @@ namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;
 
 namespace CNA::Studio
 {
+    // STUDIO-04028. Every byte figure `--ui-benchmark` prints is one of these constants times a
+    // vertex count, and both are stated as literals because `StudioUiBenchmark.hpp` is CNA-free by
+    // design. A change to either layout would make all of them wrong at once, silently and in the
+    // direction nobody checks. Here it is a compile error naming the constant.
+    //
+    // The two differ by more than padding. Studio hands CNA a 56-byte VertexPositionColorTexture
+    // whose data is twenty bytes: a Vector3 (12), a Color (24, because CNA's Color carries a
+    // vtable of its own) and a Vector2 (8), plus eight for this type's own vtable pointer.
+    // CNA repacks it to a 24-byte PositionColorTextureStream before upload, which is also the
+    // stride the vertex declaration names -- so the bus sees 24 where Studio wrote 56.
+    //
+    // Recorded rather than worked around: the types are CNA's and the fix belongs there
+    // (docs/CNA-GAPS.md G-11). A Studio-local vertex would be a second layout to keep in step
+    // with CNA's declaration, which is worse than the waste.
+    static_assert(sizeof(XnaGraphics::VertexPositionColorTexture) == kStudioUiSubmittedVertexBytes,
+                  "kStudioUiSubmittedVertexBytes no longer matches the vertex Studio hands CNA, so "
+                  "every byte count --ui-benchmark reports is wrong (plan.md STUDIO-04028).");
+
+    bool studioUiGpuVertexStrideMatches()
+    {
+        // The GPU-side half of the same check, and a *runtime* one because the stride lives on a
+        // VertexDeclaration rather than in a type's size. That is the public way to ask: the
+        // packed stream behind it is CNA::Internal, which Studio does not reach into
+        // (STUDIO-02032) -- and the declaration's stride is the authority anyway, because it is
+        // what the device is told.
+        return XnaGraphics::VertexPositionColorTexture::getVertexDeclarationStatic()
+                   .getVertexStrideProperty() == static_cast<int>(kStudioUiGpuVertexBytes);
+    }
+
     namespace
     {
         /**
@@ -354,6 +386,21 @@ namespace CNA::Studio
                 ++stats.drawCalls;
                 stats.triangles += command.indexCount / 3;
                 stats.indices += command.indexCount;
+
+                // What this call actually hands the driver (STUDIO-04028). The field existed and
+                // this backend left it at zero, so every comparison of the two backends on upload
+                // bytes was a number against a zero -- which reads as "the classic path uploads
+                // nothing" rather than as "nobody counted".
+                //
+                // A user-array draw copies its arrays out on every call, and the vertex range is
+                // not a choice: DrawUserIndexedPrimitives takes a vertex offset relative to the
+                // array it is given, so the array must start at the command's base vertex and run
+                // to the end of the list. A list drawn by many commands is therefore copied many
+                // times, which is the cost the modern backend's persistent buffers exist to avoid
+                // and which had never been measured.
+                stats.geometryBytesUploaded +=
+                    availableVertices * sizeof(XnaGraphics::VertexPositionColorTexture)
+                    + static_cast<std::size_t>(command.indexCount) * sizeof(std::uint16_t);
             }
         }
 

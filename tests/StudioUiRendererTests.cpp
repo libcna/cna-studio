@@ -156,3 +156,4 @@ CNA_STUDIO_TEST(TheShaderNamesNoGraphicsBackendAndNoRendererIdentity)
         }
     }
 }
+

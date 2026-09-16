@@ -153,4 +153,18 @@ namespace CNA::Studio
         std::unique_ptr<Impl> impl_;
         UiRenderStats lastStats_;
     };
+
+    /**
+     * @brief Whether CNA still uploads the vertex stride `kStudioUiGpuVertexBytes` assumes.
+     *
+     * `STUDIO-04028`. Every GPU byte figure `--ui-benchmark` prints is that constant times a
+     * vertex count, and the constant is a literal because `StudioUiBenchmark.hpp` is CNA-free. The
+     * submitted-bytes half is pinned by a `static_assert`; this half cannot be, because the stride
+     * lives on a `VertexDeclaration` rather than in a type's size -- so it is asked at run time,
+     * through the public declaration, by the host that is already checking the model per frame.
+     *
+     * @return True when the declaration's stride is what the benchmark assumes.
+     */
+    [[nodiscard]] bool studioUiGpuVertexStrideMatches();
+
 }

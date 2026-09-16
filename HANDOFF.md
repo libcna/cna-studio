@@ -251,7 +251,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **217 of 544 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **219 of 546 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -294,7 +294,7 @@ and **a drop-down over a deferred popup** — the facility that lets a popup esc
 opened in, **typed drag and drop**, and **a modal dialog** — a window that owns the frame until it
 is answered, which is what About, Save Layout As and every confirmation are built on.
 
-**Phase 4 — CNAEXT UI renderer** (22 of 29). Vertex management, batching, nested scissor clipping,
+**Phase 4 — CNAEXT UI renderer** (24 of 29). Vertex management, batching, nested scissor clipping,
 rounded rectangles, clip culling, real text with kerning and correct baselines, **forty-three
 icons drawn as vector paths** with no vendored asset, **a glyph atlas that doubles rather than
 losing text** and says so in Diagnostics, **uploads of the changed rectangle rather than four

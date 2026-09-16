@@ -100,6 +100,7 @@ namespace CNA::Studio
             if (argument == "--shell-mouse-down") { options.shellPreviewMouseDown = true; continue; }
             if (argument == "--shell-right-click") { options.shellPreviewRightClick = true; continue; }
             if (argument == "--host-capabilities") { options.hostCapabilities = true; continue; }
+            if (argument == "--ui-benchmark") { options.uiBenchmark = "all"; continue; }
             if (argument == "--export-overwrite") { options.exportOverwrite = true; continue; }
             if (argument == "--shell-tooltip") { options.shellPreviewTooltip = true; continue; }
 
@@ -121,6 +122,19 @@ namespace CNA::Studio
                             "--ui-renderer expects auto, modern or compat, got '" + value + "'";
                     }
                     options.uiRenderer = value;
+                    continue;
+                }
+                if (name == "--ui-benchmark") { options.uiBenchmark = value; continue; }
+                if (name == "--ui-benchmark-frames")
+                {
+                    try { options.uiBenchmarkFrames = std::stoi(value); }
+                    catch (const std::exception&) { options.uiBenchmarkFrames = 0; }
+                    if (options.uiBenchmarkFrames <= 0)
+                    {
+                        options.hasError = true;
+                        options.errorMessage =
+                            "--ui-benchmark-frames expects a positive count, got '" + value + "'";
+                    }
                     continue;
                 }
                 if (name == "--screenshot") { options.screenshotPath = value; continue; }
@@ -380,6 +394,9 @@ namespace CNA::Studio
             "                       preview. Needs --shell-pointer.\n"
             "  --shell-tooltip      Rest the pointer until a tooltip appears.\n"
             "  --ui=imgui         Run the legacy Dear ImGui editor instead of the native shell.\n"
+            "  --ui-benchmark[=S] Measure UI frame cost for scenarios matching S (default all)\n"
+            "                     and exit. What each render backend is asked to submit.\n"
+            "  --ui-benchmark-frames=N  Frames per scenario (default 120).\n"
             "  --ui-renderer=R    auto (default), modern or compat. modern refuses a host that\n"
             "                     cannot run the CNAEXT UI renderer instead of falling back;\n"
             "                     compat forces the classic one, for A/B comparison.\n"

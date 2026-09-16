@@ -202,3 +202,75 @@ a UI renderer that was never called.
 **No backend-specific code at any stage.** Studio calls Vulkan, D3D, GL, Metal and WebGPU through
 exactly zero lines of its own; `STUDIO-02033`'s guard test fails the build on a direct backend call
 and it applies to the new module exactly as it applies to the old one.
+
+---
+
+## What the two backends actually cost (`STUDIO-04028`)
+
+"The modern renderer is not slower" was an assumption repeated for four tasks. It is a number now.
+
+`cna-studio --ui-benchmark` runs eight representative frame shapes and reports what each backend
+asks the device to do. It needs no CNA, no GPU and no window — every figure is computed from the
+`UiDrawData` both backends are handed — which is what makes it runnable on every push rather than
+only in the hour-long CNA job.
+
+At 1920×1080, sixty frames per scenario, with the example project open:
+
+| Scenario | µs/frame (median) | draw calls | vertices | classic KB | modern KB | ratio |
+|----------|------------------:|-----------:|---------:|-----------:|----------:|------:|
+| baseline (shell as it opens) | 1 857 | 19 | 5 938 | 2 659 | 154 | **17.3×** |
+| 2 000-entity outliner | 308 960 | 20 | 7 317 | 3 449 | 191 | **18.1×** |
+| … the same, scrolling | 308 055 | 20 | 7 755 | 3 656 | 202 | **18.1×** |
+| 1 500-asset content grid | 23 291 | 19 | 6 150 | 2 754 | 160 | **17.3×** |
+| eight-component Details panel | 2 645 | 20 | 8 202 | 3 865 | 213 | **18.2×** |
+| a keystroke a frame | 2 091 | 19 | 7 686 | 3 442 | 200 | **17.2×** |
+| atlas growth | 5 240 | 20 | 10 169 | 4 795 | 266 | **18.0×** |
+| resize every frame | 11 235 | 20 | 6 638 | 3 129 | 173 | **18.1×** |
+
+**The classic backend puts seventeen to eighteen times as much geometry on the bus, per frame, on
+every shape of frame measured.** The reason is structural rather than incidental:
+`DrawUserIndexedPrimitives` takes *user arrays*, so the driver copies them on every call — and the
+array a command is given runs from its base vertex to the end of its list, which in any list the
+toolkit has not had to split past 65 535 vertices is the whole array. Nineteen draw calls over one
+list of six thousand vertices is that list copied nineteen times. The modern backend uploads it
+once into a persistent `DynamicVertexBuffer` and then issues nineteen `DrawIndexedPrimitives`
+against it. The ratio is therefore roughly the draw-call count, and it grows as the UI is batched
+more finely — which is the direction every added panel pushes it.
+
+**This does not measure GPU time**, and deliberately so: a driver's answer to the same submission
+varies by vendor, and the question `STUDIO-04027` has to settle is whether one backend submits more
+work than the other, which is a property of Studio rather than of Mesa.
+
+**The cost model is checked against the renderers it models.** It is a second implementation of
+both inner loops, so it can be quietly wrong. `CnaStudioShellHost` therefore recomputes it against
+the backend's own counters on every frame of every run that has a frame limit — which is every
+capture and every CTest smoke test, on both CNA legs of CI, and none of an interactive session's —
+and a disagreement fails the process with the field, both numbers and the frame named. Verified by
+making the model wrong on purpose: it reported `draw calls: the cost model says 36, the
+compatibility backend reported 18 (frame 1)` and exited 6.
+
+**Two numbers, because two things are being counted.** The table is what reaches the bus. Studio
+hands CNA 2.3× that, because `VertexPositionColorTexture` is 56 bytes for 20 bytes of data and CNA
+repacks it to a 24-byte stream before uploading. That is `docs/CNA-GAPS.md` G-11; it is the same
+factor for both backends and so changes the absolute figures above without touching the ratio.
+`--ui-benchmark` prints both, per scenario.
+
+**The classic backend had been reporting zero.** `UiRenderStats::geometryBytesUploaded` existed,
+the modern backend filled it in, and `CnaUiRenderer` never touched it — so every comparison of the
+two on upload bytes was a number against a zero, which reads as "the classic path uploads nothing"
+rather than as "nobody counted". Fixed with this task, which is how the 17× was measurable at all.
+
+### What the benchmark found that it was not looking for
+
+Two, both recorded rather than fixed here:
+
+- **The World Outliner is O(n²) in scene size.** 250 entities cost 9 ms a frame, 500 cost 25 ms,
+  1 000 cost 84 ms and 2 000 cost 309 ms — four times the cost for twice the entities, which is the
+  signature. `SceneDocument::getChildren` scans every entity in the document, and the outliner's
+  flatten calls it once per row. Rows are virtualised, so the *drawing* is flat; the walk is not.
+  `STUDIO-30013`.
+- **1 500 assets cost the Content Browser 23 ms a frame**, against 1.9 ms for the shell around it.
+  Not measured for its scaling yet. `STUDIO-30014`.
+
+Neither is a rendering problem and neither would have been visible in a screenshot, which is the
+argument for having a benchmark that reports CPU time beside the counts.

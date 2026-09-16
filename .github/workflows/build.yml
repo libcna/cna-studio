@@ -13,12 +13,32 @@
 # real work in that sentence: a dangling reference to a subobject of a temporary passed Debug,
 # passed Release with warnings as errors, and was caught only here.
 #
-# `cna` is the expensive one. It builds SDL3, sharp-runtime, CNA and Studio from source and then
-# exports a project and builds *that*, which is minutes rather than seconds. It stays because it is
-# the only job that exercises the CNA seam, the window hosts, the native shell on a real device,
-# and the invariant the whole product rests on -- and an invariant left to a human to remember to
-# check is an invariant that rots. It runs on SOFTWARE, which needs no display; a renderer that
-# needs a GPU is `STUDIO-33010` and needs infrastructure rather than code.
+# `cna` is the expensive one, and it is a matrix over two renderers. It builds SDL3,
+# sharp-runtime, CNA and Studio from source and then exports a project and builds *that*, which is
+# minutes rather than seconds. It stays because it is the only job that exercises the CNA seam, the
+# window hosts, the native shell on a real device, and the invariant the whole product rests on --
+# and an invariant left to a human to remember to check is an invariant that rots.
+#
+#   SOFTWARE rasterises on the CPU and is happy with SDL's dummy video driver, so it needs neither
+#   a display nor a GPU. It is what Studio's *classic* UI render backend runs on, because SOFTWARE
+#   cannot execute a shader.
+#
+#   OPENGL4 is `STUDIO-04029`, and it is the first renderer this project has automated that can.
+#   Until it existed, Studio's only automated renderer was the one renderer its intended UI path
+#   cannot run on at all: the modern CNAEXT backend, the default on any capable host, was covered
+#   by nothing but somebody running it locally. It needs a display but not a GPU -- Xvfb with
+#   Mesa's llvmpipe gives a real GL 4.x context on a runner with no graphics hardware -- which is
+#   what `docs/CNA-GAPS.md` G-10 recorded as impossible, having stopped its search at the GL
+#   *family*. Only this leg can run `CnaStudioUiRenderBackendsAgree`, the A/B that draws the same
+#   shell through both backends and compares the PNGs byte for byte, because a renderer that can
+#   run only one of the two cannot compare them.
+#
+# A matrix rather than a second job, so the twenty-odd steps of checkout, submodules, dependencies
+# and export cannot drift between the two. `fail-fast: false` because which renderer failed is the
+# interesting half of the answer, and cancelling the other leg throws it away.
+#
+# Graphical CI on a *real GPU* is still `STUDIO-33010`: llvmpipe is a correct GL implementation and
+# not a driver, so anything a vendor driver does differently stays unobserved.
 
 name: build
 
@@ -133,8 +153,24 @@ jobs:
         run: ctest --test-dir build-asan --output-on-failure
 
   cna:
-    name: Linux CNA-backed (SOFTWARE)
+    name: Linux CNA-backed (${{ matrix.renderer }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Rasterises on the CPU: no display, no GPU, and the classic UI render backend.
+          - renderer: SOFTWARE
+            ctest_runner: ""
+            extra_packages: ""
+            expect_backend: compatibility
+          # A real GL 4.x context from Mesa's llvmpipe under Xvfb: no GPU, and the *modern* CNAEXT
+          # UI render backend, which is the default everywhere it can run and which SOFTWARE
+          # cannot execute at all.
+          - renderer: OPENGL4
+            ctest_runner: 'xvfb-run --server-num=99 --server-args="-screen 0 1920x1080x24"'
+            extra_packages: xvfb libgl1-mesa-dri
+            expect_backend: modern
     # Builds CNA, SDL3 and sharp-runtime from source, then Studio on top, then exports a project
     # and builds *that*. Long, and worth it: this is the only job that exercises the CNA seam, the
     # window host, the native shell on a real device, and the invariant the product rests on.
@@ -190,7 +226,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxi-dev libxfixes-dev libxss-dev libgl1-mesa-dev libegl1-mesa-dev \
-            libasound2-dev libpulse-dev
+            libasound2-dev libpulse-dev ${{ matrix.extra_packages }}
 
       - name: Initialise the SDL submodules
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
@@ -203,22 +239,32 @@ jobs:
 
       - name: Configure
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
-        # SOFTWARE, because it needs no GPU and no display: this job has neither, and a renderer
-        # that did would fail for reasons having nothing to do with Studio. CNA's own tests and
-        # examples are off for the reasons recorded as CNA gap G-09 -- a consumer wants CNA, not
-        # CNA's test suite. Draco is off because it defaults ON and wants its own submodule, and
-        # Studio has no use for compressed glTF primitives; fetching and building it would be
-        # several minutes spent on a decoder nothing here calls.
+        # CNA's own tests and examples are off for the reasons recorded as CNA gap G-09 -- a
+        # consumer wants CNA, not CNA's test suite. Draco is off because it defaults ON and wants
+        # its own submodule, and Studio has no use for compressed glTF primitives; fetching and
+        # building it would be several minutes spent on a decoder nothing here calls.
+        #
+        # CNAEXT on for both legs, because it is what decides whether the host reports the modern
+        # graphics API at all -- and therefore whether `resolveStudioUiBackend` is choosing between
+        # two backends or falling back to the only one it has. Off, the OPENGL4 leg would build,
+        # pass, and quietly exercise the classic path it exists to stop being the only one tested.
+        #
+        # CNA_STUDIO_TEST_DISPLAY is where the windowed ctests look for a graphics context, and it
+        # must agree with the Xvfb server number below. Harmless on SOFTWARE, which takes SDL's
+        # dummy video driver instead; the choice is made once, per renderer, in tests/CMakeLists.
         run: >
           cmake -S cna-studio -B build-cna -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCNA_STUDIO_WITH_CNA=ON
           -DCNA_STUDIO_CNA_ROOT=${{ github.workspace }}/cna
-          -DCNA_GRAPHICS_RENDERER=SOFTWARE
+          -DCNA_GRAPHICS_RENDERER=${{ matrix.renderer }}
           -DCNA_PLATFORM=SDL3
           -DCNA_BUILD_TESTS=OFF
           -DCNA_BUILD_EXAMPLES=OFF
           -DCNA_ENABLE_DRACO=OFF
+          -DCNA_ENABLE_NET=OFF
+          -DCNA_CNAEXT=ON
+          -DCNA_STUDIO_TEST_DISPLAY=:99
 
       - name: Build
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
@@ -228,14 +274,40 @@ jobs:
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
         run: ./build-cna/tests/cna-studio-tests
 
+      - name: This leg must get the UI render backend it exists to cover
+        if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
+        # An assertion rather than a printed line. The whole value of the OPENGL4 leg is that it
+        # runs the *modern* backend, and a host that quietly fell back to the classic one would
+        # produce an identical green tick while covering exactly what SOFTWARE already covers --
+        # which is the failure mode this job was added to close, not one to reintroduce.
+        #
+        # Both legs are asserted, not just the new one. SOFTWARE reporting `modern` would mean the
+        # capability report is claiming a shader path a CPU rasteriser does not have, which is the
+        # class of defect `STUDIO-02070` exists for: `modernApiAvailable` was a hard-coded `true`
+        # that nothing read for six phases.
+        run: |
+          ${{ matrix.ctest_runner }} ./build-cna/cna-studio --host-capabilities | tee capabilities.txt
+          if ! grep -q "UI renderer: ${{ matrix.expect_backend }}" capabilities.txt; then
+            echo "::error::${{ matrix.renderer }} was expected to host the" \
+                 "'${{ matrix.expect_backend }}' UI render backend and did not. This leg covers" \
+                 "that backend and nothing else does; a fallback here is a silent loss of" \
+                 "coverage, not a degraded run."
+            grep "UI renderer:" capabilities.txt || echo "(no UI renderer line was printed at all)"
+            exit 1
+          fi
+
       - name: CTest
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
         # Everything, the slow standalone-export case included. That case is the concrete form of
         # "CNA Studio produces CNA games, not CNA Studio games", and an invariant excluded from CI
         # for being slow is an invariant that rots.
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: ctest --test-dir build-cna --output-on-failure
+        #
+        # No SDL_VIDEODRIVER here. How a windowed case gets a surface is decided per test in
+        # tests/CMakeLists from the renderer -- `SDL_VIDEODRIVER=dummy` for SOFTWARE, `DISPLAY=:99`
+        # for everything else -- and a job-level `dummy` would win over the per-test DISPLAY and
+        # abort the OPENGL4 run with "OpenGL support is either not configured in SDL or not
+        # available in current SDL video driver (dummy)".
+        run: ${{ matrix.ctest_runner }} ctest --test-dir build-cna --output-on-failure
 
       - name: Keep the screenshots
         # The graphical cases assert on counts, which says a frame was drawn but not what was in
@@ -243,6 +315,6 @@ jobs:
         if: always() && steps.cna_checkout.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: cna-screenshots
+          name: cna-screenshots-${{ matrix.renderer }}
           path: build-cna/tests/*.png
           if-no-files-found: ignore
