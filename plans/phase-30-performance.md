@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 1 of 14 complete `█░░░░░░░░░░░`
+**Progress:** 2 of 15 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,7 +16,8 @@
 | `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ⬜ | `STUDIO-30010` |
 | `STUDIO-30012` | Caching strategy with explicit invalidation | ⬜ | `STUDIO-09004` |
 | `STUDIO-30013` | `SceneDocument` child lookup is an index, not a scan of every entity | ✅ | — |
-| `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ⬜ | `STUDIO-04028` |
+| `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ✅ | `STUDIO-04028` |
+| `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ⬜ | `STUDIO-30012`, `STUDIO-30014` |
 | `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ⬜ | `STUDIO-13011` |
 | `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
 | `STUDIO-30022` | Stress benchmark: 100,000 assets | ⬜ | `STUDIO-09016` |
@@ -103,9 +104,54 @@ reports 13.2× and fails.
 **Acceptance.** The cost is attributed to something specific, and whatever it is either scales or is
 recorded as not scaling with a number saying how.
 
-**Measured** (`--ui-benchmark=content`): 23 ms a frame for 1 500 assets against 1.9 ms for the shell
-around it, while drawing the same 19 draw calls. Not measured at more than one size, so whether it
-is linear or worse is **unknown** — which is why this is worded as a question rather than as a fix.
+**Answered. It is the filesystem, and it is linear.**
+
+| Assets | Cost per frame |
+|-------:|---------------:|
+| 200 | 2.2 ms |
+| 400 | 3.0 ms |
+| 800 | 5.0 ms |
+| 1 600 | 9.1 ms |
+
+Roughly 1.8× per doubling, so linear rather than quadratic — this is not `STUDIO-30013`'s shape.
+What makes the constant large is that **the browser asks the operating system about every asset on
+every frame**:
+
+- `AssetDatabase::isMissing` is a `std::filesystem::exists()`, and `studioContentRows` calls it once
+  per row;
+- `result.missingCount = assets.getMissingAssets().size()` is a *second* full pass over the
+  database, with another `exists()` per asset.
+
+That is about 3 000 stat calls a frame at 1 500 assets, synchronously, in the middle of describing
+the UI.
+
+**Attributed by measurement, not by reading.** With both `exists()` calls stubbed out and nothing
+else changed, the same scenario falls from **21.5 ms to 8.3 ms**: 61% of the panel's frame cost is
+the filesystem.
+
+**And it is worse in real use than in the benchmark.** With no project open the same 1 500 assets
+cost 8.6 ms rather than 21.5, because the paths resolve under a root that does not exist and the
+stat fails early. A real project root is the slow case, and a project on a network share or a cold
+cache is slower still — this is synchronous disk I/O in the render loop, which is a different kind
+of problem from a slow loop.
+
+**The fix is not this task.** Halving the syscalls by deriving the missing set once per build would
+be a clear improvement and would still leave the editor stat-ing every asset every frame. What it
+actually needs is the missing set held with explicit invalidation, which is `STUDIO-30012`'s
+question — when a file deleted outside the editor should be noticed is a design decision, not an
+optimisation. Filed as `STUDIO-30015`.
+
+### `STUDIO-30015` — The Content Browser stops asking the filesystem about every asset every frame
+
+**Acceptance.** Drawing the Content Browser performs no filesystem access proportional to the number
+of assets, and a test says so rather than a benchmark implying it.
+
+**What it has to decide**, which is why it waits for `STUDIO-30012` rather than being a smaller edit:
+when a file deleted outside the editor becomes visible as missing. Per frame is what happens today
+and is what makes this expensive; never is wrong, because "what did I break when I moved that
+folder" is the question a content browser is most often opened to answer. A watch, a rescan on
+window focus, and a rescan on an explicit refresh are all defensible and they are not the same
+product.
 
 ### `STUDIO-30030` — Establish the interactive frame-rate target and measure against it
 

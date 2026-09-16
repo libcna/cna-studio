@@ -95,6 +95,9 @@ namespace CNA::Studio
     /**
      * @brief The picture for an asset kind.
      *
+     * `STUDIO-35030`. A content browser whose rows differ only in a right-aligned grey word is one
+     * a user reads rather than scans, and scanning is the whole reason a project has folders.
+     *
      * Shared by the list, the grid and the Details panel's asset inspector (`STUDIO-07045`), which
      * is the point of it being one function: two presentations of one database that disagreed
      * about what a texture looks like would be worse than either alone. The mapping is
@@ -154,15 +157,6 @@ namespace CNA::Studio
 
         // One pass over the folders in sorted order interleaves parents with their contents
         // correctly, because "Assets" sorts before "Assets/Textures" and both before "Assets2".
-        /**
-         * @brief The picture for an asset kind.
-         *
-         * `STUDIO-35030`. A content browser whose rows differ only in a right-aligned grey word is
-         * a content browser a user reads rather than scans, and scanning is the whole reason a
-         * project has folders. The mapping is deliberately coarse: a sound effect and a song get
-         * the same speaker, because the question a user asks of an icon is "is this audio", and the
-         * detail column already answers which.
-         */
         const auto depthOf = [](const std::string& path) {
             return static_cast<int>(std::count(path.begin(), path.end(), '/'));
         };

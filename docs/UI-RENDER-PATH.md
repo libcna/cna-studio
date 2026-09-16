@@ -269,8 +269,14 @@ Two, both recorded rather than fixed here:
   signature. `SceneDocument::getChildren` scans every entity in the document, and the outliner's
   flatten calls it once per row. Rows are virtualised, so the *drawing* is flat; the walk is not.
   `STUDIO-30013`.
-- **1 500 assets cost the Content Browser 23 ms a frame**, against 1.9 ms for the shell around it.
-  Not measured for its scaling yet. `STUDIO-30014`.
+- **The Content Browser stat-s every asset, every frame.** 1 500 assets cost it 21.5 ms against
+  1.9 ms for the shell around it — linear in asset count (about 1.8× per doubling), with a large
+  constant: `isMissing` is a `std::filesystem::exists()` called once per row, and the missing
+  *count* is a second full pass with another `exists()` per asset. About 3 000 synchronous stat
+  calls a frame. Attributed by measurement rather than by reading: with both calls stubbed the same
+  scenario falls to 8.3 ms, so 61% of the panel's frame cost is the filesystem. `STUDIO-30014`
+  measured it; `STUDIO-30015` fixes it, and waits on `STUDIO-30012` because *when* a file deleted
+  outside the editor should be noticed is a design decision rather than an optimisation.
 
 Neither is a rendering problem and neither would have been visible in a screenshot, which is the
 argument for having a benchmark that reports CPU time beside the counts.
