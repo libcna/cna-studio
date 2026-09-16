@@ -38,6 +38,21 @@ namespace CNA::Studio
         }
     }
 
+    std::size_t studioClearPluginMenus(StudioShell& shell)
+    {
+        StudioActionRegistry& actions = shell.actions();
+
+        // Collected before any are removed: `remove` mutates the vector `commands()` returns, and
+        // erasing while walking it is how a loop skips half of what it was asked to remove.
+        std::vector<std::string> stale;
+        for (const StudioAction& action : actions.commands())
+        {
+            if (action.id.rfind(kStudioPluginActionPrefix, 0) == 0) { stale.push_back(action.id); }
+        }
+        for (const std::string& id : stale) { (void)actions.remove(id); }
+        return stale.size();
+    }
+
     std::size_t bindStudioPluginMenus(StudioShell& shell, StudioContext& context, StudioLog& log)
     {
         StudioActionRegistry& actions = shell.actions();
@@ -45,12 +60,7 @@ namespace CNA::Studio
         // Everything registered last time, first. A plugin that has been unloaded must leave no row
         // behind: its `invoke` points into a library the host is about to close, and a menu row
         // that called it would be calling code that is no longer mapped.
-        std::vector<std::string> stale;
-        for (const StudioAction& action : actions.commands())
-        {
-            if (action.id.rfind(kStudioPluginActionPrefix, 0) == 0) { stale.push_back(action.id); }
-        }
-        for (const std::string& id : stale) { (void)actions.remove(id); }
+        (void)studioClearPluginMenus(shell);
 
         // Copied, because invoking a command may unload the plugin that registered it -- a "Reload
         // Plugin" command does exactly that -- and the vector it lives in would be gone underneath

@@ -170,6 +170,18 @@ namespace CNA::Studio
         }
 
         /**
+         * @brief Tells a running game that one of its assets changed on disk.
+         *
+         * `STUDIO-07051`. Only while a game is actually running: sending to a stopped player is
+         * not merely useless — there is no process to send to, and the failure would be reported
+         * as a broken bridge, which is a bug report about the wrong thing.
+         *
+         * @param assetId The asset to reload.
+         * @return Whether a message was sent.
+         */
+        bool reloadAsset(const Uuid& assetId);
+
+        /**
          * @brief Drains the player's messages and notices an ending exactly once.
          * @return How many messages were read, for the panel counts.
          */

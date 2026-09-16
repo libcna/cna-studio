@@ -179,6 +179,15 @@ namespace CNA::Studio
         return player_.send(StudioMessage::makeInput(snapshot));
     }
 
+    bool StudioPlayService::reloadAsset(const Uuid& assetId)
+    {
+        // Only while a game is actually running. Sending to a stopped player is not merely useless
+        // -- there is no process to send to, and the failure would be reported as a broken bridge.
+        if (!player_.isRunning() || state_ == StudioPlayState::Stopped) { return false; }
+
+        return player_.send(StudioMessage::makeReloadAsset(assetId));
+    }
+
     bool StudioPlayService::stepFrame()
     {
         if (state_ != StudioPlayState::Paused) { return false; }

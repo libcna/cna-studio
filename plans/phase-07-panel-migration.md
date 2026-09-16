@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 32 of 46 complete `████████░░░░`
+**Progress:** 34 of 46 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -45,8 +45,8 @@
 | `STUDIO-07048` | `StudioOptions` moves out of the prototype application's header | ✅ | — |
 | `STUDIO-07049` | `--headless` and the 3D smoke flags run the native shell | ⬜ | `STUDIO-07048` |
 | `STUDIO-07050` | Transform manipulators in the native 3D view | ⬜ | `STUDIO-07009` |
-| `STUDIO-07051` | The native shell reloads assets edited outside it | ⬜ | `STUDIO-07008` |
-| `STUDIO-07052` | The native shell loads the project's plugins | ⬜ | `STUDIO-07001` |
+| `STUDIO-07051` | The native shell reloads assets edited outside it | ✅ | `STUDIO-07008` |
+| `STUDIO-07052` | The native shell loads the project's plugins | ✅ | `STUDIO-07001` |
 | `STUDIO-07053` | `--scene` opens a scene on the native shell | ✅ | `STUDIO-07048` |
 | `STUDIO-07054` | Editors for list and structure properties | ⬜ | `STUDIO-07018` |
 | `STUDIO-07055` | A numeric property field is dragged as well as typed | ⬜ | `STUDIO-07018` |
@@ -130,19 +130,95 @@ and the 2D panel already shows how a panel drives it. **Acceptance.** Translate,
 the 3D view, each one undo entry, over a multi-selection about its shared pivot, with the same
 manipulator the toolbar names.
 
-**`STUDIO-07051` — The native shell reloads assets edited outside it.** `AssetWatcher` is polled by
-`StudioApplication::pollAssets` and by nothing else, so on `--ui=studio` a texture edited in another
-program is never noticed: the editor keeps drawing the art from before the edit, the mesh cache
-keeps the old model, and the running player is never told. **Acceptance.** An externally changed,
+**`STUDIO-07051` — The native shell reloads assets edited outside it.** ✅ `AssetWatcher` was polled
+by `StudioApplication::pollAssets` and by nothing else, so on the default UI a texture edited in
+another program was never noticed: the editor kept drawing the art from before the edit, the mesh
+cache kept the old model, and a running game was never told. **Acceptance.** An externally changed,
 removed or restored asset is reported and its cached texture, mesh and player copy dropped, as the
 prototype does.
 
-**`STUDIO-07052` — The native shell loads the project's plugins.** `PluginHost::discover` and
-`loadAll` are called by `StudioApplication::loadPlugins` and by nothing else.
-`bindStudioPluginMenus` faithfully draws the commands a plugin registered — and no plugin is ever
-loaded to register any, so the menu is empty on every native run. **Acceptance.** `--plugins=DIR`
-and the default `plugins/` beside the executable are discovered and loaded on the native shell,
-each failure named per plugin, and unloaded while the context is still alive.
+**The change was never the problem.** `AssetWatcher` had always reported correctly and its own
+tests had always passed. What was missing was a caller — which is why the watcher's test suite
+could not have caught this and why nothing looked broken.
+
+**Reloading means forgetting, four times.** The viewport's texture, the mesh cache's model, the
+running player's copy and the importer facts on the record. `studioPollAssetChanges` is that
+description; the two that are not the context's business arrive as sinks, because a rendered
+texture belongs to whatever is rendering and a running game belongs to whatever launched it, and
+neither is the same object on the two UIs. Both sinks empty is the headless preview, and it still
+drops the two caches the context owns — a reload that did nothing without a viewport would make
+every headless caller silently stale.
+
+**A removed asset is deliberately not forwarded to the player.** The file is gone, so there is
+nothing to reload with, and a player told to reload a missing asset would drop the copy it is
+successfully drawing in exchange for nothing.
+
+**Verified against a real edit**, not only in unit tests: with the native shell running on a copy
+of `HelloSprites`, appending a byte to `Assets/Textures/player.png` produces one more Output Log
+message than the same run without the edit.
+
+### `STUDIO-07051`–`07053` — the shape all three shared
+
+Three tasks in one phase, one shape. Something the prototype did and the native shell did not,
+where **nothing failed**, because not doing it produces exactly what having nothing to do produces:
+`--scene` opened the project's own startup scene, the Plugins menu was empty, an edited texture went
+on being drawn. Each is invisible to any test that exercises one UI at a time, and each was found
+by asking what the *other* UI does rather than by anything going wrong.
+
+Each was fixed the same way — the decision extracted into one routine, called from both — and
+`EveryStartUpRoutineBothUisNeedIsCalledByBothOfThem` asserts the second half, which is the half
+that goes stale. An extraction only one caller uses is a refactor rather than a fix, and the two
+look identical in a diff.
+
+That guard is a hand-written list of three, and it is worth being explicit about why that is
+acceptable here where it was not for the flag guard. It is not an inventory of everything the two
+UIs must share — no such list can be complete, which is the lesson `STUDIO-07041` paid for. It is
+the set of routines extracted *because* they had gone out of step, and its job is to keep those
+three in step. A fourth that is added and not listed is exactly as guarded as it was before the
+test existed.
+
+**`STUDIO-07052` — The native shell loads the project's plugins.** ✅ `PluginHost::discover` and
+`loadAll` were called by `StudioApplication::loadPlugins` and by nothing else.
+`bindStudioPluginMenus` faithfully drew the commands a plugin registered — and no plugin was ever
+loaded to register any, so the menu was empty on every native run, which looks exactly like a
+machine with no plugins installed. **Acceptance.** `--plugins=DIR` and the default `plugins/`
+beside the executable are discovered and loaded on the native shell, each failure named per plugin,
+and unloaded while the context is still alive.
+
+**Extracted rather than copied**, the same way `STUDIO-07053` was: `studioLoadPlugins` holds the
+start-up policy — an explicit directory, otherwise `plugins/` beside the executable, otherwise
+nothing, silently, because having no plugins is the ordinary case and a warning about a directory
+nobody created teaches users to ignore warnings. `PluginHost` answers "load what is in this
+directory"; *which* directory is a start-up question and does not belong to it.
+
+**And loading a plugin on this shell for the first time segfaulted on the way out.** Not in the
+loading — in `~StudioShell`, three frames after everything had gone right. Binding a plugin command
+*copies* its `std::function` into `StudioActionRegistry`, and destroying that copy runs a manager
+function that lives in the plugin's library, so a registry cleared after `dlclose` does not fail to
+find the command: it jumps into unmapped memory.
+
+`bindStudioPluginMenus` had anticipated exactly this — its first act is to remove every action it
+registered last time, with a comment saying the `invoke` points into a library the host is about to
+close. What was missing was a caller at shutdown, where the menus are not rebuilt afterwards and
+there is nothing to rebuild them from. `studioClearPluginMenus` is that half, exposed, and the host
+calls it before the unload.
+
+**The hazard is not gone, it is bounded.** `PluginHost::deactivate` removes a plugin's extensions
+from the context and *then* closes its library, and between those two statements the shell still
+holds its copies. Nothing calls `reload` today, so the only unload is at shutdown and that path is
+now correct. A hot reload would reopen the window, and closing it properly means a notification
+before the close rather than a revision noticed after it — recorded as `STUDIO-28015` rather than
+half-fixed here.
+
+**Tested against a real library, not a stub.** Every other plugin-menu case builds a
+`PluginMenuCommand` whose `invoke` is a lambda in the test binary, which stays mapped whatever the
+host does — the right shape for asking what the menus do with a command, and precisely the wrong
+shape for this. `ARealPluginsCommandsLeaveTheRegistryBeforeItsLibraryIsClosed` uses the test plugin
+through `dlopen`, and the way it fails is by crashing. Verified by reversing the two statements: it
+segfaults. `CnaStudioNativeShellLoadsPlugins` is the end-to-end half, asserting three numbers that
+fail differently — discovered without active is a plugin that would not start, active without menu
+rows is one whose commands never reached the registry, and no line at all is a shell that never
+looked.
 
 **`STUDIO-07053` — `--scene` opens a scene on the native shell.** ✅ The flag was parsed, documented
 in the usage text, and read by `StudioApplication::initialize` alone. On the native shell — which is

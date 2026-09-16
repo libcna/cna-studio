@@ -133,6 +133,17 @@ namespace CNA::Studio
         std::string scenePath;
 
         /**
+         * @brief Where to look for plugins, or empty for `plugins/` beside the executable.
+         *
+         * `STUDIO-07052`. `PluginHost::discover` and `loadAll` were called by
+         * `StudioApplication::loadPlugins` and by nothing else, so the native shell loaded no
+         * plugins at all -- and `bindStudioPluginMenus` drew the commands they had registered
+         * faithfully, which meant an empty menu that looks exactly like a machine with no plugins
+         * installed.
+         */
+        std::string pluginDirectory;
+
+        /**
          * @brief This executable's own path, so the player builds beside it can be found.
          *
          * "Run this on Vulkan" means "launch cna-player-vulkan", and whether that binary exists is
@@ -205,6 +216,22 @@ namespace CNA::Studio
          * log rows says the panel drew; only this says the editor behind it has a project.
          */
         std::string statusLeft;
+
+        /**
+         * @brief How many plugins were discovered, and how many of them are running.
+         *
+         * `STUDIO-07052`. Reported because the interesting number is the *second* one: a plugin
+         * that was found and would not start is a fixable problem, and one that was never looked
+         * for is a Studio that has no plugin support at all — and from outside, an empty Plugins
+         * menu looks identical either way.
+         */
+        std::size_t pluginsDiscovered = 0;
+
+        /** @brief How many discovered plugins initialised and are running. */
+        std::size_t pluginsActive = 0;
+
+        /** @brief How many menu rows those plugins' commands produced. */
+        std::size_t pluginMenuRows = 0;
 
         /** @brief How many World Outliner rows the ported panel put on screen. */
         std::size_t outlinerRowsDrawn = 0;

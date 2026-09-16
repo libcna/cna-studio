@@ -11,8 +11,10 @@
 #include <system_error>
 
 #include "CNA/Studio/Assets/AssetImporters.hpp"
+#include "CNA/Studio/Plugins/PluginStartup.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/StudioAssetReload.hpp"
 #include "CNA/Studio/StudioStartupDocument.hpp"
 
 namespace CNA::Studio
@@ -640,52 +642,16 @@ namespace CNA::Studio
 
     void StudioApplication::pollAssets(double deltaSeconds)
     {
-        const AssetWatchResult result = watcher_.poll(context_.getAssets(), deltaSeconds);
-        if (!result.hasChanges()) { return; }
-
-        for (const Uuid& assetId : result.changed)
-        {
-            // Dropping the cached texture is what makes the change visible. Without it the editor
-            // would report the edit and go on drawing the art from before it. A mesh is the same
-            // bargain in the 3D view: `MeshCache` holds an imported model until told otherwise, so
-            // an edited .gltf would keep drawing the shape it had when the project was opened.
+        // Through the same routine the native shell calls (STUDIO-07051). What reloading *means*
+        // -- which four caches have to let go, and in what order -- is one description, and the two
+        // things that are not the context's business arrive as sinks.
+        StudioAssetReloadSinks sinks;
+        sinks.invalidateRendered = [this](const Uuid& assetId) {
             viewport_->invalidateAsset(assetId);
-            context_.getMeshes().invalidate(assetId);
-            reloadAssetInPlayer(assetId);
+        };
+        sinks.reloadInPlayer = [this](const Uuid& assetId) { reloadAssetInPlayer(assetId); };
 
-            const AssetRecord* record = context_.getAssets().find(assetId);
-            context_.log(LogSeverity::Info,
-                         "Reloaded '" + (record != nullptr ? record->sourcePath : assetId.toString())
-                             + "' after an external change.");
-        }
-
-        for (const Uuid& assetId : result.restored)
-        {
-            viewport_->invalidateAsset(assetId);
-            context_.getMeshes().invalidate(assetId);
-            reloadAssetInPlayer(assetId);
-
-            const AssetRecord* record = context_.getAssets().find(assetId);
-            context_.log(LogSeverity::Info,
-                         "'" + (record != nullptr ? record->sourcePath : assetId.toString())
-                             + "' is back.");
-        }
-
-        for (const Uuid& assetId : result.removed)
-        {
-            // Forgotten rather than kept: a model whose file has gone should stop being drawn, and
-            // a cache that held the last good copy would show a mesh that is no longer there.
-            context_.getMeshes().invalidate(assetId);
-
-            const AssetRecord* record = context_.getAssets().find(assetId);
-            context_.log(LogSeverity::Warning,
-                         "'" + (record != nullptr ? record->sourcePath : assetId.toString())
-                             + "' has gone missing. Anything referencing it is listed in Missing "
-                               "References.");
-        }
-
-        // The pixel size of a texture that just changed is no longer the one on record.
-        applyImporterFacts(context_.getAssets());
+        (void)studioPollAssetChanges(watcher_, context_, sinks, deltaSeconds);
     }
 
     void StudioApplication::reloadAssetInPlayer(const Uuid& assetId)
@@ -783,61 +749,17 @@ namespace CNA::Studio
 
     void StudioApplication::loadPlugins(const StudioOptions& options)
     {
-        std::string directory = options.pluginDirectory;
-
-        if (directory.empty())
-        {
-            // "Beside Studio" needs to know where the editor is. With no executable path --
-            // which is every embedded and test caller -- the same expression would resolve to
-            // "plugins" relative to the *working directory*, so an editor started from the wrong
-            // folder would load a stranger's plugins and one started from the right one would
-            // behave differently for reasons nothing on screen explains. Found by a test that
-            // passed from the repository root and failed under ctest.
-            if (options.executablePath.empty()) { return; }
-
-            directory = (std::filesystem::path{options.executablePath}.parent_path() / "plugins")
-                            .generic_string();
-        }
-
-        std::error_code errorCode;
-        if (!std::filesystem::is_directory(directory, errorCode))
-        {
-            // Silent. Having no plugins is the ordinary case, and an editor that logged a warning
-            // about a directory nobody created would train its users to ignore warnings.
-            return;
-        }
-
-        const std::vector<LoadedPlugin> found = plugins_.discover(directory);
-        if (found.empty()) { return; }
-
-        for (const LoadedPlugin& plugin : found)
-        {
-            if (plugin.loaded) { continue; }
-
-            // Reported per plugin, with the manifest's own words for what is wrong. A single
-            // "some plugins failed" is a message a user cannot act on.
-            context_.log(LogSeverity::Warning,
-                         "Plugin '" + plugin.manifest.id + "' was not loaded: " + plugin.error);
-        }
-
-        const std::size_t active = plugins_.loadAll(context_);
-
-        for (const LoadedPlugin& plugin : plugins_.getPlugins())
-        {
-            if (!plugin.loaded || plugin.active) { continue; }
-            context_.log(LogSeverity::Warning,
-                         "Plugin '" + plugin.manifest.id + "' failed to load: " + plugin.error);
-        }
-
-        context_.log(LogSeverity::Info,
-                     "Plugins: " + std::to_string(active) + " of " + std::to_string(found.size())
-                         + " loaded from " + directory + ".");
+        // Through the same routine the native shell calls, so `--plugins=DIR` and the default
+        // `plugins/` beside the executable mean one thing rather than one thing here and nothing
+        // at all on the UI that is the default (STUDIO-07052).
+        (void)studioLoadPlugins(plugins_, context_, options.pluginDirectory,
+                                options.executablePath);
     }
 
     void StudioApplication::unloadPlugins()
     {
         // While the context is still alive, which is the whole reason this is a named step rather
         // than something left to a destructor: a plugin's shutdown() is handed the context.
-        plugins_.unloadAll(context_);
+        studioUnloadPlugins(plugins_, context_);
     }
 }

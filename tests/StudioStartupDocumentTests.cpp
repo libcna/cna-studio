@@ -198,9 +198,6 @@ CNA_STUDIO_TEST(NoParsedFlagIsReadByThePrototypeAlone)
         // *flag* drives the prototype's batch mode, which the native shell has no equivalent of.
         // STUDIO-02056 extracts the comparison service, and the flag follows it.
         "comparisonTolerance",
-        // `--plugin-dir`. STUDIO-07052: the native shell does not load the project's plugins at
-        // all yet, so there is nothing for the directory to reach.
-        "pluginDirectory",
         // `--recovery-dir`. The native shell runs crash recovery through `StudioRecoverySession`
         // with the default directory; the override has not been threaded through. STUDIO-07049.
         "recoveryDirectory",
@@ -289,5 +286,5 @@ CNA_STUDIO_TEST(NoParsedFlagIsReadByThePrototypeAlone)
 
     // A run in which nothing was examined would pass every assertion above by examining nothing --
     // which is the state this guard would fall into the day someone renames the prototype's file.
-    CNA_STUDIO_EXPECT(checked >= 5);
+    CNA_STUDIO_EXPECT(checked >= 4);
 }

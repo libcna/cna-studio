@@ -50,4 +50,23 @@ namespace CNA::Studio
      * @return How many plugin commands are now on the menus.
      */
     std::size_t bindStudioPluginMenus(StudioShell& shell, StudioContext& context, StudioLog& log);
+
+    /**
+     * @brief Removes every plugin action from @p shell, leaving Studio's own untouched.
+     *
+     * **Must be called while the plugins' libraries are still mapped.** A registered action holds a
+     * `std::function` copied out of the plugin, and destroying one runs a manager function that
+     * lives in the plugin's library — so a registry cleared *after* `dlclose` does not fail to find
+     * the command, it jumps into unmapped memory. That is a segmentation fault in the shell's
+     * destructor, which is the hardest place to read a backtrace from and the least likely place
+     * anybody looks.
+     *
+     * `bindStudioPluginMenus` does this first, which is what makes it idempotent. It is exposed
+     * separately for shutdown, where the menus are not being rebuilt afterwards and there is
+     * nothing to rebuild them from.
+     *
+     * @param shell Shell whose registry is cleared of plugin actions.
+     * @return How many actions were removed.
+     */
+    std::size_t studioClearPluginMenus(StudioShell& shell);
 }

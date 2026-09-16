@@ -52,6 +52,7 @@ add_executable(cna-studio-tests
     StudioSceneSettingsTests.cpp
     StudioRenameTests.cpp
     StudioShortcutEditorTests.cpp
+    StudioAssetReloadTests.cpp
     StudioStartupDocumentTests.cpp
     StudioStatusBarTests.cpp
     StudioSavedLayoutTests.cpp
@@ -653,6 +654,31 @@ if(CNA_STUDIO_WITH_CNA)
             ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
     else()
         set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
+    endif()
+
+    # The project's plugins, on the UI that is the default (STUDIO-07052). `PluginHost::discover`
+    # and `loadAll` were called by the prototype and by nothing else, so this shell loaded none --
+    # and `bindStudioPluginMenus` drew the commands they had registered faithfully, which meant an
+    # empty Plugins menu that looks exactly like a machine with no plugins installed.
+    #
+    # The same plugin the unit tests load, from the same directory. Three numbers in one line and
+    # each fails differently: discovered without active is a plugin that would not start, active
+    # without menu rows is a plugin whose commands never reached the registry, and no line at all
+    # is a shell that never looked.
+    add_test(NAME CnaStudioNativeShellLoadsPlugins
+        COMMAND cna-studio --ui=studio --workspace=none
+            --plugins=${CMAKE_CURRENT_BINARY_DIR}/plugins
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+            --frames=20)
+    set_tests_properties(CnaStudioNativeShellLoadsPlugins PROPERTIES
+        PASS_REGULAR_EXPRESSION "plugins [1-9][0-9]* of [1-9][0-9]* active giving [1-9][0-9]* menu rows")
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioNativeShellLoadsPlugins PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
+    else()
+        set_tests_properties(CnaStudioNativeShellLoadsPlugins PROPERTIES
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
     endif()
 

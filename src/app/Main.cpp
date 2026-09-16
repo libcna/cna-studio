@@ -1238,6 +1238,7 @@ int main(int argc, char** argv)
         hostOptions.focusPanel = options.focusPanel;
         hostOptions.projectPath = options.projectPath;
         hostOptions.scenePath = options.scenePath;
+        hostOptions.pluginDirectory = options.pluginDirectory;
         hostOptions.selectEntity = options.selectEntity;
         hostOptions.invokeAction = options.shellPreviewInvoke;
         if (options.windowWidth > 0 && options.windowHeight > 0)
@@ -1318,6 +1319,15 @@ int main(int argc, char** argv)
             {
                 std::cout << ", output log showing " << result.logRowsDrawn << " of "
                           << result.logRowsMatching << " messages";
+            }
+            if (result.pluginsDiscovered > 0)
+            {
+                // Said only when there was something to find, so an ordinary run is not told about
+                // a feature it is not using -- and said with both numbers, because "found two,
+                // started none" and "found none" are different problems with the same empty menu.
+                std::cout << ", plugins " << result.pluginsActive << " of "
+                          << result.pluginsDiscovered << " active giving "
+                          << result.pluginMenuRows << " menu rows";
             }
             if (!hostOptions.workspacePath.empty())
             {

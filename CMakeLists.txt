@@ -335,6 +335,7 @@ target_link_libraries(cna-studio-player PUBLIC
 # cna-studio-plugins -- manifest discovery and validation.
 add_library(cna-studio-plugins STATIC
     src/plugins/PluginHost.cpp
+    src/plugins/PluginStartup.cpp
     src/plugins/PluginExtensions.cpp)
 target_link_libraries(cna-studio-plugins PUBLIC cna-studio-core)
 
@@ -348,6 +349,7 @@ target_link_libraries(cna-studio-plugins PUBLIC cna-studio-core)
 add_library(cna-studio-context STATIC
     src/context/StudioContext.cpp
     src/context/StudioStartupDocument.cpp
+    src/context/StudioAssetReload.cpp
     src/context/ProjectCommands.cpp
     src/context/PrefabWorkflow.cpp
     src/context/StudioRecovery.cpp)

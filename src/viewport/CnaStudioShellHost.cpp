@@ -39,6 +39,11 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/Assets/AssetWatcher.hpp"
+#include "CNA/Studio/Plugins/Plugin.hpp"
+#include "CNA/Studio/Plugins/PluginStartup.hpp"
+#include "CNA/Studio/ShellPanels/StudioPluginMenus.hpp"
+#include "CNA/Studio/StudioAssetReload.hpp"
 #include "CNA/Studio/StudioStartupDocument.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
@@ -257,6 +262,18 @@ namespace CNA::Studio
                         .save(preferences, problem);
                 });
 
+                // The project's plugins (STUDIO-07052). After the panels, because a plugin
+                // registers its commands and panels into the context on activation and
+                // `StudioShellPanels::pollPlugins` is what turns those into menu rows -- it reads
+                // an extension *revision* rather than taking a callback, so loading before it
+                // exists would leave the rows unbuilt until something else changed.
+                //
+                // Every failure is named per plugin, in the manifest's own words, through the same
+                // routine the prototype uses. A shell that loaded plugins differently from the
+                // editor beside it would be a second plugin contract nobody wrote down.
+                pluginLoad_ = studioLoadPlugins(plugins_, *context_, options.pluginDirectory,
+                                                options.executablePath);
+
                 if (!options.selectEntity.empty())
                 {
                     // By name, because that is what a person types. SceneDocument looks entities
@@ -320,6 +337,69 @@ namespace CNA::Studio
             [[nodiscard]] std::size_t logRowsMatching() const { return panelCounts().logRowsMatching; }
             [[nodiscard]] const std::string& layoutProblem() const { return layoutProblem_; }
             [[nodiscard]] bool layoutRestored() const { return layoutRestored_; }
+
+            [[nodiscard]] const StudioPluginLoad& pluginLoad() const { return pluginLoad_; }
+
+            [[nodiscard]] std::size_t pluginMenuRows() const
+            {
+                return panels_ == nullptr ? 0 : panels_->counts().pluginMenuRows;
+            }
+
+            /**
+             * @brief Shuts the plugins down while the context is still alive.
+             *
+             * Called after the loop rather than left to the destructor, for the reason the unload
+             * exists at all: a plugin's `shutdown()` is handed the context, and a member destroyed
+             * after the context would hand it a dangling reference. Declaration order alone would
+             * get this right today and would stop doing so the moment somebody reorders the
+             * members, which is not a thing a reviewer notices.
+             */
+            /**
+             * @brief Notices assets edited outside Studio and drops whatever went stale.
+             *
+             * The two sinks are the parts that are not the context's business: a rendered texture
+             * belongs to the viewport, and a running game belongs to the play service. Both are
+             * held here and neither exists on every host, so both are checked.
+             */
+            void pollAssetChanges(double deltaSeconds)
+            {
+                if (context_ == nullptr) { return; }
+
+                StudioAssetReloadSinks sinks;
+                if (sceneViewport_ != nullptr)
+                {
+                    sinks.invalidateRendered = [this](const Uuid& assetId) {
+                        sceneViewport_->invalidateAsset(assetId);
+                    };
+                }
+                if (panels_ != nullptr)
+                {
+                    sinks.reloadInPlayer = [this](const Uuid& assetId) {
+                        (void)panels_->play().reloadAsset(assetId);
+                    };
+                }
+
+                (void)studioPollAssetChanges(watcher_, *context_, sinks, deltaSeconds);
+            }
+
+            void unloadPlugins()
+            {
+                if (context_ == nullptr) { return; }
+
+                // The shell's registry first, and the order is not a preference. Binding a plugin
+                // command *copies* its `std::function` into `StudioActionRegistry`, and destroying
+                // that copy runs a manager function living in the plugin's library -- so clearing
+                // the registry after `dlclose` jumps into unmapped memory rather than failing to
+                // find a command. It crashes in `~StudioShell`, which is both the hardest place to
+                // read a backtrace from and the last place anybody looks for a plugin bug.
+                //
+                // Found by loading a plugin on this shell for the first time: the segmentation
+                // fault was not in the loading, it was in the shutting down, and it had been
+                // waiting in the design since the menus were written.
+                if (shell_ != nullptr) { (void)studioClearPluginMenus(*shell_); }
+
+                studioUnloadPlugins(plugins_, *context_);
+            }
 
             /**
              * @brief Writes the arrangement back, if this session was asked to remember one.
@@ -582,6 +662,16 @@ namespace CNA::Studio
                 // looked at something else.
                 elapsedSeconds_ += static_cast<double>(deltaSeconds);
                 panels_->poll(elapsedSeconds_);
+
+                // Assets edited outside Studio (STUDIO-07051). `AssetWatcher` was polled by the
+                // prototype and by nothing else, so on this shell a texture edited in another
+                // program was never noticed: the editor kept drawing the art from before the edit,
+                // the mesh cache kept the old model, and a running game was never told.
+                //
+                // Before the scene is rendered rather than after, so the frame that reports the
+                // change is also the frame that shows it. Reporting an edit and then drawing the
+                // old art for one more frame is a flicker nobody can explain.
+                pollAssetChanges(static_cast<double>(deltaSeconds));
 
                 renderSceneIntoViewport();
 
@@ -871,6 +961,27 @@ namespace CNA::Studio
             StudioLog log_;
 
             /**
+             * @brief The project's plugins, declared after the context they are handed.
+             *
+             * Members are destroyed in reverse declaration order, so this one goes first -- but it
+             * is never left to the destructor: a plugin's `shutdown()` takes the context, so the
+             * unload is a named step that happens while the context is still alive. See
+             * `unloadPlugins` below.
+             */
+            PluginHost plugins_;
+
+            /** @brief What `studioLoadPlugins` found, so the run can report it. */
+            StudioPluginLoad pluginLoad_;
+
+            /**
+             * @brief Watches the project's asset files for edits made outside Studio.
+             *
+             * Declared after the context whose database it reads. It holds no reference of its own
+             * -- the database is handed to `poll` -- but the order still says which owns which.
+             */
+            AssetWatcher watcher_;
+
+            /**
              * @brief The audio preview, declared before the panels that borrow it.
              *
              * Members are destroyed in reverse declaration order, and `panels_` holds a raw
@@ -915,6 +1026,10 @@ namespace CNA::Studio
         CnaStudioShellGame game{options};
         game.Run();
 
+        // Before anything reads the results, and before `game` goes out of scope: a plugin's
+        // shutdown takes the context, so it has to run while the context is still there.
+        game.unloadPlugins();
+
         result.frames = game.frames();
         result.drawCalls = game.drawCalls();
         result.triangles = game.triangles();
@@ -927,6 +1042,9 @@ namespace CNA::Studio
         result.rendererCanHostStudio = game.capabilities().canHostStudio;
         result.invokedActions = game.invoked();
         result.statusLeft = game.statusLeft();
+        result.pluginsDiscovered = game.pluginLoad().discovered;
+        result.pluginsActive = game.pluginLoad().active;
+        result.pluginMenuRows = game.pluginMenuRows();
         result.outlinerRowsDrawn = game.outlinerRowsDrawn();
         result.outlinerRowsTotal = game.outlinerRowsTotal();
         result.detailsRowsDrawn = game.detailsRowsDrawn();
