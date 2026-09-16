@@ -396,6 +396,24 @@ scripts, and a host that cannot run the modern UI renderer refuses to start.
 CI can build a renderer that meets the modern profile (gap G-10). Doing it earlier would mean
 deleting the only configuration this project has automated coverage in.
 
+**Both conditions are met, and this is still a decision rather than a mechanical cleanup.**
+`STUDIO-04026` is done. Gap G-10 is narrowed and `STUDIO-04029` put `OPENGL4` under Xvfb — a
+renderer that meets the modern profile — into `.github/workflows/build.yml`'s `cna` job as a real,
+running CI leg, verified there rather than only reproduced locally. Neither reason this task gave
+for waiting still holds.
+
+What is not free is the other half of that same CI job: the `SOFTWARE` leg, same workflow, same
+matrix, asserts `expect_backend: compatibility` and passes today. That leg exists because `SOFTWARE`
+needs no display and no GPU, which is what let this project have automated host coverage before
+`OPENGL4`-under-Xvfb existed at all (gap G-10, as it stood). Making a host that cannot run the
+modern renderer refuse to start, as this task's acceptance asks, turns that leg's assertion from
+"runs Studio on the compatibility renderer" to "refuses to start" — which is either the leg's new,
+correct assertion, or a reason to repoint the leg at something other than hosting Studio, or a
+reason `SOFTWARE` stops being a `cna` job renderer at all. Whichever it is, it is a decision about
+what CI still covers and how, not a consequence that falls out of deleting `CnaUiRenderer`. This
+task, and the `STUDIO-04027` deletion waiting on it, are recorded as blocked on that decision rather
+than attempted without one.
+
 ### `STUDIO-02050` — Define the service decomposition of the application shell
 
 **Acceptance.** The boundaries are written down with a stated rule for what earns its own type, and

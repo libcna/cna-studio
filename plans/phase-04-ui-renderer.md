@@ -41,7 +41,7 @@
 | `STUDIO-04024` | `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect` | ✅ | `STUDIO-04023` |
 | `STUDIO-04025` | A/B verification: both backends draw the same frame | ✅ | `STUDIO-04024` |
 | `STUDIO-04026` | Default the native host to the modern backend | ✅ | `STUDIO-04025` |
-| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04029`, `STUDIO-07030` |
+| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04029` ✅, `STUDIO-07030` ✅, `STUDIO-02074` |
 | `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ✅ | `STUDIO-04001` |
 
 ## Acceptance and verification
@@ -175,6 +175,32 @@ turn blocked on `STUDIO-07042`–`07046`. **This task now depends on `STUDIO-070
 prototype's host to the modern backend was considered and rejected: it is work spent on a host whose
 own task is deletion, and it would make `--ui=imgui` refuse to start on `SOFTWARE`, which is where
 the prototype's remaining coverage runs.
+
+**`STUDIO-07030` is done, and this task is still blocked — on `STUDIO-02074` now, not on the
+prototype.** The prototype's host is deleted, so the blocker recorded above has expired exactly as
+expected. What was not expired, and was not visible until the prototype's own consumer went away:
+`CnaStudioShellHost` — the *native* host, not the prototype's — also does
+`std::make_unique<CnaUiRenderer>()`, at two call sites (`makeUiRenderBackend()`'s
+`StudioUiBackendChoice::Compatibility` case, and the runtime fallback when a host the capability
+report called modern-capable refuses Studio's UI shader anyway). Both are reached deliberately: the
+first is what `--ui-renderer=compat` asks for and what `StudioHostProfile::Compatibility`
+(`STUDIO-02070`) resolves to on a host like `SOFTWARE`, which cannot execute a shader at all; the
+second is what keeps a wrongly-optimistic capability report from opening a black window instead of
+a working one. Deleting `CnaUiRenderer` today would delete both, and the CI workflow's own
+`SOFTWARE` leg (`.github/workflows/build.yml`, `expect_backend: compatibility`) asserts that this
+exact path is taken and passes.
+
+`CnaUiRenderer` therefore has no *prototype* caller left, but it has a live, tested, native one —
+which is exactly the caller `STUDIO-02074`'s acceptance names ("a host that cannot run the modern UI
+renderer refuses to start" instead of falling back). `STUDIO-02074`'s own "deliberately not now"
+note gave two conditions for revisiting it: `STUDIO-04026` done, and CI able to build a
+modern-profile renderer (gap G-10). Both are now true — `STUDIO-04029` is the second one, verified
+running in `.github/workflows/build.yml`'s `cna` job today, not merely reproduced locally. That does
+not make retiring the compatibility profile a mechanical cleanup, though: doing it would turn the
+`SOFTWARE` CI leg from "runs Studio on the compatibility renderer and asserts so" into "refuses to
+start", which needs its own decision about what that leg becomes — dropped, repointed at a
+build-only check, or something else — not a side effect of deleting one renderer file. **This task
+now depends on `STUDIO-02074`, and that task is the one with a decision left in it.**
 
 **The renderers the classic path serves, named as the acceptance asks.** Not a list of renderer
 identities — Studio never decides this by name, and `STUDIO-02030`'s guard exists to keep it that
