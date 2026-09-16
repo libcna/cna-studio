@@ -443,6 +443,7 @@ add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioBuildService.cpp
     src/shell-panels/StudioPlayService.cpp
     src/shell-panels/StudioComparisonService.cpp
+    src/shell-panels/StudioPreferencesService.cpp
     src/shell-panels/StudioOutlinerPanel.cpp
     src/shell-panels/StudioDetailsPanel.cpp
     src/shell-panels/StudioShellActions.cpp

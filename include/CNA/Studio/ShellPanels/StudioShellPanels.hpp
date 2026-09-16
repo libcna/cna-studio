@@ -39,6 +39,7 @@
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioPlayService.hpp"
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioPreferencesService.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioRecovery.hpp"
@@ -318,13 +319,24 @@ namespace CNA::Studio
         /**
          * @brief The user's preferences, edited by the Preferences panel.
          *
-         * Held here for the same reason the build is: the panel describes them and something else
-         * persists them, and two copies would be two answers to what the user decided.
+         * The one forwarder the preferences service keeps, for the reason `build()` keeps one onto
+         * `BuildProcess`: this is the thing every panel and every test already spells, and the
+         * service exists to own the *rules* around it rather than to be spelled instead of it.
          */
-        [[nodiscard]] StudioPreferences& preferences() { return preferences_; }
+        [[nodiscard]] StudioPreferences& preferences() { return preferences_.model(); }
 
         /** @brief The user's preferences. */
-        [[nodiscard]] const StudioPreferences& preferences() const { return preferences_; }
+        [[nodiscard]] const StudioPreferences& preferences() const { return preferences_.model(); }
+
+        /**
+         * @brief The preferences, their sink and the rules for applying them.
+         *
+         * Handed out whole rather than forwarded to, like `play()`, `builds()` and
+         * `comparisons()`: a method per operation would be three that do nothing.
+         */
+        [[nodiscard]] StudioPreferencesService& userPreferences() { return preferences_; }
+        /** @brief The preferences service. */
+        [[nodiscard]] const StudioPreferencesService& userPreferences() const { return preferences_; }
 
         /**
          * @brief Crash recovery: the snapshot timer, and whatever a previous session left.
@@ -337,28 +349,6 @@ namespace CNA::Studio
         /** @brief Crash recovery. */
         [[nodiscard]] const StudioRecoverySession& recovery() const { return recovery_; }
 
-        /**
-         * @brief Sets the seam through which changed preferences reach disk.
-         *
-         * Unset means "nothing is persisted", which the preview wants: a shell that refused to
-         * change a preference because nobody gave it a file would be worse than one that forgets.
-         *
-         * @param save Writes the preferences. Receives the reason on failure.
-         */
-        void setPreferencesSink(std::function<bool(const StudioPreferences&,
-                                                   std::string*)> save)
-        {
-            savePreferences_ = std::move(save);
-        }
-
-        /**
-         * @brief Applies whatever @ref preferences now says to the shell, then persists it.
-         *
-         * Public because a host that has just read the file wants exactly this, and because the
-         * order matters and should not be repeated: applied *before* it is written, so a save that
-         * fails still leaves the user looking at what they chose.
-         */
-        void applyPreferences();
 
         /** @brief The build this Studio would run. */
         [[nodiscard]] BuildProcess& build() { return build_.process(); }
@@ -464,7 +454,6 @@ namespace CNA::Studio
         StudioTreeState layersState_;
         StudioTreeState diagnosticsState_;
         StudioTreeState comparisonState_;
-        StudioPreferences preferences_;
         StudioShortcutEditorState shortcutEditor_;
 
         /** @brief Snapshots of the open scene, and whatever a previous session left behind. */
@@ -484,7 +473,6 @@ namespace CNA::Studio
          * on its first poll.
          */
         std::uint64_t pluginRevision_ = 0;
-        std::function<bool(const StudioPreferences&, std::string*)> savePreferences_;
 
         StudioViewportState viewportState_;
         Uuid selectedAsset_;
@@ -509,6 +497,14 @@ namespace CNA::Studio
          * because a user switched tabs.
          */
         StudioComparisonService comparison_;
+
+        /**
+         * @brief What the user decided Studio should be like.
+         *
+         * Held here for the same reason the build is: the panel describes them and something else
+         * persists them, and two copies would be two answers to what the user decided.
+         */
+        StudioPreferencesService preferences_;
 
         StudioDiagnosticsInfo diagnostics_;
         StudioShellPanelCounts counts_;

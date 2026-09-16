@@ -13,6 +13,7 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioPreferencesService.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioPreferences.hpp"
@@ -339,13 +340,13 @@ CNA_STUDIO_TEST(ChangingAPreferenceReachesTheThemeImmediately)
 
     StudioPreferences saved;
     bool wrote = false;
-    harness.panels.setPreferencesSink([&](const StudioPreferences& preferences, std::string*) {
+    harness.panels.userPreferences().setSaveSink([&](const StudioPreferences& preferences, std::string*) {
         saved = preferences;
         wrote = true;
         return true;
     });
 
-    harness.panels.applyPreferences();
+    harness.panels.userPreferences().apply();
     CNA_STUDIO_EXPECT(wrote);
     CNA_STUDIO_EXPECT_EQ(saved.theme, std::string{"light"});
     CNA_STUDIO_EXPECT_EQ(harness.shell.theme().scale(), 2.0f);
@@ -357,12 +358,12 @@ CNA_STUDIO_TEST(APreferenceThatCouldNotBeSavedStillTookEffect)
     // chose -- they can see it worked and decide what to do about the file.
     Harness harness;
     harness.panels.preferences().theme = "light";
-    harness.panels.setPreferencesSink([](const StudioPreferences&, std::string* problem) {
+    harness.panels.userPreferences().setSaveSink([](const StudioPreferences&, std::string* problem) {
         if (problem != nullptr) { *problem = "the disk is full"; }
         return false;
     });
 
-    harness.panels.applyPreferences();
+    harness.panels.userPreferences().apply();
     CNA_STUDIO_EXPECT(!harness.log.entries().empty());
     CNA_STUDIO_EXPECT(harness.log.entries().back().message.find("the disk is full")
                       != std::string::npos);
@@ -401,4 +402,110 @@ CNA_STUDIO_TEST(TheOpenWithRowOffersTheLayoutsThatExist)
     // list is the shell's, not a copy the panel keeps.
     CNA_STUDIO_EXPECT_EQ(harness.shell.frame().phaseViolations(), std::size_t{0});
     CNA_STUDIO_EXPECT_EQ(harness.shell.savedLayouts().size(), std::size_t{2});
+}
+
+// ------------------------------------------------------------------------------------------------
+// The preferences service on its own (STUDIO-02057)
+//
+// The rule these carry is the ordering: applied first, persisted second, so that a write which
+// fails still leaves the user looking at what they chose. Every case above needed a StudioShell, a
+// StudioShellPanels and therefore a binding of every panel in Studio to state it. These need a log
+// and a lambda.
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(ThePreferencesServiceRunsWithNoShellAndNoPanels)
+{
+    StudioLog log;
+    StudioPreferencesService preferences{log, nullptr};
+
+    CNA_STUDIO_EXPECT_EQ(preferences.model().theme, std::string{"dark"});
+    CNA_STUDIO_EXPECT_EQ(preferences.theme().scale(), 1.0f);
+
+    // Nowhere to write and nothing to show is not a failure, and is not logged as one.
+    CNA_STUDIO_EXPECT(!preferences.apply());
+    CNA_STUDIO_EXPECT(log.entries().empty());
+
+    preferences.model().theme = "light";
+    preferences.model().uiScale = 1.5f;
+    CNA_STUDIO_EXPECT_EQ(preferences.theme().scale(), 1.5f);
+
+    // An unknown name reads as the default rather than as a corrupt file: the file stores a name
+    // so that it survives a retheme, and a name is exactly the thing that can go stale.
+    preferences.model().theme = "solarized-midnight";
+    CNA_STUDIO_EXPECT(preferences.theme().scale() == 1.5f);
+}
+
+CNA_STUDIO_TEST(APreferenceIsAppliedBeforeItIsPersistedEvenWhenTheWriteFails)
+{
+    // The ordering is the rule, and the sink is what lets it be asserted: a service that called
+    // shell.setTheme() directly would need a shell to check the order it does two things in.
+    StudioLog log;
+    std::vector<float> appliedScales;
+    StudioPreferencesService preferences{
+        log, [&appliedScales](StudioTheme theme) { appliedScales.push_back(theme.scale()); }};
+
+    bool appliedBeforeTheWrite = false;
+    preferences.setSaveSink([&](const StudioPreferences&, std::string* problem) {
+        appliedBeforeTheWrite = !appliedScales.empty();
+        if (problem != nullptr) { *problem = "the disk is full"; }
+        return false;
+    });
+
+    preferences.model().uiScale = 2.0f;
+    CNA_STUDIO_EXPECT(!preferences.apply());
+
+    CNA_STUDIO_EXPECT(appliedBeforeTheWrite);
+    CNA_STUDIO_EXPECT_EQ(appliedScales.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(appliedScales.front(), 2.0f);
+
+    // And the failure is said. Silence would leave a user whose theme reverts on the next launch
+    // with no way to find out why.
+    CNA_STUDIO_EXPECT(!log.entries().empty());
+    CNA_STUDIO_EXPECT(log.entries().back().message.find("the disk is full") != std::string::npos);
+}
+
+CNA_STUDIO_TEST(AResetAppliesAndPersistsRatherThanOnlyChangingTheRecord)
+{
+    // reset() rather than assigning a default-constructed model, so that the reset cannot be done
+    // without the apply. A reset that changed the record and not the screen is the one a user
+    // reports as "Reset did nothing".
+    StudioLog log;
+    std::vector<StudioTheme> applied;
+    StudioPreferences written;
+    StudioPreferencesService preferences{
+        log, [&applied](StudioTheme theme) { applied.push_back(std::move(theme)); }};
+    preferences.setSaveSink([&written](const StudioPreferences& saved, std::string*) {
+        written = saved;
+        return true;
+    });
+
+    preferences.model().theme = "light";
+    preferences.model().uiScale = 2.0f;
+    preferences.model().autosaveSeconds = 7;
+    CNA_STUDIO_EXPECT(preferences.apply());
+
+    preferences.reset();
+    CNA_STUDIO_EXPECT_EQ(preferences.model().theme, std::string{"dark"});
+    CNA_STUDIO_EXPECT_EQ(preferences.model().autosaveSeconds, StudioPreferences{}.autosaveSeconds);
+    CNA_STUDIO_EXPECT_EQ(applied.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(applied.back().scale(), 1.0f);
+    CNA_STUDIO_EXPECT_EQ(written.theme, std::string{"dark"});
+}
+
+CNA_STUDIO_TEST(TheShellStillSpeaksForThePreferencesServiceItOwns)
+{
+    // The forwarding half. preferences() is the one forwarder kept, for the reason build() keeps
+    // one onto BuildProcess: it is what every panel and every test already spells. It must be the
+    // service's model rather than a copy, or the panel would edit one and the theme read another.
+    Harness harness;
+    CNA_STUDIO_EXPECT(&harness.panels.preferences() == &harness.panels.userPreferences().model());
+
+    const StudioShellPanels& constPanels = harness.panels;
+    CNA_STUDIO_EXPECT(&constPanels.preferences() == &constPanels.userPreferences().model());
+
+    // And the shell is what the theme sink reaches, which is the one thing the extraction had to
+    // keep working.
+    harness.panels.preferences().uiScale = 1.25f;
+    CNA_STUDIO_EXPECT(harness.panels.userPreferences().apply() == false);   // no sink to write to
+    CNA_STUDIO_EXPECT_EQ(harness.shell.theme().scale(), 1.25f);
 }

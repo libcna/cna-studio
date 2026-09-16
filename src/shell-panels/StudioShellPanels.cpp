@@ -53,7 +53,12 @@ namespace CNA::Studio
           comparison_(context, log,
                       [this](StudioNotification notification) { notify(std::move(notification)); },
                       [this]() -> const std::vector<PlayerBuild>& { return play_.builds(); },
-                      services_.readImage, services_.writeImage)
+                      services_.readImage, services_.writeImage),
+          // The theme goes out through a sink for the reason every other outcome here does: the
+          // service needs no shell to be constructed, and a test reads what was applied.
+          preferences_(log, [this](StudioTheme theme) {
+              if (shell_ != nullptr) { shell_->setTheme(std::move(theme)); }
+          })
     {
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_.process());
 
@@ -177,7 +182,7 @@ namespace CNA::Studio
         // arrive by being *assigned* -- the host loads them from disk straight into this object --
         // and a setting that only takes effect down one of the two paths is a setting that works
         // when you change it and not when you restart.
-        recovery_.setIntervalSeconds(static_cast<double>(preferences_.autosaveSeconds));
+        recovery_.setIntervalSeconds(static_cast<double>(preferences_.model().autosaveSeconds));
 
         const double delta = recoveryLastSeconds_ < 0.0 || nowSeconds < recoveryLastSeconds_
             ? 0.0
@@ -212,26 +217,6 @@ namespace CNA::Studio
         }
 
         recovery_.update(delta);
-    }
-
-    void StudioShellPanels::applyPreferences()
-    {
-        if (shell_ == nullptr) { return; }
-
-        // Applied before it is persisted, so a write that fails still leaves the user looking at
-        // what they chose: they can see it worked and decide what to do about the file.
-        StudioTheme theme = preferences_.theme == "light" ? StudioTheme::light()
-                                                          : StudioTheme::dark();
-        theme.setScale(preferences_.uiScale);
-        shell_->setTheme(std::move(theme));
-
-        if (!savePreferences_) { return; }
-
-        std::string problem;
-        if (!savePreferences_(preferences_, &problem))
-        {
-            log_.append(LogSeverity::Warning, "Could not save preferences: " + problem);
-        }
     }
 
     void StudioShellPanels::publishStatus()
@@ -542,9 +527,10 @@ namespace CNA::Studio
             // being *assigned*, when the host loads them from disk, and a setting that only takes
             // effect down one of the two paths is one that works when you change it and not when
             // you restart.
-            viewportState_.cameraSpeed = preferences_.cameraSpeed;
-            viewportState_.invertZoom = preferences_.invertZoom;
-            viewportState_.navigation = preferences_.navigation;
+            const StudioPreferences& settings = preferences_.model();
+            viewportState_.cameraSpeed = settings.cameraSpeed;
+            viewportState_.invertZoom = settings.invertZoom;
+            viewportState_.navigation = settings.navigation;
 
             // The two views branch here, at the top, rather than inside one function that would
             // then be about both. They share the document and nothing below it: a press in 3D
@@ -975,7 +961,7 @@ namespace CNA::Studio
             context.actions = &shell.actions();
 
             const StudioPreferencesPanelResult panel =
-                studioPreferencesPanel(frame, bounds, preferences_, context, shortcutEditor_);
+                studioPreferencesPanel(frame, bounds, preferences_.model(), context, shortcutEditor_);
 
             if (panel.resetRequested)
             {
@@ -994,9 +980,8 @@ namespace CNA::Studio
                 shell.openDialog(std::move(request), [this](const StudioDialogResult& answer) {
                     if (answer.dismissed || answer.chosen != 1) { return; }
 
-                    preferences_ = StudioPreferences{};
+                    preferences_.reset();
                     ++counts_.preferenceChanges;
-                    applyPreferences();
                     log_.append(LogSeverity::Info, "Preferences reset to the defaults.");
                 });
                 return;
@@ -1004,7 +989,7 @@ namespace CNA::Studio
 
             if (!panel.changed) { return; }
             ++counts_.preferenceChanges;
-            applyPreferences();
+            (void)preferences_.apply();
         });
 
         // The first ported panel (STUDIO-07005). Drawn by the Studio UI, from a log no UI owns --

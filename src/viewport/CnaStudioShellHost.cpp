@@ -152,11 +152,11 @@ namespace CNA::Studio
                     StudioWorkspaceServices services;
                     services.saveNamed = [workspacePath](const std::string& name,
                                                          const JsonValue& layout,
-                                                         std::string* problem) {
+                                                                        std::string* problem) {
                         return StudioWorkspaceStore{workspacePath}.saveNamed(name, layout, problem);
                     };
                     services.removeNamed = [workspacePath](const std::string& name,
-                                                           std::string* problem) {
+                                                                          std::string* problem) {
                         return StudioWorkspaceStore{workspacePath}.removeNamed(name, problem);
                     };
                     shell_->setWorkspaceServices(std::move(services));
@@ -212,8 +212,8 @@ namespace CNA::Studio
                 // changes, because the command it named never actually ran.
                 shell_->setQuitHandler([this] { Exit(); });
 
-                panels_->setPreferencesSink([](const StudioPreferences& preferences,
-                                               std::string* problem) {
+                panels_->userPreferences().setSaveSink([](const StudioPreferences& preferences,
+                                                              std::string* problem) {
                     return StudioPreferencesStore{StudioPreferencesStore::defaultPath()}
                         .save(preferences, problem);
                 });

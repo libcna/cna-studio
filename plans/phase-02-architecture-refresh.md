@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 31 of 38 complete `███████░░░░░`
+**Progress:** 32 of 38 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -35,7 +35,7 @@
 | `STUDIO-02054` | Extract `StudioPlayService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
 | `STUDIO-02055` | Extract `StudioBuildService` from `StudioShellPanels` | ✅ | `STUDIO-02050` |
 | `STUDIO-02056` | Extract `StudioComparisonService` | ✅ | `STUDIO-02050` |
-| `STUDIO-02057` | Extract `StudioPreferencesService` | ⬜ | `STUDIO-02050` |
+| `STUDIO-02057` | Extract `StudioPreferencesService` | ✅ | `STUDIO-02050` |
 | `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | ⬜ | `STUDIO-02050` |
 | `STUDIO-02059` | Guard test: no service reaches another through a locator or a singleton | ✅ | `STUDIO-02055` |
 | `STUDIO-02060` | Restore the CNA-backed build against current CNA | ✅ | `STUDIO-02001` |
@@ -408,7 +408,7 @@ application object takes just before it stops being reviewable.
 | `StudioPlayService` | The player process, play state, installed builds, the session override, input forwarding | `STUDIO-02054` ✅ |
 | `StudioBuildService` | The build process, the finish transition, standalone packaging | `STUDIO-02055` ✅ |
 | `StudioComparisonService` | The renderer comparison run, its request and its report | `STUDIO-02056` ✅ |
-| `StudioPreferencesService` | The preferences model, its sink, and applying it to a live shell | `STUDIO-02057` |
+| `StudioPreferencesService` | The preferences model, its sink, and applying it to a live shell | `STUDIO-02057` ✅ |
 | per-panel binders | The 440-line `bind()` | `STUDIO-02058` |
 
 `StudioRecoverySession` already exists and already has this shape, which is part of why the shape
@@ -487,6 +487,39 @@ the whole service rather than growing a method per operation.
 **One behaviour changed on purpose.** The outcome used to be dropped entirely when there was no
 shell to raise it on. It goes through the sink unconditionally now, like the play service's crash
 notification, so a headless caller gets it in the log rather than not at all.
+
+### `STUDIO-02057` — Extract `StudioPreferencesService`
+
+**Acceptance.** The ordering rule — applied first, persisted second — can be stated without a shell,
+and the Preferences panel edits the service's model rather than a copy of it.
+
+**Why a handful of settings earns a type.** The third part of the rule on `STUDIO-02050`: a failure
+mode of its own, and one Studio gets wrong by default. A preference is applied and *then* persisted,
+so a write that fails still leaves the user looking at what they chose — they can see it worked and
+decide what to do about the file. The opposite order makes a full disk look like a control that does
+nothing. That is a rule with a failure and a message, and it is exactly the kind that gets quietly
+reversed by somebody tidying up a function that does two things.
+
+**The theme goes out through a sink**, like every other service's outcome. Applying preferences
+means giving the shell a theme, and taking a `StudioShell&` would put this back where it started:
+untestable without one, and holding the whole shell to call one method on it. A test now reads the
+theme that was applied, which is how `APreferenceIsAppliedBeforeItIsPersistedEvenWhenTheWriteFails`
+can assert the *order* of two side effects rather than only their results.
+
+**`reset()` rather than assigning a default-constructed model**, so the reset cannot be done without
+the apply. A reset that changed the record and not the screen is the one a user reports as "Reset
+did nothing".
+
+**Not here, deliberately:** reading and writing the file. That is `StudioPreferencesStore`'s, it is
+CNA-free and already tested on its own, and a service that also knew the file format would own two
+things that change for different reasons. This one owns the decision; the store owns the bytes.
+
+**Verification.** `ThePreferencesServiceRunsWithNoShellAndNoPanels`,
+`APreferenceIsAppliedBeforeItIsPersistedEvenWhenTheWriteFails`,
+`AResetAppliesAndPersistsRatherThanOnlyChangingTheRecord`, and
+`TheShellStillSpeaksForThePreferencesServiceItOwns` — which checks that `preferences()` returns the
+service's own model rather than a copy, because a panel editing one while the theme read another
+would be a preference that appears to do nothing every other frame.
 
 ### `STUDIO-02059` — Guard test: no service reaches another through a locator or a singleton
 
