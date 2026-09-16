@@ -850,8 +850,17 @@ namespace CNA::Studio
                 const StudioCamera3D& camera = sceneViewport_->getCamera3D();
                 const SpriteSizeProvider sizes = sceneViewport_->makeSizeProvider();
 
+                // The grid's plane is the user's (STUDIO-07056). The preference is a boolean
+                // because `cna-studio-ui-core` does not link the scene module; the mapping onto
+                // `GridPlane` belongs here, where both halves are in scope.
+                WireframeOptions wireframeOptions;
+                wireframeOptions.gridPlane = panels_->viewportGridOnGroundPlane()
+                    ? GridPlane::Ground
+                    : GridPlane::SceneXY;
+
                 const WireframeResult wireframe = buildSceneWireframe(
-                    context_->getScene(), camera, context_->getSelection(), sizes);
+                    context_->getScene(), camera, context_->getSelection(), sizes,
+                    wireframeOptions);
 
                 const SceneModelBatch models = buildSceneModelBatch(
                     context_->getScene(), camera, context_->makeMeshProvider(),

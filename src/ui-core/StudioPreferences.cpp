@@ -70,6 +70,7 @@ namespace CNA::Studio
         return lhs.theme == rhs.theme && lhs.uiScale == rhs.uiScale
             && lhs.fontSizePoints == rhs.fontSizePoints && lhs.navigation == rhs.navigation
             && lhs.cameraSpeed == rhs.cameraSpeed && lhs.invertZoom == rhs.invertZoom
+            && lhs.gridOnGroundPlane == rhs.gridOnGroundPlane
             && lhs.autosaveSeconds == rhs.autosaveSeconds
             && lhs.reopenLastProject == rhs.reopenLastProject
             && lhs.externalEditor == rhs.externalEditor && lhs.cmakePath == rhs.cmakePath
@@ -128,6 +129,7 @@ namespace CNA::Studio
         viewport.set("navigation", std::string{studioNavigationStyleName(preferences.navigation)});
         viewport.set("cameraSpeed", static_cast<double>(preferences.cameraSpeed));
         viewport.set("invertZoom", preferences.invertZoom);
+        viewport.set("gridOnGroundPlane", preferences.gridOnGroundPlane);
         document.set("viewport", std::move(viewport));
 
         JsonValue documents = JsonValue::makeObject();
@@ -178,6 +180,8 @@ namespace CNA::Studio
         (void)parseStudioNavigationStyle(viewport["navigation"].asString(), preferences.navigation);
         preferences.cameraSpeed = viewport["cameraSpeed"].asFloat(preferences.cameraSpeed);
         preferences.invertZoom = viewport["invertZoom"].asBoolean(preferences.invertZoom);
+        preferences.gridOnGroundPlane =
+            viewport["gridOnGroundPlane"].asBoolean(preferences.gridOnGroundPlane);
 
         const JsonValue& documents = value["documents"];
         preferences.autosaveSeconds =

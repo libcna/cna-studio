@@ -658,3 +658,83 @@ CNA_STUDIO_TEST(FlyingWithTheGizmoKeysDoesNotAlsoSwitchTheManipulator)
 
     CNA_STUDIO_EXPECT(fixture.panels.viewportMode() == GizmoMode::Translate);
 }
+
+CNA_STUDIO_TEST(TheGridPlaneCommandIsOfferedOnlyWhereItChangesSomething)
+{
+    // `STUDIO-07056`. The prototype offers *Grid on Ground Plane* in the View menu and offers it
+    // only in the 3D view, where it does something. The 2D view has one plane and no choice to
+    // make about it -- a command that visibly does nothing there is a bug report waiting to be
+    // filed.
+    //
+    // Greyed out rather than hidden, which is the difference worth testing: a user who went looking
+    // for the setting should find it and see why it is unavailable. A row that disappears teaches
+    // them the feature does not exist.
+    ShellFixture fixture;
+
+    const StudioAction* action = fixture.shell.actions().find("studio.view.gridOnGroundPlane");
+    CNA_STUDIO_EXPECT(action != nullptr);
+    CNA_STUDIO_EXPECT(action->checkable);
+
+    // The 2D view is where a Studio opens.
+    CNA_STUDIO_EXPECT(fixture.panels.viewportView() == StudioViewportView::TwoD);
+    CNA_STUDIO_EXPECT(action->isEnabled && !action->isEnabled());
+
+    // Present, not absent: found by id above and still findable here.
+    CNA_STUDIO_EXPECT(fixture.shell.actions().invoke("studio.view.gridOnGroundPlane")
+                      == StudioActionResult::Disabled);
+    CNA_STUDIO_EXPECT(!fixture.panels.viewportGridOnGroundPlane());
+
+    fixture.press(UiKey::Digit3);
+    CNA_STUDIO_EXPECT(fixture.panels.viewportView() == StudioViewportView::ThreeD);
+
+    const StudioAction* inThreeD = fixture.shell.actions().find("studio.view.gridOnGroundPlane");
+    CNA_STUDIO_EXPECT(inThreeD != nullptr);
+    CNA_STUDIO_EXPECT(inThreeD->isEnabled && inThreeD->isEnabled());
+}
+
+CNA_STUDIO_TEST(TheGridPlaneIsAPreferenceSoItSurvivesARestart)
+{
+    // Written to the preferences rather than to the viewport state, and the reason is mechanical:
+    // the state is copied *from* the preferences every poll, so a command that wrote to the state
+    // would be writing to something about to be overwritten and the setting would last one frame.
+    //
+    // It is also what makes the choice survive a restart without inventing a second place to keep
+    // it -- which is the acceptance condition, and the half a user notices.
+    ShellFixture fixture;
+    fixture.press(UiKey::Digit3);
+    CNA_STUDIO_EXPECT(fixture.panels.viewportView() == StudioViewportView::ThreeD);
+
+    CNA_STUDIO_EXPECT(!fixture.panels.userPreferences().model().gridOnGroundPlane);
+
+    CNA_STUDIO_EXPECT(fixture.shell.actions().invoke("studio.view.gridOnGroundPlane")
+                      == StudioActionResult::Invoked);
+    CNA_STUDIO_EXPECT(fixture.panels.userPreferences().model().gridOnGroundPlane);
+
+    // And the viewport state follows on the next poll, which is what the wireframe reads.
+    fixture.shell.renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(fixture.panels.viewportGridOnGroundPlane());
+
+    // Checkable means it says which answer is current, and pressing it again is the other one.
+    const StudioAction* action = fixture.shell.actions().find("studio.view.gridOnGroundPlane");
+    CNA_STUDIO_EXPECT(action != nullptr && action->isChecked && action->isChecked());
+
+    CNA_STUDIO_EXPECT(fixture.shell.actions().invoke("studio.view.gridOnGroundPlane")
+                      == StudioActionResult::Invoked);
+    CNA_STUDIO_EXPECT(!fixture.panels.userPreferences().model().gridOnGroundPlane);
+}
+
+CNA_STUDIO_TEST(TheGridPlanePreferenceRoundTripsThroughItsFile)
+{
+    // The other half of "survives a restart": the setting has to reach disk in a form that reads
+    // back. A preference the editor honours in memory and drops on save is one that works for
+    // exactly as long as the session.
+    StudioPreferences saved;
+    saved.gridOnGroundPlane = true;
+
+    StudioPreferences loaded;
+    CNA_STUDIO_EXPECT(loaded.gridOnGroundPlane == false);
+
+    loaded = studioPreferencesFromJson(studioPreferencesToJson(saved));
+    CNA_STUDIO_EXPECT(loaded.gridOnGroundPlane);
+    CNA_STUDIO_EXPECT(loaded == saved);
+}

@@ -328,6 +328,13 @@ namespace CNA::Studio
                 "Move the viewport camera to frame the selection.", C::View, chord(UiKey::F));
         command("studio.view.toggleGrid", "Show Grid",
                 "Show or hide the viewport grid.", C::View, {}, /*checkable=*/true);
+        // `STUDIO-07056`. Checkable rather than two commands, because it is one choice with two
+        // answers and a pair would put both on the menu with one of them always wrong. Disabled in
+        // the 2D view rather than hidden: a user who went looking for it should find it and see
+        // why it is greyed out, which a missing row cannot tell them.
+        command("studio.view.gridOnGroundPlane", "Grid on Ground Plane",
+                "Draw the 3D grid on the ground plane (XZ) rather than the scene's own (XY).",
+                C::View, {}, /*checkable=*/true);
         command("studio.view.translate", "Translate",
                 "Switch the gizmo to translation.", C::View, chord(UiKey::W));
         command("studio.view.rotate", "Rotate",

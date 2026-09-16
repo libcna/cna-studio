@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 34 of 46 complete `█████████░░░`
+**Progress:** 35 of 46 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -50,7 +50,7 @@
 | `STUDIO-07053` | `--scene` opens a scene on the native shell | ✅ | `STUDIO-07048` |
 | `STUDIO-07054` | Editors for list and structure properties | ⬜ | `STUDIO-07018` |
 | `STUDIO-07055` | A numeric property field is dragged as well as typed | ⬜ | `STUDIO-07018` |
-| `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ⬜ | `STUDIO-07009` |
+| `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ✅ | `STUDIO-07009` |
 | `STUDIO-07057` | The angles a user typed survive being read back | ⬜ | `STUDIO-07018` |
 | `STUDIO-07058` | Reparenting by dragging in the World Outliner | ⬜ | `STUDIO-07006` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
@@ -274,10 +274,33 @@ gesture. The native field commits on Enter and nothing else, so setting a positi
 **Acceptance.** A horizontal drag on a numeric field changes the value proportionally, is one undo
 entry, and a click without movement still places the caret for typing.
 
-**`STUDIO-07056` — The 3D view's grid plane.** The prototype offers *Grid on Ground Plane* in the
-View menu, and offers it only in the 3D view, where it changes something. The native shell has no
+**`STUDIO-07056` — The 3D view's grid plane.** ✅ The prototype offers *Grid on Ground Plane* in the
+View menu, and offers it only in the 3D view, where it changes something. The native shell had no
 such command and no `GridPlane` at all. **Acceptance.** The grid can be put on the ground plane in
 the 3D view, the command is absent or disabled in the 2D one, and the choice survives a restart.
+
+**Disabled in the 2D view rather than hidden**, which is where this differs from the prototype and
+deliberately so. The prototype omits the row; a user who went looking for the setting finds nothing
+and learns the feature does not exist. Greyed out, they find it and can see why it is unavailable —
+and the native shell can express that, because a plugin command and a built-in command are both
+registry actions with an `isEnabled` predicate.
+
+**A preference, not viewport state**, and the reason is mechanical rather than stylistic: the
+viewport state is copied *from* the preferences every poll, so a command that wrote to the state
+would be writing to something about to be overwritten and the setting would last one frame. It is
+also what makes the choice survive a restart without inventing a second place to keep it.
+
+**Stored as a boolean rather than as `GridPlane`.** `cna-studio-ui-core` does not link
+`cna-studio-scene`, and giving preferences a reason to would invert the layering for one field. The
+mapping happens in the host that builds the wireframe, which already has both in scope.
+
+**`CnaStudioGridPlaneChangesTheView` is the inverse of the render-backend A/B.** There two routes
+must agree because only the plumbing differs; here two runs must *disagree*, because the only thing
+that differs is the setting. That shape is the one this phase keeps meeting: a preference stored,
+loaded, given a menu row and read by nothing produces two identical captures while every unit test
+around it passes, because each half works — `STUDIO-11015` was exactly that, three viewport
+preferences written to disk and read by nobody. Verified by cutting the host's one line that passes
+the option: the test fails, and passes again when it is restored.
 
 **`STUDIO-07057` — The angles a user typed survive being read back.** A rotation is stored as a
 quaternion and edited as Euler angles, and the conversion is not injective: at gimbal lock, typing

@@ -945,6 +945,28 @@ if(CNA_STUDIO_WITH_CNA AND CNA_STUDIO_WITH_IMGUI)
             LABELS "needs-display" TIMEOUT 300)
     endif()
 
+    # The grid plane actually reaches the 3D view (STUDIO-07056). The inverse of the A/B above:
+    # there the two routes must agree because only the plumbing differs, here the two runs must
+    # disagree because the only thing that differs is the setting being tested. A preference that
+    # is stored, loaded, given a menu row and read by nothing produces two identical captures while
+    # every unit test around it passes -- which is `STUDIO-11015` exactly, three viewport
+    # preferences written to disk and read by nobody.
+    add_test(NAME CnaStudioGridPlaneChangesTheView
+        COMMAND ${CMAKE_COMMAND}
+            -DCNA_STUDIO_EXE=$<TARGET_FILE:cna-studio>
+            -DCNA_STUDIO_PROJECT=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
+            -DCNA_STUDIO_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DCNA_STUDIO_SIZE=1280x720
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GridPlaneTest.cmake)
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioGridPlaneChangesTheView PROPERTIES TIMEOUT 300)
+    else()
+        set_tests_properties(CnaStudioGridPlaneChangesTheView PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
+            LABELS "needs-display" TIMEOUT 300)
+    endif()
+
     # --screenshot without --frames has no final frame to capture, and silently writing nothing
     # would make the smoke test above pass for the wrong reason.
     add_test(NAME CnaStudioScreenshotNeedsFrameLimit

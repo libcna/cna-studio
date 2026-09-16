@@ -188,6 +188,20 @@ namespace CNA::Studio
         /** @brief Whether the wheel's zoom direction is reversed. */
         bool invertZoom = false;
 
+        /**
+         * @brief Whether the 3D grid lies on the ground plane rather than the scene's own.
+         *
+         * `STUDIO-07056`. Copied in every frame from the preferences alongside `cameraSpeed` and
+         * `invertZoom`, and for the same reason: a preference also arrives by being *assigned*
+         * when the host loads it from disk, so a setting applied only when the Preferences panel
+         * changes it works when you change it and not when you restart.
+         *
+         * It means nothing in the 2D view, which has one plane and no choice to make about it —
+         * the command that sets it is disabled there rather than hidden, so a user who looked for
+         * it can see it exists and see why it is greyed out.
+         */
+        bool gridOnGroundPlane = false;
+
         /** @brief Whether a 3D navigation gesture is in progress. */
         bool navigating = false;
         /** @brief Whether that gesture has moved at all, which is what makes it not a click. */

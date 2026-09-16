@@ -385,6 +385,36 @@ namespace CNA::Studio
             shell.actions().add(std::move(action));
         }
 
+        // Which plane the 3D grid lies in (STUDIO-07056). Written straight to the preferences
+        // rather than to the viewport state, because the state is copied *from* the preferences
+        // every frame -- writing to it would be writing to something about to be overwritten, and
+        // the setting would take effect for exactly one frame. It is also what makes the choice
+        // survive a restart without a second place to store it.
+        if (const StudioAction* existing = shell.actions().find("studio.view.gridOnGroundPlane"))
+        {
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this] { return preferences_.model().gridOnGroundPlane; };
+            // Enabled only where it changes something. The 2D view has one plane and no choice to
+            // make about it -- and a command that visibly does nothing is a bug report waiting to
+            // be filed. Greyed out rather than absent, so a user who went looking for it finds it.
+            action.isEnabled = [this] { return viewportState_.view == StudioViewportView::ThreeD; };
+            action.run = [this] {
+                const bool ground = !preferences_.model().gridOnGroundPlane;
+                preferences_.model().gridOnGroundPlane = ground;
+
+                // Through `apply` rather than by assigning the model alone: applying is what
+                // writes them to disk, and a setting changed in the record and not on disk is one
+                // that works until the user restarts.
+                (void)preferences_.apply();
+
+                log_.append(LogSeverity::Info,
+                            ground ? "The 3D grid is on the ground plane."
+                                   : "The 3D grid is on the scene's own plane.");
+            };
+            shell.actions().add(std::move(action));
+        }
+
         // The two views. Exclusive and checkable for the same reason the tools are: a viewport can
         // only be showing one of them, and a menu that cannot say which is one a user tests by
         // pressing it.
@@ -537,6 +567,7 @@ namespace CNA::Studio
             viewportState_.cameraSpeed = settings.cameraSpeed;
             viewportState_.invertZoom = settings.invertZoom;
             viewportState_.navigation = settings.navigation;
+            viewportState_.gridOnGroundPlane = settings.gridOnGroundPlane;
 
             // The two views branch here, at the top, rather than inside one function that would
             // then be about both. They share the document and nothing below it: a press in 3D

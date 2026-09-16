@@ -98,6 +98,20 @@ namespace CNA::Studio
         /** @brief True to invert the wheel's zoom direction. */
         bool invertZoom = false;
 
+        /**
+         * @brief True to draw the 3D grid on the ground plane rather than the scene's own.
+         *
+         * `STUDIO-07056`. A boolean rather than the `GridPlane` enum the wireframe takes, because
+         * `cna-studio-ui-core` does not link `cna-studio-scene` and giving preferences a reason to
+         * would invert the layering for one field. The mapping happens where the wireframe is
+         * built, which is where both halves are already in scope.
+         *
+         * The default is the scene's own plane, because everything this editor can place today
+         * lives in XY — a floor is what a user needs the moment a model stands on one, and not
+         * before.
+         */
+        bool gridOnGroundPlane = false;
+
         // --- Documents -------------------------------------------------------------------------
 
         /** @brief Seconds between autosaves, or zero for none. */

@@ -289,6 +289,18 @@ namespace CNA::Studio
         [[nodiscard]] GizmoSpace viewportSpace() const { return viewportState_.space; }
 
         /**
+         * @brief Whether the 3D grid lies on the ground plane rather than the scene's own.
+         *
+         * `STUDIO-07056`. Read by the host that builds the wireframe, which cannot read the
+         * preference directly: the preference is a boolean in `cna-studio-ui-core` and `GridPlane`
+         * lives in `cna-studio-scene`, and this is the object that already sees both.
+         */
+        [[nodiscard]] bool viewportGridOnGroundPlane() const
+        {
+            return viewportState_.gridOnGroundPlane;
+        }
+
+        /**
          * @brief Tells the shell which player binaries exist beside it.
          *
          * "Run this on Vulkan" means "launch cna-player-vulkan", so what Play can do is decided
