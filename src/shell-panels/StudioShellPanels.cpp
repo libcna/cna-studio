@@ -638,6 +638,7 @@ namespace CNA::Studio
             StudioDetailsServices details_services;
             details_services.audio = services_.audio;
             details_services.thumbnail = services_.assetThumbnail;
+            details_services.modelEffectName = services_.modelEffectName;
 
             const StudioDetailsResult details =
                 studioDetailsPanel(frame, bounds, context_, details_services);
@@ -646,6 +647,7 @@ namespace CNA::Studio
                 counts_.detailsRowsDrawn = details.rowsDrawn;
                 counts_.audioPreviews = details.audio.controls;
                 counts_.animationFrames = details.animationFrames;
+                counts_.prefabOverrides = details.prefab.overrides;
 
                 // Taken from the draw pass so the viewport draws what was on screen rather than
                 // what the input pass decided a moment before the transport buttons were read.
@@ -657,6 +659,16 @@ namespace CNA::Studio
             {
                 log_.append(LogSeverity::Info,
                             "Changed " + details.editedProperty + ".  Undo with Ctrl+Z.");
+            }
+
+            // Revert and Apply (STUDIO-07042). Apply writes the prefab *file*, which every other
+            // instance of it is about to be compared against, so a failure has to reach the user
+            // rather than being a button that did nothing.
+            if (!details.prefab.message.empty())
+            {
+                log_.append(details.prefab.failed ? LogSeverity::Warning : LogSeverity::Info,
+                            details.prefab.failed ? details.prefab.message
+                                                  : details.prefab.message + ".");
             }
 
             // Said out loud, both ways. A preview that will not load and a clip of silence sound
@@ -671,6 +683,26 @@ namespace CNA::Studio
             else if (details.audio.stopped)
             {
                 log_.append(LogSeverity::Trace, "Preview stopped.");
+            }
+        });
+
+        // The Material panel (STUDIO-07046). Registered since the shell existed and blank until
+        // now: a tab a user could raise onto an empty rectangle, which reads as a broken editor
+        // rather than an unfinished one. Phase 19 grows it into a material editor with a preview;
+        // this is the panel it grows in.
+        shell.setPanelContent("material", [this](StudioFrame& frame, const UiRect& bounds) {
+            StudioDetailsServices details_services;
+            details_services.audio = services_.audio;
+            details_services.thumbnail = services_.assetThumbnail;
+            details_services.modelEffectName = services_.modelEffectName;
+
+            const StudioDetailsResult material =
+                studioMaterialPanel(frame, bounds, context_, details_services);
+            if (frame.isDrawPass()) { counts_.materialFields = material.materialFields; }
+            if (material.edited)
+            {
+                log_.append(LogSeverity::Info,
+                            "Changed " + material.editedProperty + ".  Undo with Ctrl+Z.");
             }
         });
 

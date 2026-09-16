@@ -113,6 +113,49 @@ namespace CNA::Studio
          * honestly knows.
          */
         std::function<UiTextureId(const Uuid&)> thumbnail;
+
+        /**
+         * @brief Names the effect this build's model pass actually draws through.
+         *
+         * `plan.md` STUDIO-07046. Which effect a build got decides whether metallic and roughness
+         * reach the screen at all (CNA gap G-05), so the material editor says which one it is
+         * rather than leaving a user to wonder why a slider does nothing. Unset leaves the line
+         * off, which is honest for a build with no renderer to ask.
+         */
+        std::function<std::string()> modelEffectName;
+    };
+
+    /**
+     * @brief What the prefab section reported and did this frame.
+     *
+     * `plan.md` STUDIO-07042. Returned rather than logged, like everything else this panel
+     * produces: the binder that already owns the Output Log is where the message belongs.
+     */
+    struct StudioPrefabSectionResult
+    {
+        /** @brief The selected entity is part of a prefab instance, so the section was drawn. */
+        bool present = false;
+
+        /** @brief How many ways the instance differs from its prefab. */
+        std::size_t overrides = 0;
+
+        /** @brief Revert was pressed and the command ran. Input pass only. */
+        bool reverted = false;
+
+        /** @brief Apply was pressed and the command ran. Input pass only. */
+        bool applied = false;
+
+        /**
+         * @brief What to say about it: a summary on success, the reason on a failure.
+         *
+         * Apply *writes the prefab file*, which is the one action in this panel that changes an
+         * asset every other instance of that prefab is about to be compared against — so "it did
+         * not work" has to reach the user rather than being a button that did nothing.
+         */
+        std::string message;
+
+        /** @brief True when @ref message is a failure rather than a summary. */
+        bool failed = false;
     };
 
     /** @brief What the Details panel did this frame. */
@@ -154,6 +197,18 @@ namespace CNA::Studio
 
         /** @brief How many frames the previewed clip has. Zero when there is no preview. */
         std::size_t animationFrames = 0;
+
+        /** @brief What the prefab section reported. */
+        StudioPrefabSectionResult prefab;
+
+        /**
+         * @brief How many editable material fields were drawn, or zero for anything else.
+         *
+         * `plan.md` STUDIO-07046. Reported so a test can assert the editor appeared without
+         * reading pixels -- and so "the material editor is a heading with nothing under it" is a
+         * failure a test can name.
+         */
+        std::size_t materialFields = 0;
     };
 
     /**
@@ -228,4 +283,26 @@ namespace CNA::Studio
     StudioDetailsResult studioDetailsPanel(StudioFrame& frame, const UiRect& bounds,
                                            StudioContext& context,
                                            const StudioDetailsServices& services = {});
+
+    /**
+     * @brief Draws the Material panel: the selected material asset, or what to do to get one.
+     *
+     * `plan.md` STUDIO-07046. The native shell has registered a `material` panel since the shell
+     * existed and never drawn anything in it — a tab a user can raise onto a blank rectangle,
+     * which reads as a broken editor rather than as an unfinished one. It shows the same editor
+     * the Details panel does, over the same file, because a second implementation of a property
+     * grid over one document is how the two come to disagree.
+     *
+     * Phase 19 is what grows this into a material *editor* — a preview, texture slots, the shader
+     * the material compiles to. This is the panel it grows in.
+     *
+     * @param frame The frame.
+     * @param bounds The panel's content rectangle.
+     * @param context The editor. Its selected asset decides what is shown.
+     * @param services The effect-name seam.
+     * @return What happened.
+     */
+    StudioDetailsResult studioMaterialPanel(StudioFrame& frame, const UiRect& bounds,
+                                            StudioContext& context,
+                                            const StudioDetailsServices& services = {});
 }

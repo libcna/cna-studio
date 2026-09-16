@@ -294,7 +294,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **226 of 550 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **228 of 551 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -409,7 +409,7 @@ survives a restart; and **notifications** — a build, a package, a renderer com
 player announcing itself over the corner of the workspace, with the panel that explains it offered
 as a button, a failure that stays until it is dismissed, and every one of them written to the log.
 
-**Phase 7 — Panel migration** (27 of 34, 2 in progress). The strangler seam itself — one log model
+**Phase 7 — Panel migration** (29 of 34, 2 in progress). The strangler seam itself — one log model
 read by both consoles, a panel content seam on the shell, and a module for the ported panels — and
 **every prototype panel now ported off Dear ImGui except the material editor**: the Output Log, the
 World Outliner, the Details panel (with real editors for every property kind), the Content Browser,
@@ -489,9 +489,9 @@ variables current CNA actually defines.
 host eligibility, target renderer validation, and the guard that keeps Studio's transcription of
 CNA's configure rules from drifting.
 
-**Phase 30 — Large-project performance** (2 of 15).
+**Phase 30 — Large-project performance** (2 of 16).
 
-**Phase 30 — Large-project performance** (2 of 15). Neither was planned for this session and both
+**Phase 30 — Large-project performance** (2 of 16). Neither was planned for this session and both
 came out of `STUDIO-04028`'s benchmark. `STUDIO-30013` made the World Outliner linear in scene size
 rather than quadratic — 309 ms a frame at 2 000 entities became 19 ms — through
 `SceneDocument::getChildrenByParent()`, which is a *grouping* rather than a cached index because

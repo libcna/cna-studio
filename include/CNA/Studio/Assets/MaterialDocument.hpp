@@ -98,4 +98,38 @@ namespace CNA::Studio
          */
         bool loadFromJson(const JsonValue& json);
     };
+
+    class AssetDatabase;
+
+    /** @brief Why a material asset could not be read. Empty when it was. */
+    enum class MaterialLoadProblem
+    {
+        /** @brief Loaded. */
+        None,
+        /** @brief No such asset, or it is not a material. */
+        NotAMaterial,
+        /** @brief The file is not there, or cannot be opened. */
+        Unreadable,
+        /** @brief Not JSON, or a `formatVersion` this build cannot read. */
+        UnreadableFormat,
+    };
+
+    /**
+     * @brief Reads the material asset @p assetId from the project.
+     *
+     * `plan.md` STUDIO-07046. One reader rather than one per caller: the model pass's material
+     * provider and the editor that writes the file must agree about what the file says, and two
+     * copies of "open it, parse it, load it, and decide what a failure means" is two chances to
+     * disagree about a material that is half-written.
+     *
+     * @param assets The project's assets, for the record and the path.
+     * @param assetId The material asset.
+     * @param out Filled in on success; untouched otherwise, so a caller's defaults survive.
+     * @return What happened, so the caller can say which of the three failures it was — a missing
+     *         file, an unreadable one and one this build is too old for are three different
+     *         messages, and only the last of them means "do not offer to overwrite it".
+     */
+    [[nodiscard]] MaterialLoadProblem loadMaterialDocument(const AssetDatabase& assets,
+                                                           const Uuid& assetId,
+                                                           MaterialDocument& out);
 }

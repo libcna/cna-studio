@@ -117,6 +117,15 @@ namespace CNA::Studio
         std::function<UiTextureId(const Uuid&)> assetThumbnail;
 
         /**
+         * @brief Names the effect this build's model pass draws through.
+         *
+         * `STUDIO-07046`. Which effect a build got decides whether a material's metallic and
+         * roughness reach the screen at all (CNA gap G-05), so the material editor says which one
+         * rather than leaving a user wondering why a field does nothing. Unset leaves the line off.
+         */
+        std::function<std::string()> modelEffectName;
+
+        /**
          * @brief Puts text on the system clipboard, returning whether it got there.
          *
          * A seam rather than a direct call, because the clipboard is behind a default-off CNA
@@ -157,6 +166,12 @@ namespace CNA::Studio
 
         /** @brief How many frames the sprite clip being previewed has, or zero. */
         std::size_t animationFrames = 0;
+
+        /** @brief How many editable fields the Material panel drew. */
+        std::size_t materialFields = 0;
+
+        /** @brief How many ways the selected prefab instance differs from its prefab. */
+        std::size_t prefabOverrides = 0;
     };
 
     /**

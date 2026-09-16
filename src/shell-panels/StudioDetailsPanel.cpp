@@ -10,7 +10,11 @@
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/MaterialDocument.hpp"
 #include "CNA/Studio/Core/NumberText.hpp"
+#include "CNA/Studio/PrefabWorkflow.hpp"
+#include "CNA/Studio/Scene/PrefabCommands.hpp"
+#include "CNA/Studio/Scene/PrefabDocument.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
@@ -27,6 +31,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace CNA::Studio
 {
@@ -400,6 +408,347 @@ namespace CNA::Studio
         bool isAudibleAsset(AssetType type)
         {
             return type == AssetType::SoundEffect || type == AssetType::Song;
+        }
+
+        /** @brief How many rows the prefab section reserves at most. */
+        constexpr std::size_t kPrefabSectionRows = 6;
+
+        /** @brief What the prefab section knows, worked out once a frame and kept for both passes. */
+        struct PrefabSummary
+        {
+            /** @brief -2 the asset is gone, -1 it will not load, otherwise the override count. */
+            std::int64_t state = -2;
+            std::string name;
+            std::vector<std::string> lines;
+        };
+
+        /** @brief Packs a summary into the one string a `WidgetState` can hold. */
+        std::string packPrefabSummary(const PrefabSummary& summary)
+        {
+            std::string packed = summary.name;
+            for (const std::string& line : summary.lines) { packed += "\n" + line; }
+            return packed;
+        }
+
+        /** @brief Unpacks what @ref packPrefabSummary wrote. */
+        PrefabSummary unpackPrefabSummary(std::int64_t state, const std::string& packed)
+        {
+            PrefabSummary summary;
+            summary.state = state;
+
+            std::size_t start = 0;
+            bool first = true;
+            while (start <= packed.size())
+            {
+                const std::size_t end = packed.find('\n', start);
+                const std::string part =
+                    packed.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                if (first) { summary.name = part; first = false; }
+                else { summary.lines.push_back(part); }
+                if (end == std::string::npos) { break; }
+                start = end + 1;
+            }
+            return summary;
+        }
+
+        /** @brief Describes one override the way the report reads it. */
+        std::string describeOverride(const PrefabOverride& entry)
+        {
+            std::string line = std::string{toString(entry.kind)} + ": " + entry.entityName;
+            if (!entry.propertyName.empty()) { line += "." + entry.propertyName; }
+            return line;
+        }
+
+        /**
+         * @brief A linear colour row: a swatch, then its channels as floats.
+         *
+         * `plan.md` STUDIO-07046. Not the property grid's `Color` editor, which edits a
+         * `StudioColor` as four whole numbers from 0 to 255 -- a material's colours are linear
+         * floats and an emissive one is routinely greater than one, so 0..255 would both quantise
+         * what the user typed and refuse what a bright material needs.
+         *
+         * The swatch shows the 0..1 range as a colour, clamped. A value above one has no brighter
+         * pixel to show, which is a property of a screen rather than of the material, so the
+         * numbers beside it stay the truth.
+         *
+         * @param frame The frame.
+         * @param bounds The control column.
+         * @param key A stable id for the row.
+         * @param colour In, and out when a channel committed.
+         * @return True when a channel committed.
+         */
+        bool linearColorRow(StudioFrame& frame, const UiRect& bounds, const char* key,
+                            StudioVector3& colour)
+        {
+            const StudioTheme& theme = frame.theme();
+            const float spacing = metricOf(theme, StudioMetric::SpacingSmall);
+
+            UiRect control = bounds;
+            const UiRect swatch = control.splitLeft(
+                std::min(metricOf(theme, StudioMetric::ControlHeight), control.width));
+            control.splitLeft(std::min(spacing, control.width));
+
+            if (frame.isDrawPass())
+            {
+                const auto channel = [](float value) {
+                    return static_cast<std::uint8_t>(
+                        std::clamp(std::lround(value * 255.0f), 0L, 255L));
+                };
+                frame.drawList().fillRect(
+                    swatch.inset(UiEdges{0.0f, 2.0f}),
+                    StudioColor{channel(colour.x), channel(colour.y), channel(colour.z), 255});
+                frame.drawList().strokeRect(swatch.inset(UiEdges{0.0f, 2.0f}),
+                                            theme.color(StudioColorRole::Border),
+                                            metricOf(theme, StudioMetric::BorderWidth));
+            }
+
+            // Unlabelled, for the reason `axisRoleFor` records: the swatch beside them says which
+            // channel is which far better than three letters can.
+            static const char* const kChannels[] = {"r", "g", "b"};
+            float components[3] = {colour.x, colour.y, colour.z};
+
+            frame.ids().push(key);
+            const bool changed = numericComponents(frame, control, kChannels, components, 3,
+                                                   /*integral=*/false, /*labelled=*/false);
+            frame.ids().pop();
+
+            if (!changed) { return false; }
+            colour = StudioVector3{components[0], components[1], components[2]};
+            return true;
+        }
+
+        /**
+         * @brief The prefab section: what this instance has changed, and what to do about it.
+         *
+         * `plan.md` STUDIO-07042. Answered for the **instance**, not for the entity: selecting a
+         * child of an instance should still say what it is part of and let the user act on it, so
+         * the section walks up to the instance root first.
+         *
+         * ### Worked out once a frame, not once a pass
+         *
+         * The comparison loads the prefab from disk and walks both subtrees. The panel is
+         * described twice a frame, and doing that twice would double the cost of the one panel in
+         * Studio that opens a file to draw itself. The input pass computes it and packs the
+         * summary into the widget state; the draw pass reads what the input pass decided, which
+         * also means the rows drawn are exactly the rows the buttons were hit-tested against.
+         *
+         * It is still a file read per frame while a prefab instance is selected, which is the
+         * Content Browser's problem one size down (`STUDIO-30016`).
+         *
+         * ### Three at most, and a count
+         *
+         * The list exists to make the divergence *recognisable*, not to enumerate it — the same
+         * rule the missing-reference report follows. A hundred overrides is a hundred rows nobody
+         * reads and a panel that scrolls for a second.
+         *
+         * @param frame The frame.
+         * @param area The rows the section may use; advanced by the ones it takes.
+         * @param theme The theme.
+         * @param context The editor. Its scene is compared and mutated; its history receives it.
+         * @param entityId The selected entity, anywhere inside the instance.
+         * @return What it reported and did.
+         */
+        StudioPrefabSectionResult studioPrefabSection(StudioFrame& frame, UiRect& area,
+                                                      const StudioTheme& theme,
+                                                      StudioContext& context, const Uuid& entityId)
+        {
+            StudioPrefabSectionResult result;
+
+            const Uuid instanceRoot = findInstanceRoot(context.getScene(), entityId);
+            if (!instanceRoot.isValid()) { return result; }
+            result.present = true;
+
+            const float rowHeight = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                             metricOf(theme, StudioMetric::MinimumHitTarget));
+            const float spacing = metricOf(theme, StudioMetric::SpacingXSmall);
+
+            const auto nextRow = [&]() {
+                const UiRect row = area.splitTop(rowHeight);
+                area.splitTop(spacing);
+                return row;
+            };
+
+            const auto say = [&](const UiRect& box, const std::string& text, StudioColorRole role,
+                                 StudioFontRole font = StudioFontRole::Body) {
+                if (frame.isDrawPass())
+                {
+                    studioDrawText(frame, box,
+                                   studioTruncateText(frame, theme.font(font), text, box.width),
+                                   font, theme.color(role));
+                }
+            };
+
+            WidgetState& state = frame.state().get(frame.ids().make("prefabsummary"));
+
+            const Uuid assetId = getPrefabAssetOf(context.getScene(), instanceRoot);
+            const AssetRecord* record = context.getAssets().find(assetId);
+
+            // Kept across the passes so the commands below have it without a second load.
+            PrefabDocument prefab;
+            bool prefabLoaded = false;
+
+            if (frame.isInputPass())
+            {
+                PrefabSummary summary;
+                if (record == nullptr)
+                {
+                    // The link survives the asset going away, so it is reported rather than
+                    // vanishing: an instance whose prefab was deleted is exactly what a user needs
+                    // told.
+                    summary.state = -2;
+                    summary.name = assetId.toString();
+                }
+                else if (!prefab.loadFromFile(context.getAssets().resolvePath(record->sourcePath),
+                                              context.getComponentRegistry())
+                              .succeeded)
+                {
+                    summary.state = -1;
+                    summary.name = record->sourcePath;
+                }
+                else
+                {
+                    prefabLoaded = true;
+                    const std::vector<PrefabOverride> overrides = findPrefabOverrides(
+                        context.getScene(), instanceRoot, prefab, context.getComponentRegistry());
+
+                    summary.state = static_cast<std::int64_t>(overrides.size());
+                    summary.name = prefab.getName();
+                    for (std::size_t index = 0; index < overrides.size() && index < 3; ++index)
+                    {
+                        summary.lines.push_back(describeOverride(overrides[index]));
+                    }
+                }
+
+                state.integer = summary.state;
+                state.text = packPrefabSummary(summary);
+            }
+
+            const PrefabSummary summary = unpackPrefabSummary(state.integer, state.text);
+            result.overrides = summary.state > 0 ? static_cast<std::size_t>(summary.state) : 0;
+
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                say(parts.label, "Prefab", StudioColorRole::TextSecondary);
+                if (summary.state == -2)
+                {
+                    say(parts.control, "missing (" + summary.name + ")", StudioColorRole::Warning);
+                }
+                else if (summary.state == -1)
+                {
+                    say(parts.control, summary.name + " will not load", StudioColorRole::Warning);
+                }
+                else
+                {
+                    say(parts.control, summary.name, StudioColorRole::TextPrimary);
+                }
+            }
+
+            if (summary.state < 0) { return result; }
+
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                say(parts.label, "Changes", StudioColorRole::TextSecondary);
+                say(parts.control,
+                    result.overrides == 0
+                        ? std::string{"None. This instance is the prefab."}
+                        : std::to_string(result.overrides)
+                              + (result.overrides == 1 ? " change" : " changes"),
+                    result.overrides == 0 ? StudioColorRole::TextSecondary
+                                          : StudioColorRole::TextPrimary);
+            }
+
+            for (const std::string& line : summary.lines)
+            {
+                UiRect row = nextRow();
+                row.splitLeft(std::min(metricOf(theme, StudioMetric::SpacingLarge), row.width));
+                say(row, line, StudioColorRole::TextSecondary, StudioFontRole::BodySmall);
+            }
+            if (result.overrides > summary.lines.size())
+            {
+                UiRect row = nextRow();
+                row.splitLeft(std::min(metricOf(theme, StudioMetric::SpacingLarge), row.width));
+                say(row, "and " + std::to_string(result.overrides - summary.lines.size()) + " more",
+                    StudioColorRole::TextDisabled, StudioFontRole::BodySmall);
+            }
+
+            if (result.overrides == 0) { return result; }
+
+            const PropertyRow parts = splitRow(theme, nextRow());
+            UiRect controls = parts.control;
+            const float buttonWidth =
+                std::max(metricOf(theme, StudioMetric::ControlHeight) * 2.5f, 64.0f);
+            const UiRect revertBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+            controls.splitLeft(std::min(spacing, controls.width));
+            const UiRect applyBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+
+            frame.ids().push("prefab");
+
+            StudioButtonOptions revert;
+            revert.icon = StudioIcon::Undo;
+            revert.tooltip = "Throw away this instance's changes and take the prefab as it is";
+            const bool revertPressed =
+                studioButton(frame, frame.ids().make("revert"), revertBox, "Revert", revert)
+                    .activated;
+
+            StudioButtonOptions apply;
+            apply.icon = StudioIcon::Save;
+            apply.tooltip = "Write this instance's changes back into the prefab file";
+            const bool applyPressed =
+                studioButton(frame, frame.ids().make("apply"), applyBox, "Apply", apply).activated;
+
+            frame.ids().pop();
+
+            // Only the input pass can have pressed anything, and only the input pass loaded the
+            // prefab the revert needs.
+            if (revertPressed && prefabLoaded)
+            {
+                auto command = std::make_unique<RevertPrefabInstanceCommand>(
+                    context.getScene(), instanceRoot, prefab);
+                if (command->isValid())
+                {
+                    result.message = command->getDescription();
+                    context.execute(std::move(command));
+                    context.pruneSelection();
+                    result.reverted = true;
+                }
+                else
+                {
+                    result.message = "There is nothing to revert.";
+                    result.failed = true;
+                }
+            }
+            else if (applyPressed)
+            {
+                auto command = std::make_unique<ApplyPrefabInstanceCommand>(
+                    context.getScene(), context.getAssets(), context.getComponentRegistry(),
+                    instanceRoot);
+                if (!command->isValid())
+                {
+                    result.message = "Cannot apply: " + command->getError();
+                    result.failed = true;
+                }
+                else
+                {
+                    const std::string summaryText = command->getDescription();
+                    const ApplyPrefabInstanceCommand* raw = command.get();
+                    context.execute(std::move(command));
+
+                    // Apply writes a file, and a write that failed has to be said: every other
+                    // instance of this prefab is about to be compared against what is on disk.
+                    if (raw->getError().empty())
+                    {
+                        result.message = summaryText;
+                        result.applied = true;
+                    }
+                    else
+                    {
+                        result.message = "Cannot write the prefab: " + raw->getError();
+                        result.failed = true;
+                    }
+                }
+            }
+
+            return result;
         }
 
         /** @brief What one sprite animation preview showed this frame. */
@@ -1291,6 +1640,204 @@ namespace CNA::Studio
         return result;
     }
 
+    /**
+     * @brief The material asset editor: what a `.cnamaterial` holds, edited in place.
+     *
+     * `plan.md` STUDIO-07046, the last of the five Inspector sections `STUDIO-07041` found with no
+     * native answer — and the one the migration inventory had recorded as not existing at all. It
+     * said "there is no `.cnamaterial` editor to port; the `material` panel is registered and
+     * empty". There is one: `InspectorPanel::drawMaterialAsset`, which is a *section* of the
+     * Inspector rather than a panel, which is why an inventory of panels could not see it.
+     *
+     * ### The file is the document
+     *
+     * A material is not in the scene and not in the asset database: it is a file, and every edit
+     * here rewrites it through `SetMaterialCommand`, which keeps the previous bytes so undo
+     * replays them verbatim. There is nothing to invalidate afterwards — the material provider
+     * reads the file on every ask rather than caching it, which is exactly what makes an edit
+     * visible in the viewport on the next frame.
+     *
+     * ### A file that cannot be read is refused rather than defaulted
+     *
+     * Showing an editable form over a file this build could not parse is offering to overwrite it
+     * with less than it holds. The three failures are told apart, because they are three different
+     * problems: a material whose file has gone, one that is not valid JSON, and one written by a
+     * newer Studio.
+     *
+     * @param frame The frame.
+     * @param area The rows left below the asset's identity.
+     * @param context The editor; its history receives the edits.
+     * @param record The material asset.
+     * @param services The effect-name seam.
+     * @param rows Advanced by the rows this drew.
+     * @return What happened.
+     */
+    StudioDetailsResult studioMaterialEditor(StudioFrame& frame, UiRect& area,
+                                             StudioContext& context, const AssetRecord& record,
+                                             const StudioDetailsServices& services)
+    {
+        StudioDetailsResult result;
+        const StudioTheme& theme = frame.theme();
+
+        const float rowHeight = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                         metricOf(theme, StudioMetric::MinimumHitTarget));
+        const float spacing = metricOf(theme, StudioMetric::SpacingXSmall);
+
+        const auto nextRow = [&]() {
+            const UiRect row = area.splitTop(rowHeight);
+            area.splitTop(spacing);
+            ++result.rowsDrawn;
+            return row;
+        };
+
+        const auto say = [&](const UiRect& box, const std::string& text, StudioColorRole role) {
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, box,
+                               studioTruncateText(frame, theme.font(StudioFontRole::Body), text,
+                                                  box.width),
+                               StudioFontRole::Body, theme.color(role));
+            }
+        };
+
+        MaterialDocument material;
+        const MaterialLoadProblem problem =
+            loadMaterialDocument(context.getAssets(), record.id, material);
+        if (problem != MaterialLoadProblem::None)
+        {
+            say(nextRow(),
+                problem == MaterialLoadProblem::Unreadable
+                    ? "This material's file cannot be opened."
+                    : "This material was written by a newer Studio, or is not valid JSON.",
+                StudioColorRole::Warning);
+            return result;
+        }
+
+        {
+            const UiRect row = nextRow();
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, row, "Material", StudioFontRole::Subheading,
+                               theme.color(StudioColorRole::TextPrimary));
+            }
+        }
+
+        frame.ids().push("material");
+
+        // Collected rather than applied as they are found, and applied once at the end: every one
+        // of these rewrites the file, and two writes in one frame would put two entries in the
+        // history for one keystroke.
+        std::optional<MaterialDocument> edited;
+        std::string editedField;
+
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            say(parts.label, "Name", StudioColorRole::TextSecondary);
+            ++result.materialFields;
+
+            std::string name = material.name;
+            StudioTextFieldOptions options;
+            options.selectAllOnFocus = true;
+            if (studioTextField(frame, frame.ids().make("name"), parts.control, name, options)
+                    .committed
+                && name != material.name)
+            {
+                MaterialDocument next = material;
+                next.name = name;
+                edited = next;
+                editedField = "name";
+            }
+        }
+
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            say(parts.label, "Base Colour", StudioColorRole::TextSecondary);
+            ++result.materialFields;
+
+            StudioVector3 colour = material.diffuseColor;
+            if (linearColorRow(frame, parts.control, "diffuse", colour) && !edited.has_value())
+            {
+                MaterialDocument next = material;
+                next.diffuseColor = colour;
+                edited = next;
+                editedField = "base colour";
+            }
+        }
+
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            say(parts.label, "Emissive", StudioColorRole::TextSecondary);
+            ++result.materialFields;
+
+            StudioVector3 colour = material.emissiveColor;
+            if (linearColorRow(frame, parts.control, "emissive", colour) && !edited.has_value())
+            {
+                MaterialDocument next = material;
+                next.emissiveColor = colour;
+                edited = next;
+                editedField = "emissive";
+            }
+        }
+
+        struct ScalarField
+        {
+            const char* id;
+            const char* label;
+            float MaterialDocument::*member;
+        };
+        static const ScalarField kScalars[] = {
+            {"metallic", "Metallic", &MaterialDocument::metallic},
+            {"roughness", "Roughness", &MaterialDocument::roughness},
+            {"alpha", "Alpha", &MaterialDocument::alpha},
+        };
+
+        for (const ScalarField& field : kScalars)
+        {
+            const PropertyRow parts = splitRow(theme, nextRow());
+            say(parts.label, field.label, StudioColorRole::TextSecondary);
+            ++result.materialFields;
+
+            frame.ids().push(field.id);
+            const StudioPropertyEditContext editing{&context, Uuid{}};
+            const StudioPropertyEditResult change = studioPropertyEditor(
+                frame, parts.control, PropertyValue{material.*field.member}, {}, editing);
+            frame.ids().pop();
+
+            if (change.edited.has_value() && !edited.has_value())
+            {
+                MaterialDocument next = material;
+                next.*field.member = change.edited->get<float>(material.*field.member);
+                edited = next;
+                editedField = field.label;
+            }
+        }
+
+        // Said plainly rather than left to be discovered: which effect a build got decides whether
+        // metallic and roughness reach the screen at all (CNA gap G-05), and on a BasicEffect build
+        // they are still not wasted -- the specular colour and power are derived from them.
+        if (services.modelEffectName)
+        {
+            const std::string effect = services.modelEffectName();
+            if (!effect.empty())
+            {
+                say(nextRow(), "Drawn through " + effect + ".", StudioColorRole::TextDisabled);
+            }
+        }
+
+        frame.ids().pop();
+
+        if (edited.has_value())
+        {
+            auto command = std::make_unique<SetMaterialCommand>(
+                context.getAssets().resolvePath(record.sourcePath), *edited, editedField);
+            context.execute(std::move(command), MergePolicy::MergeWithPrevious);
+            result.edited = true;
+            result.editedProperty = fileNameOf(record.sourcePath) + "." + editedField;
+        }
+
+        return result;
+    }
+
     StudioDetailsResult studioAssetInspector(StudioFrame& frame, const UiRect& area,
                                              StudioContext& context, const Uuid& assetId,
                                              const StudioDetailsServices& services)
@@ -1321,8 +1868,10 @@ namespace CNA::Studio
             descriptor != nullptr ? &descriptor->properties : nullptr;
 
         // Name, path, kind, a gap, the importer's heading, and one row per setting -- plus the
-        // preview row when this is something that can be heard.
+        // preview row when this is something that can be heard, and the material editor's own
+        // rows when this is a material: a heading, six fields and the effect line.
         const std::size_t rows = 6 + (isAudibleAsset(record->type) ? 1u : 0u)
+                                 + (record->type == AssetType::Material ? 8u : 0u)
                                  + (properties != nullptr ? properties->size() : 0);
 
         StudioScrollOptions scroll;
@@ -1408,6 +1957,21 @@ namespace CNA::Studio
 
         nextRow();
 
+        if (record->type == AssetType::Material)
+        {
+            // A material is the editor's *own* document rather than something imported, so it gets
+            // its fields here instead of an importer's settings form.
+            const StudioDetailsResult material =
+                studioMaterialEditor(frame, cursor, context, *record, services);
+            result.rowsDrawn += material.rowsDrawn;
+            result.materialFields = material.materialFields;
+            result.edited = material.edited;
+            result.editedProperty = material.editedProperty;
+            frame.ids().pop();
+            studioEndScroll(frame);
+            return result;
+        }
+
         if (properties == nullptr || properties->empty())
         {
             // An importer with no declared settings is not a fault -- most have nothing worth
@@ -1418,14 +1982,11 @@ namespace CNA::Studio
             // the editor for it has not been written. Saying which is the difference between a
             // gap somebody can look up and one they report as a bug.
             const std::string text =
-                record->type == AssetType::Material
-                    ? std::string{"A material is edited by the material editor, which the native "
-                                  "shell does not have yet (STUDIO-07046)."}
-                    : (record->importerId.empty()
-                           ? std::string{"No importer handles this file type."}
-                           : (descriptor == nullptr
-                                  ? record->importerId + " is not registered in this build."
-                                  : record->importerId + " has no settings."));
+                record->importerId.empty()
+                    ? std::string{"No importer handles this file type."}
+                    : (descriptor == nullptr
+                           ? record->importerId + " is not registered in this build."
+                           : record->importerId + " has no settings.");
             label(row, text, StudioColorRole::TextSecondary);
             frame.ids().pop();
             studioEndScroll(frame);
@@ -1501,6 +2062,78 @@ namespace CNA::Studio
         frame.ids().pop();
         frame.ids().pop();
         studioEndScroll(frame);
+        return result;
+    }
+
+    StudioDetailsResult studioMaterialPanel(StudioFrame& frame, const UiRect& bounds,
+                                            StudioContext& context,
+                                            const StudioDetailsServices& services)
+    {
+        StudioDetailsResult result;
+        const StudioTheme& theme = frame.theme();
+
+        UiRect area = bounds.inset(UiEdges{metricOf(theme, StudioMetric::SpacingSmall)});
+        if (area.width <= 0.0f || area.height <= 0.0f) { return result; }
+
+        const AssetRecord* record = context.getSelectedAsset().isValid()
+            ? context.getAssets().find(context.getSelectedAsset())
+            : nullptr;
+
+        if (record == nullptr || record->type != AssetType::Material)
+        {
+            // A next action rather than a dead end, which is the rule every other empty state in
+            // Studio follows: "nothing to show" leaves a user looking for the thing that is
+            // broken.
+            if (frame.isDrawPass())
+            {
+                // Short enough to fit a narrow dock. The longer form -- "Select a material in the
+                // Content Browser to edit it" -- ran off the edge of this panel at the width the
+                // default layout gives it, which is the one width it is guaranteed to be seen at.
+                studioDrawText(frame, area,
+                               studioTruncateText(frame, theme.font(StudioFontRole::Body),
+                                                  context.hasProject()
+                                                      ? "Select a material to edit it."
+                                                      : "No project is open.",
+                                                  area.width),
+                               StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
+            }
+            return result;
+        }
+
+        // The file name first, because this panel is not beside the asset inspector's identity
+        // rows and would otherwise be a form with no subject.
+        const float rowHeight = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                         metricOf(theme, StudioMetric::MinimumHitTarget));
+        const float spacing = metricOf(theme, StudioMetric::SpacingXSmall);
+
+        frame.ids().push("materialpanel");
+        {
+            UiRect line = area.splitTop(rowHeight);
+            area.splitTop(spacing);
+            ++result.rowsDrawn;
+
+            const UiRect icon = line.splitLeft(std::min(rowHeight, line.width));
+            line.splitLeft(std::min(metricOf(theme, StudioMetric::SpacingXSmall), line.width));
+            if (frame.isDrawPass())
+            {
+                studioDrawIcon(frame, icon.inset(UiEdges{4.0f}), StudioIcon::Material,
+                               theme.color(StudioColorRole::TextPrimary));
+                studioDrawText(frame, line,
+                               studioTruncateText(frame, theme.font(StudioFontRole::Subheading),
+                                                  fileNameOf(record->sourcePath), line.width),
+                               StudioFontRole::Subheading,
+                               theme.color(StudioColorRole::TextPrimary));
+            }
+        }
+
+        const StudioDetailsResult editor =
+            studioMaterialEditor(frame, area, context, *record, services);
+        frame.ids().pop();
+
+        result.rowsDrawn += editor.rowsDrawn;
+        result.materialFields = editor.materialFields;
+        result.edited = editor.edited;
+        result.editedProperty = editor.editedProperty;
         return result;
     }
 
@@ -1582,8 +2215,15 @@ namespace CNA::Studio
             return rows;
         }();
 
-        // name, enabled, a gap, and the Add Component row at the bottom.
-        const std::size_t totalRows = componentRows + 4;
+        // name, enabled, a gap, and the Add Component row at the bottom -- plus the prefab
+        // section when there is one. Reserved at its maximum rather than at what it will draw:
+        // the count comes from a comparison the section has not run yet at this point, and a
+        // scroll view that is a row too tall is invisible where one a row too short clips the
+        // last control.
+        const std::size_t totalRows =
+            componentRows + 4
+            + (findInstanceRoot(context.getScene(), entityId).isValid() ? kPrefabSectionRows + 1
+                                                                        : 0u);
 
         StudioScrollOptions scroll;
         scroll.contentHeight = static_cast<float>(totalRows) * (rowHeight + spacing);
@@ -1651,6 +2291,24 @@ namespace CNA::Studio
                     result.edited = true;
                     result.editedProperty = "enabled";
                 }
+            }
+        }
+
+        // --- The prefab this entity came from, if any ----------------------------------------
+        //
+        // `STUDIO-07042`. Above the components, where the prototype draws it: what an entity *is*
+        // comes before what it holds, and an instance whose prefab is missing is something a user
+        // needs told before they start editing components that are about to be reverted.
+        {
+            const std::size_t before = result.rowsDrawn;
+            UiRect section = cursor;
+            result.prefab = studioPrefabSection(frame, section, theme, context, entityId);
+            if (result.prefab.present)
+            {
+                const float consumed = section.y - cursor.y;
+                cursor.splitTop(consumed);
+                result.rowsDrawn =
+                    before + static_cast<std::size_t>(std::lround(consumed / (rowHeight + spacing)));
             }
         }
 

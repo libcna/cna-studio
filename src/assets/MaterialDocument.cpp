@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Assets/MaterialDocument.hpp"
 
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
+
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <iterator>
+#include <string>
 
 namespace CNA::Studio
 {
@@ -106,5 +111,31 @@ namespace CNA::Studio
         emissiveTexture = Uuid::parse(json["emissiveTexture"].asString(""));
 
         return true;
+    }
+
+    MaterialLoadProblem loadMaterialDocument(const AssetDatabase& assets, const Uuid& assetId,
+                                             MaterialDocument& out)
+    {
+        const AssetRecord* record = assets.find(assetId);
+        if (record == nullptr || record->type != AssetType::Material)
+        {
+            return MaterialLoadProblem::NotAMaterial;
+        }
+
+        std::ifstream stream{assets.resolvePath(record->sourcePath)};
+        if (!stream) { return MaterialLoadProblem::Unreadable; }
+
+        const std::string text{std::istreambuf_iterator<char>{stream},
+                               std::istreambuf_iterator<char>{}};
+        const JsonParseResult parsed = Json::parse(text);
+        if (!parsed.succeeded) { return MaterialLoadProblem::UnreadableFormat; }
+
+        // Loaded into a local first, so a document that declares a version this build cannot read
+        // leaves the caller's own value untouched rather than half-overwritten.
+        MaterialDocument loaded;
+        if (!loaded.loadFromJson(parsed.value)) { return MaterialLoadProblem::UnreadableFormat; }
+
+        out = std::move(loaded);
+        return MaterialLoadProblem::None;
     }
 }

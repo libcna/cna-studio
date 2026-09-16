@@ -55,8 +55,9 @@ The Viewport is ✅ as of `STUDIO-07009`: the native one composites the 2D scene
 manipulates, paints tiles, shows the 3D view, and forwards input to a running game. It was the last
 🔄 in this table.
 
-Panels the native shell adds, which the prototype has no equivalent for: `layers`, `preferences`,
-`material` (registered, no content yet — Phase 19).
+Panels the native shell adds, which the prototype has no equivalent for: `layers`, `preferences`
+and `material` — the last of which showed nothing at all until `STUDIO-07046` (Phase 19 grows it
+into a material editor with a preview).
 
 ---
 
@@ -298,12 +299,32 @@ project; each is a panel or a mode with a known shape.
 Rows leave this table by being answered, and the prose below says which, because a list that only
 ever shrinks is one nobody can tell the difference between "done" and "quietly dropped" in.
 
+**This table is empty.** Every row that was ever in it has been answered, and the prose below says
+by what. `STUDIO-07030` — deleting the Dear ImGui panel implementations — is unblocked.
+
 | What | Prototype home | What it needs |
 |------|----------------|---------------|
-| Prefab overrides | `InspectorPanel::drawPrefabSection` | Report, revert and apply, in the native Details panel (`STUDIO-07042`) |
-| Material asset editor | `InspectorPanel::drawMaterialAsset` | The editor the prototype already has, ported (`STUDIO-07046`) |
+| *(nothing)* | — | — |
 
-Six rows have left this table since it was written. **The sprite animation preview** is answered by
+Eight rows have left this table since it was written. **Prefab overrides** are answered by
+`studioPrefabSection` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07042`): what the
+instance has changed, three of them listed and the rest counted, with Revert and Apply. It is
+answered for the *instance* rather than for the entity, so selecting a child of an instance still
+says what it is part of. **The material asset editor** is answered by
+`studioMaterialEditor` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07046`): name, base
+colour, emissive, metallic, roughness and alpha, over the `.cnamaterial` file itself, through
+`SetMaterialCommand` so undo replays the bytes that were there. It is the one editor in Studio whose
+document is a file rather than the scene or the asset database, which is why a file this build
+cannot parse is refused rather than shown as defaults — an editable form over a file that did not
+load is an offer to overwrite it with less than it holds.
+
+It also closed the **`material` panel**, which this document listed as "registered, no content yet
+— Phase 19". A tab a user could raise onto a blank rectangle is a broken editor rather than an
+unfinished one; it shows the same editor over the selected material, and Phase 19 grows a preview
+and texture slots in it. Every panel the native shell registers now draws something, and
+`EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle`'s pending list is empty.
+
+**The sprite animation preview** is answered by
 `studioAnimationPreview` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07043`): transport,
 a frame readout, the frame itself sampled out of the sheet, and a snapshot published to the host so
 the viewport draws the frame the preview is showing. The playback lives in the widget state store,

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 27 of 34 complete `████████░░░░`
+**Progress:** 29 of 34 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -36,11 +36,11 @@
 | `STUDIO-07024` | Layers panel: the project's render layers and what is on each | ✅ | `STUDIO-03034` |
 | `STUDIO-07040` | Add and remove a component from the native Details panel | ✅ | `STUDIO-07008` |
 | `STUDIO-07041` | Inventory the prototype's *controls*, not only its panels and menus | ✅ | `STUDIO-07020` |
-| `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | ⬜ | `STUDIO-07041` |
+| `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | ✅ | `STUDIO-07041` |
 | `STUDIO-07043` | Sprite animation preview in the native Details panel | ✅ | `STUDIO-07041` |
 | `STUDIO-07044` | Audio preview in the native Details panel | ✅ | `STUDIO-07041` |
 | `STUDIO-07045` | The asset inspector: a selected asset's own properties | ✅ | `STUDIO-07041` |
-| `STUDIO-07046` | The material asset editor the prototype already has | ⬜ | `STUDIO-07041` |
+| `STUDIO-07046` | The material asset editor the prototype already has | ✅ | `STUDIO-07041` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
 
@@ -874,6 +874,40 @@ to render as "(not editable yet)", which is the answer for a kind with no editor
 unimplemented feature — a texture's pixel size said that instead of `32, 32`. And a `.cnamaterial`
 said "No importer handles this file type", which is true and useless: a material is the editor's own
 document, and the honest answer names `STUDIO-07046`.
+
+**`STUDIO-07042` is done, and it was the last of the five.** The prefab section reports what an
+instance has changed, reverts it, and applies it back into the prefab file. Answered for the
+*instance* rather than for the entity: selecting a child of an instance still says what it is part
+of and still lets the user act on it.
+
+Three things about it are worth keeping. The report is a **comparison**, not a record, so it has to
+be run — which means the one panel in Studio that opens a file to draw itself. It runs on the input
+pass and packs its summary into the widget state for the draw pass, so the cost is one read a frame
+rather than two, and the rows drawn are exactly the rows the buttons were hit-tested against. The
+list shows **three overrides and a count**, because it exists to make the divergence recognisable
+rather than to enumerate it. And **Apply writes the prefab file**, which every other instance of
+that prefab is about to be compared against — so unlike every other control in this panel, a
+failure has to reach the Output Log rather than being a button that did nothing.
+
+**`STUDIO-07046` is done**, and it closed two things rather than one. The material editor is
+`studioMaterialEditor`: name, base colour, emissive, metallic, roughness and alpha over the
+`.cnamaterial` file, through `SetMaterialCommand` so undo replays the previous bytes. It is the one
+editor in Studio whose document is a *file* — not the scene, not the asset database — which is why
+a file this build cannot parse is refused rather than shown as defaults: an editable form over a
+file that did not load is an offer to overwrite it with less than it holds. The three failures are
+told apart, because a material whose file has gone, one that is not valid JSON and one written by a
+newer Studio are three different problems.
+
+The second thing is the **`material` panel**, registered since the shell existed and drawing
+nothing — a tab a user could raise onto a blank rectangle, which reads as a broken editor rather
+than an unfinished one. It shows the same editor over the selected material.
+`EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle`'s pending list is empty now, and
+Phase 19 grows a preview and texture slots in that panel rather than inventing a home for them.
+
+**And one reader, not two.** `StudioContext::makeMaterialProvider` had its own copy of "open it,
+parse it, load it, and decide what a failure means". Both call `loadMaterialDocument` now: the
+provider decides what the viewport draws while the editor decides what the user sees, and two
+copies of that logic is two chances to disagree about a material that is half-written.
 
 **The material one corrects the inventory.** `docs/MIGRATION-INVENTORY.md` said "there is no
 `.cnamaterial` editor to port; the `material` panel is registered and empty (Phase 19)". There is

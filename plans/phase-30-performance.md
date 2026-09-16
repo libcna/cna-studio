@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 2 of 15 complete `█░░░░░░░░░░░`
+**Progress:** 2 of 16 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -18,6 +18,7 @@
 | `STUDIO-30013` | `SceneDocument` child lookup is an index, not a scan of every entity | ✅ | — |
 | `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ✅ | `STUDIO-04028` |
 | `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ⬜ | `STUDIO-30012`, `STUDIO-30014` |
+| `STUDIO-30016` | The Details panel stops opening files to draw itself | ⬜ | `STUDIO-30012` |
 | `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ⬜ | `STUDIO-13011` |
 | `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
 | `STUDIO-30022` | Stress benchmark: 100,000 assets | ⬜ | `STUDIO-09016` |
@@ -140,6 +141,24 @@ be a clear improvement and would still leave the editor stat-ing every asset eve
 actually needs is the missing set held with explicit invalidation, which is `STUDIO-30012`'s
 question — when a file deleted outside the editor should be noticed is a design decision, not an
 optimisation. Filed as `STUDIO-30015`.
+
+### `STUDIO-30016` — The Details panel stops opening files to draw itself
+
+**Acceptance.** Selecting a material or a prefab instance does not open a file on every frame. The
+document is read when it changes rather than when it is drawn, and an edit made outside Studio is
+still noticed — which is the same design decision `STUDIO-30012` has to make for the asset database
+and is why this waits for it.
+
+**Where it comes from.** `STUDIO-07046` and `STUDIO-07042` each added an editor whose document is a
+*file*: the material editor reads the `.cnamaterial` it is showing, and the prefab section loads the
+`.cnaprefab` and walks both subtrees to find the overrides. Both already halve the obvious cost by
+working on the input pass and keeping what they found for the draw pass — the prefab section packs
+its summary into the widget state — so it is one read per frame rather than two. It is still a read
+per frame, and the prefab one also walks a subtree that could be hundreds of entities.
+
+Smaller than `STUDIO-30015` by a lot: those are two files while one thing is selected, against three
+thousand `stat` calls per frame on every frame the Content Browser is visible. Filed so it is not
+forgotten rather than because it is urgent.
 
 ### `STUDIO-30015` — The Content Browser stops asking the filesystem about every asset every frame
 

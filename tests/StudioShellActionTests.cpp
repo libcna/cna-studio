@@ -262,9 +262,13 @@ CNA_STUDIO_TEST(EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle)
     // A panel with no content is a grey rectangle with a tab on it, and that is indistinguishable
     // from a panel whose content failed to draw. The same discipline as the unimplemented
     // commands: the list is here, with a reason, and it fails in both directions.
-    const std::vector<std::pair<std::string, std::string>> pending = {
-        {"material", "a material editor over .cnamaterial assets (Phase 19)"},
-    };
+    //
+    // **The list is empty**, and that is the state to keep it in. `material` was the last entry
+    // and `STUDIO-07046` closed it: it had been registered since the shell existed and drawn
+    // nothing, so raising that tab put a user in front of a blank rectangle. It shows the same
+    // editor the Details panel does over the selected `.cnamaterial`, which is also what Phase 19
+    // will grow a preview and texture slots into.
+    const std::vector<std::pair<std::string, std::string>> pending = {};
 
     Fixture fixture;
     StudioCamera2D camera;

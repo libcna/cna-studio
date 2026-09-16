@@ -217,6 +217,12 @@ namespace CNA::Studio
                                                      : kUiTextureNone;
                 };
 
+                // What the material editor tells a user about their own build (STUDIO-07046).
+                services.modelEffectName = [this] {
+                    return sceneViewport_ != nullptr ? sceneViewport_->getModelEffectName()
+                                                     : std::string{};
+                };
+
                 services.setClipboardText = [](const std::string& text) {
                     if (!CnaUiPlatform::hasClipboard()) { return false; }
                     CnaUiPlatform::setClipboardText(text);

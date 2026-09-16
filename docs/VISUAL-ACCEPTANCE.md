@@ -186,12 +186,12 @@ yet answered* table, repeated here so the two can be compared by a test rather t
 found five, because this review and that inventory were both looking at the level of *panels* and
 the gap was a level below: the controls inside one. The prototype's Inspector draws eight sections
 and the native Details panel had three. `docs/MIGRATION-INVENTORY.md` has the correction and what
-changed so it cannot recur. The asset inspector has since been answered (`STUDIO-07045`), the audio
-preview after it (`STUDIO-07044`) and the sprite animation preview after that (`STUDIO-07043`),
-leaving two:
+changed so it cannot recur. All five have since been answered — the asset inspector
+(`STUDIO-07045`), the audio preview (`STUDIO-07044`), the sprite animation preview
+(`STUDIO-07043`), the material editor (`STUDIO-07046`) and the prefab section (`STUDIO-07042`) —
+and the list is empty:
 
-- Prefab overrides
-- Material asset editor
+- *(nothing)*
 
 **This review is a judgement and says so.** No test can assert that one editor looks better than
 another. What the suite does check is that the four captures exist, that they are the sizes this

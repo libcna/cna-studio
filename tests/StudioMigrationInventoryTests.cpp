@@ -611,14 +611,16 @@ namespace
              "Scene Environment", nullptr},
             {"drawProjectInspector", "src/shell-panels/StudioDetailsPanel.cpp",
              "Layers", nullptr},
-            {"drawPrefabSection", nullptr, nullptr, "STUDIO-07042"},
+            {"drawPrefabSection", "src/shell-panels/StudioDetailsPanel.cpp",
+             "studioPrefabSection", nullptr},
             {"drawAnimationPreview", "src/shell-panels/StudioDetailsPanel.cpp",
              "studioAnimationPreview", nullptr},
             {"drawAudioPreview", "src/shell-panels/StudioDetailsPanel.cpp",
              "studioAudioPreviewRow", nullptr},
             {"drawAssetInspector", "src/shell-panels/StudioDetailsPanel.cpp",
              "studioAssetInspector", nullptr},
-            {"drawMaterialAsset", nullptr, nullptr, "STUDIO-07046"},
+            {"drawMaterialAsset", "src/shell-panels/StudioDetailsPanel.cpp",
+             "studioMaterialEditor", nullptr},
         };
         return sections;
     }
@@ -677,8 +679,12 @@ CNA_STUDIO_TEST(EveryUnansweredInspectorSectionNamesTheTaskThatClosesIt)
     // Stated so that closing the last one is a deliberate edit to this number rather than
     // something nobody notices. Dear ImGui cannot be deleted while this is above zero.
     //
-    // Five when STUDIO-07041 took the inventory; four since STUDIO-07045 answered the asset
-    // inspector, three since STUDIO-07044 answered the audio preview, two since STUDIO-07043
-    // answered the sprite animation preview.
-    CNA_STUDIO_EXPECT_EQ(unanswered, std::size_t{2});
+    // Five when STUDIO-07041 took the inventory, and **zero** now: STUDIO-07045 answered the
+    // asset inspector, STUDIO-07044 the audio preview, STUDIO-07043 the sprite animation preview,
+    // STUDIO-07046 the material editor and STUDIO-07042 the prefab section.
+    //
+    // This number reaching zero is what unblocks STUDIO-07030 -- deleting the Dear ImGui panels.
+    // It must not go back up: a section added to the prototype's Inspector from here would be a
+    // section added to a panel that is being deleted.
+    CNA_STUDIO_EXPECT_EQ(unanswered, std::size_t{0});
 }

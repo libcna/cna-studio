@@ -219,19 +219,15 @@ namespace CNA::Studio
     {
         return [this](const Uuid& assetId) -> std::optional<MeshMaterial>
         {
-            const AssetRecord* record = assets_.find(assetId);
-            if (record == nullptr || record->type != AssetType::Material) { return std::nullopt; }
-
-            std::ifstream stream{assets_.resolvePath(record->sourcePath)};
-            if (!stream) { return std::nullopt; }
-
-            const std::string text{std::istreambuf_iterator<char>{stream},
-                                   std::istreambuf_iterator<char>{}};
-            const JsonParseResult parsed = Json::parse(text);
-            if (!parsed.succeeded) { return std::nullopt; }
-
+            // One reader, shared with the editor that writes this file (STUDIO-07046). Two copies
+            // of "open it, parse it, load it" would be two chances to disagree about a material
+            // that is half-written -- and the editor's copy is the one a user is looking at while
+            // this one decides what to draw.
             MaterialDocument material;
-            if (!material.loadFromJson(parsed.value)) { return std::nullopt; }
+            if (loadMaterialDocument(assets_, assetId, material) != MaterialLoadProblem::None)
+            {
+                return std::nullopt;
+            }
 
             MeshMaterial resolved = material.toMeshMaterial();
 
