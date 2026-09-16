@@ -153,6 +153,10 @@ namespace
      * things and then finish identically: by the time either arrives here the geometry is already
      * in the draw data, so the only difference between them is what was described into it.
      *
+     * With no `--shell-preview` path -- `--headless`'s own way through this function
+     * (STUDIO-07049) -- the frame is still rasterised and checked, just not written anywhere: a
+     * smoke test wants to know the shell drew cleanly, not a file to open afterward.
+     *
      * @param options Parsed command line, for the output path and the size to report.
      * @param theme The theme the shell was built with, for the background and the report line.
      * @param shell The shell holding the described frame.
@@ -199,27 +203,33 @@ namespace
             }
         }
 
-        if (!CNA::Studio::writeImageAsPng(image, options.shellPreviewPath))
+        // No path is what `--headless` asks for (STUDIO-07049): a frame drawn and checked, same as
+        // above, but with nothing to photograph it for -- the smoke test wants a clean exit, not a
+        // file.
+        if (!options.shellPreviewPath.empty())
         {
-            std::cerr << "cna-studio: could not write '" << options.shellPreviewPath << "'\n";
-            return 4;
-        }
+            if (!CNA::Studio::writeImageAsPng(image, options.shellPreviewPath))
+            {
+                std::cerr << "cna-studio: could not write '" << options.shellPreviewPath << "'\n";
+                return 4;
+            }
 
-        const CNA::Studio::UiDrawData& data = shell.drawData();
-        std::size_t vertices = 0;
-        std::size_t commands = 0;
-        for (const CNA::Studio::UiDrawList& list : data.lists)
-        {
-            vertices += list.vertices.size();
-            commands += list.commands.size();
-        }
+            const CNA::Studio::UiDrawData& data = shell.drawData();
+            std::size_t vertices = 0;
+            std::size_t commands = 0;
+            for (const CNA::Studio::UiDrawList& list : data.lists)
+            {
+                vertices += list.vertices.size();
+                commands += list.commands.size();
+            }
 
-        std::cout << "cna-studio: shell preview " << image.width << "x" << image.height
-                  << ", theme '" << theme.name() << "', scale " << theme.scale()
-                  << ", " << commands << " draw calls, " << vertices << " vertices, "
-                  << shell.frame().interactionCount() << " interactive widgets, cursor "
-                  << CNA::Studio::studioCursorName(shell.cursor())
-                  << " -> " << options.shellPreviewPath << "\n";
+            std::cout << "cna-studio: shell preview " << image.width << "x" << image.height
+                      << ", theme '" << theme.name() << "', scale " << theme.scale()
+                      << ", " << commands << " draw calls, " << vertices << " vertices, "
+                      << shell.frame().interactionCount() << " interactive widgets, cursor "
+                      << CNA::Studio::studioCursorName(shell.cursor())
+                      << " -> " << options.shellPreviewPath << "\n";
+        }
 
         if (shell.frame().phaseViolations() > 0)
         {
@@ -607,6 +617,18 @@ namespace
 
     int renderShellPreview(const CNA::Studio::StudioOptions& options)
     {
+        // Checked before anything else opens: comparing means decoding the captures, decoding
+        // needs a graphics device, and this function's whole reason to exist is running with none.
+        // `--headless` reaches here now too (STUDIO-07049), so the check moved up from the console
+        // UI's own path rather than being duplicated at both of this function's entry points.
+        if (options.compareBackends)
+        {
+            std::cerr << "cna-studio: --compare-backends needs a graphics device, so it cannot run "
+                         "headless or on the null UI. Run it on a build with -DCNA_STUDIO_WITH_CNA=ON "
+                         "and a display.\n";
+            return 3;
+        }
+
         CNA::Studio::StudioTheme theme = options.shellPreviewTheme == "light"
             ? CNA::Studio::StudioTheme::light()
             : CNA::Studio::StudioTheme::dark();
@@ -645,6 +667,18 @@ namespace
         (void)CNA::Studio::bindStudioShellActions(shell, context, log);
 
         CNA::Studio::StudioShellPanels panels{shell, context, log};
+
+        // The viewport's own camera, bound even with no graphics device: without it the viewport's
+        // commands -- `--view=3d` among them -- are found and refused rather than run, which is
+        // exactly what left `--view=3d` and `--orbit` reaching only the prototype (STUDIO-07049).
+        // Bare value objects rather than a real scene viewport, because a headless preview has no
+        // device to build one from and none of these flags need it to draw anything -- they need
+        // only the camera state a real session would also be changing.
+        CNA::Studio::StudioCamera2D camera2D;
+        CNA::Studio::StudioCamera3D camera3D;
+        panels.setViewportServices(
+            camera2D, camera3D,
+            [](const CNA::Studio::Uuid&) { return CNA::Studio::StudioVector2{32.0f, 32.0f}; });
 
         // And the same discovery, for the same reason: what Play can launch and what the Backends
         // panel can compare are decided by which cna-player binaries are beside this executable,
@@ -816,6 +850,29 @@ namespace
             }
 
             shell.notifications().post(std::move(notification));
+        }
+
+        // `--view=3d` switches the viewport before anything else touches it (STUDIO-07049) -- the
+        // same command a press of 3 or `--shell-invoke=studio.view.3d` runs, just asked for by its
+        // own flag, the way the prototype's `StudioApplication::initialize` asks for it.
+        if (options.threeDimensionalView)
+        {
+            shell.invoke("studio.view.3d");
+            if (!shell.refusedActions().empty())
+            {
+                std::cerr << "cna-studio: --view=3d did nothing -- "
+                          << shell.refusedActions().front() << ".\n";
+                return 2;
+            }
+        }
+
+        // After the switch, not before: the switch frames the scene once on its own, and setting
+        // the angles first would have that framing overwrite them straight back out.
+        if (options.orbitDegrees)
+        {
+            constexpr float kDegreesToRadians = 3.14159265358979323846f / 180.0f;
+            camera3D.setYaw(options.orbitDegrees->x * kDegreesToRadians);
+            camera3D.setPitch(options.orbitDegrees->y * kDegreesToRadians);
         }
 
         // `--shell-invoke=ID` runs a command, so a capture can show what it put on the screen --
@@ -1173,8 +1230,15 @@ int main(int argc, char** argv)
     }
 
     // Before the UI selection below, because the preview needs no window, no toolkit and no
-    // graphics device at all.
-    if (!options.shellPreviewPath.empty())
+    // graphics device at all. `--headless` reaches the same function once nothing else asked for
+    // a real window (STUDIO-07049): this is already the native shell's own headless drawing, and
+    // unconditional on `CNA_STUDIO_HAS_CNA`, so it is where `--headless` has to land once the
+    // prototype -- the console UI it used to mean -- is gone. Explicit `--ui=imgui --headless`
+    // still means the console UI: that is the fallback this same run has by name
+    // (`CnaStudioFallsBackToImGuiWhenAsked`), and it names something other than "studio" here.
+    const bool nativeHeadless =
+        options.headless && (options.uiBackend.empty() || options.uiBackend == "studio");
+    if (!options.shellPreviewPath.empty() || nativeHeadless)
     {
         return renderShellPreview(options);
     }
@@ -1191,16 +1255,15 @@ int main(int argc, char** argv)
     // every menu, every shortcut, the toolbar, the 2D and 3D views, and input to a running game.
     //
     // Resolved here rather than defaulted in the option struct, because the answer depends on the
-    // build. A Studio without CNA has no window to open either UI in, and `--headless` wants
-    // neither; both of those are the legacy path, where "no window" already means the console UI.
+    // build. A Studio without CNA has no window to open either UI in, so this build's only answer
+    // is the console one -- `--headless` already asked for that above and returned before here.
     const std::string uiBackend = [&] {
         if (!options.uiBackend.empty()) { return options.uiBackend; }
 #if defined(CNA_STUDIO_HAS_CNA)
-        // `--headless` already means the console UI, and resolving to the native shell there would
-        // open a window for a run that asked for none.
-        if (!options.headless) { return std::string{"studio"}; }
-#endif
+        return std::string{"studio"};
+#else
         return std::string{"imgui"};
+#endif
     }();
 
 #if defined(CNA_STUDIO_HAS_CNA)

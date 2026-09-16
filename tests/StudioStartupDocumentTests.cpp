@@ -199,14 +199,8 @@ CNA_STUDIO_TEST(NoParsedFlagIsReadByThePrototypeAlone)
         // STUDIO-02056 extracts the comparison service, and the flag follows it.
         "comparisonTolerance",
         // `--recovery-dir`. The native shell runs crash recovery through `StudioRecoverySession`
-        // with the default directory; the override has not been threaded through. STUDIO-07049.
+        // with the default directory; the override has not been threaded through.
         "recoveryDirectory",
-        // `--view=3d` and `--orbit=YAW,PITCH`. STUDIO-07049: the 3D smoke flags run the prototype
-        // only. `orbitDegrees` is the one this guard found on its first run, which is the argument
-        // for writing it over the parser -- the flag list I would have typed by hand had four
-        // entries in it and `--orbit` was not one of them.
-        "threeDimensionalView",
-        "orbitDegrees",
     };
 
     const std::vector<CnaStudioTest::Scan::SourceFile> sources =

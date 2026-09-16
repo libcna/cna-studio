@@ -171,7 +171,10 @@ if(CNA_STUDIO_WITH_IMGUI)
 endif()
 
 add_test(NAME CnaStudioTests COMMAND cna-studio-tests)
-set_tests_properties(CnaStudioTests PROPERTIES TIMEOUT 120)
+# 120s stopped being enough the moment the suite's own growth met ASan's overhead -- 1424 cases
+# ran clean at 130s under it, over the old ceiling for no reason a hang would produce. Loosened
+# rather than left to flake on the next few tasks that add their own tests.
+set_tests_properties(CnaStudioTests PROPERTIES TIMEOUT 300)
 
 # A smoke test over the real binary: parses arguments, opens nothing, draws one headless frame.
 # This is what catches a linker or start-up regression that the unit tests cannot see.

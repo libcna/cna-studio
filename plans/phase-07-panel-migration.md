@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 40 of 46 complete `██████████░░`
+**Progress:** 41 of 46 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -43,7 +43,7 @@
 | `STUDIO-07046` | The material asset editor the prototype already has | ✅ | `STUDIO-07041` |
 | `STUDIO-07047` | Inventory the prototype's *tests*, and close what deleting them would lose | ✅ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
 | `STUDIO-07048` | `StudioOptions` moves out of the prototype application's header | ✅ | — |
-| `STUDIO-07049` | `--headless` and the 3D smoke flags run the native shell | ⬜ | `STUDIO-07048` |
+| `STUDIO-07049` | `--headless` and the 3D smoke flags run the native shell | ✅ | `STUDIO-07048` |
 | `STUDIO-07050` | Transform manipulators in the native 3D view | ✅ | `STUDIO-07009` |
 | `STUDIO-07051` | The native shell reloads assets edited outside it | ✅ | `STUDIO-07008` |
 | `STUDIO-07052` | The native shell loads the project's plugins | ✅ | `STUDIO-07001` |
@@ -476,15 +476,42 @@ checks the header still exists so it cannot pass by scanning for something that 
 
 ### `STUDIO-07049` — `--headless` and the 3D smoke flags run the native shell
 
-**Acceptance.** `--headless`, `--view=3d` and `--orbit` do what they say on a build with no
+**Acceptance.** ✅ `--headless`, `--view=3d` and `--orbit` do what they say on a build with no
 prototype in it, and the five CTest smoke cases that use them assert the same things about the
 native shell that they assert about the prototype today.
 
-**Why.** `--headless` resolves to the *prototype* on every build, because that is where the console
-UI lives — so CI's cheapest smoke test, the one that catches a link or start-up regression the unit
-tests cannot see, runs the code being deleted. The native shell already draws headless (that is what
-`--shell-preview` is), so this is wiring rather than invention, but it has to exist before the
+**Why.** `--headless` resolved to the *prototype* on every build, because that is where the console
+UI lived — so CI's cheapest smoke test, the one that catches a link or start-up regression the unit
+tests cannot see, ran the code being deleted. The native shell already drew headless (that is what
+`--shell-preview` is), so this was wiring rather than invention, but it had to exist before the
 deletion rather than after it.
+
+**`renderShellPreview` is now `--headless`'s own path**, not only `--shell-preview`'s. It needs no
+window, no toolkit and no graphics device either way, so the entry gate in `main()` sends
+`--headless` there the moment nothing named a real UI explicitly — `--ui=imgui --headless` still
+means the console UI, which is the fallback `CnaStudioFallsBackToImGuiWhenAsked` keeps proving by
+name. Writing the PNG is now conditional on `--shell-preview`'s own path being set; `--headless`
+alone still rasterises and checks the frame, just with nothing to photograph it for.
+
+**The viewport had no camera to drive**, which is why `--view=3d` and `--orbit` reached only the
+prototype: `bindViewport`'s commands — the two views among them — are bound by
+`setViewportServices`, and the headless preview had never called it. A bare `StudioCamera2D` and
+`StudioCamera3D`, no scene viewport behind them, are enough — these flags change camera state, not
+what is composited, and a headless preview has no device to composite anything with regardless.
+`--view=3d` now runs through `shell.invoke("studio.view.3d")`, the same command a press of 3 runs,
+rather than a second copy of what that action already does; `--orbit` sets the camera's yaw and
+pitch after it, converting degrees to radians the same way `StudioApplication::initialize` already
+did, and only after the switch, because the switch frames the scene once on its own and applying
+the angles first would have that framing thrown straight back out.
+
+**`--compare-backends` still refuses to run headless.** The check moved from the console UI's own
+path into `renderShellPreview` itself, checked first: comparing means decoding captures, decoding
+needs a device, and that has nothing to do with which path got `--headless` there.
+
+**The guard that would have caught this untangled itself.** `threeDimensionalView` and
+`orbitDegrees` come off `NoParsedFlagIsReadByThePrototypeAlone`'s allow-list now that `Main.cpp`
+reads them too — the same guard that found `--orbit` was not on a hand-typed list of four flags
+when `STUDIO-07053` wrote it over the parser instead.
 
 ### `STUDIO-07001` — Compatibility adapter so unported panels keep working during the migration
 
