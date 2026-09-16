@@ -202,6 +202,60 @@ CNA_STUDIO_TEST(TheNativeStudioUiHasNoDearImGuiDependency)
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
 
+CNA_STUDIO_TEST(OnlyThePrototypesOwnFilesIncludeThePrototypesApplication)
+{
+    // `plan.md` STUDIO-07048. `StudioApplication` is the prototype's application object and is
+    // being deleted (STUDIO-07030). Until it goes, the rule that makes that deletion a deletion
+    // rather than a deletion plus a refactor is that nothing outside the prototype's own files
+    // depends on its header.
+    //
+    // It used to declare `StudioOptions` as well, so *every* entry point included it -- the native
+    // shell and the headless shell preview among them -- in order to read a parsed command line
+    // that has nothing to do with the prototype. That struct is `CNA/Studio/StudioOptions.hpp`
+    // now, and this is what stops the dependency coming back.
+    //
+    // The list is the prototype: `main` dispatches to it, the Dear ImGui window host runs it, and
+    // its own source. When those go, this test goes with them -- and the header it names goes
+    // first, so it cannot quietly pass by scanning for something that no longer exists.
+    const std::vector<std::string> allowed = {
+        "src/app/Main.cpp",
+        "src/app/StudioApplication.cpp",
+        "include/CNA/Studio/StudioApplication.hpp",
+        "include/CNA/Studio/StudioOptions.hpp",       // names it in a comment, for the history
+        "include/CNA/Studio/Viewport/CnaStudioHost.hpp",
+        "src/viewport/CnaStudioHost.cpp",
+    };
+
+    // The header has to be there, or this passes by finding nothing.
+    bool headerExists = false;
+    for (const SourceFile& file : collectSources({"include"}))
+    {
+        if (file.relativePath == "include/CNA/Studio/StudioApplication.hpp")
+        {
+            headerExists = true;
+            break;
+        }
+    }
+    CNA_STUDIO_EXPECT(headerExists);
+
+    std::size_t violations = 0;
+    for (const SourceFile& file : collectSources({"src", "include"}))
+    {
+        if (std::find(allowed.begin(), allowed.end(), file.relativePath) != allowed.end())
+        {
+            continue;
+        }
+        if (file.text.find("StudioApplication.hpp") == std::string::npos) { continue; }
+
+        ++violations;
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+            file.relativePath + " includes CNA/Studio/StudioApplication.hpp. That header is the "
+            "prototype's application and is being deleted (STUDIO-07030). A parsed command line "
+            "is CNA/Studio/StudioOptions.hpp.");
+    }
+    CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
+}
+
 CNA_STUDIO_TEST(ThePlayerDependsOnNoUiRenderBackend)
 {
     // `plan.md` STUDIO-04027. The player runs the user's game and draws no editor UI at all, so it

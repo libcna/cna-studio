@@ -45,6 +45,18 @@ namespace CNA::Studio
         void commitDragEdit(StudioContext& context, StudioViewportState& state,
                             const Uuid& entityId, const char* property, PropertyValue value)
         {
+            // A drag that has not actually changed anything writes nothing (STUDIO-07047). A press
+            // on an arm followed by a release without movement is an ordinary thing to do -- a user
+            // grabs a handle and thinks better of it -- and it used to leave an undo entry behind
+            // that undid nothing, so the next Ctrl+Z appeared to do nothing at all.
+            //
+            // Compared against the document rather than against the pointer: a drag *can* return to
+            // where it started, and the entry for that gesture should go too.
+            const StudioEntity* entity = context.getScene().findEntity(entityId);
+            const StudioComponent* transform =
+                entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTransform) : nullptr;
+            if (transform != nullptr && transform->getProperty(property) == value) { return; }
+
             context.execute(
                 std::make_unique<SetPropertyCommand>(context.getScene(), entityId,
                                                      BuiltinComponentIds::kTransform, property,
@@ -175,6 +187,29 @@ namespace CNA::Studio
             }
 
             if (edits.empty()) { return false; }
+
+            // Drop the edits that change nothing, for the reason `commitDragEdit` gives: a gesture
+            // that moved no entity must not leave an undo entry that moves none back.
+            const auto changesSomething = [&scene](const EntityTransformEdit& edit) {
+                const StudioEntity* entity = scene.findEntity(edit.entityId);
+                const StudioComponent* transform =
+                    entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTransform)
+                                      : nullptr;
+                if (transform == nullptr) { return false; }
+                if (edit.position.has_value()
+                    && transform->getProperty("position") != PropertyValue{*edit.position})
+                {
+                    return true;
+                }
+                if (edit.rotation.has_value()
+                    && transform->getProperty("rotation") != PropertyValue{*edit.rotation})
+                {
+                    return true;
+                }
+                return edit.scale.has_value()
+                    && transform->getProperty("scale") != PropertyValue{*edit.scale};
+            };
+            if (std::none_of(edits.begin(), edits.end(), changesSomething)) { return false; }
 
             // One command for the whole selection, and one undo entry for the whole drag. A command
             // per entity would make undoing one gesture several presses of Ctrl+Z, and would undo
@@ -686,6 +721,18 @@ namespace CNA::Studio
 
         const bool anyButton = chord.left || chord.middle || chord.right;
 
+        // A press of *any* button over the panel, not only the left one. `StudioInteraction::pressed`
+        // is deliberately left-only -- it is what decides focus and clicks -- so asking it alone
+        // meant the middle and right gestures could never begin: Studio's own right-drag fly and
+        // middle-drag pan did nothing, and the whole of the Blender scheme, which lives on the
+        // middle button, was unreachable (STUDIO-07047). The 2D viewport had always read the
+        // buttons directly for exactly this reason.
+        const bool pressedHere =
+            surface.pressed
+            || (surface.hovered
+                && (router.mousePressed(UiMouseButton::Middle)
+                    || router.mousePressed(UiMouseButton::Right)));
+
         if (state.navigating && !anyButton)
         {
             state.navigating = false;
@@ -695,7 +742,7 @@ namespace CNA::Studio
             // count as one -- the same rule the 2D viewport applies to its gizmo.
             if (!state.navigationMoved && surface.hovered) { result.clicked3D = true; }
         }
-        else if (!state.navigating && anyButton && surface.pressed)
+        else if (!state.navigating && anyButton && pressedHere)
         {
             // Resolved once, at the press, and kept for the length of the drag. Asked every frame,
             // a user who released Shift halfway through a pan would find the camera orbiting from
@@ -781,6 +828,13 @@ namespace CNA::Studio
         // keys to it would be this editor's habit leaking into somebody else's vocabulary.
         if (chord.right && state.navigation == StudioNavigationStyle::Studio)
         {
+            // The keys are this gesture's for as long as it lasts. Without this the shell's
+            // shortcut dispatch also sees them, and W and E are Translate and Rotate -- so flying
+            // forwards switched the manipulator on the way (STUDIO-07047). The comment above used
+            // to say the right button kept them apart; the button is what *arms* the gesture, and
+            // this is what tells the rest of the shell about it.
+            frame.router().setWantsKeyboardGesture(true);
+
             // Proportional to the orbit distance, so one press crosses the same fraction of what
             // is on screen whether the camera is inside a room or above a level.
             const float step = std::max(0.05f, camera.getDistance() * 0.04f) * state.cameraSpeed;

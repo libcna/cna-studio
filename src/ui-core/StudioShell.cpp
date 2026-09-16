@@ -3001,6 +3001,11 @@ namespace CNA::Studio
         // viewport nor the field should have to know about the other.
         if (router.wantsTextInput() && !modified) { return; }
 
+        // STUDIO-07047: and an unmodified chord inside a keyboard *gesture* belongs to the gesture.
+        // The 3D viewport flies on W, A, S, D, Q and E while the right button is held; W and E are
+        // also Translate and Rotate. Flying forwards used to switch the manipulator on the way.
+        if (router.wantsKeyboardGesture() && !modified) { return; }
+
         for (int key = kFirstDispatchableKey; key < static_cast<int>(UiKey::Count); ++key)
         {
             const auto candidate = static_cast<UiKey>(key);

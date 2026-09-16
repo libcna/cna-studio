@@ -504,7 +504,13 @@ namespace CNA::Studio
             // The first thing a user sees, and with no project it was a grid and nothing else --
             // no hint that a project is what is missing, and none that the grid is a viewport
             // rather than a panel that failed to draw (STUDIO-06013).
-            if (!context_.hasProject())
+            //
+            // **And a scene, not a project** (STUDIO-07047). This used to gate on the project
+            // alone, which made the viewport inert for every scene that had not been opened from
+            // one -- including the `Untitled` scene a Studio started with no project now opens, so
+            // the World Outliner listed a camera the viewport refused to navigate around. There is
+            // something to show as soon as there is something in the scene.
+            if (!context_.hasProject() && context_.getScene().getEntityCount() == 0)
             {
                 sayViewportIsEmpty(frame, bounds, "No project open.",
                                    "Open one with File > Open Project, or --project.");

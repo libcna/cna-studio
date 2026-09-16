@@ -13,7 +13,10 @@ add_executable(cna-studio-tests
     ProjectAndAssetTests.cpp
     ModelImportTests.cpp
     ApplicationTests.cpp
+    StudioOptionsTests.cpp
+    PluginHostTests.cpp
     UiTests.cpp
+    UiDrawDataTests.cpp
     UiCoreTests.cpp
     StudioShellTests.cpp
     StudioFrameTests.cpp
@@ -69,6 +72,7 @@ add_executable(cna-studio-tests
     StudioDiagnosticsPanelTests.cpp
     StudioVisualQualityTests.cpp
     StudioViewportPanelTests.cpp
+    StudioNativeParityTests.cpp
     ArchitectureGuardTests.cpp
     ServiceBoundaryGuardTests.cpp
     StudioUiBenchmarkTests.cpp
@@ -136,6 +140,7 @@ target_compile_definitions(cna-studio-tests PRIVATE
 # binary compiles StudioApplication.cpp directly rather than linking the cna-studio executable.
 target_sources(cna-studio-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioApplication.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/app/StudioOptions.cpp"
     ${CNA_STUDIO_PANEL_SOURCES})
 
 # The one module that links CNA. Linked into the tests so the seam itself -- the key map, the

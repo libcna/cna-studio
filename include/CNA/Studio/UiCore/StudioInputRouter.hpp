@@ -324,6 +324,25 @@ namespace CNA::Studio
          */
         void setWantsTextInput(bool editing) { wantsTextInput_ = editing; }
 
+        /**
+         * @brief Whether a panel is driving a keyboard gesture and unmodified chords are its own.
+         *
+         * `plan.md` STUDIO-07047. The sibling of @ref wantsTextInput, for the other way a panel can
+         * own the keyboard without holding focus: the 3D viewport flies on W, A, S, D, Q and E
+         * while the right button is held, and W and E are also the translate and rotate shortcuts.
+         * Without this, flying forwards switched the manipulator to rotate on the way.
+         *
+         * Declared during the description pass and read by the shortcut dispatch afterwards, which
+         * is why the shell dispatches after describing rather than before.
+         */
+        [[nodiscard]] bool wantsKeyboardGesture() const { return wantsKeyboardGesture_; }
+
+        /**
+         * @brief Declares that a panel is driving a keyboard gesture this frame.
+         * @param active True while the gesture is in flight.
+         */
+        void setWantsKeyboardGesture(bool active) { wantsKeyboardGesture_ = active; }
+
     private:
         [[nodiscard]] bool layerAcceptsInput() const;
         [[nodiscard]] bool pointerInside(const UiRect& bounds) const;
@@ -346,6 +365,7 @@ namespace CNA::Studio
 
         std::vector<WidgetId> focusables_;
         bool wantsTextInput_ = false;
+        bool wantsKeyboardGesture_ = false;
         bool focusMoveRequested_ = false;
         bool focusMoveBackwards_ = false;
         bool hasFrame_ = false;

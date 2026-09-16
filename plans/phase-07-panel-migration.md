@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 29 of 34 complete `█████████░░░`
+**Progress:** 31 of 46 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -41,7 +41,19 @@
 | `STUDIO-07044` | Audio preview in the native Details panel | ✅ | `STUDIO-07041` |
 | `STUDIO-07045` | The asset inspector: a selected asset's own properties | ✅ | `STUDIO-07041` |
 | `STUDIO-07046` | The material asset editor the prototype already has | ✅ | `STUDIO-07041` |
-| `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
+| `STUDIO-07047` | Inventory the prototype's *tests*, and close what deleting them would lose | ✅ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |
+| `STUDIO-07048` | `StudioOptions` moves out of the prototype application's header | ✅ | — |
+| `STUDIO-07049` | `--headless` and the 3D smoke flags run the native shell | ⬜ | `STUDIO-07048` |
+| `STUDIO-07050` | Transform manipulators in the native 3D view | ⬜ | `STUDIO-07009` |
+| `STUDIO-07051` | The native shell reloads assets edited outside it | ⬜ | `STUDIO-07008` |
+| `STUDIO-07052` | The native shell loads the project's plugins | ⬜ | `STUDIO-07001` |
+| `STUDIO-07053` | `--scene` opens a scene on the native shell | ⬜ | `STUDIO-07048` |
+| `STUDIO-07054` | Editors for list and structure properties | ⬜ | `STUDIO-07018` |
+| `STUDIO-07055` | A numeric property field is dragged as well as typed | ⬜ | `STUDIO-07018` |
+| `STUDIO-07056` | The 3D view's grid plane, offered where it changes something | ⬜ | `STUDIO-07009` |
+| `STUDIO-07057` | The angles a user typed survive being read back | ⬜ | `STUDIO-07018` |
+| `STUDIO-07058` | Reparenting by dragging in the World Outliner | ⬜ | `STUDIO-07006` |
+| `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07047`, `STUDIO-07049`, `STUDIO-07050`, `STUDIO-07051`, `STUDIO-07052`, `STUDIO-07053`, `STUDIO-07054`, `STUDIO-07055`, `STUDIO-07056`, `STUDIO-07057`, `STUDIO-07058` |
 | `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | ⬜ | `STUDIO-07030` |
 
 > **`STUDIO-07030` blocks more than this phase.** `CnaStudioHost` — the `--ui=imgui` host — creates
@@ -55,6 +67,150 @@
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-07047` — Inventory the prototype's tests, and close what deleting them would lose
+
+**Acceptance.** Every case in `tests/ApplicationTests.cpp` and `tests/UiTests.cpp` is accounted for:
+either the behaviour it asserts is covered without the prototype — by a unit test over the shared
+code or by a native panel test — or a native test is written for it, or it is recorded as testing
+the prototype's own presentation and therefore going away with it. The accounting is a table a test
+checks, not a document, for the reason `STUDIO-07041` gives.
+
+**Why this exists.** `STUDIO-07041` found that the migration inventory accounted for *surfaces* —
+panels, menus, toolbars, shortcuts — and that a whole level below it was unaccounted for: the
+controls inside a panel. There is a level below *that*, and it is the one deleting the prototype
+actually costs. `ApplicationTests.cpp` is 116 cases and `UiTests.cpp` is 17: gizmo drags and their
+undo merging, prefab instantiate/revert/apply, tilemap brush/fill/eyedropper, asset drops onto typed
+slots, 3D orbit and fly navigation, Euler round-tripping at gimbal lock, crash recovery, plugin
+loading. Almost all of it is *shared* code reached through the prototype's panels, and almost none
+of it is about Dear ImGui. Deleting the panels without this would delete a third of the suite and
+nothing would say so.
+
+**Verification.** A table in `tests/StudioMigrationInventoryTests.cpp` naming, for each prototype
+case, the file and symbol that covers the same behaviour without it — checked against the file, the
+way the Inspector-section table is — and a count that has to be edited deliberately.
+
+**Done, and it cost more than it looked like it would.** All 112 cases are accounted for: 88
+covered elsewhere, 17 recorded as gaps with the task that closes each, and 7 that really are about
+Dear ImGui and go with it. Eight files changed shape on the way — the command-line cases, the
+plugin-host cases and the `UiDrawData` boundary cases were in the prototype's files by habit and are
+files of their own now, so the deletion is a deletion rather than a rescue operation.
+
+**What it found first was not a missing test.** Writing the native cases that were missing turned up
+things the native shell cannot do at all, and five defects in what it can:
+
+- `studio.edit.delete` deleted the **last** selected entity and cleared the selection, so deleting a
+  selection of five removed one. `studio.edit.duplicate` left the *original* selected, so the
+  obvious next gesture moved the wrong thing. Both are the whole selection now, as one undo entry.
+- A press on a manipulator that moved nothing **still pushed an undo entry**, so the next Ctrl+Z
+  appeared to do nothing.
+- The 3D viewport started a navigation gesture on `StudioInteraction::pressed`, which is left-button
+  only — so Studio's own middle-drag pan and right-drag fly never began, and the whole Blender
+  scheme, which lives on the middle button, was unreachable.
+- Flying on W and E **also switched the manipulator**, because the shortcut dispatch had no way to
+  know a panel was driving a keyboard gesture. `StudioInputRouter::wantsKeyboardGesture` is the
+  sibling of `wantsTextInput` that says so.
+- A Studio opened with no project started on an **empty scene with no camera** — the prototype calls
+  `newScene` and the native hosts did not — and the viewport then refused to navigate at all,
+  because it gated on a project rather than on having something to show.
+
+### `STUDIO-07050` … `STUDIO-07053` — Four things the native shell does not do, found by `STUDIO-07047`
+
+The inventory of *tests* was written to stop the deletion losing coverage. What it found first was
+four things the native shell cannot do at all — each of them shared code that nobody is running,
+which is the same shape as the crash-recovery gap `STUDIO-07020`'s inventory missed and for the
+same reason: they are not panels, menu items, toolbar controls or shortcuts, so no inventory of
+*surfaces* could see them.
+
+**`STUDIO-07050` — Transform manipulators in the native 3D view.** `studioViewportPanel3D` picks
+and it does not manipulate: there is no gizmo drawn and none to drag, so an entity cannot be moved,
+turned or scaled in the 3D view. The prototype does all three, the maths is unit-tested in
+`SceneTests.cpp` (`AThreeDimensionalDragFollowsTheCursorAlongTheGrabbedAxis` and its neighbours),
+and the 2D panel already shows how a panel drives it. **Acceptance.** Translate, rotate and scale in
+the 3D view, each one undo entry, over a multi-selection about its shared pivot, with the same
+manipulator the toolbar names.
+
+**`STUDIO-07051` — The native shell reloads assets edited outside it.** `AssetWatcher` is polled by
+`StudioApplication::pollAssets` and by nothing else, so on `--ui=studio` a texture edited in another
+program is never noticed: the editor keeps drawing the art from before the edit, the mesh cache
+keeps the old model, and the running player is never told. **Acceptance.** An externally changed,
+removed or restored asset is reported and its cached texture, mesh and player copy dropped, as the
+prototype does.
+
+**`STUDIO-07052` — The native shell loads the project's plugins.** `PluginHost::discover` and
+`loadAll` are called by `StudioApplication::loadPlugins` and by nothing else.
+`bindStudioPluginMenus` faithfully draws the commands a plugin registered — and no plugin is ever
+loaded to register any, so the menu is empty on every native run. **Acceptance.** `--plugins=DIR`
+and the default `plugins/` beside the executable are discovered and loaded on the native shell,
+each failure named per plugin, and unloaded while the context is still alive.
+
+**`STUDIO-07053` — `--scene` opens a scene on the native shell.** The flag is parsed, documented in
+the usage text, and read by `StudioApplication::initialize` alone. On the native shell — which is
+the default UI — it is silently ignored and the project's startup scene opens instead.
+**Acceptance.** `--scene=PATH` opens that scene, and a path that will not open is reported rather
+than swallowed.
+
+### `STUDIO-07054` … `STUDIO-07058` — Four more, and a fifth the inventory found on the way
+
+**`STUDIO-07054` — Editors for list and structure properties.** `studioPropertyEditor` shows a
+`List` as "4 items" and a `Structure` as "3 fields", and `EveryPropertyKindTheSchemaDeclaresGets-
+AControlRatherThanASummary` already records those two as the kinds with no editor. What that costs
+is concrete: a sprite animation's frame list and a model renderer's per-part material overrides
+cannot be edited in the native shell at all. The prototype adds, removes and reorders both.
+**Acceptance.** A list element can be added, removed and moved, a structure's fields are edited like
+any other property, and each change is one undo entry.
+
+**`STUDIO-07055` — A numeric property field is dragged as well as typed.** The prototype's number
+fields scrub: press, move sideways, and the value follows, merging into one undo entry for the whole
+gesture. The native field commits on Enter and nothing else, so setting a position means typing it.
+**Acceptance.** A horizontal drag on a numeric field changes the value proportionally, is one undo
+entry, and a click without movement still places the caret for typing.
+
+**`STUDIO-07056` — The 3D view's grid plane.** The prototype offers *Grid on Ground Plane* in the
+View menu, and offers it only in the 3D view, where it changes something. The native shell has no
+such command and no `GridPlane` at all. **Acceptance.** The grid can be put on the ground plane in
+the 3D view, the command is absent or disabled in the 2D one, and the choice survives a restart.
+
+**`STUDIO-07057` — The angles a user typed survive being read back.** A rotation is stored as a
+quaternion and edited as Euler angles, and the conversion is not injective: at gimbal lock, typing
+90 into one field and reading the extraction back gives different numbers in the other two. The
+prototype keeps what was typed until something else changes the rotation. The native editor converts
+afresh every frame. **Acceptance.** The angles a user typed stay in the fields, and stop applying the
+moment the rotation changes from anywhere else.
+
+**`STUDIO-07058` — Reparenting by dragging in the World Outliner.** The prototype reparents by
+dragging one row onto another, refuses a parent dropped onto its own child, and keeps drawing while
+the change is pending. The native outliner has no drag at all — `StudioOutlinerPanel.cpp` mentions
+reparenting only to say that a cycle would be a bug elsewhere. **Acceptance.** A row dragged onto
+another reparents it as one undo entry; a drop that would make a cycle is refused without an entry;
+the tree keeps drawing throughout.
+
+### `STUDIO-07048` — `StudioOptions` moves out of the prototype application's header
+
+**Acceptance.** `StudioOptions` and its parser live in a header of their own. Nothing outside the
+prototype's own files includes `CNA/Studio/StudioApplication.hpp`.
+
+**Why.** Every entry point parses the command line into `StudioOptions`, the native shell and the
+shell preview included, and it is declared in the header of the object being deleted. Moving it is
+mechanical and makes `STUDIO-07030` a deletion rather than a deletion plus a refactor — which is
+the difference between a diff a reviewer can read and one they have to take on trust.
+
+**Done.** `CNA/Studio/StudioOptions.hpp` and `src/app/StudioOptions.cpp`, and
+`OnlyThePrototypesOwnFilesIncludeThePrototypesApplication` is what keeps the dependency from coming
+back: the allowed list is `main`, the Dear ImGui window host and the prototype's own source, and it
+checks the header still exists so it cannot pass by scanning for something that has gone.
+
+### `STUDIO-07049` — `--headless` and the 3D smoke flags run the native shell
+
+**Acceptance.** `--headless`, `--view=3d` and `--orbit` do what they say on a build with no
+prototype in it, and the five CTest smoke cases that use them assert the same things about the
+native shell that they assert about the prototype today.
+
+**Why.** `--headless` resolves to the *prototype* on every build, because that is where the console
+UI lives — so CI's cheapest smoke test, the one that catches a link or start-up regression the unit
+tests cannot see, runs the code being deleted. The native shell already draws headless (that is what
+`--shell-preview` is), so this is wiring rather than invention, but it has to exist before the
+deletion rather than after it.
 
 ### `STUDIO-07001` — Compatibility adapter so unported panels keep working during the migration
 

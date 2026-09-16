@@ -355,6 +355,47 @@ under *Toolbar controls* above.
 
 ---
 
+## The level below the controls: the prototype's tests
+
+`STUDIO-07041` found that this document accounted for **surfaces** — panels, menu items, toolbar
+controls, shortcuts — and that the level below it was unaccounted for: the controls inside a panel.
+`STUDIO-07047` found the level below *that*, and it is the one deleting the prototype actually
+costs.
+
+`tests/ApplicationTests.cpp` and `tests/UiTests.cpp` are 112 end-to-end cases run over the
+prototype's application. Almost all of them are about **shared** code reached through the
+prototype's panels — gizmo drags and their undo merging, prefab revert and apply, the tilemap
+brush, asset drops onto typed slots, 3D navigation, crash recovery — and almost none of them is
+about Dear ImGui. Deleting those files without accounting for them would have deleted a third of
+the suite, and nothing would have said which third.
+
+The accounting is a table in `tests/StudioMigrationInventoryTests.cpp`, checked against the files
+the way the Inspector-section table is: every case is covered elsewhere by a named test that must
+exist, or recorded as a gap with the task that closes it, or marked as going away with the
+prototype. It fails in both directions — a case added to the prototype with no row, and a row
+naming a case that has gone.
+
+**What it found first was not a missing test.** It was eight things the native shell cannot do at
+all, each of them shared code that nobody is running:
+
+| What the prototype does and the native shell does not | Task |
+|-------------------------------------------------------|------|
+| Move, turn or scale an entity in the 3D view | `STUDIO-07050` |
+| Notice an asset edited outside the editor | `STUDIO-07051` |
+| Load the project's plugins | `STUDIO-07052` |
+| Open the scene `--scene` names | `STUDIO-07053` |
+| Add to, remove from or reorder a list property | `STUDIO-07054` |
+| Drag a number field rather than typing into it | `STUDIO-07055` |
+| Put the 3D grid on the ground plane | `STUDIO-07056` |
+| Keep the angles a user typed at gimbal lock | `STUDIO-07057` |
+| Reparent by dragging one outliner row onto another | `STUDIO-07058` |
+
+That is the same shape as the crash-recovery gap this document missed before, and for the same
+reason: none of them is a panel, a menu item, a toolbar control or a shortcut, so no inventory of
+surfaces could see any of them.
+
+---
+
 ## What this inventory could not see, and the correction
 
 **This document was wrong**, and the way it was wrong is worth more than the list above.

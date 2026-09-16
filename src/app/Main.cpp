@@ -24,6 +24,11 @@
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
+#include "CNA/Studio/StudioOptions.hpp"
+
+// The prototype's application, for `--ui=imgui` and the console UI that `--headless` runs on.
+// Both are on their way out (STUDIO-07030); every other path in this file needs only the options
+// struct above, which is why that is a header of its own now (STUDIO-07048).
 #include "CNA/Studio/StudioApplication.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
@@ -611,7 +616,14 @@ namespace
             log.append(severity, message);
         });
 
-        if (!options.projectPath.empty() && !context.openProject(options.projectPath))
+        if (options.projectPath.empty())
+        {
+            // The same document a Studio with no project opens (STUDIO-07047): a scene with a
+            // camera in it, because one with no camera renders nothing and reads as a broken
+            // editor. The preview photographs what the editor shows, so it opens the same thing.
+            context.newScene("Untitled");
+        }
+        else if (!context.openProject(options.projectPath))
         {
             std::cerr << "cna-studio: could not open '" << options.projectPath << "'.\n";
             return 2;

@@ -178,7 +178,15 @@ namespace CNA::Studio
                     log_.append(severity, message);
                 });
 
-                if (!options.projectPath.empty())
+                if (options.projectPath.empty())
+                {
+                    // A scene with no camera renders nothing, which reads as "Studio is broken"
+                    // rather than "you have not added a camera yet" -- so a Studio opened with no
+                    // project starts with one, exactly as the prototype does (STUDIO-07047). The
+                    // native shell did not, and started on a completely empty document.
+                    context_->newScene("Untitled");
+                }
+                else
                 {
                     if (context_->openProject(options.projectPath))
                     {

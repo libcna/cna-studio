@@ -688,3 +688,294 @@ CNA_STUDIO_TEST(EveryUnansweredInspectorSectionNamesTheTaskThatClosesIt)
     // section added to a panel that is being deleted.
     CNA_STUDIO_EXPECT_EQ(unanswered, std::size_t{0});
 }
+
+// ------------------------------------------------------------------------------------------------
+// The level below the controls: the prototype's *tests* (STUDIO-07047)
+//
+// `STUDIO-07041` found that the inventory accounted for surfaces -- panels, menus, toolbars,
+// shortcuts -- and that the level below it, the controls inside a panel, was unaccounted for. There
+// is a level below *that*, and it is the one deleting the prototype actually costs.
+//
+// `ApplicationTests.cpp` runs the prototype's application over a null UI and asserts on what it
+// does to the document: gizmo drags and their undo merging, prefab revert and apply, tilemap brush
+// and fill, asset drops onto typed slots, 3D navigation, crash recovery. Almost all of it is
+// *shared* code reached through the prototype's panels, and almost none of it is about Dear ImGui.
+// Deleting that file without this would delete a third of the suite and nothing would say which
+// third.
+//
+// So every case is accounted for here: covered elsewhere (a file and a symbol, checked against the
+// file), or recorded as a gap with the task that closes it, or marked as going away with the
+// prototype because it is about the prototype's own presentation.
+//
+// **What this found first was not a missing test.** It was eight things the native shell cannot do
+// at all -- a manipulator in the 3D view, an asset reloaded after an external edit, a loaded
+// plugin, `--scene`, a list property that can be added to, a numeric field that can be dragged, a
+// grid plane, a reparent by dragging -- each of them shared code that nobody is running. That is
+// the crash-recovery gap of `STUDIO-07020` repeating, for the same reason: none of them is a
+// surface, so no inventory of surfaces could see them.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief One case of the prototype's suite, and where its behaviour is covered without it. */
+    struct PrototypeCase
+    {
+        /** @brief The case in `ApplicationTests.cpp` or `UiTests.cpp`. */
+        const char* name;
+        /** @brief Where the same behaviour is covered, or null. */
+        const char* file;
+        /** @brief A symbol that must appear in that file -- normally the covering case's name. */
+        const char* symbol;
+        /** @brief The task that closes it, for a behaviour nothing covers yet. */
+        const char* task;
+        /** @brief True when the case is about the prototype's own presentation and goes with it. */
+        bool goesWithThePrototype;
+    };
+
+    /** @brief Every case in the prototype's two end-to-end files, and its answer. */
+    const std::vector<PrototypeCase>& prototypeCases()
+    {
+        static const std::vector<PrototypeCase> cases = {
+            {"ApplicationStartsWithAUsableEmptyScene", "tests/StudioNativeParityTests.cpp", "AStudioOpenedWithNoProjectStartsOnASceneSomethingCanBeSeenIn", nullptr, false},
+            {"ApplicationDrawsEveryPanelEachFrame", "tests/StudioEmptyStateTests.cpp", "EveryPanelSaysSomethingWhenThereIsNothingToShow", nullptr, false},
+            {"ApplicationHonoursItsFrameLimit", nullptr, nullptr, "STUDIO-07049", false},
+            {"ApplicationWalksADeepHierarchyWithoutCrashing", "tests/StudioOutlinerPanelTests.cpp", "ADeepSceneIsDrawnRatherThanDescended", nullptr, false},
+            {"SelectionIsPrunedWhenItsEntityIsDeleted", "tests/StudioNativeParityTests.cpp", "DeletingAnEntityTakesItOutOfTheSelection", nullptr, false},
+            {"FullProjectRoundTripThroughTheApplication", "tests/ProjectAndAssetTests.cpp", "ProjectRoundTripsThroughAFile", nullptr, false},
+            {"ApplicationReportsAMissingProjectRatherThanCrashing", "tests/StudioNativeParityTests.cpp", "AProjectThatIsNotThereIsReportedRatherThanOpened", nullptr, false},
+            {"AGizmoDragMovesTheSelectedEntityAlongTheGrabbedAxis", "tests/StudioViewportPanelTests.cpp", "DraggingATranslateArmMovesTheEntityAlongThatAxisOnly", nullptr, false},
+            {"AGizmoDragOnTheCentreHandleMovesOnBothAxes", "tests/StudioNativeParityTests.cpp", "TheCentreHandleMovesOnBothAxesAtOnce", nullptr, false},
+            {"AGizmoDragIsOneUndoEntryThatReturnsToWhereItStarted", "tests/StudioViewportPanelTests.cpp", "AWholeDragIsOneUndoEntryRatherThanOnePerFrame", nullptr, false},
+            {"TwoGizmoDragsAreTwoUndoEntries", "tests/StudioViewportPanelTests.cpp", "TwoGroupDragsAreTwoUndoEntriesRatherThanOne", nullptr, false},
+            {"AGizmoDragSurvivesThePointerLeavingTheViewport", "tests/StudioNativeParityTests.cpp", "ADragSurvivesThePointerLeavingTheViewport", nullptr, false},
+            {"AGizmoPressDoesNotAlsoChangeTheSelection", "tests/StudioViewportPanelTests.cpp", "PressingATranslateArmStartsADragRatherThanSelecting", nullptr, false},
+            {"PressingAHandleWithoutMovingLeavesTheHistoryAlone", "tests/StudioNativeParityTests.cpp", "APressOnAHandleThatMovesNothingLeavesTheHistoryAlone", nullptr, false},
+            {"APressAwayFromEveryHandleStillSelects", "tests/StudioNativeParityTests.cpp", "APressAwayFromEveryHandleStillPicks", nullptr, false},
+            {"ShortcutsDriveUndoAndRedo", "tests/StudioShellActionTests.cpp", "TheKeyboardAndTheMenuReachTheSameAction", nullptr, false},
+            {"DeleteRemovesTheSelectionAndClearsIt", "tests/StudioShellActionTests.cpp", "DeletingAnEntityIsUndoable", nullptr, false},
+            {"DuplicateCopiesTheSubtreeWithFreshIdsAndSelectsTheCopy", "tests/StudioNativeParityTests.cpp", "DuplicateCopiesTheSubtreeWithFreshIdsAndSelectsTheCopy", nullptr, false},
+            {"FrameSelectedBringsTheSelectionIntoView", "tests/StudioViewportPanelTests.cpp", "FocusSelectedMovesTheCameraOntoWhatIsSelected", nullptr, false},
+            {"TheComparisonHarnessIsOffUnlessAskedFor", "tests/StudioComparisonPanelTests.cpp", "WithNoProjectThereIsNothingToCompareAndThePanelSaysSo", nullptr, false},
+            {"TheComparisonHarnessReportsWhenItCannotRun", "tests/StudioComparisonPanelTests.cpp", "AProblemIsSaidBeforeTheButtonRatherThanAfterPressingIt", nullptr, false},
+            {"GizmoModeShortcutsSwitchTheManipulator", "tests/StudioViewportPanelTests.cpp", "TheTransformShortcutsReachTheGizmoThroughTheRegistry", nullptr, false},
+            {"ARotateDragTurnsTheSelectedEntity", "tests/StudioViewportPanelTests.cpp", "TheRotateAndScaleManipulatorsDragTheirOwnProperty", nullptr, false},
+            {"ARotateDragIsOneUndoEntryThatReturnsToWhereItStarted", "tests/StudioViewportPanelTests.cpp", "AWholeDragIsOneUndoEntryRatherThanOnePerFrame", nullptr, false},
+            {"APressInsideTheRotateRingStillReachesThePicker", "tests/ViewportTests.cpp", "RotateGizmoHitTestGrabsTheRingAndNotItsInterior", nullptr, false},
+            {"AScaleDragResizesTheSelectedEntity", "tests/StudioViewportPanelTests.cpp", "TheRotateAndScaleManipulatorsDragTheirOwnProperty", nullptr, false},
+            {"DuplicatingASelectionIsOneUndoEntry", "tests/StudioNativeParityTests.cpp", "DuplicateCopiesTheSubtreeWithFreshIdsAndSelectsTheCopy", nullptr, false},
+            {"DeletingASelectionIsOneUndoEntry", "tests/StudioNativeParityTests.cpp", "DeletingASelectionIsOneUndoEntry", nullptr, false},
+            {"AGizmoDragOnAMultiSelectionMovesEveryEntityAsOneUndoEntry", "tests/StudioViewportPanelTests.cpp", "DraggingAMultiSelectionMovesEveryEntityByTheSameAmount", nullptr, false},
+            {"AMultiSelectionGizmoLeavesAChildOfASelectedParentAlone", "tests/ViewportTests.cpp", "ASelectionsRootsExcludeDescendantsOfOtherSelectedEntities", nullptr, false},
+            {"TwoInspectorDragsOfOneFieldAreTwoUndoEntries", nullptr, nullptr, "STUDIO-07055", false},
+            {"HoldingTheSnapModifierRoundsAGizmoDragToTheGrid", "tests/StudioNativeParityTests.cpp", "TheSnapModifierRoundsADragToTheVisibleGrid", nullptr, false},
+            {"CtrlClickingAddsToTheSelectionAndClickingEmptySpaceWithItDoesNot", "tests/StudioViewportPanelTests.cpp", "CtrlClickingASecondSpriteAddsItToTheSelection", nullptr, false},
+            {"TheViewportToolbarShowsAndSetsTheGizmoModeAndSpace", "tests/StudioViewportPanelTests.cpp", "TheToolbarsTransformButtonsChooseTheManipulator", nullptr, false},
+            {"TheGizmoSpaceShortcutTogglesBothWays", "tests/StudioNativeParityTests.cpp", "TheGizmoSpaceShortcutTogglesBothWays", nullptr, false},
+            {"ALocalSpaceDragFollowsTheEntitysOwnAxis", "tests/StudioNativeParityTests.cpp", "ALocalSpaceDragFollowsTheEntitysOwnAxis", nullptr, false},
+            {"AnArmedShortcutFiresExactlyOnce", "tests/StudioNativeParityTests.cpp", "AnArmedShortcutFiresExactlyOnce", nullptr, false},
+            {"AddingAComponentThroughTheInspectorIsUndoable", "tests/StudioDetailsPanelTests.cpp", "AComponentCanBeAddedToTheSelectedEntityAndUndone", nullptr, false},
+            {"TheAddPickerDropsAUniqueComponentTheEntityAlreadyHas", "tests/StudioNativeParityTests.cpp", "TheAddPickerDropsAUniqueComponentTheEntityAlreadyHas", nullptr, false},
+            {"ARequiredComponentGetsNoRemoveButton", "tests/StudioNativeParityTests.cpp", "ARequiredComponentGetsNoRemoveButton", nullptr, false},
+            {"RemovingAComponentThroughTheInspectorIsUndoable", "tests/StudioDetailsPanelTests.cpp", "AComponentIsRemovedFromItsOwnHeaderAndUndone", nullptr, false},
+            {"RotationIsEditedAsDegreesAndStoredAsAQuaternion", "tests/StudioDetailsPanelTests.cpp", "AQuaternionIsEditedAsAnglesRatherThanAsFourRawNumbers", nullptr, false},
+            {"TheInspectorKeepsTheAnglesTheUserTypedAtGimbalLock", nullptr, nullptr, "STUDIO-07057", false},
+            {"TheAngleCacheStopsApplyingOnceSomethingElseChangesTheRotation", nullptr, nullptr, "STUDIO-07057", false},
+            {"DoubleClickingAHierarchyNodeRenamesItInPlace", "tests/StudioRenameTests.cpp", "F2RenamesTheSelectionAndRaisesTheOutlinerToDoIt", nullptr, false},
+            {"AnEmptyRenameIsTreatedAsASlipAndKeepsTheOldName", "tests/StudioRenameTests.cpp", "AnEmptyNameIsRefusedRatherThanApplied", nullptr, false},
+            {"DraggingAnEntityOntoAnotherReparentsIt", nullptr, nullptr, "STUDIO-07058", false},
+            {"DroppingAParentOntoItsOwnChildIsRefusedWithoutAnUndoEntry", nullptr, nullptr, "STUDIO-07058", false},
+            {"DroppingAnEntityOntoItselfDoesNothing", nullptr, nullptr, "STUDIO-07058", false},
+            {"CtrlClickExtendsTheHierarchySelection", "tests/StudioNativeParityTests.cpp", "CtrlClickExtendsTheOutlinerSelection", nullptr, false},
+            {"TheHierarchyKeepsDrawingWhileAReparentIsPending", nullptr, nullptr, "STUDIO-07058", false},
+            {"DroppingATextureOntoASpriteSlotSetsIt", "tests/StudioDragDropTests.cpp", "ReleasingOverAMatchingTargetDeliversThePayload", nullptr, false},
+            {"ASlotRefusesAnAssetOfTheWrongKindAndSaysWhy", "tests/StudioDragDropTests.cpp", "ATargetOfTheWrongTypeSaysSoRatherThanIgnoringIt", nullptr, false},
+            {"ASlotWithNoDeclaredKindTakesAnything", "tests/StudioDragDropTests.cpp", "ATargetOfTheRightTypeLightsUpBeforeTheDrop", nullptr, false},
+            {"TheMaterialOverrideSlotTakesAMaterialAndRefusesEverythingElse", "tests/StudioDragDropTests.cpp", "ATargetOfTheWrongTypeSaysSoRatherThanIgnoringIt", nullptr, false},
+            {"TheConsoleCopiesWhatItIsShowing", "tests/StudioLogPanelTests.cpp", "FilteringCountsAndTextAgreeWithEachOther", nullptr, false},
+            {"TheConsoleClearButtonEmptiesIt", "tests/StudioLogPanelTests.cpp", "ClearingTheLogIsReportedRatherThanDoneBehindTheOwnersBack", nullptr, false},
+            {"TheConsoleScrollLockIsRememberedAcrossFrames", "tests/StudioLogPanelTests.cpp", "FollowingNewOutputStopsTheMomentTheUserScrollsAway", nullptr, false},
+            {"TheConsoleSeverityFilterIsRememberedAcrossFrames", "tests/StudioLogPanelTests.cpp", "TheSeverityOfALineIsVisibleWithoutReadingIt", nullptr, false},
+            {"RelinkingFromTheReportFixesEveryReferenceAtOnce", "tests/StudioProblemsPanelTests.cpp", "DroppingAnAssetOnABrokenRowAsksToRelinkItRatherThanClearIt", nullptr, false},
+            {"TheReportSaysSoWhenNothingIsBroken", "tests/StudioProblemsPanelTests.cpp", "ACleanSceneSaysSoRatherThanShowingNothing", nullptr, false},
+            {"SelectingAnAssetSwitchesTheInspectorToItsImportSettings", "tests/StudioDetailsPanelTests.cpp", "SelectingAnAssetShowsItRatherThanTheSceneSettings", nullptr, false},
+            {"EditingAnImportSettingGoesThroughTheUndoStack", "tests/StudioDetailsPanelTests.cpp", "AnImporterSettingIsEditedThroughTheHistoryLikeEveryOtherProperty", nullptr, false},
+            {"AnExternallyEditedAssetIsReloadedAndReported", nullptr, nullptr, "STUDIO-07051", false},
+            {"TheAssetBrowserShowsAFolderTree", "tests/StudioContentBrowserTests.cpp", "FoldersComeFromPathsAndParentsComeFirst", nullptr, false},
+            {"TheAssetBrowserFilterHidesWhatDoesNotMatch", nullptr, nullptr, "STUDIO-35042", false},
+            {"DroppingAnAssetOnAFolderMovesTheFileAndNotAnyScene", "tests/ProjectAndAssetTests.cpp", "AssetDatabaseKeepsIdentityAcrossAMove", nullptr, false},
+            {"RenamingAnAssetKeepsItInItsFolder", "tests/ProjectAndAssetTests.cpp", "AssetDatabaseKeepsIdentityAcrossAMove", nullptr, false},
+            {"ARenameContainingASeparatorIsRefusedWithAReason", "tests/ProjectAndAssetTests.cpp", "AssetDatabaseKeepsIdentityAcrossAMove", nullptr, false},
+            {"TheValidationPanelReportsAnIssueAndSelectsItsEntity", "tests/StudioProblemsPanelTests.cpp", "ClickingAnIssueRowAsksToSelectTheEntityAtFault", nullptr, false},
+            {"TheHistoryPanelListsEveryEntryIncludingTheUndoneOnes", "tests/StudioHistoryPanelTests.cpp", "UndoneEntriesAreMarkedRatherThanHidden", nullptr, false},
+            {"ClickingAHistoryRowMovesTheCursorToIt", "tests/StudioHistoryPanelTests.cpp", "ClickingARowAsksToNavigateRatherThanNavigatingMidList", nullptr, false},
+            {"AnEmptyHistorySaysSoRatherThanDrawingNothing", "tests/StudioHistoryPanelTests.cpp", "AnEmptyHistoryStillHasThePositionItStartedFrom", nullptr, false},
+            {"AnUnsavedSceneIsSnapshottedAndTheSnapshotGoesAwayOnSave", "tests/StudioRecoveryTests.cpp", "TheNativeShellWritesSnapshotsWhileTheSceneIsUnsaved", nullptr, false},
+            {"RecoveredWorkIsOfferedRatherThanRestoredBehindTheUsersBack", "tests/StudioRecoveryTests.cpp", "WorkFromAPreviousSessionIsOfferedRatherThanFound", nullptr, false},
+            {"DiscardingARecoveredSceneRemovesTheSnapshotForGood", "tests/StudioRecoveryTests.cpp", "DiscardingRemovesTheSnapshotAndTheOffer", nullptr, false},
+            {"AutosaveCanBeTurnedOffEntirely", "tests/StudioRecoveryTests.cpp", "AnAutosaveIntervalOfZeroWritesNothing", nullptr, false},
+            {"TheInspectorAddsRemovesAndReordersListElements", nullptr, nullptr, "STUDIO-07054", false},
+            {"TheInspectorEditsTheProjectsLayersWhenNothingIsSelected", "tests/StudioSceneSettingsTests.cpp", "ALayerCanBeAddedAndTheChangeIsUndoable", nullptr, false},
+            {"APrefabIsMadeFromASelectionAndDroppedBackIntoTheScene", "tests/SceneTests.cpp", "InstantiatingAPrefabGivesFreshIdsAndKeepsTheLink", nullptr, false},
+            {"TheInspectorReportsOverridesAndRevertsOrAppliesThem", "tests/StudioPrefabSectionTests.cpp", "RevertingThrowsTheChangesAwayAndUndoBringsThemBack", nullptr, false},
+            {"ApplyingAnInstantiatedInstanceKeepsEveryLinkIntact", "tests/StudioPrefabSectionTests.cpp", "ApplyingWritesTheChangesIntoThePrefabFile", nullptr, false},
+            {"TheBrushPaintsAcrossADragAsOneUndoEntry", "tests/StudioTilemapToolTests.cpp", "ADragAcrossSeveralCellsIsOneUndoEntry", nullptr, false},
+            {"TheEraserClearsAndTheBrushDoesNotSelectOrPickTheCamera", "tests/StudioTilemapToolTests.cpp", "TheEraserClearsTheCellRatherThanWritingZero", nullptr, false},
+            {"TheBrushSaysSoWhenTheSelectionHasNoTilemap", "tests/StudioTilemapToolTests.cpp", "PaintingWithNoTilemapSelectedSaysSoOncePerPress", nullptr, false},
+            {"TheEyedropperTakesATileAndGoesBackToPainting", "tests/StudioTilemapToolTests.cpp", "TheEyedropperTakesTheTileAndThenGoesBackToPainting", nullptr, false},
+            {"AFillCoversTheDraggedRectangleAsOneUndoEntry", "tests/StudioTilemapToolTests.cpp", "AFillCoversTheDraggedRectangleOnReleaseAsOneEntry", nullptr, false},
+            {"AFillDraggedBackwardsAndPastTheEdgeStillFillsWhatExists", "tests/StudioTilemapToolTests.cpp", "AFillDraggedBackwardsStillFillsTheRectangle", nullptr, false},
+            {"TheInspectorPreviewsAnAnimationWithoutPuttingItInTheDocument", "tests/StudioSpritePreviewTests.cpp", "PreviewingPutsNothingIntoTheDocument", nullptr, false},
+            {"TheDiagnosticsPanelReportsWhatThisBuildIsAndCanDo", "tests/StudioDiagnosticsPanelTests.cpp", "EveryRendererStudioKnowsIsListedWithItsHostTier", nullptr, false},
+            {"TheInspectorPreviewsAClipWithTheSettingsTheComponentDeclares", "tests/StudioAudioPreviewTests.cpp", "AnAudioSourcePlaysItsClipWithItsOwnVolumePanAndPitch", nullptr, false},
+            {"AnEntityWithNoClipIsToldRatherThanOfferedADeadButton", "tests/StudioAudioPreviewTests.cpp", "AnAudioSourceWithNoClipSaysSoRatherThanOfferingSilence", nullptr, false},
+            {"TheBuildPanelExplainsItselfBeforeOfferingToBuild", "tests/StudioBuildPanelTests.cpp", "WithNoProjectThePanelSaysSoRatherThanDrawingAnEmptyForm", nullptr, false},
+            {"TheThreeDimensionalViewIsAToggleThatLeavesTheTwoDimensionalCameraAlone", "tests/StudioViewport3DTests.cpp", "TheTwoViewsAreExclusiveAndSayWhichIsShowing", nullptr, false},
+            {"TheGridPlaneIsOfferedOnlyWhereItChangesSomething", nullptr, nullptr, "STUDIO-07056", false},
+            {"ThreeDimensionalNavigationOrbitsFliesAndPans", "tests/StudioViewport3DTests.cpp", "ADragOrbitsTheCameraWithoutMovingThePivot", nullptr, false},
+            {"TheGizmoKeysFlyRatherThanSwitchingManipulatorInTheThreeDimensionalView", "tests/StudioNativeParityTests.cpp", "FlyingWithTheGizmoKeysDoesNotAlsoSwitchTheManipulator", nullptr, false},
+            {"TheDigitsSelectTheViewAndKeepWorkingWhileFlying", "tests/StudioNativeParityTests.cpp", "TheDigitsSelectTheViewRatherThanOnlyTheMenu", nullptr, false},
+            {"FramingAndPickingFollowWhicheverCameraIsOnScreen", "tests/StudioViewport3DTests.cpp", "TheFirstSwitchToThreeDimensionsFramesTheSceneAndLaterOnesDoNot", nullptr, false},
+            {"AProjectsOwnSnapStepWinsOverTheVisibleGrid", "tests/StudioNativeParityTests.cpp", "AProjectsOwnSnapStepWinsOverTheVisibleGrid", nullptr, false},
+            {"AThreeDimensionalGizmoDragMovesTheEntityAndUndoesAsOneEntry", nullptr, nullptr, "STUDIO-07050", false},
+            {"AThreeDimensionalTurnCarriesAWholeSelectionAboutItsPivot", nullptr, nullptr, "STUDIO-07050", false},
+            {"AThreeDimensionalScaleDragResizesTheEntityAndUndoesAsOneEntry", nullptr, nullptr, "STUDIO-07050", false},
+            {"AThreeDimensionalDragMovesAWholeSelectionAsOneUndoEntry", nullptr, nullptr, "STUDIO-07050", false},
+            {"APerPartMaterialRowIsEditedFieldByField", nullptr, nullptr, "STUDIO-07054", false},
+
+            // `UiTests.cpp`: the Dear ImGui implementation of `StudioUi`, which is the one
+            // thing in either file that really is about Dear ImGui. It goes with it.
+            {"ImGuiUiProducesValidDrawDataForTheWholeStudio", nullptr, nullptr, nullptr, true},
+            {"ImGuiUiRequestsItsFontAtlasThroughTheTextureProtocol", nullptr, nullptr, nullptr, true},
+            {"ImGuiUiStaysValidAcrossManyFramesWithInput", nullptr, nullptr, nullptr, true},
+            {"ImGuiUiExitsWhenTheWindowIsClosed", nullptr, nullptr, nullptr, true},
+            {"ImGuiUiRoutesLogMessagesIntoTheSharedModel", nullptr, nullptr, nullptr, true},
+            {"ImGuiUiEmitsAQuadForEveryVisibleGlyph", nullptr, nullptr, nullptr, true},
+            {"ImGuiUiRequestsAnUpdateWhenNewGlyphsAppear", nullptr, nullptr, nullptr, true},
+        };
+        return cases;
+    }
+
+    /** @brief The names of every `CNA_STUDIO_TEST` in @p relativePath. */
+    std::vector<std::string> testNamesIn(const std::string& relativePath)
+    {
+        const std::string text = readSource(relativePath);
+        std::vector<std::string> names;
+
+        constexpr std::string_view kMarker = "CNA_STUDIO_TEST(";
+        std::size_t at = text.find(kMarker);
+        while (at != std::string::npos)
+        {
+            const std::size_t open = at + kMarker.size();
+            const std::size_t close = text.find(')', open);
+            if (close == std::string::npos) { break; }
+            names.push_back(text.substr(open, close - open));
+            at = text.find(kMarker, close);
+        }
+        return names;
+    }
+}
+
+CNA_STUDIO_TEST(EveryCaseOfThePrototypesSuiteIsAccountedFor)
+{
+    // The half that catches a case being added to the prototype, or one being renamed, without the
+    // accounting following it. A case nobody has answered for is a case that disappears quietly
+    // when the file does.
+    for (const char* file : {"tests/ApplicationTests.cpp", "tests/UiTests.cpp"})
+    {
+        for (const std::string& name : testNamesIn(file))
+        {
+            const bool accounted = std::any_of(
+                prototypeCases().begin(), prototypeCases().end(),
+                [&name](const PrototypeCase& entry) { return name == entry.name; });
+            if (!accounted)
+            {
+                CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                    std::string{file} + "'s '" + name + "' is not in the prototype-case table. "
+                    "Deleting that file would delete it with nothing saying so: record where the "
+                    "behaviour is covered without the prototype, or the task that will cover it.");
+            }
+        }
+    }
+
+    // And the other way: a row naming a case that is no longer there is a row that has stopped
+    // meaning anything.
+    const std::vector<std::string> application = testNamesIn("tests/ApplicationTests.cpp");
+    const std::vector<std::string> ui = testNamesIn("tests/UiTests.cpp");
+    CNA_STUDIO_EXPECT(!application.empty());
+
+    for (const PrototypeCase& entry : prototypeCases())
+    {
+        const bool exists =
+            std::find(application.begin(), application.end(), entry.name) != application.end()
+            || std::find(ui.begin(), ui.end(), entry.name) != ui.end();
+        if (!exists)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"the prototype-case table names '"} + entry.name
+                + "', which neither ApplicationTests.cpp nor UiTests.cpp holds any more.");
+        }
+    }
+}
+
+CNA_STUDIO_TEST(EveryAnsweredPrototypeCaseNamesATestThatIsActuallyThere)
+{
+    // The half that goes stale silently: a case recorded as covered whose cover was renamed or
+    // removed. Checked against the file, because a table saying it is covered is exactly what
+    // would be wrong.
+    for (const PrototypeCase& entry : prototypeCases())
+    {
+        if (entry.file == nullptr) { continue; }
+
+        const std::string text = readSource(entry.file);
+        if (text.empty())
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"'"} + entry.name + "' is recorded as covered by " + entry.file
+                + ", which does not exist.");
+            continue;
+        }
+        if (text.find(entry.symbol) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"'"} + entry.name + "' is recorded as covered by '" + entry.symbol
+                + "' in " + entry.file + ", which no longer contains it.");
+        }
+    }
+}
+
+CNA_STUDIO_TEST(EveryUnansweredPrototypeCaseNamesTheTaskThatWillCoverIt)
+{
+    // A gap with no task against it is a gap nobody will close -- and the ids have to be real rows
+    // in the plan, checked the same way the Inspector sections' are.
+    const std::string phase7 = readSource("plans/phase-07-panel-migration.md");
+    const std::string phase35 = readSource("plans/phase-35-polish.md");
+    CNA_STUDIO_EXPECT(!phase7.empty());
+    CNA_STUDIO_EXPECT(!phase35.empty());
+
+    std::size_t gaps = 0;
+    std::size_t goes = 0;
+    for (const PrototypeCase& entry : prototypeCases())
+    {
+        if (entry.goesWithThePrototype) { ++goes; continue; }
+        if (entry.file != nullptr) { continue; }
+        ++gaps;
+
+        CNA_STUDIO_EXPECT(entry.task != nullptr);
+        if (entry.task == nullptr) { continue; }
+        if (phase7.find(entry.task) == std::string::npos
+            && phase35.find(entry.task) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"'"} + entry.name + "' names " + entry.task
+                + ", which is not a task in Phase 7 or Phase 35.");
+        }
+    }
+
+    // Stated so that closing one is a deliberate edit rather than something nobody notices, the
+    // way the Inspector sections' count is. Seventeen when the accounting was taken.
+    CNA_STUDIO_EXPECT_EQ(gaps, std::size_t{17});
+
+    // And the seven that are genuinely about Dear ImGui: they are the only ones the deletion may
+    // simply take with it.
+    CNA_STUDIO_EXPECT_EQ(goes, std::size_t{7});
+}

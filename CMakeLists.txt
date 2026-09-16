@@ -489,6 +489,7 @@ set(CNA_STUDIO_PANEL_SOURCES
 add_executable(cna-studio
     src/app/Main.cpp
     src/app/StudioApplication.cpp
+    src/app/StudioOptions.cpp
     ${CNA_STUDIO_PANEL_SOURCES})
 target_link_libraries(cna-studio PRIVATE
     cna-studio-ui-core

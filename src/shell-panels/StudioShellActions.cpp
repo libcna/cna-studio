@@ -6,7 +6,9 @@
 
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 
+#include "CNA/Studio/Core/StudioCommand.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
+#include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -14,6 +16,7 @@
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <functional>
+#include <vector>
 #include <memory>
 #include <string>
 #include <utility>
@@ -97,15 +100,41 @@ namespace CNA::Studio
              [&context, &log] {
                  if (context.getSelection().empty()) { return; }
 
-                 // Through the history, like every other edit. Deleting an entity is the single
-                 // operation a user most needs to be able to take back.
-                 const Uuid target = context.getSelection().back();
-                 const StudioEntity* entity = context.getScene().findEntity(target);
-                 const std::string name = entity != nullptr ? entity->getName() : "entity";
+                 // **Every** selected entity, not the last one (STUDIO-07047). Deleting one of a
+                 // selection of five and clearing the selection is the shape of bug a user reports
+                 // as "Delete only sometimes works", because which one survived depended on the
+                 // order they clicked.
+                 //
+                 // Roots only: a delete takes the whole subtree with it, so a selected descendant
+                 // of a selected entity is already accounted for, and asking to delete it
+                 // separately would push a command that finds nothing. The same helper the
+                 // multi-selection gizmo uses.
+                 const std::vector<Uuid> doomed =
+                     findSelectionRoots(context.getScene(), context.getSelection());
+                 if (doomed.empty()) { return; }
 
-                 context.execute(std::make_unique<DeleteEntityCommand>(context.getScene(), target));
-                 context.clearSelection();
-                 log.append(LogSeverity::Info, "Deleted '" + name + "'.");
+                 const StudioEntity* first = context.getScene().findEntity(doomed.front());
+                 const std::string name = first != nullptr ? first->getName() : "entity";
+
+                 // One entry for the whole action. Through the history, like every other edit:
+                 // deleting is the single operation a user most needs to be able to take back.
+                 auto batch = std::make_unique<CompositeCommand>(
+                     "Delete " + std::to_string(doomed.size())
+                     + (doomed.size() == 1 ? " entity" : " entities"));
+                 for (const Uuid& entityId : doomed)
+                 {
+                     if (context.getScene().findEntity(entityId) == nullptr) { continue; }
+                     batch->add(
+                         std::make_unique<DeleteEntityCommand>(context.getScene(), entityId));
+                 }
+                 if (batch->isEmpty()) { return; }
+
+                 context.execute(std::move(batch));
+                 context.pruneSelection();
+                 log.append(LogSeverity::Info,
+                            doomed.size() == 1
+                                ? "Deleted '" + name + "'."
+                                : "Deleted " + std::to_string(doomed.size()) + " entities.");
              });
 
         bind("studio.file.saveAll",
@@ -131,15 +160,36 @@ namespace CNA::Studio
         bind("studio.edit.duplicate",
              [&context] { return !context.getSelection().empty(); },
              [&context, &log] {
-                 if (context.getSelection().empty()) { return; }
+                 // Snapshotted, because the copies are selected as they are made and iterating the
+                 // live selection would duplicate the copies as well.
+                 const std::vector<Uuid> sources = context.getSelection();
+                 if (sources.empty()) { return; }
 
-                 const Uuid source = context.getSelection().back();
-                 auto command = std::make_unique<DuplicateEntityCommand>(context.getScene(), source);
+                 // One entry for the whole action, for the reason Delete has one: duplicating five
+                 // entities is one press of Ctrl+D, so undoing it is one press of Ctrl+Z.
+                 auto batch = std::make_unique<CompositeCommand>(
+                     "Duplicate " + std::to_string(sources.size())
+                     + (sources.size() == 1 ? " entity" : " entities"));
 
-                 // Asked *before* executing, because after it the command owns the answer and the
-                 // description names a copy that did not exist when the question was asked.
-                 const std::string what = command->getDescription();
-                 context.execute(std::move(command));
+                 std::vector<Uuid> copies;
+                 for (const Uuid& sourceId : sources)
+                 {
+                     auto command =
+                         std::make_unique<DuplicateEntityCommand>(context.getScene(), sourceId);
+                     if (!command->isValid()) { continue; }
+                     copies.push_back(command->getEntityId());
+                     batch->add(std::move(command));
+                 }
+                 if (batch->isEmpty()) { return; }
+
+                 // Asked *before* executing, because after it the description names a copy that did
+                 // not exist when the question was asked.
+                 const std::string what = batch->getDescription();
+                 context.execute(std::move(batch));
+
+                 // Selecting the copies is what makes "duplicate, then drag it somewhere" work
+                 // without a trip back to the World Outliner (STUDIO-07047).
+                 context.setSelection(std::move(copies));
                  log.append(LogSeverity::Info, what + ".");
              });
 

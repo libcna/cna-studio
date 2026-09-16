@@ -48,6 +48,10 @@ namespace CNA::Studio
         focusables_.clear();
         wantsTextInput_ = false;
 
+        // Declared afresh each frame by whichever panel is driving one, so a gesture that ended
+        // does not keep the keyboard for the frame after it.
+        wantsKeyboardGesture_ = false;
+
         // Cleared with the rest of the per-frame record: a focused widget that stopped being
         // described -- its panel closed, its row scrolled out of a list -- has no rectangle, and
         // reporting the one it had last time would point at whatever took its place.
