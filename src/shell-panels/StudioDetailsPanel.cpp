@@ -14,12 +14,17 @@
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
 #include "CNA/Studio/ProjectCommands.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
+// The audio seam. A header with no CNA in it -- the implementation that links CNA lives in the one
+// module that may, and this panel only ever sees the interface.
+#include "CNA/Studio/Viewport/StudioAudio.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 
 namespace CNA::Studio
@@ -379,6 +384,149 @@ namespace CNA::Studio
             row.splitLeft(std::min(metricOf(theme, StudioMetric::SpacingSmall), row.width));
             parts.control = row;
             return parts;
+        }
+
+        /** @brief Whether a preview can be offered for an asset of this kind at all. */
+        bool isAudibleAsset(AssetType type)
+        {
+            return type == AssetType::SoundEffect || type == AssetType::Song;
+        }
+
+        /**
+         * @brief One audio preview control: Play, Stop, and what would be heard.
+         *
+         * `plan.md` STUDIO-07044. Drawn the same way wherever it appears -- under an audio source's
+         * properties with that source's own volume, pan and pitch, and on a sound asset with
+         * neutral ones -- because two previews with different controls on them is how the one that
+         * is looked at less often quietly becomes the wrong one.
+         *
+         * Every refusal is *said*. A control that is missing, or present and inert, is one the user
+         * cannot tell from a feature that was never written: no audio in this build, no clip
+         * assigned and a clip whose file has gone are three different problems with three different
+         * answers, and only the last of them is the device's fault.
+         *
+         * @param frame The frame.
+         * @param row The whole row, label column included.
+         * @param theme The theme the row is measured from.
+         * @param services The audio seam, which may be absent.
+         * @param assets Where the clip's record is resolved from.
+         * @param clipId The clip to play, which may be unset.
+         * @param volume 0..1.
+         * @param pitch -1..1 in octaves.
+         * @param pan -1..1, left to right.
+         * @return What the control did.
+         */
+        StudioAudioPreviewResult studioAudioPreviewRow(StudioFrame& frame, const UiRect& row,
+                                                       const StudioTheme& theme,
+                                                       const StudioDetailsServices& services,
+                                                       const AssetDatabase& assets,
+                                                       const Uuid& clipId, float volume,
+                                                       float pitch, float pan)
+        {
+            StudioAudioPreviewResult result;
+            ++result.controls;
+
+            const PropertyRow parts = splitRow(theme, row);
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame, parts.label, "Preview", StudioFontRole::Body,
+                               theme.color(StudioColorRole::TextSecondary));
+            }
+
+            const AssetRecord* record = clipId.isValid() ? assets.find(clipId) : nullptr;
+
+            // Why this control cannot do anything, when it cannot. Worked out once and used for
+            // both the disabled state and the sentence beside it, so the two can never disagree --
+            // a greyed button next to text saying it should work is the shape of a bug report.
+            std::string refusal;
+            std::string refusalDetail;
+            if (services.audio == nullptr)
+            {
+                refusal = "No audio device.";
+                refusalDetail = "This build has no audio device, so nothing can be previewed.";
+            }
+            else if (!clipId.isValid())
+            {
+                refusal = "No clip assigned.";
+                refusalDetail = "Assign a clip to this audio source to hear it.";
+            }
+            else if (record == nullptr)
+            {
+                refusal = "Clip missing.";
+                refusalDetail = "The clip this refers to is not in the project's assets.";
+            }
+            else if (!isAudibleAsset(record->type))
+            {
+                // A texture in a clip slot. The property editor's asset picker filters by the
+                // declared type, but a scene authored elsewhere can hold anything.
+                refusal = "Not a sound.";
+                refusalDetail = fileNameOf(record->sourcePath) + " is not a sound.";
+            }
+
+            // Icon-only, and measured rather than assumed. Two buttons carrying the words "Play"
+            // and "Stop" leave a property panel's control column about eighty pixels for the
+            // sentence beside them, which is where "This build has no audio device." became
+            // "This ..." -- an explanation nobody can read is an explanation nobody has. The
+            // label still decides the identity, the tooltip and what a screen reader says.
+            const float buttonWidth = std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                               metricOf(theme, StudioMetric::MinimumHitTarget));
+            const float spacing = metricOf(theme, StudioMetric::SpacingXSmall);
+
+            UiRect controls = parts.control;
+            const UiRect playBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+            controls.splitLeft(std::min(spacing, controls.width));
+            const UiRect stopBox = controls.splitLeft(std::min(buttonWidth, controls.width));
+            controls.splitLeft(std::min(metricOf(theme, StudioMetric::SpacingSmall), controls.width));
+
+            frame.ids().push("audiopreview");
+
+            StudioButtonOptions play;
+            play.icon = StudioIcon::Play;
+            play.iconOnly = true;
+            play.enabled = refusal.empty();
+            play.tooltip = refusal.empty()
+                ? std::string_view{"Hear this clip as it is configured here"}
+                : std::string_view{refusalDetail};
+            if (studioButton(frame, frame.ids().make("play"), playBox, "Play", play).activated)
+            {
+                result.played = true;
+                result.clip = record != nullptr ? record->sourcePath : std::string{};
+                // Reported rather than swallowed: a clip that will not load and a clip of silence
+                // sound identical, and only one of them is the user's problem to fix.
+                result.started = services.audio->play(clipId, volume, pitch, pan);
+            }
+
+            StudioButtonOptions stop;
+            stop.icon = StudioIcon::Stop;
+            stop.iconOnly = true;
+            // Asked of the device, not of a remembered flag, so a clip that simply reached its end
+            // stops offering a Stop that could not do anything.
+            stop.enabled = services.audio != nullptr && services.audio->isPlaying();
+            stop.tooltip = "Stop the preview";
+            if (studioButton(frame, frame.ids().make("stop"), stopBox, "Stop", stop).activated)
+            {
+                result.stopped = true;
+                services.audio->stop();
+            }
+
+            frame.ids().pop();
+
+            if (frame.isDrawPass() && controls.width > 0.0f)
+            {
+                // What will be heard, or why nothing will be. The clip's file name rather than its
+                // path: a preview button beside a name answers "which sound is this" without the
+                // user having to go back to the property above it.
+                const std::string text =
+                    refusal.empty() ? fileNameOf(record->sourcePath) : refusal;
+                studioDrawText(frame, controls,
+                               studioTruncateText(frame, theme.font(StudioFontRole::BodySmall),
+                                                  text, controls.width),
+                               StudioFontRole::BodySmall,
+                               theme.color(refusal.empty() ? StudioColorRole::TextSecondary
+                                                           : StudioColorRole::TextDisabled));
+            }
+
+            return result;
         }
     }
 
@@ -910,7 +1058,8 @@ namespace CNA::Studio
     }
 
     StudioDetailsResult studioAssetInspector(StudioFrame& frame, const UiRect& area,
-                                             StudioContext& context, const Uuid& assetId)
+                                             StudioContext& context, const Uuid& assetId,
+                                             const StudioDetailsServices& services)
     {
         StudioDetailsResult result;
         const StudioTheme& theme = frame.theme();
@@ -937,8 +1086,10 @@ namespace CNA::Studio
         const std::vector<PropertyDescriptor>* properties =
             descriptor != nullptr ? &descriptor->properties : nullptr;
 
-        // Name, path, kind, a gap, the importer's heading, and one row per setting.
-        const std::size_t rows = 6 + (properties != nullptr ? properties->size() : 0);
+        // Name, path, kind, a gap, the importer's heading, and one row per setting -- plus the
+        // preview row when this is something that can be heard.
+        const std::size_t rows = 6 + (isAudibleAsset(record->type) ? 1u : 0u)
+                                 + (properties != nullptr ? properties->size() : 0);
 
         StudioScrollOptions scroll;
         scroll.contentHeight = static_cast<float>(rows) * (rowHeight + spacing);
@@ -1008,6 +1159,17 @@ namespace CNA::Studio
             const PropertyRow parts = splitRow(theme, nextRow());
             label(parts.label, "Id", StudioColorRole::TextSecondary);
             label(parts.control, record->id.toString(), StudioColorRole::TextDisabled);
+        }
+
+        // Offered on the asset itself as well as on a component that references it: hearing a clip
+        // is most often wanted right after importing it, when no entity uses it yet.
+        //
+        // Neutral settings, unlike the component preview -- this is the file as imported, with
+        // nothing an entity chose applied to it.
+        if (isAudibleAsset(record->type))
+        {
+            result.audio = studioAudioPreviewRow(frame, nextRow(), theme, services,
+                                                 context.getAssets(), assetId, 1.0f, 0.0f, 0.0f);
         }
 
         nextRow();
@@ -1109,7 +1271,8 @@ namespace CNA::Studio
     }
 
     StudioDetailsResult studioDetailsPanel(StudioFrame& frame, const UiRect& bounds,
-                                           StudioContext& context)
+                                           StudioContext& context,
+                                           const StudioDetailsServices& services)
     {
         StudioDetailsResult result;
         const StudioTheme& theme = frame.theme();
@@ -1126,7 +1289,7 @@ namespace CNA::Studio
         // panel shows one thing at a time, and which one is decided by what was clicked last.
         if (context.getSelectedAsset().isValid())
         {
-            return studioAssetInspector(frame, area, context, context.getSelectedAsset());
+            return studioAssetInspector(frame, area, context, context.getSelectedAsset(), services);
         }
 
         const std::vector<Uuid>& selection = context.getSelection();
@@ -1174,6 +1337,8 @@ namespace CNA::Studio
                     context.getComponentRegistry().find(component.getTypeId());
                 rows += descriptor != nullptr ? descriptor->properties.size()
                                               : component.getProperties().size();
+                // And its preview, which is a row of the grid like any other.
+                if (component.getTypeId() == BuiltinComponentIds::kAudioSource) { ++rows; }
             }
             return rows;
         }();
@@ -1339,6 +1504,25 @@ namespace CNA::Studio
                 properties = &improvised;
             }
 
+            // Read before the property loop, which may break out of itself the moment an edit
+            // lands. Values rather than a reference into the component, so the preview below is
+            // drawn from something that cannot have been invalidated by the edit that ended it.
+            const bool isAudioSource = component.getTypeId() == BuiltinComponentIds::kAudioSource;
+            const Uuid clipId =
+                isAudioSource ? component.getPropertyOrDefault("clip", descriptor)
+                                    .get<PropertyValue::AssetReference>()
+                                    .id
+                              : Uuid{};
+            const float clipVolume =
+                isAudioSource ? component.getPropertyOrDefault("volume", descriptor).get<float>(1.0f)
+                              : 1.0f;
+            const float clipPitch =
+                isAudioSource ? component.getPropertyOrDefault("pitch", descriptor).get<float>(0.0f)
+                              : 0.0f;
+            const float clipPan =
+                isAudioSource ? component.getPropertyOrDefault("pan", descriptor).get<float>(0.0f)
+                              : 0.0f;
+
             for (const PropertyDescriptor& property : *properties)
             {
                 const PropertyRow parts = splitRow(theme, nextRow());
@@ -1380,6 +1564,33 @@ namespace CNA::Studio
 
                     // The component list may have been rebuilt underneath this loop.
                     break;
+                }
+            }
+
+            // The preview, under the properties it plays with. Per *source* rather than per
+            // entity: `CNA.AudioSource` is declared non-unique, so an entity may carry several,
+            // and the prototype's `findComponent` preview can only ever hear the first of them.
+            //
+            // Scoped by type and index like the header's Remove button, because two sources on one
+            // entity would otherwise share one widget identity -- and two buttons with one id is a
+            // press that lands on whichever of them the state store saw last.
+            if (isAudioSource)
+            {
+                frame.ids().push(component.getTypeId());
+                frame.ids().pushIndex(static_cast<std::int64_t>(componentIndex));
+                const StudioAudioPreviewResult preview =
+                    studioAudioPreviewRow(frame, nextRow(), theme, services, context.getAssets(),
+                                          clipId, clipVolume, clipPitch, clipPan);
+                frame.ids().pop();
+                frame.ids().pop();
+
+                result.audio.controls += preview.controls;
+                if (preview.played || preview.stopped)
+                {
+                    result.audio.played = preview.played;
+                    result.audio.stopped = preview.stopped;
+                    result.audio.started = preview.started;
+                    result.audio.clip = preview.clip;
                 }
             }
         }

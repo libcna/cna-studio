@@ -55,6 +55,7 @@
 
 namespace CNA::Studio
 {
+    class StudioAudio;
     class StudioContext;
 
     /** @brief What a host can offer the panels that the panels cannot do themselves. */
@@ -96,6 +97,16 @@ namespace CNA::Studio
         ImageWriter writeImage;
 
         /**
+         * @brief Plays one clip at a time, for the Details panel's preview.
+         *
+         * `STUDIO-07044`. A seam for the same reason the clipboard and the image decoder are:
+         * playing a sound needs CNA, exactly one module may link CNA (decision D-03), and the
+         * panels have to keep working in a build that has neither. Unset draws the preview
+         * disabled and says why, which is what a headless Studio can honestly offer.
+         */
+        StudioAudio* audio = nullptr;
+
+        /**
          * @brief Puts text on the system clipboard, returning whether it got there.
          *
          * A seam rather than a direct call, because the clipboard is behind a default-off CNA
@@ -130,6 +141,9 @@ namespace CNA::Studio
 
         /** @brief How many plugin commands are on the menus. */
         std::size_t pluginMenuRows = 0;
+
+        /** @brief How many audio preview controls the Details panel drew. */
+        std::size_t audioPreviews = 0;
     };
 
     /**

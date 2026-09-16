@@ -46,6 +46,7 @@
 #include "CNA/Studio/UiCore/StudioTheme.hpp"
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
+#include "CNA/Studio/Viewport/StudioAudio.hpp"
 #include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 #include "CNA/Studio/UiRenderer/StudioHostRenderer.hpp"
 #include "CNA/Studio/UiRenderer/StudioModernUiRenderer.hpp"
@@ -199,6 +200,14 @@ namespace CNA::Studio
                 // Every ported panel, bound in one place that does not need CNA -- so the
                 // headless preview shows the same panels this window does (STUDIO-07001).
                 StudioShellPanelServices services;
+
+                // The Details panel's preview (STUDIO-07044). Constructed here rather than at
+                // first press: it needs the asset database and nothing else, and a device is only
+                // touched when a clip is actually played -- so a Studio started on a machine with
+                // no sound card still opens, and says so on the button rather than at start-up.
+                audio_ = createCnaStudioAudio(context_->getAssets());
+                services.audio = audio_.get();
+
                 services.setClipboardText = [](const std::string& text) {
                     if (!CnaUiPlatform::hasClipboard()) { return false; }
                     CnaUiPlatform::setClipboardText(text);
@@ -832,6 +841,14 @@ namespace CNA::Studio
             bool viewportComposited_ = false;
             std::unique_ptr<StudioContext> context_;
             StudioLog log_;
+
+            /**
+             * @brief The audio preview, declared before the panels that borrow it.
+             *
+             * Members are destroyed in reverse declaration order, and `panels_` holds a raw
+             * pointer to this for the whole of its life.
+             */
+            std::unique_ptr<StudioAudio> audio_;
 
             /**
              * @brief Declared after the log and the context it borrows, so it is destroyed first.

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 25 of 34 complete `███████░░░░░`
+**Progress:** 26 of 34 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -38,7 +38,7 @@
 | `STUDIO-07041` | Inventory the prototype's *controls*, not only its panels and menus | ✅ | `STUDIO-07020` |
 | `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | ⬜ | `STUDIO-07041` |
 | `STUDIO-07043` | Sprite animation preview in the native Details panel | ⬜ | `STUDIO-07041` |
-| `STUDIO-07044` | Audio preview in the native Details panel | ⬜ | `STUDIO-07041` |
+| `STUDIO-07044` | Audio preview in the native Details panel | ✅ | `STUDIO-07041` |
 | `STUDIO-07045` | The asset inspector: a selected asset's own properties | ✅ | `STUDIO-07041` |
 | `STUDIO-07046` | The material asset editor the prototype already has | ⬜ | `STUDIO-07041` |
 | `STUDIO-07030` | Remove the Dear ImGui panel implementations | ⬜ | `STUDIO-07042`, `STUDIO-07043`, `STUDIO-07044`, `STUDIO-07045`, `STUDIO-07046` |

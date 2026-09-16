@@ -635,12 +635,34 @@ namespace CNA::Studio
         // The Details panel (STUDIO-07007), the third ported and the first that writes to the
         // document. Every edit goes through the command history, so Ctrl+Z reaches it.
         shell.setPanelContent("details", [this](StudioFrame& frame, const UiRect& bounds) {
-            const StudioDetailsResult details = studioDetailsPanel(frame, bounds, context_);
-            if (frame.isDrawPass()) { counts_.detailsRowsDrawn = details.rowsDrawn; }
+            StudioDetailsServices details_services;
+            details_services.audio = services_.audio;
+
+            const StudioDetailsResult details =
+                studioDetailsPanel(frame, bounds, context_, details_services);
+            if (frame.isDrawPass())
+            {
+                counts_.detailsRowsDrawn = details.rowsDrawn;
+                counts_.audioPreviews = details.audio.controls;
+            }
             if (details.edited)
             {
                 log_.append(LogSeverity::Info,
                             "Changed " + details.editedProperty + ".  Undo with Ctrl+Z.");
+            }
+
+            // Said out loud, both ways. A preview that will not load and a clip of silence sound
+            // identical, and only one of them is something the user can fix -- which is the whole
+            // reason `StudioAudio::play` returns anything at all (STUDIO-07044).
+            if (details.audio.played)
+            {
+                log_.append(details.audio.started ? LogSeverity::Info : LogSeverity::Warning,
+                            details.audio.started ? "Playing '" + details.audio.clip + "'."
+                                                  : "Cannot play '" + details.audio.clip + "'.");
+            }
+            else if (details.audio.stopped)
+            {
+                log_.append(LogSeverity::Trace, "Preview stopped.");
             }
         });
 

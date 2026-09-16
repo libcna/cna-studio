@@ -302,10 +302,16 @@ ever shrinks is one nobody can tell the difference between "done" and "quietly d
 |------|----------------|---------------|
 | Prefab overrides | `InspectorPanel::drawPrefabSection` | Report, revert and apply, in the native Details panel (`STUDIO-07042`) |
 | Sprite animation preview | `InspectorPanel::drawAnimationPreview` | A preview that does not put the frame it is showing into the document (`STUDIO-07043`) |
-| Audio preview | `InspectorPanel::drawAudioPreview` | The audio seam the native Details panel does not reach yet (`STUDIO-07044`) |
 | Material asset editor | `InspectorPanel::drawMaterialAsset` | The editor the prototype already has, ported (`STUDIO-07046`) |
 
-Four rows have left this table since it was written. **The asset inspector** is answered by
+Five rows have left this table since it was written. **The audio preview** is answered by
+`studioAudioPreviewRow` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07044`): Play and
+Stop under an audio source's own properties, playing that source's clip at its own volume, pan and
+pitch, and the same control on a selected sound asset with neutral settings. It differs from the
+prototype's on purpose. `CNA.AudioSource` is declared `unique = false`, so an entity may carry
+several sources; the prototype draws **one preview per entity**, found with `findComponent`, and can
+only ever play the first of them. The native panel draws one per *source*. **The asset inspector**
+is answered by
 `studioAssetInspector` in `src/shell-panels/StudioDetailsPanel.cpp` (`STUDIO-07045`): the asset's
 identity and kind, and its importer's declared settings edited through the command history. It was
 not only a missing section — the native Content Browser and the native Details panel had *different*

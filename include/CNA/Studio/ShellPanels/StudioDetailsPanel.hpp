@@ -25,6 +25,13 @@
  * one nobody can change, and a control that looked editable and silently did nothing would be worse
  * than both. `STUDIO-07018` is the rest, and it wants pickers rather than more text fields: a
  * colour typed as four numbers and a rotation typed as four is how an inspector gets a reputation.
+ *
+ * ### The audio preview belongs to the component, not to the entity
+ *
+ * `STUDIO-07044`. The prototype draws one preview per *entity*, found with `findComponent` — the
+ * first audio source on it. `CNA.AudioSource` is declared `unique = false`, so an entity may carry
+ * several, and the prototype's preview can only ever hear one of them. Here each source draws its
+ * own, under its own properties, playing its own clip at its own volume, pan and pitch.
  */
 
 #pragma once
@@ -42,7 +49,58 @@
 
 namespace CNA::Studio
 {
+    class StudioAudio;
     class StudioContext;
+
+    /**
+     * @brief What an audio preview control did this frame.
+     *
+     * `plan.md` STUDIO-07044. Reported rather than logged here, like every other result this panel
+     * returns: a panel that wrote to the Output Log would be one that has to be given a log, and
+     * the binder that already has one is where the other panels' messages come from.
+     */
+    struct StudioAudioPreviewResult
+    {
+        /** @brief How many preview controls were drawn -- one per audio source, plus the asset's. */
+        std::size_t controls = 0;
+
+        /** @brief Play was pressed this frame. Input pass only. */
+        bool played = false;
+
+        /** @brief Stop was pressed this frame. Input pass only. */
+        bool stopped = false;
+
+        /**
+         * @brief Whether the device actually took the clip.
+         *
+         * Separate from @ref played because the two differ and the difference is the user's to
+         * know: a clip that will not load and a clip of silence sound identical, and only one of
+         * them is something to fix.
+         */
+        bool started = false;
+
+        /** @brief The clip a Play was asked for, by source path, for the message. */
+        std::string clip;
+    };
+
+    /**
+     * @brief What the Details panel may reach beyond the document.
+     *
+     * `plan.md` STUDIO-07044. The same shape as the viewport's services and for the same reason:
+     * playing a sound needs CNA, exactly one module may link CNA, and the panel has to keep
+     * working in a headless run where there is no audio device at all.
+     */
+    struct StudioDetailsServices
+    {
+        /**
+         * @brief Plays one clip at a time. Unset means this build cannot play anything.
+         *
+         * A null seam draws the control *disabled and says why*, rather than hiding it or
+         * offering a button that does nothing. A preview that is simply absent on a build without
+         * audio is a feature the user cannot tell from one that was never written.
+         */
+        StudioAudio* audio = nullptr;
+    };
 
     /** @brief What the Details panel did this frame. */
     struct StudioDetailsResult
@@ -68,6 +126,9 @@ namespace CNA::Studio
 
         /** @brief What was edited, for the log: `Transform.position`, say. */
         std::string editedProperty;
+
+        /** @brief What the audio preview controls did. */
+        StudioAudioPreviewResult audio;
     };
 
     /**
@@ -76,6 +137,9 @@ namespace CNA::Studio
      * @param frame The frame.
      * @param bounds The panel's content rectangle.
      * @param context The editor. Its selection decides what is shown; its history receives edits.
+     * @param services What the panel cannot reach itself -- the audio seam the preview plays
+     *        through. Defaulted, so a build with no audio draws the same panel with the preview
+     *        disabled rather than a different one.
      * @return What happened.
      */
     /**
@@ -137,5 +201,6 @@ namespace CNA::Studio
                                                   const StudioPropertyEditContext& editing);
 
     StudioDetailsResult studioDetailsPanel(StudioFrame& frame, const UiRect& bounds,
-                                           StudioContext& context);
+                                           StudioContext& context,
+                                           const StudioDetailsServices& services = {});
 }
