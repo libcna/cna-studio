@@ -349,7 +349,7 @@ CNA_STUDIO_TEST(AQuaternionIsEditedAsAnglesRatherThanAsFourRawNumbers)
     // Euler degrees, in the convention the runtime reads back.
     Fixture fixture;
 
-    StudioEntity* entity = fixture.context.getScene().findEntity(fixture.entity);
+    StudioEntity* entity = fixture.context.getScene().findEntityForEdit(fixture.entity);
     StudioComponent* transform = entity->findComponent("CNA.Transform");
     transform->setProperty("rotation",
                            PropertyValue{quaternionFromEulerDegrees(StudioVector3{0.0f, 90.0f, 0.0f})});
@@ -370,7 +370,7 @@ CNA_STUDIO_TEST(EveryPropertyKindTheSchemaDeclaresGetsAControlRatherThanASummary
     // after the widget it needed arrived.
     Fixture fixture;
 
-    StudioEntity* entity = fixture.context.getScene().findEntity(fixture.entity);
+    StudioEntity* entity = fixture.context.getScene().findEntityForEdit(fixture.entity);
     StudioComponent extras{"Test.Kinds"};
     extras.setProperty("colour", PropertyValue{StudioColor{10, 20, 30, 40}});
     extras.setProperty("rect", PropertyValue{StudioRectangle{1, 2, 3, 4}});
@@ -396,7 +396,7 @@ CNA_STUDIO_TEST(EveryPropertyKindTheSchemaDeclaresGetsAControlRatherThanASummary
     PropertyValue::ListValue list;
     list.items.push_back(PropertyValue{1});
     nested.setProperty("items", PropertyValue{std::move(list)});
-    fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
+    fixture.context.getScene().findEntityForEdit(fixture.entity)->addComponent(std::move(nested));
 
     Harness second{fixture.context};
     CNA_STUDIO_EXPECT_EQ(second.last.readOnlyProperties, std::size_t{0});
@@ -456,7 +456,7 @@ CNA_STUDIO_TEST(AComponentIsRemovedFromItsOwnHeaderAndUndone)
     // is asserted by the count not falling to zero.
     Fixture fixture;
     {
-        StudioEntity* entity = fixture.context.getScene().findEntity(fixture.entity);
+        StudioEntity* entity = fixture.context.getScene().findEntityForEdit(fixture.entity);
         CNA_STUDIO_EXPECT(entity != nullptr);
         entity->getComponents().push_back(StudioComponent{"CNA.SpriteRenderer"});
     }
@@ -822,7 +822,7 @@ CNA_STUDIO_TEST(AListPropertyGetsARowThatExpandsIntoItsElements)
     list.items.push_back(PropertyValue{1});
     list.items.push_back(PropertyValue{2});
     nested.setProperty("items", PropertyValue{std::move(list)});
-    fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
+    fixture.context.getScene().findEntityForEdit(fixture.entity)->addComponent(std::move(nested));
 
     Harness harness{fixture.context};
 
@@ -858,7 +858,7 @@ CNA_STUDIO_TEST(AStructurePropertyGetsARowPerField)
     structure.set("width", PropertyValue{4});
     structure.set("label", PropertyValue{std::string{"left"}});
     nested.setProperty("layout", PropertyValue{std::move(structure)});
-    fixture.context.getScene().findEntity(fixture.entity)->addComponent(std::move(nested));
+    fixture.context.getScene().findEntityForEdit(fixture.entity)->addComponent(std::move(nested));
 
     Harness harness{fixture.context};
     CNA_STUDIO_EXPECT_EQ(harness.last.readOnlyProperties, std::size_t{0});

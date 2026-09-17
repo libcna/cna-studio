@@ -422,8 +422,8 @@ CNA_STUDIO_TEST(RemovingByIndexTakesTheInstanceThatWasAskedFor)
     }
 
     // Tell the two apart, so "the wrong one was removed" is visible rather than merely plausible.
-    scene.findEntity(id)->getComponents()[1].setProperty("volume", PropertyValue{0.25f});
-    scene.findEntity(id)->getComponents()[2].setProperty("volume", PropertyValue{0.75f});
+    scene.findEntityForEdit(id)->getComponents()[1].setProperty("volume", PropertyValue{0.25f});
+    scene.findEntityForEdit(id)->getComponents()[2].setProperty("volume", PropertyValue{0.75f});
 
     // A type-based remove takes the first instance. The inspector needs the one the user clicked,
     // and the two look identical afterwards, so getting this wrong is silent.

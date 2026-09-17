@@ -312,7 +312,7 @@ CNA_STUDIO_TEST(EachAudioSourceHearsItsOwnClip)
     // first's settings, whichever one the user was looking at.
     SourceFixture fixture;
     const Uuid second = addSound(fixture.context, "Assets/Audio/thud.wav");
-    fixture.context.getScene().findEntity(fixture.entity)
+    fixture.context.getScene().findEntityForEdit(fixture.entity)
         ->getComponents().push_back(audioSource(second, 1.0f, 0.0f, 0.5f));
 
     fixture.settle();

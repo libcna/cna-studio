@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 11 of 17 complete `███████░░░░░`
+**Progress:** 12 of 17 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -25,7 +25,7 @@
 | `STUDIO-30023` | Stress benchmark: very large logs | ⬜ | `STUDIO-27021` |
 | `STUDIO-30024` | Stress benchmark: large property lists and large imported models | ⬜ | `STUDIO-14018` |
 | `STUDIO-30025` | Stress benchmark: many thumbnails and many concurrent import jobs | ⬜ | `STUDIO-09003` |
-| `STUDIO-30026` | Attribute and remove the cost of a very large multi-selection | ⬜ | `STUDIO-30021` |
+| `STUDIO-30026` | Attribute and remove the cost of a very large multi-selection | ✅ | `STUDIO-30021` |
 | `STUDIO-30030` | Establish the interactive frame-rate target and measure against it | ⬜ | `STUDIO-30020` |
 
 ## Acceptance and verification
@@ -569,10 +569,62 @@ looks wrong is how a morning goes missing.
 entities — is attributed to something specific and then either removed or recorded as irreducible
 with a number saying why.
 
-**Starting points, none of them confirmed.** The per-frame consumers of `getSelection()` are the
-Details panel (`StudioDetailsPanel.cpp`), the shell's action enabling (`StudioShellPanels.cpp`) and
-the viewport (`StudioViewportPanel.cpp`). Separately, `findSelectionRoots` in `TransformGizmos.cpp`
-is O(selection²) in the worst case — a `std::find` over the whole selection per ancestor step per
-selected entity — which at twenty thousand is not a frame cost today because it runs on gizmo drag
-*begin*, but is a hang waiting for somebody to drag a select-all. `StudioContext::isSelected` is a
-linear scan as well. Measure first: see what the entry above says about guessing.
+**Done, and it was not about the selection at all.** `outliner-20000-all-selected` went from
+18 .0 ms to 5.8 ms, which is what the same scene costs with *nothing* selected. Selecting twenty
+thousand entities is now free.
+
+**What it actually was: `STUDIO-30011`'s cache never survived a frame, and the rule I wrote is
+what killed it.** Callgrind put `SceneDocument::getChildrenByParent()` at 82% inclusive of the whole
+run — the hierarchy was being rebuilt twice a frame, exactly the pass that task had just removed.
+
+The invalidation rule was right — *asking for a changeable entity invalidates* — and the trigger was
+wrong, for a reason that is worth writing down because it will happen again. `findEntity` had a
+const and a non-const overload, and **overload resolution picks by the object's constness, not by
+what the caller does with the result.** `context.getScene()` returns a non-const document nearly
+everywhere, so a caller writing
+
+```cpp
+const StudioEntity* entity = context.getScene().findEntity(id);   // plainly a reader
+```
+
+got the write handle and gave up the index. About twenty call sites did that. The Details panel was
+the one that mattered: it took a mutable entity purely to read `getName`, `getComponents` and
+`isEnabled` — it proposes every change as a command (decision D-06) and never needed one — so *any*
+selection at all rebuilt the hierarchy on every pass, and the cost scaled with the scene rather than
+with the selection. Twenty thousand entities, two passes, about 6 ms each.
+
+So `findEntity` is const-qualified only now, and the write handle is `findEntityForEdit`, named for
+what it does. A const member function is callable on a non-const object, so readers get the read
+whatever they hold, and only a caller that asks by name gives up the index. The compiler found
+every genuine writer.
+
+**The guard test is the one that was missing.** `STUDIO-30011` asserted that drawing rebuilds
+nothing — with nothing selected, which is precisely the case that passed while the feature was
+broken. It now asserts it with everything selected too.
+
+**Also fixed, and not measured, because no benchmark could see it.** `findSelectionRoots` tested
+each ancestor against the selection with a `std::find` over the whole of it: O(selection²), and it
+runs on gizmo drag *begin* rather than per frame, so every scenario in `--ui-benchmark` is blind to
+it. At twenty thousand selected it is a hang waiting for somebody to try dragging a select-all,
+which is not a rare thing to try. It is a set lookup now, with
+`SelectionRootsAnswerTheSameWayWhateverTheSelectionCosts` holding the behaviour — including that the
+ancestor walk excludes descendants at *any* depth, which a lookup that stopped at the first step
+would quietly have broken.
+
+**`StudioContext::isSelected` is still a linear scan**, and stays that way: it is called once per
+question rather than once per row, nothing measured shows it, and a second index would need its own
+invalidation story. Recorded rather than fixed on suspicion — see what `STUDIO-30021` says about
+that.
+
+**Measured** (`--ui-benchmark=outliner`, Release, 120 frames at 1920×1080, median µs/frame):
+
+| scenario | before | after |
+|---|---:|---:|
+| `outliner-2000` | 569 | 554 |
+| `outliner-20000` | 3631 | 4438 |
+| `outliner-20000-deep` | 6101 | 5764 |
+| `outliner-20000-scrolling` | 6391 | 5812 |
+| `outliner-20000-all-selected` | 17 986 | **5808** |
+
+The unselected rows are unchanged within run-to-run noise on this machine, which is the point: the
+readers that stopped invalidating were only ever costing anything when something was selected.

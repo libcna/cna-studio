@@ -29,7 +29,7 @@ namespace CNA::Studio
         return found == indexById_.end() ? nullptr : &entities_[found->second];
     }
 
-    StudioEntity* SceneDocument::findEntity(const Uuid& id)
+    StudioEntity* SceneDocument::findEntityForEdit(const Uuid& id)
     {
         const auto found = indexById_.find(id);
         if (found == indexById_.end()) { return nullptr; }
@@ -39,6 +39,10 @@ namespace CNA::Studio
         // document's back, and all three decide the hierarchy index -- the first its shape, the
         // other two the order of a parent's children. Conservative on purpose: it costs a rebuild
         // that may not have been needed, and it cannot be wrong.
+        //
+        // It is a *named* handle rather than an overload (STUDIO-30026) because an overload is
+        // chosen by the document's constness rather than by the caller's intent: readers were
+        // getting this one and giving up the index every frame.
         invalidateHierarchy();
         return &entities_[found->second];
     }
@@ -101,7 +105,7 @@ namespace CNA::Studio
 
     bool SceneDocument::reparentEntity(const Uuid& childId, const Uuid& newParentId)
     {
-        StudioEntity* child = findEntity(childId);
+        StudioEntity* child = findEntityForEdit(childId);
         if (child == nullptr) { return false; }
 
         if (newParentId.isValid())

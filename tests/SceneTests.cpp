@@ -892,10 +892,10 @@ CNA_STUDIO_TEST(OverridesAreFoundByComparingRatherThanByRecording)
 
     // Change a property, rename an entity, add one and delete one -- four different ways an
     // instance can diverge, all of them ordinary things a user does.
-    target.findEntity(instanceRoot)
+    target.findEntityForEdit(instanceRoot)
         ->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("position", PropertyValue{StudioVector3{999.0f, 0.0f, 0.0f}});
-    target.findEntity(instanceRoot)->setName("Boss");
+    target.findEntityForEdit(instanceRoot)->setName("Boss");
 
     StudioEntity extra = makeEntity(fixture.registry, "Shield", 0.0f, 0.0f);
     const Uuid extraId = target.addEntity(std::move(extra));
@@ -949,8 +949,8 @@ CNA_STUDIO_TEST(RevertingAnInstancePutsItBackExactlyAndUndoesInOnePress)
     instantiate.execute();
     const Uuid instanceRoot = instantiate.getRootId();
 
-    target.findEntity(instanceRoot)->setName("Boss");
-    target.findEntity(instanceRoot)
+    target.findEntityForEdit(instanceRoot)->setName("Boss");
+    target.findEntityForEdit(instanceRoot)
         ->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("position", PropertyValue{StudioVector3{999.0f, 0.0f, 0.0f}});
 
@@ -1058,7 +1058,7 @@ CNA_STUDIO_TEST(ATilemapGridReadsPadsAndResizesByCoordinate)
     // A stored list of the wrong length is padded, not rejected: a hand-edited scene one row short
     // should open and be fixable.
     StudioComponent* component =
-        fixture.scene.findEntity(fixture.entityId)->findComponent(BuiltinComponentIds::kTilemap);
+        fixture.scene.findEntityForEdit(fixture.entityId)->findComponent(BuiltinComponentIds::kTilemap);
     PropertyValue::ListValue truncated;
     truncated.items.emplace_back(std::int64_t{3});
     component->setProperty(TilemapKeys::kTiles, PropertyValue{truncated});
@@ -1453,7 +1453,7 @@ CNA_STUDIO_TEST(TwoEnabledAudioListenersAreAnError)
     CNA_STUDIO_EXPECT_EQ(countIssues(issues, SceneIssue::Severity::Error), std::size_t{2});
 
     // Switching one off resolves it, the same way it resolves a second primary camera.
-    scene.findEntity(scene.getEntities().back().getId())->setEnabled(false);
+    scene.findEntityForEdit(scene.getEntities().back().getId())->setEnabled(false);
     CNA_STUDIO_EXPECT_EQ(countRule(validateScene(scene, registry), "duplicate-audio-listener"),
                          std::size_t{0});
 }
@@ -1739,7 +1739,7 @@ CNA_STUDIO_TEST(SceneBoundsCoverEntitiesThatDrawNothing)
     const Uuid spriteId = scene.addEntity(makeEntity(registry, "Sprite", 100.0f, 0.0f));
     StudioComponent renderer{BuiltinComponentIds::kSpriteRenderer};
     renderer.applyDefaults(*registry.find(BuiltinComponentIds::kSpriteRenderer));
-    scene.findEntity(spriteId)->addComponent(std::move(renderer));
+    scene.findEntityForEdit(spriteId)->addComponent(std::move(renderer));
 
     // A bare Transform -- a camera, a light, an empty parent. The 2D viewport leaves these out of
     // framing because it draws them as fixed-size icons, but in a 3D view they are often the only
@@ -1834,7 +1834,7 @@ CNA_STUDIO_TEST(TheWireframeBoxesEveryEntityAndMarksTheSelection)
     const Uuid firstId = scene.addEntity(makeEntity(registry, "First", 0.0f, 0.0f));
     const Uuid secondId = scene.addEntity(makeEntity(registry, "Second", 60.0f, 0.0f));
     const Uuid disabledId = scene.addEntity(makeEntity(registry, "Disabled", -60.0f, 0.0f));
-    scene.findEntity(disabledId)->setEnabled(false);
+    scene.findEntityForEdit(disabledId)->setEnabled(false);
 
     StudioCamera3D camera = makeCamera();
     camera.setPivot(StudioVector3{});
@@ -1878,11 +1878,11 @@ CNA_STUDIO_TEST(PickingInThreeDimensionsTakesTheNearestBox)
     // "nearest" rather than the 2D viewport's "topmost", because depth is a real quantity here
     // and layer order is not.
     const Uuid nearId = scene.addEntity(makeEntity(registry, "Near", 0.0f, 0.0f));
-    scene.findEntity(nearId)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(nearId)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("position", PropertyValue{StudioVector3{0.0f, 0.0f, 40.0f}});
 
     const Uuid farId = scene.addEntity(makeEntity(registry, "Far", 0.0f, 0.0f));
-    scene.findEntity(farId)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(farId)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("position", PropertyValue{StudioVector3{0.0f, 0.0f, -40.0f}});
 
     StudioCamera3D camera = makeCamera();
@@ -2054,7 +2054,7 @@ CNA_STUDIO_TEST(AThreeDimensionalDragOfAChildStoresTheParentRelativePosition)
     SceneDocument scene;
 
     const Uuid parentId = scene.addEntity(makeEntity(registry, "Rig", 0.0f, 0.0f));
-    scene.findEntity(parentId)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(parentId)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation", PropertyValue{quaternionFromEulerDegrees(StudioVector3{0.0f, 90.0f, 0.0f})});
 
     const Uuid childId = scene.addEntity(makeEntity(registry, "Mount", 0.0f, 0.0f));
@@ -2126,7 +2126,7 @@ CNA_STUDIO_TEST(EntitiesThatDrawNothingGetABadgeRatherThanACube)
     const Uuid cameraId = scene.addEntity(makeEntity(registry, "Main Camera", 0.0f, 0.0f));
     StudioComponent cameraComponent{BuiltinComponentIds::kCamera};
     cameraComponent.applyDefaults(*registry.find(BuiltinComponentIds::kCamera));
-    scene.findEntity(cameraId)->addComponent(std::move(cameraComponent));
+    scene.findEntityForEdit(cameraId)->addComponent(std::move(cameraComponent));
 
     const Uuid emptyId = scene.addEntity(makeEntity(registry, "Spawn Point", 200.0f, 0.0f));
 
@@ -2504,7 +2504,7 @@ CNA_STUDIO_TEST(AThreeDimensionalTurnIsAppliedInTheWorldRatherThanTheEntitysOwnF
     // Already lying on its side. An unrotated entity cannot tell the two compositions apart --
     // they differ by exactly the rotation the entity already has -- which is why the gizmo passed
     // its first test while turning things about the wrong axes.
-    scene.findEntity(entityId)
+    scene.findEntityForEdit(entityId)
         ->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation",
                       PropertyValue{quaternionFromEulerDegrees(StudioVector3{90.0f, 0.0f, 0.0f})});
@@ -2603,7 +2603,7 @@ CNA_STUDIO_TEST(ADirectionalLightShinesAlongItsEntitysOwnForwardAxis)
     // Turned a half turn about Y, it must shine back the other way. Asserting the property rather
     // than a number: whatever convention the transform uses, a light spun 180 degrees cannot go on
     // pointing where it did.
-    StudioEntity* stored = scene.findEntity(id);
+    StudioEntity* stored = scene.findEntityForEdit(id);
     CNA_STUDIO_EXPECT(stored != nullptr);
     StudioComponent* transform = stored->findComponent(BuiltinComponentIds::kTransform);
     CNA_STUDIO_EXPECT(transform != nullptr);
@@ -2632,7 +2632,7 @@ CNA_STUDIO_TEST(ALightOnADisabledEntityIsNotCollected)
 
     CNA_STUDIO_EXPECT_EQ(collectSceneLights(scene).size(), std::size_t{1});
 
-    scene.findEntity(id)->setEnabled(false);
+    scene.findEntityForEdit(id)->setEnabled(false);
     CNA_STUDIO_EXPECT(collectSceneLights(scene).empty());
 }
 
@@ -2777,7 +2777,7 @@ CNA_STUDIO_TEST(AModelDrawsWhereTheSceneTransformSaysItIs)
     addModelRenderer(registry, entity, modelId);
     const Uuid id = scene.addEntity(std::move(entity));
 
-    StudioComponent* transform = scene.findEntity(id)->findComponent(BuiltinComponentIds::kTransform);
+    StudioComponent* transform = scene.findEntityForEdit(id)->findComponent(BuiltinComponentIds::kTransform);
     transform->setProperty("scale", PropertyValue{StudioVector3{2.0f, 3.0f, 1.0f}});
     transform->setProperty("rotation",
                            PropertyValue{quaternionFromEulerDegrees(StudioVector3{0.0f, 0.0f, 90.0f})});
@@ -2831,7 +2831,7 @@ CNA_STUDIO_TEST(AnEntityWhoseMeshHasNotArrivedIsCountedRatherThanDropped)
     CNA_STUDIO_EXPECT_EQ(pending.pendingMeshes, std::size_t{1});
 
     // And a disabled entity is not pending either -- it is simply not there, like everywhere else.
-    scene.findEntity(id)->setEnabled(false);
+    scene.findEntityForEdit(id)->setEnabled(false);
     const SceneModelBatch disabled = buildSceneModelBatch(scene, camera, none);
     CNA_STUDIO_EXPECT_EQ(disabled.pendingMeshes, std::size_t{0});
 }
@@ -2965,7 +2965,7 @@ CNA_STUDIO_TEST(ASpriteIgnoresEverythingButItsZRotation)
     addSpriteRenderer(registry, entity, textureId);
     const Uuid id = scene.addEntity(std::move(entity));
 
-    scene.findEntity(id)
+    scene.findEntityForEdit(id)
         ->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation",
                       PropertyValue{quaternionFromEulerDegrees(StudioVector3{60.0f, 45.0f, 0.0f})});
@@ -3453,7 +3453,7 @@ CNA_STUDIO_TEST(TheHierarchyIndexIsBuiltOnceAndGivenUpByEveryWayOfChangingTheSce
     // document hands out, behind its back. Asking for that handle is what invalidates, because it
     // is the only moment the document can still see coming.
     CNA_STUDIO_EXPECT(rebuildsAfter([&] {
-        StudioEntity* entity = scene.findEntity(thirdId);
+        StudioEntity* entity = scene.findEntityForEdit(thirdId);
         CNA_STUDIO_EXPECT(entity != nullptr);
         if (entity != nullptr) { entity->setParentId(firstId); }
     }));
@@ -3461,7 +3461,7 @@ CNA_STUDIO_TEST(TheHierarchyIndexIsBuiltOnceAndGivenUpByEveryWayOfChangingTheSce
 
     // A rename through the same handle reorders a parent's children, which is the same index.
     CNA_STUDIO_EXPECT(rebuildsAfter([&] {
-        StudioEntity* entity = scene.findEntity(thirdId);
+        StudioEntity* entity = scene.findEntityForEdit(thirdId);
         if (entity != nullptr) { entity->setName("AAA"); }
     }));
     CNA_STUDIO_EXPECT_EQ(scene.getChildrenByParent().at(firstId).front().toString(),
@@ -3526,4 +3526,68 @@ CNA_STUDIO_TEST(ACachedHierarchyIsTheSameHierarchyAsARebuiltOne)
     // into a container it forgot to clear would double every child list.
     scene.invalidateHierarchy();
     CNA_STUDIO_EXPECT(scene.getChildrenByParent() == cached);
+}
+
+CNA_STUDIO_TEST(SelectionRootsAnswerTheSameWayWhateverTheSelectionCosts)
+{
+    // `findSelectionRoots` decides what a multi-entity gizmo drag actually moves: an entity whose
+    // ancestor is also selected must not be moved twice, once by itself and once by its parent.
+    // The ancestor test was a linear scan of the whole selection, per step, per entity -- fine by
+    // hand and quadratic for a select-all, which is one keystroke away. This is the behaviour that
+    // had to survive making it a lookup (`plan.md` STUDIO-30026).
+    SceneDocument scene;
+
+    std::vector<Uuid> chain;
+    Uuid parent;
+    for (int i = 0; i < 12; ++i)
+    {
+        StudioEntity entity{Uuid::generate(), "Link " + std::to_string(i)};
+        if (i > 0) { entity.setParentId(parent); }
+        parent = entity.getId();
+        chain.push_back(parent);
+        scene.addEntity(std::move(entity));
+    }
+
+    // A second chain, so "selected somewhere else" is not mistaken for "selected above me".
+    StudioEntity other{Uuid::generate(), "Elsewhere"};
+    const Uuid elsewhere = other.getId();
+    scene.addEntity(std::move(other));
+
+    // The whole chain selected collapses to its one root.
+    std::vector<Uuid> everything = chain;
+    everything.push_back(elsewhere);
+    const std::vector<Uuid> roots = findSelectionRoots(scene, everything);
+    CNA_STUDIO_EXPECT_EQ(roots.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(roots.front() == chain.front());
+    CNA_STUDIO_EXPECT(roots.back() == elsewhere);
+
+    // At *any* depth, not just one level up: a gap in the selection does not make a second root,
+    // because the entity below the gap still has a selected ancestor further up. This is the
+    // property that makes the walk a walk rather than a parent check, and the one a lookup could
+    // quietly have broken by stopping at the first step.
+    const std::vector<Uuid> split{chain[0], chain[1], chain[5], chain[6]};
+    const std::vector<Uuid> splitRoots = findSelectionRoots(scene, split);
+    CNA_STUDIO_EXPECT_EQ(splitRoots.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(splitRoots.front() == chain[0]);
+
+    // Two roots need two subtrees, which is what the second chain is for.
+    const std::vector<Uuid> disjoint{chain[5], elsewhere};
+    const std::vector<Uuid> disjointRoots = findSelectionRoots(scene, disjoint);
+    CNA_STUDIO_EXPECT_EQ(disjointRoots.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(disjointRoots.front() == chain[5]);
+    CNA_STUDIO_EXPECT(disjointRoots.back() == elsewhere);
+
+    // A deep entity on its own is its own root, however much is above it unselected.
+    const std::vector<Uuid> lone{chain.back()};
+    CNA_STUDIO_EXPECT(findSelectionRoots(scene, lone) == lone);
+
+    // And the order is the selection's, not the hierarchy's -- a drag that reordered what it moved
+    // would apply the same delta in a different sequence, which matters once snapping is involved.
+    const std::vector<Uuid> reversed{elsewhere, chain[6], chain[5]};
+    const std::vector<Uuid> reversedRoots = findSelectionRoots(scene, reversed);
+    CNA_STUDIO_EXPECT_EQ(reversedRoots.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(reversedRoots.front() == elsewhere);
+    CNA_STUDIO_EXPECT(reversedRoots.back() == chain[5]);
+
+    CNA_STUDIO_EXPECT(findSelectionRoots(scene, {}).empty());
 }

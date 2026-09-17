@@ -80,9 +80,36 @@ namespace CNA::Studio
         /** @brief Returns every entity, in serialisation order. */
         [[nodiscard]] const std::vector<StudioEntity>& getEntities() const { return entities_; }
 
-        /** @brief Returns the entity with @p id, or nullptr when there is none. */
+        /**
+         * @brief Returns the entity with @p id to read, or nullptr when there is none.
+         *
+         * Const-qualified only, deliberately (`plan.md` STUDIO-30026). It used to have a non-const
+         * overload beside it, and that is a trap in a document that caches anything derived from
+         * its entities: overload resolution picks the *mutable* one whenever the document itself is
+         * non-const, which is almost everywhere — so a caller writing
+         * `const StudioEntity* e = context.getScene().findEntity(id)`, plainly a reader, got the
+         * write handle and invalidated the hierarchy index. Twenty-odd call sites did exactly that,
+         * every frame, and `STUDIO-30011`'s cache never survived one.
+         *
+         * A const member function is callable on a non-const object, so a reader now gets the read
+         * whatever it holds, and only @ref findEntityForEdit — which a caller has to ask for by
+         * name — gives up the index.
+         */
         [[nodiscard]] const StudioEntity* findEntity(const Uuid& id) const;
-        [[nodiscard]] StudioEntity* findEntity(const Uuid& id);
+
+        /**
+         * @brief Returns the entity with @p id to change, or nullptr when there is none.
+         *
+         * Named for what it is, because handing out a changeable entity invalidates the hierarchy
+         * index: this is the only handle through which a parent, a name or a sort order can change
+         * behind the document's back, and all three decide that index (the first its shape, the
+         * other two the order within a parent). Conservative — it costs a rebuild that may not have
+         * been needed, and it cannot be wrong.
+         *
+         * Use @ref findEntity to read. A `findEntityForEdit` on a draw path is a bug, and
+         * `SceneDocument::getHierarchyRebuildCount()` is how a test says so.
+         */
+        [[nodiscard]] StudioEntity* findEntityForEdit(const Uuid& id);
 
         /** @brief Returns the number of entities. */
         [[nodiscard]] std::size_t getEntityCount() const { return entities_.size(); }

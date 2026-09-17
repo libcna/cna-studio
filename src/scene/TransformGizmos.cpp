@@ -2,6 +2,7 @@
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 
 #include <algorithm>
+#include <unordered_set>
 #include <cmath>
 #include <utility>
 
@@ -527,6 +528,13 @@ namespace CNA::Studio
     {
         std::vector<Uuid> roots;
 
+        // Built once (`plan.md` STUDIO-30026). The ancestor test used to be a `std::find` over the
+        // whole selection, per step of the walk, per selected entity -- fine for the handful of
+        // things anybody clicks by hand, and O(n^2) for the one keystroke that selects everything.
+        // It is not on a draw path, so no benchmark would have caught it; it is a hang waiting for
+        // somebody to drag a select-all, which is not a rare thing to try.
+        const std::unordered_set<Uuid> selected{entityIds.begin(), entityIds.end()};
+
         for (const Uuid& entityId : entityIds)
         {
             // Walk up to the scene root looking for another selected entity. The chain is a
@@ -540,7 +548,7 @@ namespace CNA::Studio
                 const Uuid parentId = entity->getParentId();
                 if (!parentId.isValid()) { break; }
 
-                if (std::find(entityIds.begin(), entityIds.end(), parentId) != entityIds.end())
+                if (selected.count(parentId) != 0)
                 {
                     hasSelectedAncestor = true;
                     break;

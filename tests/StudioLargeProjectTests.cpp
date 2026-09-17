@@ -490,11 +490,32 @@ CNA_STUDIO_TEST(OutliningTwentyThousandEntitiesDescribesAScreenfulRatherThanASce
 
     // And drawing a scene nobody has changed rebuilds the hierarchy index not at all
     // (STUDIO-30011). This is the assertion that keeps the cache real: it is defeated the day
-    // somebody puts a non-const `findEntity` on a draw path, and nothing else would notice.
+    // somebody puts a write handle on a draw path, and nothing else would notice.
     const std::uint64_t rebuilds = context.getScene().getHierarchyRebuildCount();
     shell->renderFrame(at(-1.0f, -1.0f));
     shell->renderFrame(at(-1.0f, -1.0f));
     CNA_STUDIO_EXPECT_EQ(context.getScene().getHierarchyRebuildCount(), rebuilds);
+
+    // Including with everything selected (STUDIO-30026), which is where it was defeated. The
+    // Details panel took a mutable entity purely to read it, and `findEntity` had a non-const
+    // overload that overload resolution preferred whenever the document was non-const -- so any
+    // selection at all rebuilt the hierarchy twice a frame. At twenty thousand entities that was
+    // 12 ms a frame, and the select-all benchmark read 18.0 ms against 6.1 ms unselected.
+    //
+    // Selecting is a change, so it costs one rebuild; drawing afterwards must cost none.
+    std::vector<Uuid> everything;
+    everything.reserve(context.getScene().getEntityCount());
+    for (const StudioEntity& entity : context.getScene().getEntities())
+    {
+        everything.push_back(entity.getId());
+    }
+    context.setSelection(std::move(everything));
+
+    shell->renderFrame(at(-1.0f, -1.0f));
+    const std::uint64_t selectedRebuilds = context.getScene().getHierarchyRebuildCount();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT_EQ(context.getScene().getHierarchyRebuildCount(), selectedRebuilds);
 
     // Scrolled a long way down, then clicked: the row under the pointer is the one the scrollbar
     // says is there, not the first root. This is the failure a window makes possible and a whole

@@ -12,7 +12,7 @@ namespace CNA::Studio
         /** @brief Finds a component, creating nothing. Returns nullptr when entity or type is absent. */
         StudioComponent* findComponent(SceneDocument& document, const Uuid& entityId, std::string_view typeId)
         {
-            StudioEntity* entity = document.findEntity(entityId);
+            StudioEntity* entity = document.findEntityForEdit(entityId);
             return entity != nullptr ? entity->findComponent(typeId) : nullptr;
         }
     }
@@ -147,12 +147,12 @@ namespace CNA::Studio
 
     void RenameEntityCommand::execute()
     {
-        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->setName(newName_); }
+        if (StudioEntity* entity = document_->findEntityForEdit(entityId_)) { entity->setName(newName_); }
     }
 
     void RenameEntityCommand::undo()
     {
-        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->setName(oldName_); }
+        if (StudioEntity* entity = document_->findEntityForEdit(entityId_)) { entity->setName(oldName_); }
     }
 
     std::string RenameEntityCommand::getDescription() const
@@ -190,12 +190,12 @@ namespace CNA::Studio
 
     void SetEntityEnabledCommand::execute()
     {
-        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->setEnabled(enabled_); }
+        if (StudioEntity* entity = document_->findEntityForEdit(entityId_)) { entity->setEnabled(enabled_); }
     }
 
     void SetEntityEnabledCommand::undo()
     {
-        if (StudioEntity* entity = document_->findEntity(entityId_))
+        if (StudioEntity* entity = document_->findEntityForEdit(entityId_))
         {
             entity->setEnabled(wasEnabled_);
         }
@@ -312,7 +312,7 @@ namespace CNA::Studio
         /** @brief Returns @p entityId's transform component, or nullptr. */
         StudioComponent* findTransform(SceneDocument& document, const Uuid& entityId)
         {
-            StudioEntity* entity = document.findEntity(entityId);
+            StudioEntity* entity = document.findEntityForEdit(entityId);
             if (entity == nullptr) { return nullptr; }
             return entity->findComponent(BuiltinComponentIds::kTransform);
         }
@@ -474,13 +474,13 @@ namespace CNA::Studio
     void AddComponentCommand::execute()
     {
         if (!valid_) { return; }
-        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->addComponent(prototype_); }
+        if (StudioEntity* entity = document_->findEntityForEdit(entityId_)) { entity->addComponent(prototype_); }
     }
 
     void AddComponentCommand::undo()
     {
         if (!valid_) { return; }
-        StudioEntity* entity = document_->findEntity(entityId_);
+        StudioEntity* entity = document_->findEntityForEdit(entityId_);
         if (entity == nullptr) { return; }
 
         // Remove the *last* instance of the type, which is the one execute() appended. For a
@@ -545,13 +545,13 @@ namespace CNA::Studio
     void RemoveComponentCommand::execute()
     {
         if (!valid_) { return; }
-        if (StudioEntity* entity = document_->findEntity(entityId_)) { entity->removeComponentAt(removedIndex_); }
+        if (StudioEntity* entity = document_->findEntityForEdit(entityId_)) { entity->removeComponentAt(removedIndex_); }
     }
 
     void RemoveComponentCommand::undo()
     {
         if (!valid_) { return; }
-        StudioEntity* entity = document_->findEntity(entityId_);
+        StudioEntity* entity = document_->findEntityForEdit(entityId_);
         if (entity == nullptr) { return; }
 
         // Restore at the original index so the inspector's component order survives undo.

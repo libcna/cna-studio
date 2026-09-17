@@ -14,7 +14,7 @@ namespace CNA::Studio
         /** @brief Returns the tilemap component on @p entityId, or nullptr. */
         StudioComponent* findTilemap(SceneDocument& document, const Uuid& entityId)
         {
-            StudioEntity* entity = document.findEntity(entityId);
+            StudioEntity* entity = document.findEntityForEdit(entityId);
             return entity != nullptr ? entity->findComponent(BuiltinComponentIds::kTilemap) : nullptr;
         }
     }

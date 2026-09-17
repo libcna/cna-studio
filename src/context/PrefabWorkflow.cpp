@@ -138,7 +138,7 @@ namespace CNA::Studio
         // how users learn not to trust the feature.
         for (const StudioEntity& captured : prefab_.getEntities())
         {
-            StudioEntity* live = scene_->findEntity(captured.getId());
+            StudioEntity* live = scene_->findEntityForEdit(captured.getId());
             if (live == nullptr) { continue; }
 
             live->setStudioState(PrefabKeys::kPrefabEntity, PropertyValue{captured.getId().toString()});
@@ -270,7 +270,7 @@ namespace CNA::Studio
 
         for (const auto& [instanceId, prefabEntityId] : newLinks_)
         {
-            if (StudioEntity* entity = scene_->findEntity(instanceId))
+            if (StudioEntity* entity = scene_->findEntityForEdit(instanceId))
             {
                 entity->setStudioState(PrefabKeys::kPrefabEntity, PropertyValue{prefabEntityId.toString()});
             }
@@ -284,7 +284,7 @@ namespace CNA::Studio
         for (const auto& [instanceId, prefabEntityId] : newLinks_)
         {
             (void)prefabEntityId;
-            if (StudioEntity* entity = scene_->findEntity(instanceId))
+            if (StudioEntity* entity = scene_->findEntityForEdit(instanceId))
             {
                 entity->removeStudioState(PrefabKeys::kPrefabEntity);
             }

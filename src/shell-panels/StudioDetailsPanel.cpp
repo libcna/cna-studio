@@ -2858,7 +2858,11 @@ namespace
             return studioSceneSettings(frame, area, context);
         }
 
-        StudioEntity* entity = context.getScene().findEntity(selection.back());
+        // Read, not edit (`plan.md` STUDIO-30026). The inspector shows an entity and *proposes*
+        // changes; every one of them goes through a command (decision D-06), so it never needs a
+        // mutable handle -- and taking one cost the whole editor a hierarchy rebuild per pass for
+        // as long as anything was selected. At twenty thousand entities that was 12 ms a frame.
+        const StudioEntity* entity = context.getScene().findEntity(selection.back());
         if (entity == nullptr)
         {
             if (frame.isDrawPass())

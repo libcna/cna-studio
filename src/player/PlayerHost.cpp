@@ -278,7 +278,7 @@ namespace CNA::Studio
         const std::string componentTypeId = message.payload["component"].asString();
         const std::string propertyName = message.payload["property"].asString();
 
-        StudioEntity* entity = scene_.findEntity(entityId);
+        StudioEntity* entity = scene_.findEntityForEdit(entityId);
         if (entity == nullptr)
         {
             outbox.push_back(StudioMessage::makeReportLog(

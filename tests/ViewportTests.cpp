@@ -56,7 +56,7 @@ namespace
         sprite.applyDefaults(*registry.find(BuiltinComponentIds::kSpriteRenderer));
         sprite.setProperty("sourceRectangle", PropertyValue{StudioRectangle{0, 0, width, height}});
         sprite.setProperty("layerDepth", PropertyValue{layerDepth});
-        scene.findEntity(entityId)->addComponent(std::move(sprite));
+        scene.findEntityForEdit(entityId)->addComponent(std::move(sprite));
     }
 
     /** @brief Adds a component of @p typeId, populated with its declared defaults. */
@@ -65,7 +65,7 @@ namespace
     {
         StudioComponent component{typeId};
         component.applyDefaults(*registry.find(typeId));
-        scene.findEntity(entityId)->addComponent(std::move(component));
+        scene.findEntityForEdit(entityId)->addComponent(std::move(component));
     }
 
     bool nearlyEqual(float a, float b, float tolerance = 0.001f)
@@ -79,7 +79,7 @@ namespace
     /** @brief Sets @p entityId's local rotation to @p radians about Z. */
     void setZRotation(SceneDocument& scene, const Uuid& entityId, float radians)
     {
-        scene.findEntity(entityId)->findComponent(BuiltinComponentIds::kTransform)
+        scene.findEntityForEdit(entityId)->findComponent(BuiltinComponentIds::kTransform)
             ->setProperty("rotation", PropertyValue{quaternionFromZRotation(radians)});
     }
 
@@ -111,7 +111,7 @@ CNA_STUDIO_TEST(WorldTransformAppliesParentRotation)
     SceneDocument scene;
 
     const Uuid parent = addEntity(scene, registry, "Parent", 0.0f, 0.0f);
-    scene.findEntity(parent)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(parent)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation", PropertyValue{quaternionFromZRotation(3.14159265f * 0.5f)});
 
     const Uuid child = addEntity(scene, registry, "Child", 10.0f, 0.0f);
@@ -148,7 +148,7 @@ CNA_STUDIO_TEST(EntityBoundsUseTheSourceRectangleAndOrigin)
     CNA_STUDIO_EXPECT(nearlyEqual(bounds->max.y, 216.0f));
 
     // The origin shifts the sprite, exactly as SpriteBatch::Draw's origin parameter does.
-    scene.findEntity(id)->findComponent(BuiltinComponentIds::kSpriteRenderer)
+    scene.findEntityForEdit(id)->findComponent(BuiltinComponentIds::kSpriteRenderer)
         ->setProperty("origin", PropertyValue{StudioVector2{16.0f, 8.0f}});
 
     const std::optional<WorldBounds2D> centred = computeEntityBounds2D(scene, id, kNoSizes);
@@ -167,7 +167,7 @@ CNA_STUDIO_TEST(EntityBoundsFallBackWhenTheTextureSizeIsUnknown)
     StudioComponent sprite{BuiltinComponentIds::kSpriteRenderer};
     sprite.applyDefaults(*registry.find(BuiltinComponentIds::kSpriteRenderer));
     sprite.setProperty("texture", PropertyValue{PropertyValue::AssetReference{Uuid::generate()}});
-    scene.findEntity(id)->addComponent(std::move(sprite));
+    scene.findEntityForEdit(id)->addComponent(std::move(sprite));
 
     const std::optional<WorldBounds2D> bounds = computeEntityBounds2D(scene, id, kNoSizes);
     CNA_STUDIO_EXPECT(bounds.has_value());
@@ -184,7 +184,7 @@ CNA_STUDIO_TEST(EntityBoundsUseTheProviderWhenNoSourceRectangleIsSet)
     StudioComponent sprite{BuiltinComponentIds::kSpriteRenderer};
     sprite.applyDefaults(*registry.find(BuiltinComponentIds::kSpriteRenderer));
     sprite.setProperty("texture", PropertyValue{PropertyValue::AssetReference{textureId}});
-    scene.findEntity(id)->addComponent(std::move(sprite));
+    scene.findEntityForEdit(id)->addComponent(std::move(sprite));
 
     const SpriteSizeProvider provider = [textureId](const Uuid& asset) {
         return asset == textureId ? StudioVector2{48.0f, 24.0f} : StudioVector2{};
@@ -202,7 +202,7 @@ CNA_STUDIO_TEST(RotatedSpriteBoundsCoverTheRotatedCorners)
 
     const Uuid id = addEntity(scene, registry, "Sprite", 0.0f, 0.0f);
     addSprite(scene, registry, id, 100, 10);
-    scene.findEntity(id)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(id)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation", PropertyValue{quaternionFromZRotation(3.14159265f * 0.5f)});
 
     // Rotated a quarter turn, a 100x10 sprite occupies a 10x100 box. Taking the AABB before the
@@ -382,7 +382,7 @@ CNA_STUDIO_TEST(PickingIgnoresDisabledEntities)
 
     const Uuid hidden = addEntity(scene, registry, "Hidden", 0.0f, 0.0f);
     addSprite(scene, registry, hidden, 100, 100, 0.1f);
-    scene.findEntity(hidden)->setEnabled(false);
+    scene.findEntityForEdit(hidden)->setEnabled(false);
 
     const Uuid visible = addEntity(scene, registry, "Visible", 0.0f, 0.0f);
     addSprite(scene, registry, visible, 100, 100, 0.9f);
@@ -565,7 +565,7 @@ CNA_STUDIO_TEST(GizmoDragHonoursARotatedParent)
     SceneDocument scene;
 
     const Uuid parent = addEntity(scene, registry, "Parent", 0.0f, 0.0f);
-    scene.findEntity(parent)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(parent)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation", PropertyValue{quaternionFromZRotation(3.14159265f * 0.5f)});
 
     const Uuid child = addEntity(scene, registry, "Child", 0.0f, 0.0f);
@@ -731,7 +731,7 @@ CNA_STUDIO_TEST(ARotateDragOnAChildTurnsItByTheSameWorldAngle)
 
     // And the entity really did end up half a radian round in the world, which is what the user
     // was pointing at. Getting this wrong gives a child that lags or races its own cursor.
-    scene.findEntity(child)->findComponent(BuiltinComponentIds::kTransform)
+    scene.findEntityForEdit(child)->findComponent(BuiltinComponentIds::kTransform)
         ->setProperty("rotation", PropertyValue{*turned});
     CNA_STUDIO_EXPECT(nearlyEqual(zRotationOf(computeWorldTransform(scene, child)->rotation),
                                   kQuarterTurn + 0.5f, 0.001f));
@@ -1073,7 +1073,7 @@ CNA_STUDIO_TEST(TheGameViewComesFromThePrimaryCamera)
 
     const Uuid camera = addEntity(scene, registry, "Main Camera", 400.0f, 300.0f);
     addComponent(scene, registry, camera, BuiltinComponentIds::kCamera);
-    scene.findEntity(camera)->findComponent(BuiltinComponentIds::kCamera)
+    scene.findEntityForEdit(camera)->findComponent(BuiltinComponentIds::kCamera)
         ->setProperty("orthographicSize", PropertyValue{600.0f});
 
     const GameView view = computeGameView(scene, StudioVector2{1280.0f, 720.0f});
@@ -1100,7 +1100,7 @@ CNA_STUDIO_TEST(TheGameViewClearsToTheCamerasOwnColour)
 
     const Uuid camera = addEntity(scene, registry, "Main Camera", 0.0f, 0.0f);
     addComponent(scene, registry, camera, BuiltinComponentIds::kCamera);
-    scene.findEntity(camera)->findComponent(BuiltinComponentIds::kCamera)
+    scene.findEntityForEdit(camera)->findComponent(BuiltinComponentIds::kCamera)
         ->setProperty("clearColor", PropertyValue{StudioColor{10, 20, 30, 255}});
 
     const GameView view = computeGameView(scene, StudioVector2{800.0f, 600.0f});
@@ -1116,11 +1116,11 @@ CNA_STUDIO_TEST(TheGameViewIgnoresDisabledAndNonPrimaryCameras)
 
     const Uuid disabled = addEntity(scene, registry, "Cutscene Camera", 900.0f, 900.0f);
     addComponent(scene, registry, disabled, BuiltinComponentIds::kCamera);
-    scene.findEntity(disabled)->setEnabled(false);
+    scene.findEntityForEdit(disabled)->setEnabled(false);
 
     const Uuid secondary = addEntity(scene, registry, "Minimap Camera", 700.0f, 700.0f);
     addComponent(scene, registry, secondary, BuiltinComponentIds::kCamera);
-    scene.findEntity(secondary)->findComponent(BuiltinComponentIds::kCamera)
+    scene.findEntityForEdit(secondary)->findComponent(BuiltinComponentIds::kCamera)
         ->setProperty("isPrimary", PropertyValue{false});
 
     const Uuid primary = addEntity(scene, registry, "Main Camera", 100.0f, 100.0f);
@@ -1288,7 +1288,7 @@ CNA_STUDIO_TEST(DisabledEntitiesGetNoIcon)
 
     const Uuid cameraId = addEntity(scene, registry, "Main Camera", 0.0f, 0.0f);
     addComponent(scene, registry, cameraId, BuiltinComponentIds::kCamera);
-    scene.findEntity(cameraId)->setEnabled(false);
+    scene.findEntityForEdit(cameraId)->setEnabled(false);
 
     StudioCamera2D view;
     view.setViewportSize(StudioVector2{800.0f, 600.0f});

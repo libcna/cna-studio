@@ -352,7 +352,7 @@ CNA_STUDIO_TEST(TwoAnimatedComponentsKeepTheirOwnPosition)
     // The playback is keyed by the component's identity rather than held once for the panel, so a
     // second clip on the same entity does not share the first one's frame.
     Fixture fixture{4, 10.0f};
-    StudioEntity* subject = fixture.context.getScene().findEntity(fixture.entity);
+    StudioEntity* subject = fixture.context.getScene().findEntityForEdit(fixture.entity);
     subject->getComponents().push_back(spriteAnimation(fixture.sheet, 4, 10.0f));
 
     fixture.settle();
@@ -365,7 +365,7 @@ CNA_STUDIO_TEST(TwoAnimatedComponentsKeepTheirOwnPosition)
 
     // Which is only meaningful if the first really did move, so ask it directly by removing the
     // second and looking at what the panel then publishes.
-    subject = fixture.context.getScene().findEntity(fixture.entity);
+    subject = fixture.context.getScene().findEntityForEdit(fixture.entity);
     subject->getComponents().pop_back();
     fixture.settle();
     CNA_STUDIO_EXPECT_EQ(fixture.last.animation.position, std::size_t{2});
@@ -411,7 +411,7 @@ CNA_STUDIO_TEST(ShorteningTheClipWhileItPlaysDoesNotLeaveThePositionPastTheEnd)
     fixture.clickTransport(2);
     CNA_STUDIO_EXPECT_EQ(fixture.last.animation.position, std::size_t{3});
 
-    StudioEntity* subject = fixture.context.getScene().findEntity(fixture.entity);
+    StudioEntity* subject = fixture.context.getScene().findEntityForEdit(fixture.entity);
     StudioComponent* animation = subject->findComponent(BuiltinComponentIds::kSpriteAnimation);
     PropertyValue::ListValue frames;
     frames.items.push_back(PropertyValue{std::int64_t{0}});

@@ -240,7 +240,7 @@ namespace
         void moveRoot(float x)
         {
             context.getScene()
-                .findEntity(instanceRoot)
+                .findEntityForEdit(instanceRoot)
                 ->findComponent(BuiltinComponentIds::kTransform)
                 ->setProperty("position", PropertyValue{StudioVector3{x, 20.0f, 0.0f}});
         }

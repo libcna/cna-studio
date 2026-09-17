@@ -110,7 +110,7 @@ namespace
         void setPosition(const StudioVector3& value)
         {
             context.getScene()
-                .findEntity(entity)
+                .findEntityForEdit(entity)
                 ->findComponent(BuiltinComponentIds::kTransform)
                 ->setProperty("position", PropertyValue{value});
         }
@@ -119,7 +119,7 @@ namespace
         {
             const float radians = degrees * 3.14159265358979323846f / 180.0f;
             context.getScene()
-                .findEntity(entity)
+                .findEntityForEdit(entity)
                 ->findComponent(BuiltinComponentIds::kTransform)
                 ->setProperty("rotation",
                               PropertyValue{StudioQuaternion{0.0f, 0.0f, std::sin(radians * 0.5f),
