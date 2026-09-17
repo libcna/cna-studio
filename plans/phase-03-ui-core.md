@@ -6,7 +6,7 @@
 
 **Exit criteria.** A panel can be described, laid out, hit-tested, focused, keyboard-navigated and driven to produce draw data, entirely without a GPU.
 
-**Progress:** 30 of 34 complete `██████████░░`
+**Progress:** 31 of 35 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -44,6 +44,7 @@
 | `STUDIO-03036` | Drop-down selection over a deferred popup | ✅ | `STUDIO-03022`, `STUDIO-03033` |
 | `STUDIO-03040` | Modal dialogs: a window that owns the frame until it is answered | ✅ | `STUDIO-03022` |
 | `STUDIO-03041` | Make paint order separable from input order, so a widget cannot describe itself under its own background | ⬜ | `STUDIO-03009` |
+| `STUDIO-03042` | A widget that needs its own id twice asks once, so the collision detector means something | ✅ | `STUDIO-03002` |
 
 ## Acceptance and verification
 
@@ -569,3 +570,29 @@ a task rather than a commit.
 missing is the one that fails for *any* interactive element drawn under an opaque fill that covers
 it, without having to know which widgets exist — probably by rasterising a frame with every
 interactive rectangle known to the frame, and requiring each hovered one to change some pixel.
+
+### `STUDIO-03042` — A widget that needs its own id twice asks once
+
+**Found by `STUDIO-09016`**, and pre-existing rather than caused by it. The hundred-thousand-asset
+case was the first test to ask the Content Browser whether any widget id had been issued twice, and
+the answer was one per draggable row and one per draggable card, every frame.
+
+**Not a real collision, and that is the problem.** `WidgetIdStack::make` derives the id from the
+scope and the key, so asking twice returns the same value — a row that called `make("row")` for its
+`interact` and again where `studioDragSource` needed the same id was getting the right id both
+times. But `make` also *records* the id, because issuing one twice is how two different widgets end
+up sharing an identity, which presents as one control responding to a press somewhere else. So the
+panel sat permanently above zero, and a genuine collision introduced next to it would have been
+invisible in the noise. A detector nobody can assert against is a detector that is not running.
+
+Fixed where it occurred — the tree's rows, the grid's cards, and the floating window's title bar and
+resize grip, all of which fetched an id a second time rather than keeping the one they had — rather
+than by adding a non-recording `peek`. A widget asking for its own id twice has the id already; the
+call that would need `peek` is a caller asking about a widget it has not declared yet, and there
+isn't one. (`STUDIO-09016` wanted exactly that and got a different shape instead, for reasons that
+have nothing to do with identity: see its entry.)
+
+**Asserted where it was missing.** `NoWidgetInTheBrowserIsGivenTheSameIdentityTwice` in
+`tests/StudioContentBrowserTests.cpp` runs both views with the folder pane open, pointer away and
+pointer over the listing, because a hover describes widgets an unpointed frame never does. The
+hundred-thousand-asset cases assert it too, which is where it was found.

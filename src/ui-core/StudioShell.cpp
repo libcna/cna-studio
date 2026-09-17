@@ -2139,8 +2139,11 @@ namespace CNA::Studio
         const UiRect title{tabsEnd, strip.top(),
                            std::max(0.0f, strip.right() - tabHeight - tabsEnd), strip.height};
 
+        // Issued once and kept: a second `make` returns the same id and also records it again,
+        // which the collision detector reports as two widgets sharing an identity.
+        const WidgetId titleId = frame_.ids().make("title");
         const StudioInteraction moved =
-            frame_.router().interact(frame_.ids().make("title"), title, /*enabled=*/true);
+            frame_.router().interact(titleId, title, /*enabled=*/true);
         if (frame_.isInputPass() && moved.held && movingFloat_ == kInvalidFloatingDock)
         {
             // Where the window *is*, not where it asked to be. Those differ when the workspace is
@@ -2158,13 +2161,14 @@ namespace CNA::Studio
         }
         if (moved.hovered || movingFloat_ == index)
         {
-            (void)frame_.requestCursor(frame_.ids().make("title"), StudioCursor::Move);
+            (void)frame_.requestCursor(titleId, StudioCursor::Move);
         }
 
         const UiRect gripBox{window.bounds.right() - grip, window.bounds.bottom() - grip,
                              grip, grip};
+        const WidgetId gripId = frame_.ids().make("grip");
         const StudioInteraction resized =
-            frame_.router().interact(frame_.ids().make("grip"), gripBox, /*enabled=*/true);
+            frame_.router().interact(gripId, gripBox, /*enabled=*/true);
         if (frame_.isInputPass() && resized.held && resizingFloat_ == kInvalidFloatingDock)
         {
             // The visible size, for the same reason the move above takes the visible position:
@@ -2177,7 +2181,7 @@ namespace CNA::Studio
         }
         if (resized.hovered || resizingFloat_ == index)
         {
-            (void)frame_.requestCursor(frame_.ids().make("grip"), StudioCursor::ResizeNwSe);
+            (void)frame_.requestCursor(gripId, StudioCursor::ResizeNwSe);
         }
         if (frame_.isDrawPass())
         {

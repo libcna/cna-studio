@@ -233,6 +233,7 @@ CNA_STUDIO_TEST(DrawingAHundredThousandAssetsDescribesAScreenfulRatherThanAProje
         }
 
         CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+        CNA_STUDIO_EXPECT_EQ(shell->frame().ids().collisionCount(), std::size_t{0});
 
         // Drawing asked the filesystem nothing, at a hundred thousand assets as at four hundred
         // (STUDIO-30015). This is the pass that would have made 200 000 stat calls.
@@ -308,6 +309,7 @@ CNA_STUDIO_TEST(ScrollingAHundredThousandAssetsShowsTheRowsTheScrollbarSaysItDoe
     CNA_STUDIO_EXPECT(drawn.rowsDrawn > 0);
     CNA_STUDIO_EXPECT(drawn.rowsBuilt <= 400);
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(shell->frame().ids().collisionCount(), std::size_t{0});
 
     // Clicking a visible row selects the asset the scroll position says is there, rather than the
     // first file in the folder. At the point the wheel was turned, which is known to be over the
@@ -328,4 +330,5 @@ CNA_STUDIO_TEST(ScrollingAHundredThousandAssetsShowsTheRowsTheScrollbarSaysItDoe
         CNA_STUDIO_EXPECT(record->sourcePath > "Assets/Flat/asset000400.png");
     }
 }
+
 

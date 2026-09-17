@@ -1656,11 +1656,17 @@ namespace CNA::Studio
             const bool renaming = !state.tree.renaming().empty()
                                && state.tree.renaming() == entryId;
 
+            // Issued once and kept, rather than asked for again where the drag needs it. Two calls
+            // return the same id -- it is derived from the scope and the key -- but each one also
+            // *records* it, and a key recorded twice is what the collision detector is there to
+            // report. It was reporting it: one per draggable card, every frame.
+            const WidgetId cardId = frame.ids().make("card");
+
             // A card being renamed is a text field, not a card: clicking to place the caret must
             // not also enter the folder, and dragging to select a word must not pick the asset up.
             const StudioInteraction interaction = renaming
                 ? StudioInteraction{}
-                : frame.interact(frame.ids().make("card"), box, /*enabled=*/true);
+                : frame.interact(cardId, box, /*enabled=*/true);
 
             // Outside the draw pass, because the rename field below needs the same rectangle the
             // label would have used: an editor that appeared somewhere other than where the name
@@ -1793,7 +1799,7 @@ namespace CNA::Studio
                 payload.type = std::string{kStudioAssetDragType};
                 payload.value = entry.assetId.toString();
                 payload.label = entry.label;
-                studioDragSource(frame, frame.ids().make("card"), interaction, std::move(payload));
+                studioDragSource(frame, cardId, interaction, std::move(payload));
             }
             else
             {

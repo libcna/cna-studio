@@ -998,6 +998,61 @@ CNA_STUDIO_TEST(RenamingAFolderThroughTheBrowserMovesEverythingUnderIt)
                          std::string{"Assets/Textures/Deep/b.png"});
 }
 
+CNA_STUDIO_TEST(NoWidgetInTheBrowserIsGivenTheSameIdentityTwice)
+{
+    // Two widgets sharing an id are one widget answering for both, and the symptom is a control
+    // that responds to a press somewhere else. `WidgetIdStack` has detected this since
+    // `STUDIO-03003`; what was missing was anybody asking the Content Browser.
+    //
+    // It had been failing all along, once per draggable row and once per draggable card, because a
+    // row asked for its own id a second time where the drag needed it. The id is the same either
+    // way -- it is derived from the scope and the key -- but the *second* request is what the
+    // detector counts, and a genuine collision in the same panel would have been invisible in the
+    // noise. Found by the hundred-thousand-asset case in `StudioLargeProjectTests`, which is the
+    // first test to have asked.
+    for (const StudioContentView view : {StudioContentView::Grid, StudioContentView::List})
+    {
+        ScopedProject project{"identity"};
+
+        // Folders and files together, because they take different paths through both views: a file
+        // is a drag source and a folder is a drop target.
+        project.write("Assets/Textures/one.png");
+        project.write("Assets/Textures/two.png");
+        project.write("Assets/Sounds/three.wav");
+
+        StudioContext context;
+        context.getAssets().setProjectRoot(project.root());
+        CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+        StudioContentBrowserState state;
+        state.view = view;
+        state.folder = "Assets";
+
+        // The folder pane shown, so its tree is described in the same frame as the listing. Two
+        // trees in one panel is exactly the case a scope is supposed to keep apart.
+        state.folderPaneWidth = 220.0f;
+
+        auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+        shell->resetLayout();
+        shell->renderFrame(at(-1.0f, -1.0f));
+        CNA_STUDIO_EXPECT(shell->activatePanel("content"));
+
+        CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+            [&](StudioFrame& frame, const UiRect& area) {
+                studioContentBrowser(frame, area, context, state);
+            }));
+
+        // Once with the pointer away, once over the listing: a hover adds widgets -- the row
+        // toggle, the tooltip -- that a frame nobody is pointing at never describes.
+        shell->renderFrame(at(-1.0f, -1.0f));
+        CNA_STUDIO_EXPECT_EQ(shell->frame().ids().collisionCount(), std::size_t{0});
+
+        shell->renderFrame(at(640.0f, 400.0f));
+        CNA_STUDIO_EXPECT_EQ(shell->frame().ids().collisionCount(), std::size_t{0});
+        CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+    }
+}
+
 CNA_STUDIO_TEST(ARightClickAsksAboutTheRowUnderThePointerRatherThanTheSelection)
 {
     // The distinction that decides which file gets deleted. A menu that acted on the selection

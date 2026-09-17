@@ -341,7 +341,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **286 of 574 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **287 of 575 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -396,7 +396,7 @@ what they chose. Three of the four are testable with a context, a log and a lamb
 its dependencies explicitly, and there is no service locator to register with. That is the point:
 a locator would make every dependency invisible again, one `get<T>()` at a time.
 
-**Phase 3 — Studio UI core** (30 of 34). Design tokens and two themes, widget identity, retained
+**Phase 3 — Studio UI core** (31 of 35). Design tokens and two themes, widget identity, retained
 state, the draw list, input routing with capture and focus, the five-phase frame lifecycle, cursor
 requests, **tooltips with a per-widget delay**, **popup layering and input blocking**, widget
 helpers, text measurement, High-DPI correctness including the seams, scrolling with row

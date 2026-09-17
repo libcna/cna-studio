@@ -154,6 +154,12 @@ namespace CNA::Studio
 
             const bool renaming = !state.renaming().empty() && state.renaming() == row.id;
 
+            // Issued once and kept, rather than asked for again where the drag needs it. Two calls
+            // return the same id -- it is derived from the scope and the key -- but each one also
+            // *records* it, and a key recorded twice is what the collision detector is there to
+            // report. It was reporting it: one per draggable row, every frame.
+            const WidgetId rowId = frame.ids().make("row");
+
             // The whole row is the target, not just the text. A tree where a click lands only on
             // the label is a tree with a different hit area on every line.
             //
@@ -162,7 +168,7 @@ namespace CNA::Studio
             // to select a word would pick the entity up.
             const StudioInteraction interaction = renaming
                 ? StudioInteraction{}
-                : frame.interact(frame.ids().make("row"), rowBounds, row.enabled);
+                : frame.interact(rowId, rowBounds, row.enabled);
 
             UiRect cursor = rowBounds.inset(UiEdges{padding, 0.0f, padding, 0.0f});
             cursor.splitLeft(std::min(indent * static_cast<float>(row.depth), cursor.width));
@@ -212,8 +218,7 @@ namespace CNA::Studio
                 payload.type = row.dragType;
                 payload.value = row.dragValue.empty() ? row.id : row.dragValue;
                 payload.label = row.label;
-                if (studioDragSource(frame, frame.ids().make("row"), interaction,
-                                     std::move(payload)))
+                if (studioDragSource(frame, rowId, interaction, std::move(payload)))
                 {
                     result.dragStarted = slot;
                 }
