@@ -36,6 +36,7 @@
 
 #pragma once
 
+#include "CNA/Studio/Assets/AssetDependencies.hpp"
 #include "CNA/Studio/Core/PropertyValue.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Scene/SpriteAnimation.hpp"
@@ -124,6 +125,19 @@ namespace CNA::Studio
          * off, which is honest for a build with no renderer to ask.
          */
         std::function<std::string()> modelEffectName;
+
+        /**
+         * @brief The project's asset reference graph, for the asset inspector's dependency section.
+         *
+         * `plan.md` STUDIO-09012. A seam rather than something the panel builds, because building
+         * it reads every scene, prefab and material in the project — which is a decision about
+         * *when*, and the panel that draws a section is the wrong place to make it.
+         *
+         * Unset draws the section saying the index has not been built, rather than omitting it: a
+         * section that is simply absent is one the user cannot tell from an asset nothing
+         * references, and those are opposite answers to the question they asked.
+         */
+        const AssetDependencyIndex* dependencies = nullptr;
     };
 
     /**
@@ -210,6 +224,24 @@ namespace CNA::Studio
          * failure a test can name.
          */
         std::size_t materialFields = 0;
+
+        /**
+         * @brief How many dependency rows the asset inspector drew, both directions together.
+         *
+         * `plan.md` STUDIO-09012. Reported so a test can assert the section found the references
+         * rather than reading pixels -- and so "the dependency section is two headings with
+         * nothing under them" is a failure a test can name.
+         */
+        std::size_t dependencyRows = 0;
+
+        /**
+         * @brief The asset a dependency row was clicked to go to, on the frame it was.
+         *
+         * The section is a way *through* the graph, not a read-only report: the answer to "what
+         * uses this" is usually followed by "and what does that use", and a list nobody can click
+         * makes the user find the file in the Content Browser themselves.
+         */
+        Uuid navigatedToAsset;
     };
 
     /**

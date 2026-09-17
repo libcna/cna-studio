@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 5 of 16 complete `███░░░░░░░░░`
+**Progress:** 6 of 17 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,11 +21,12 @@
 | `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ✅ | `STUDIO-09001` |
 | `STUDIO-09010` | Reimport, preserving Studio-side import settings | ⬜ | `STUDIO-10001` |
 | `STUDIO-09011` | Reveal in the system file manager | ⬜ | `STUDIO-09001` |
-| `STUDIO-09012` | Dependency view: references-to and referenced-by | ⬜ | `STUDIO-09001` |
+| `STUDIO-09012` | Dependency view: references-to and referenced-by | ✅ | `STUDIO-09001` |
 | `STUDIO-09013` | Missing asset handling with a clear path to relink | ⬜ | `STUDIO-09012` |
 | `STUDIO-09014` | Asset metadata and import settings UI | ⬜ | `STUDIO-09001` |
 | `STUDIO-09015` | Source file tracking and derived-data cache separation | ⬜ | `STUDIO-09004` |
 | `STUDIO-09016` | Virtualised browsing for very large asset counts | ⬜ | `STUDIO-30010` |
+| `STUDIO-09017` | A reference on a component with no descriptor survives a save and reload | ⬜ | — |
 
 ## Acceptance and verification
 
@@ -231,6 +232,56 @@ selected asset, and greying out when nothing is selected. A guard test asserts t
 hints are the chords the action registry actually binds, because a hint that has drifted is a
 promise the user stops trusting rather than a bug they report.
 
+### `STUDIO-09012` — Dependency view: references-to and referenced-by
+
+**Done.** `AssetDependencyIndex` builds the project's reference graph, and the asset inspector shows
+both directions with every row clickable.
+
+**Nothing on disk records this, which is why it needs an index.** A scene holds a Uuid, not a path
+(D-08) — that is what makes moving a file free, and it is also what makes "what breaks if I delete
+this?" unanswerable by looking at the file. The only way to know that `Level.cnascene` uses
+`player.png` is to read every file that could hold an id.
+
+**Both directions out of one pass**, because they are the same data read two ways. An index that
+computed "referenced by" from one walk and "references" from another would be two things that could
+disagree, and the disagreement would show up as a delete that looked safe.
+
+**Four decisions with an obvious wrong answer.**
+
+- **Stored properties, not descriptors.** A component whose plugin failed to load keeps its data and
+  has its references counted like any other. A descriptor-driven walk would skip exactly the file a
+  dependency view is opened for. (`STUDIO-09017` is the half of this that a save and reload still
+  loses.)
+- **A nil reference is an empty slot, not an edge.** A sprite with no texture yet points at nothing;
+  a graph that recorded it would answer "what uses nothing?" with every empty slot in the project.
+- **An unreadable file is a warning, not a failed build.** A project with one broken prefab still
+  has a useful answer for every other asset in it, and an index that refused to build would take the
+  view away precisely when something is wrong.
+- **The open scene overrides what was read from disk.** `observeScene` *replaces* rather than merges,
+  so a reference the user just removed leaves the answer. A view built only from files is right until
+  the user edits something, which is exactly when they ask.
+
+**Built lazily, and that is a compromise recorded rather than hidden.** The walk reads every scene,
+prefab and material in the project, so it is rebuilt when an asset is inspected and something has
+changed since — at most once per change, paid by the user who asked. `STUDIO-30001`'s background
+jobs are what remove the pause.
+
+**A row is a way through the graph, not a report.** "What uses this" is followed by "and what does
+that use", so every row selects what it names. An id with no record is shown as `Missing: <id>`
+rather than skipped — it is the single most useful row in the section.
+
+**The asset inspector had three exits, and two of them skipped the section.** A material returned
+from its own branch and an asset with no importer settings returned from another, so the dependency
+view would have appeared for the one case in three that has an importer with settings to show. They
+are now one exit.
+
+**Verification.** `tests/AssetDependencyTests.cpp`: both directions from one build, materials'
+texture fields, prefabs and importer-declared dependencies, nil references ignored, an unreadable
+file warning without losing the rest, a component with no descriptor, and `observeScene` replacing
+rather than merging. `tests/StudioDetailsPanelTests.cpp` drives the real panel through a shell
+frame: the section finds the reference, a row click navigates to the file holding it, and a build
+with no index says so rather than drawing what an unreferenced asset would look like.
+
 ### `STUDIO-09015` — Source file tracking and derived-data cache separation
 
 **Acceptance.** Caches and derived content are clearly separated from authoritative source and are not version-controlled
@@ -241,3 +292,28 @@ promise the user stops trusting rather than a bug they report.
 
 **Verification.** Stress test at 100,000 synthetic assets
 
+
+### `STUDIO-09017` — A reference on a component with no descriptor survives a save and reload
+
+**Why this exists.** Found by `STUDIO-09012`, and pre-existing rather than caused by it. A component
+the editor has no descriptor for has its properties read back with their types *inferred from the
+JSON shape* (`EntityJson.cpp`), and an asset reference is written as a bare UUID string — which is
+indistinguishable from a string property that happens to hold one. So after a save and a reload the
+reference is a `String`, and neither the dependency index nor `findMissingReferences` can see it.
+
+The existing missing-reference test for components with no descriptor passes only because it
+never round-trips. `AReferenceOnAnUnknownComponentIsLostByARoundTripUntilStudio09017` asserts the
+limitation as it stands, so removing it is a test to change rather than a behaviour to discover.
+
+**Why it matters.** The case it costs is a plugin that failed to load — precisely the file a
+dependency view and a missing-reference report are opened for.
+
+**Acceptance.** A scene saved and reloaded with a component the build has no descriptor for keeps
+that component's asset and entity references *as* references, and they appear in both the dependency
+index and the missing-reference report.
+
+**What it will take.** The information is simply not in the file, so inference cannot recover it:
+a type has to be written alongside the value for properties on components with no descriptor, which
+is a format change and therefore a migration. Guessing "a string that parses as a UUID is an asset
+reference" is rejected: an entity reference serialises identically, so the guess would silently
+change one into the other.

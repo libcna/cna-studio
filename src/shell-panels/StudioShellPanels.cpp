@@ -67,8 +67,15 @@ namespace CNA::Studio
         // Every command that lands, mirrored to a running game exactly as it happens to the
         // document -- an inspector edit, a gizmo drag, an undo -- so Play shows what the editor
         // shows without every editing surface having to know a player might be listening.
-        context_.setCommandObserver(
-            [this](const StudioCommand& command) { mirrorCommandToPlayer(command); });
+        context_.setCommandObserver([this](const StudioCommand& command) {
+            mirrorCommandToPlayer(command);
+
+            // Any command may have changed a reference -- retargeting a sprite, deleting an
+            // entity, moving an asset. A flag rather than a rebuild: the answer is only looked at
+            // when an asset is inspected, and rebuilding on every gizmo drag would read every
+            // scene in the project sixty times a second.
+            dependenciesStale_ = true;
+        });
 
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_.process());
 
@@ -79,6 +86,49 @@ namespace CNA::Studio
         shell.notifications().setLog(&log_);
 
         bind(shell);
+    }
+
+    const AssetDependencyIndex* StudioShellPanels::dependencyIndex()
+    {
+        if (dependenciesStale_)
+        {
+            const AssetDependencyScan scan =
+                dependencies_.build(context_.getAssets(), context_.getComponentRegistry());
+
+            // Each file that could not be read, once. A project with one broken prefab still has a
+            // useful answer for every other asset in it, and an index that said nothing about the
+            // broken one would make the missing edges look like an asset nothing references.
+            for (const std::string& warning : scan.warnings)
+            {
+                log_.append(LogSeverity::Warning, "Dependency index: " + warning + ".");
+            }
+
+            dependenciesStale_ = false;
+        }
+
+        // The open scene last, and every time: it may hold unsaved edits, and a dependency view
+        // built only from files is right until the user changes something -- which is exactly when
+        // they ask. It walks one document rather than the project, so it is cheap enough to redo.
+        //
+        // The context holds the scene's path as it was opened, which is absolute; the database
+        // speaks in project-relative paths. A scene outside the project root comes back starting
+        // with "..", which matches nothing -- which is the right answer for a file the project does
+        // not contain.
+        if (!context_.getScenePath().empty() && !context_.getAssets().getProjectRoot().empty())
+        {
+            const std::string relative =
+                std::filesystem::path{context_.getScenePath()}
+                    .lexically_relative(context_.getAssets().getProjectRoot())
+                    .generic_string();
+
+            if (const AssetRecord* scene = context_.getAssets().findByPath(relative);
+                scene != nullptr)
+            {
+                dependencies_.observeScene(context_.getScene(), scene->id, scene->sourcePath);
+            }
+        }
+
+        return &dependencies_;
     }
 
     void StudioShellPanels::setPlayerBuilds(std::vector<PlayerBuild> builds)
@@ -877,6 +927,12 @@ namespace CNA::Studio
             details_services.audio = services_.audio;
             details_services.thumbnail = services_.assetThumbnail;
             details_services.modelEffectName = services_.modelEffectName;
+
+            // Asked for on the input pass only, so the rebuild -- which reads every scene, prefab
+            // and material in the project -- happens once per frame at most, and the draw pass
+            // describes exactly the graph the input pass routed against.
+            details_services.dependencies =
+                frame.isInputPass() ? dependencyIndex() : &dependencies_;
 
             const StudioDetailsResult details =
                 studioDetailsPanel(frame, bounds, context_, details_services);

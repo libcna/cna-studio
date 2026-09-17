@@ -623,6 +623,23 @@ namespace CNA::Studio
 
         StudioTreeState outlinerState_;
         StudioContentBrowserState contentState_;
+
+        /**
+         * @brief The asset reference graph the Details panel's dependency section reads
+         *        (`plan.md` STUDIO-09012).
+         *
+         * Built lazily and kept, because building it reads every scene, prefab and material in the
+         * project. `dependenciesStale_` is set by any command and by a project opening; the rebuild
+         * happens the next time an asset is inspected, which is the only moment the answer is
+         * looked at. `STUDIO-30001`'s background jobs are what will let it be rebuilt without the
+         * pause; until then the pause is paid once per change, by the user who asked.
+         */
+        AssetDependencyIndex dependencies_;
+        bool dependenciesStale_ = true;
+
+        /** @brief Returns the index, rebuilding it first when something has changed. */
+        [[nodiscard]] const AssetDependencyIndex* dependencyIndex();
+
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;
         StudioTreeState layersState_;

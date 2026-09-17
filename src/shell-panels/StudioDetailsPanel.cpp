@@ -2160,12 +2160,25 @@ namespace
         const std::vector<PropertyDescriptor>* properties =
             descriptor != nullptr ? &descriptor->properties : nullptr;
 
+        // What the dependency section will add: a heading, the two counted headings, and a row per
+        // reference in each direction (STUDIO-09012). Counted here rather than guessed, because the
+        // scroll extent is what decides whether the last row can be reached.
+        const std::vector<AssetUsage> usedBy =
+            services.dependencies != nullptr ? services.dependencies->referencedBy(assetId)
+                                             : std::vector<AssetUsage>{};
+        const std::vector<Uuid> uses =
+            services.dependencies != nullptr ? services.dependencies->referencesTo(assetId)
+                                             : std::vector<Uuid>{};
+        const std::size_t dependencyRows =
+            services.dependencies != nullptr ? 3 + usedBy.size() + uses.size() : 2;
+
         // Name, path, kind, a gap, the importer's heading, and one row per setting -- plus the
         // preview row when this is something that can be heard, and the material editor's own
         // rows when this is a material: a heading, six fields and the effect line.
         const std::size_t rows = 6 + (isAudibleAsset(record->type) ? 1u : 0u)
                                  + (record->type == AssetType::Material ? 8u : 0u)
-                                 + (properties != nullptr ? properties->size() : 0);
+                                 + (properties != nullptr ? properties->size() : 0)
+                                 + dependencyRows;
 
         StudioScrollOptions scroll;
         scroll.contentHeight = static_cast<float>(rows) * (rowHeight + spacing);
@@ -2250,6 +2263,10 @@ namespace
 
         nextRow();
 
+        // One exit from here on, rather than a `return` per case. The dependency section below
+        // (STUDIO-09012) belongs to *every* asset, and it was skipped for two of the three when
+        // each branch returned for itself -- which is most assets, because most have no importer
+        // settings at all.
         if (record->type == AssetType::Material)
         {
             // A material is the editor's *own* document rather than something imported, so it gets
@@ -2260,12 +2277,8 @@ namespace
             result.materialFields = material.materialFields;
             result.edited = material.edited;
             result.editedProperty = material.editedProperty;
-            frame.ids().pop();
-            studioEndScroll(frame);
-            return result;
         }
-
-        if (properties == nullptr || properties->empty())
+        else if (properties == nullptr || properties->empty())
         {
             // An importer with no declared settings is not a fault -- most have nothing worth
             // choosing. Saying so beats an empty form the user waits for something to appear in.
@@ -2281,90 +2294,189 @@ namespace
                            ? record->importerId + " is not registered in this build."
                            : record->importerId + " has no settings.");
             label(row, text, StudioColorRole::TextSecondary);
+        }
+        else
+        {
+            {
+                const UiRect row = nextRow();
+                if (frame.isDrawPass())
+                {
+                    studioDrawText(frame, row,
+                                   descriptor->displayName.empty() ? record->importerId
+                                                                   : descriptor->displayName,
+                                   StudioFontRole::Subheading,
+                                   theme.color(StudioColorRole::TextPrimary));
+                }
+            }
+
+            frame.ids().push(record->importerId);
+
+            for (const PropertyDescriptor& property : *properties)
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                label(parts.label,
+                      property.displayName.empty() ? property.name : property.displayName,
+                      StudioColorRole::TextSecondary);
+
+                // The stored setting when the sidecar carries one, the declared default otherwise.
+                // Writing every default into the sidecar on first sight would make each asset's diff
+                // noise, so absent stays absent until the user actually chooses something.
+                const JsonValue& stored = record->importerSettings[property.name];
+                const PropertyValue value = stored.isNull()
+                    ? property.defaultValue
+                    : PropertyValue::fromJson(stored, property.type);
+
+                frame.ids().push(property.name);
+
+                StudioPropertyEditResult edit;
+                if (property.readOnly)
+                {
+                    // Declared read-only by the importer. Shown as text rather than as a control the
+                    // user can put a caret in and then find refuses them -- a disabled field that
+                    // takes focus is one somebody reports as broken.
+                    edit.readOnlyKind = true;
+                    label(parts.control, describeValue(value), StudioColorRole::TextDisabled);
+                }
+                else if (value.getType() == PropertyType::List
+                         || value.getType() == PropertyType::Structure)
+                {
+                    // The same expanding editor the component grid uses (STUDIO-07054), through the
+                    // same row allocator. An importer setting that is a list is a list, and giving it
+                    // a second editor here would be the drift `STUDIO-07045` extracted this code to
+                    // avoid.
+                    const StudioPropertyEditContext editing{&context, Uuid{}};
+                    const CompoundEditResult compound =
+                        compoundPropertyEditor(frame, parts.control, nextRow, value, editing);
+                    edit.edited = compound.edited;
+                }
+                else
+                {
+                    const StudioPropertyEditContext editing{&context, Uuid{}};
+                    edit = studioPropertyEditor(frame, parts.control, value, property.enumOptions,
+                                                editing);
+                }
+                if (edit.readOnlyKind) { ++result.readOnlyProperties; }
+
+                frame.ids().pop();
+
+                if (!edit.edited.has_value()) { continue; }
+
+                auto command = std::make_unique<SetImporterSettingCommand>(
+                    context.getAssets(), assetId, property.name, *edit.edited);
+                if (!command->isValid()) { continue; }
+
+                // Merging, like every other property field: dragging a value is one undo entry that
+                // returns to what the drag started from. And through the history at all, because an
+                // importer setting is persisted to the sidecar -- an edit that could not be undone
+                // would be the one edit in Studio that cannot.
+                context.execute(std::move(command), MergePolicy::MergeWithPrevious);
+                result.edited = true;
+                result.editedProperty = record->sourcePath + "." + property.name;
+                break;
+            }
+
             frame.ids().pop();
-            studioEndScroll(frame);
-            return result;
         }
 
+        // --- What uses this, and what this uses (STUDIO-09012) --------------------------------
+        //
+        // The question a user opens an asset to answer before they delete it, and the one nothing
+        // on disk records: a scene holds a Uuid, so "what breaks if this goes" needs the reverse
+        // map. Both directions, because they are different questions -- "is this safe to remove"
+        // and "what did this model come with".
         {
-            const UiRect row = nextRow();
-            if (frame.isDrawPass())
+            frame.ids().push("deps");
+            label(nextRow(), "Dependencies", StudioColorRole::TextSecondary);
+
+            if (services.dependencies == nullptr)
             {
-                studioDrawText(frame, row,
-                               descriptor->displayName.empty() ? record->importerId
-                                                               : descriptor->displayName,
-                               StudioFontRole::Subheading,
-                               theme.color(StudioColorRole::TextPrimary));
-            }
-        }
-
-        frame.ids().push(record->importerId);
-
-        for (const PropertyDescriptor& property : *properties)
-        {
-            const PropertyRow parts = splitRow(theme, nextRow());
-            label(parts.label,
-                  property.displayName.empty() ? property.name : property.displayName,
-                  StudioColorRole::TextSecondary);
-
-            // The stored setting when the sidecar carries one, the declared default otherwise.
-            // Writing every default into the sidecar on first sight would make each asset's diff
-            // noise, so absent stays absent until the user actually chooses something.
-            const JsonValue& stored = record->importerSettings[property.name];
-            const PropertyValue value = stored.isNull()
-                ? property.defaultValue
-                : PropertyValue::fromJson(stored, property.type);
-
-            frame.ids().push(property.name);
-
-            StudioPropertyEditResult edit;
-            if (property.readOnly)
-            {
-                // Declared read-only by the importer. Shown as text rather than as a control the
-                // user can put a caret in and then find refuses them -- a disabled field that
-                // takes focus is one somebody reports as broken.
-                edit.readOnlyKind = true;
-                label(parts.control, describeValue(value), StudioColorRole::TextDisabled);
-            }
-            else if (value.getType() == PropertyType::List
-                     || value.getType() == PropertyType::Structure)
-            {
-                // The same expanding editor the component grid uses (STUDIO-07054), through the
-                // same row allocator. An importer setting that is a list is a list, and giving it
-                // a second editor here would be the drift `STUDIO-07045` extracted this code to
-                // avoid.
-                const StudioPropertyEditContext editing{&context, Uuid{}};
-                const CompoundEditResult compound =
-                    compoundPropertyEditor(frame, parts.control, nextRow, value, editing);
-                edit.edited = compound.edited;
+                // Said rather than left out. A section that is simply absent is one a user cannot
+                // tell from an asset nothing references, and those are opposite answers.
+                label(nextRow(), "Not indexed in this build.", StudioColorRole::TextDisabled);
             }
             else
             {
-                const StudioPropertyEditContext editing{&context, Uuid{}};
-                edit = studioPropertyEditor(frame, parts.control, value, property.enumOptions,
-                                            editing);
+                Uuid navigateTo;
+
+                const auto section = [&](const char* heading, std::size_t count,
+                                         const auto& drawRows) {
+                    label(nextRow(),
+                          std::string{heading} + " (" + std::to_string(count) + ")",
+                          StudioColorRole::TextSecondary);
+
+                    // A count of zero is an answer, and a better one than an empty gap: "nothing
+                    // references this" is what makes a delete safe, and a section that showed
+                    // nothing would read as a section that had not loaded.
+                    if (count == 0)
+                    {
+                        label(nextRow(), "    Nothing.", StudioColorRole::TextDisabled);
+                        return;
+                    }
+                    drawRows();
+                };
+
+                section("Used by", usedBy.size(), [&] {
+                    frame.ids().push("usedby");
+                    for (std::size_t i = 0; i < usedBy.size(); ++i)
+                    {
+                        const AssetUsage& usage = usedBy[i];
+                        StudioButtonOptions options;
+                        options.kind = StudioButtonKind::Ghost;
+                        options.align = StudioTextAlign::Left;
+                        options.icon = studioAssetIcon(usage.holderType);
+                        options.tooltip = usage.holderPath;
+                        if (studioButton(frame, frame.ids().makeIndex(static_cast<std::int64_t>(i)),
+                                         nextRow(), usage.describe(), options).activated)
+                        {
+                            navigateTo = usage.holderId;
+                        }
+                    }
+                    frame.ids().pop();
+                });
+
+                section("Uses", uses.size(), [&] {
+                    frame.ids().push("uses");
+                    for (std::size_t i = 0; i < uses.size(); ++i)
+                    {
+                        const AssetRecord* target = context.getAssets().find(uses[i]);
+
+                        StudioButtonOptions options;
+                        options.kind = StudioButtonKind::Ghost;
+                        options.align = StudioTextAlign::Left;
+                        options.icon = target != nullptr ? studioAssetIcon(target->type)
+                                                         : StudioIcon::Warning;
+
+                        // An id with no record is a reference this asset makes to something the
+                        // database does not have -- which is the single most useful row in the
+                        // section, so it is shown as what it is rather than skipped.
+                        const std::string text = target != nullptr
+                            ? target->sourcePath
+                            : "Missing: " + uses[i].toString();
+                        options.tooltip = text;
+
+                        if (studioButton(frame, frame.ids().makeIndex(static_cast<std::int64_t>(i)),
+                                         nextRow(), text, options).activated
+                            && target != nullptr)
+                        {
+                            navigateTo = uses[i];
+                        }
+                    }
+                    frame.ids().pop();
+                });
+
+                // Applied after both lists, because selecting from inside the loop would change
+                // what the rest of this frame is describing half-way through drawing it.
+                if (navigateTo.isValid() && frame.isInputPass())
+                {
+                    context.selectAsset(navigateTo);
+                    result.navigatedToAsset = navigateTo;
+                }
             }
-            if (edit.readOnlyKind) { ++result.readOnlyProperties; }
 
+            result.dependencyRows = usedBy.size() + uses.size();
             frame.ids().pop();
-
-            if (!edit.edited.has_value()) { continue; }
-
-            auto command = std::make_unique<SetImporterSettingCommand>(
-                context.getAssets(), assetId, property.name, *edit.edited);
-            if (!command->isValid()) { continue; }
-
-            // Merging, like every other property field: dragging a value is one undo entry that
-            // returns to what the drag started from. And through the history at all, because an
-            // importer setting is persisted to the sidecar -- an edit that could not be undone
-            // would be the one edit in Studio that cannot.
-            context.execute(std::move(command), MergePolicy::MergeWithPrevious);
-            result.edited = true;
-            result.editedProperty = record->sourcePath + "." + property.name;
-            break;
         }
 
-        frame.ids().pop();
         frame.ids().pop();
         studioEndScroll(frame);
         return result;

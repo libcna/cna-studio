@@ -16,6 +16,8 @@
 
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetDependencies.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Core/NumberText.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
@@ -25,6 +27,7 @@
 #include "CNA/Studio/UiCore/UiSoftwareRasterizer.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <cstdint>
 #include <set>
 #include <cmath>
@@ -1202,4 +1205,141 @@ CNA_STUDIO_TEST(TheAngleCacheIsAbandonedTheInstantSomethingElseProducesADifferen
     CNA_STUDIO_EXPECT_EQ(fixture.shownText("pitch"), studioFormatFloat(honest.x));
     CNA_STUDIO_EXPECT_EQ(fixture.shownText("yaw"), studioFormatFloat(honest.y));
     CNA_STUDIO_EXPECT_EQ(fixture.shownText("roll"), studioFormatFloat(honest.z));
+}
+
+// ------------------------------------------------------------------------------------------------
+// The dependency section (STUDIO-09012)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * @brief The asset inspector shows both directions, and a row is a way through the graph.
+ *
+ * The question a user opens an asset to answer before deleting it — and the one nothing on disk
+ * records, because a scene holds a Uuid rather than a path. A section that drew its headings and
+ * found no references would look exactly like an asset nothing uses, which is the opposite answer.
+ */
+CNA_STUDIO_TEST(TheAssetInspectorShowsWhatUsesAnAssetAndWhatItUses)
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-depsection";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Assets", code);
+
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+    context.getAssets().setProjectRoot(directory.generic_string());
+
+    const auto track = [&context](const std::string& path, AssetType type) {
+        AssetRecord record;
+        record.id = Uuid::generate();
+        record.sourcePath = path;
+        record.type = type;
+        const Uuid id = record.id;
+        CNA_STUDIO_EXPECT(context.getAssets().add(std::move(record)));
+        return id;
+    };
+
+    const Uuid textureId = track("Assets/player.png", AssetType::Texture2D);
+    const Uuid sceneId = track("Assets/Level.cnascene", AssetType::Scene);
+
+    StudioEntity hero{Uuid::generate(), "Hero"};
+    StudioComponent sprite{BuiltinComponentIds::kSpriteRenderer};
+    sprite.applyDefaults(*context.getComponentRegistry().find(BuiltinComponentIds::kSpriteRenderer));
+    sprite.setProperty("texture", PropertyValue{PropertyValue::AssetReference{textureId}});
+    hero.addComponent(std::move(sprite));
+
+    SceneDocument scene;
+    scene.addEntity(std::move(hero));
+
+    AssetDependencyIndex index;
+    (void)index.build(context.getAssets(), context.getComponentRegistry());
+    index.observeScene(scene, sceneId, "Assets/Level.cnascene");
+
+    StudioDetailsServices services;
+    services.dependencies = &index;
+
+    CNA_STUDIO_EXPECT_EQ(index.referencedBy(textureId).size(), std::size_t{1});
+
+    context.selectAsset(textureId);
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    UiRect bounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context, services);
+            if (frame.isInputPass()) { last = pass; }
+            if (frame.isDrawPass()) { bounds = area; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    // The texture is used once and uses nothing.
+    CNA_STUDIO_EXPECT_EQ(last.dependencyRows, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+
+    // A row is clickable, and clicking it goes to the file holding the reference. Swept rather
+    // than assuming a row height, so a metric change cannot turn this into a test that clicks
+    // empty space and passes for the wrong reason.
+    bool navigated = false;
+    for (float y = bounds.top() + 4.0f; y < bounds.bottom() - 4.0f && !navigated; y += 5.0f)
+    {
+        const float x = bounds.left() + 30.0f;
+        shell->renderFrame(at(x, y, false));
+        shell->renderFrame(at(x, y, true));
+        shell->renderFrame(at(x, y, false));
+        navigated = context.getSelectedAsset() == sceneId;
+    }
+
+    if (!navigated)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "no dependency row led to the scene that references the asset.");
+    }
+    else
+    {
+        // And from the scene's own inspector the other direction is the one with something in it.
+        shell->renderFrame(at(-1.0f, -1.0f));
+        CNA_STUDIO_EXPECT_EQ(last.dependencyRows, std::size_t{1});
+    }
+
+    std::filesystem::remove_all(directory, code);
+}
+
+/** @brief With no index, the section says so rather than reading as "nothing references this". */
+CNA_STUDIO_TEST(WithoutAnIndexTheDependencySectionSaysSoRatherThanLookingEmpty)
+{
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+
+    AssetRecord record;
+    record.id = Uuid::generate();
+    record.sourcePath = "Assets/player.png";
+    record.type = AssetType::Texture2D;
+    const Uuid id = record.id;
+    CNA_STUDIO_EXPECT(context.getAssets().add(std::move(record)));
+    context.selectAsset(id);
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context);
+            if (frame.isInputPass()) { last = pass; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    // No rows, and the panel still drew: an inspector that threw away its other sections because
+    // one seam was unset would be a build without a dependency index having no asset inspector.
+    CNA_STUDIO_EXPECT_EQ(last.dependencyRows, std::size_t{0});
+    CNA_STUDIO_EXPECT(last.rowsDrawn > 0);
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
 }
