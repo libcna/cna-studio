@@ -383,6 +383,27 @@ namespace
                 return input;
             }});
 
+        // `STUDIO-30021`. The other half of a large world: not how many entities there are, but how
+        // many are *selected*. Select-all is one keystroke, and everything downstream of the
+        // selection -- which rows are highlighted, what the gizmo pivots around, what the Details
+        // panel shows -- is a question asked per row about a list.
+        scenarios.push_back(UiBenchmarkScenario{
+            "outliner-20000-all-selected",
+            "the same deep scene with every one of the 20,000 entities selected",
+            "outliner",
+            [](StudioShell&, StudioContext& context, Panels&) {
+                fillDeepScene(context.getScene(), 20000, 50);
+
+                std::vector<CNA::Studio::Uuid> everything;
+                everything.reserve(context.getScene().getEntityCount());
+                for (const CNA::Studio::StudioEntity& entity : context.getScene().getEntities())
+                {
+                    everything.push_back(entity.getId());
+                }
+                context.setSelection(std::move(everything));
+            },
+            {}});
+
         scenarios.push_back(UiBenchmarkScenario{
             "content-grid", "1500 assets in the Content Browser's card grid",
             "content",

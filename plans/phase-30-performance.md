@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 10 of 16 complete `███████░░░░░`
+**Progress:** 11 of 17 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -20,11 +20,12 @@
 | `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ✅ | `STUDIO-30012`, `STUDIO-30014` |
 | `STUDIO-30016` | The Details panel stops opening files to draw itself | ✅ | `STUDIO-30012` |
 | `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ✅ | `STUDIO-13011` |
-| `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
+| `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ✅ | `STUDIO-30020` |
 | `STUDIO-30022` | Stress benchmark: 100,000 assets | ✅ | `STUDIO-09016` |
 | `STUDIO-30023` | Stress benchmark: very large logs | ⬜ | `STUDIO-27021` |
 | `STUDIO-30024` | Stress benchmark: large property lists and large imported models | ⬜ | `STUDIO-14018` |
 | `STUDIO-30025` | Stress benchmark: many thumbnails and many concurrent import jobs | ⬜ | `STUDIO-09003` |
+| `STUDIO-30026` | Attribute and remove the cost of a very large multi-selection | ⬜ | `STUDIO-30021` |
 | `STUDIO-30030` | Establish the interactive frame-rate target and measure against it | ⬜ | `STUDIO-30020` |
 
 ## Acceptance and verification
@@ -528,3 +529,50 @@ already gone their own way: `STUDIO-30015` for the Content Browser's filesystem 
 share, and `STUDIO-09016`/`STUDIO-13011` for the models the two trees were building. What remains
 under this title is nothing anybody has measured a cost for, and a task kept open for work nobody
 can name is a task that never closes.
+
+### `STUDIO-30021` — Stress benchmark: deep hierarchies and large multi-selection
+
+**Done.** Deep hierarchies arrived with `STUDIO-30020` — `outliner-20000-deep` puts twenty thousand
+entities in chains fifty deep, which is what separates a recursion from a loop wearing a tree's
+clothes. This task adds the other half, `outliner-20000-all-selected`: the same scene with every
+entity selected.
+
+**Selecting everything is one keystroke**, and it is the case nobody benchmarks because nobody does
+it on purpose — they press Ctrl-A to look at something, and the editor stops responding. Everything
+downstream of a selection is a question asked per entity or per row about a list, so it is exactly
+the shape that is free at five and quadratic at twenty thousand.
+
+**Measured** (`--ui-benchmark=outliner`, Release, 120 frames at 1920×1080, median µs/frame):
+
+| scenario | median | min |
+|---|---:|---:|
+| `outliner-20000-deep` | 6101 | 5262 |
+| `outliner-20000-all-selected` | 17 986 | 16 711 |
+
+**Twelve milliseconds a frame, and the benchmark's job stops there.** Removing it is
+`STUDIO-30026`, filed rather than folded in, because attributing it properly is a separate piece of
+work from having the number — and this phase has been bitten before by a cost that "obviously" came
+from somewhere it did not (`STUDIO-30014`).
+
+**One hypothesis already ruled out, by measurement rather than by reading.** The obvious suspect was
+the Outliner's per-row selection test, `std::find` over the selection vector: a screenful of forty
+rows asking twenty thousand questions each, twice a frame. Replacing it with a hash lookup built
+once per walk made the scenario *worse* — 18.7 ms to 21.4 ms — because building a twenty-thousand
+entry set per pass costs more than the comparisons it saves, and the comparisons were never the
+problem. The change was reverted. It is written down because a ruled-out suspect is worth as much
+as a confirmed one to whoever picks `STUDIO-30026` up, and because the reflex to fix the thing that
+looks wrong is how a morning goes missing.
+
+### `STUDIO-30026` — Attribute and remove the cost of a very large multi-selection
+
+**Acceptance.** The cost `STUDIO-30021` measured — about 12 ms a frame at twenty thousand selected
+entities — is attributed to something specific and then either removed or recorded as irreducible
+with a number saying why.
+
+**Starting points, none of them confirmed.** The per-frame consumers of `getSelection()` are the
+Details panel (`StudioDetailsPanel.cpp`), the shell's action enabling (`StudioShellPanels.cpp`) and
+the viewport (`StudioViewportPanel.cpp`). Separately, `findSelectionRoots` in `TransformGizmos.cpp`
+is O(selection²) in the worst case — a `std::find` over the whole selection per ancestor step per
+selected entity — which at twenty thousand is not a frame cost today because it runs on gizmo drag
+*begin*, but is a hang waiting for somebody to drag a select-all. `StudioContext::isSelected` is a
+linear scan as well. Measure first: see what the entry above says about guessing.
