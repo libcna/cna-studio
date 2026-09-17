@@ -10,6 +10,8 @@
 
 #include "TestHarness.hpp"
 
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
@@ -723,4 +725,60 @@ CNA_STUDIO_TEST(FIsRefusedUntilSomethingIsSelected)
     context.select(id);
 
     CNA_STUDIO_EXPECT(shell.actions().isEnabled("studio.view.focusSelected"));
+}
+
+// ------------------------------------------------------------------------------------------------
+// Dropping an asset into the view (STUDIO-09008)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AnAssetDroppedIntoTheViewLandsWhereItWasLetGo)
+{
+    // At the pointer rather than at the origin. In a scene with anything in it the origin is under
+    // something else, and an editor that put every dropped thing there would make the gesture a
+    // step towards moving it rather than a way of placing it.
+    Fixture fixture;
+
+    const Uuid texture = Uuid::generate();
+    {
+        AssetRecord record;
+        record.id = texture;
+        record.sourcePath = "Assets/hero.png";
+        record.type = AssetType::Texture2D;
+        CNA_STUDIO_EXPECT(fixture.context.getAssets().add(std::move(record)));
+    }
+
+    fixture.settle();
+
+    StudioFrame::StudioDragPayload payload;
+    payload.type = std::string{kStudioAssetDragType};
+    payload.value = texture.toString();
+    payload.label = "hero.png";
+
+    // A point well away from the view's centre, so "landed where it was let go" is distinguishable
+    // from "landed at the origin".
+    const float x = kWidth * 0.25f;
+    const float y = kHeight * 0.75f;
+
+    UiInputState down = at(x, y);
+    down.setMouseDown(UiMouseButton::Left, true);
+    fixture.run(down);
+    CNA_STUDIO_EXPECT(fixture.frame.beginDrag(fixture.frame.ids().make("source"), payload));
+
+    fixture.run(down);
+    fixture.run(at(x, y));
+
+    CNA_STUDIO_EXPECT(fixture.last.assetDropped.isValid());
+    CNA_STUDIO_EXPECT_EQ(fixture.last.assetDropped.toString(), texture.toString());
+
+    // The world point under the pointer, which is what the camera says and not what the test
+    // recomputes a second way.
+    const StudioVector2 expected =
+        fixture.camera.screenToWorld(StudioVector2{x - fixture.body.left(),
+                                                   y - fixture.body.top()});
+    CNA_STUDIO_EXPECT_EQ(fixture.last.assetDropPosition.x, expected.x);
+    CNA_STUDIO_EXPECT_EQ(fixture.last.assetDropPosition.y, expected.y);
+
+    // Reported rather than acted on: the viewport does not know what an asset becomes, and nothing
+    // reached the scene from here.
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), std::size_t{0});
 }

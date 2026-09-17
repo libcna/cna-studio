@@ -67,6 +67,18 @@ namespace CNA::Studio
         bool reparented = false;
 
         /**
+         * @brief An asset was dropped on a row, and is to be put in the scene. Input pass only.
+         *
+         * `plan.md` STUDIO-09008. Reported rather than acted on here, because what an asset
+         * *becomes* is one decision shared with the viewport (`Scene/AssetDrop.hpp`) and the panel
+         * that owns the tree is not where a shared decision belongs.
+         */
+        Uuid assetDropped;
+
+        /** @brief The row it was dropped on, which becomes the new entity's parent. */
+        Uuid assetDropParent;
+
+        /**
          * @brief Whether a drop was refused because it would have made a cycle. Input pass only.
          *
          * Reported rather than swallowed, and reported *separately* from a reparent that happened:

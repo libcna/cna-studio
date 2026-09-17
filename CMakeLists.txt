@@ -139,6 +139,7 @@ add_library(cna-studio-scene STATIC
     src/scene/SpriteAnimation.cpp
     src/scene/SceneCommands.cpp
     src/scene/BuiltinComponents.cpp
+    src/scene/AssetDrop.cpp
     src/scene/SceneTransform.cpp
     src/scene/StudioCamera2D.cpp
     src/scene/StudioCamera3D.cpp

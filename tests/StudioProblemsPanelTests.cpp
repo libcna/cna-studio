@@ -294,7 +294,11 @@ CNA_STUDIO_TEST(DroppingAnAssetOnABrokenRowAsksToRelinkItRatherThanClearIt)
     // The row declares itself a target for assets, which is what the Content Browser drags.
     const std::vector<StudioTreeRow> rows = fixture.rows();
     const StudioTreeRow& row = rows[static_cast<std::size_t>(fixture.rowIndex(assetRow))];
-    CNA_STUDIO_EXPECT_EQ(row.dropType, std::string{kStudioAssetDragType});
+    CNA_STUDIO_EXPECT_EQ(row.dropTypes.size(), std::size_t{1});
+    if (!row.dropTypes.empty())
+    {
+        CNA_STUDIO_EXPECT_EQ(row.dropTypes.front(), std::string{kStudioAssetDragType});
+    }
 
     // Driven through the frame's own drag, because "does a drop reach the panel" is the thing
     // under test rather than "does the Content Browser start a drag", which has its own case.

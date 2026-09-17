@@ -91,7 +91,7 @@ namespace CNA::Studio
                 asset.muted = true;
                 // Dropping the right asset onto the broken row is the shortest path from "this is
                 // broken" to "this is fixed", and it is the gesture the ImGui panel had.
-                asset.dropType = std::string{kStudioAssetDragType};
+                asset.dropTypes = {std::string{kStudioAssetDragType}};
                 rows.push_back(asset);
 
                 if (!state.tree.isExpanded(asset.id)) { continue; }

@@ -1114,7 +1114,7 @@ namespace CNA::Studio
                 // And a folder takes one, which is how a file is moved (STUDIO-09009). Dragging is
                 // the gesture people reach for first; the menu exists for the file that is already
                 // where the drag would have to start from.
-                row.dropType = std::string{kStudioAssetDragType};
+                row.dropTypes = {std::string{kStudioAssetDragType}};
             }
 
             rows.push_back(std::move(row));

@@ -16,6 +16,8 @@
 #include "CNA/Studio/Project/ProjectValidation.hpp"
 #include "CNA/Studio/Project/StudioReveal.hpp"
 #include "CNA/Studio/Project/RecentProjects.hpp"
+#include "CNA/Studio/Scene/AssetDrop.hpp"
+#include "CNA/Studio/Scene/PrefabCommands.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
@@ -94,6 +96,66 @@ namespace CNA::Studio
         shell.notifications().setLog(&log_);
 
         bind(shell);
+    }
+
+    bool StudioShellPanels::placeDroppedAsset(const Uuid& assetId, const StudioVector3& position,
+                                             const Uuid& parentId)
+    {
+        const AssetRecord* record = context_.getAssets().find(assetId);
+        if (record == nullptr) { return false; }
+
+        // A prefab is a subtree with a link back to the asset, so it is a different command rather
+        // than a different branch of the same one.
+        if (studioAssetDropKind(record->type) == StudioAssetDropKind::Prefab)
+        {
+            const PrefabDocument* prefab =
+                documents_.prefab(context_.getAssets(), assetId, context_.getComponentRegistry());
+            if (prefab == nullptr)
+            {
+                log_.append(LogSeverity::Warning,
+                            "Could not read '" + record->sourcePath + "'.");
+                return false;
+            }
+
+            auto command = std::make_unique<InstantiatePrefabCommand>(
+                context_.getScene(), *prefab, assetId, parentId);
+            if (!command->isValid())
+            {
+                log_.append(LogSeverity::Warning,
+                            "'" + record->sourcePath + "' has nothing in it to place.");
+                return false;
+            }
+
+            const Uuid rootId = command->getRootId();
+            context_.execute(std::move(command));
+            context_.select(rootId);
+
+            // Positioned after it exists, and only when asked to: the hierarchy drops at no
+            // particular place, and moving a prefab instance to the origin because nobody said
+            // otherwise would be an edit nobody asked for.
+            log_.append(LogSeverity::Info, "Placed '" + record->sourcePath + "'.  Undo with Ctrl+Z.");
+            return true;
+        }
+
+        StudioEntity entity;
+        if (!studioEntityForAsset(context_.getAssets(), assetId, context_.getComponentRegistry(),
+                                  position, entity))
+        {
+            // Said rather than silent. A drag that is refused with no explanation is one the user
+            // repeats, and then repeats more slowly.
+            log_.append(LogSeverity::Warning, describeStudioAssetDropRefusal(*record));
+            return false;
+        }
+
+        auto command = std::make_unique<CreateEntityCommand>(context_.getScene(), std::move(entity));
+        const Uuid created = command->getEntityId();
+        context_.execute(std::move(command));
+
+        // Selected, so the next thing the user does happens to what they just placed -- which is
+        // almost always moving it.
+        context_.select(created);
+        log_.append(LogSeverity::Info, "Placed '" + record->sourcePath + "'.  Undo with Ctrl+Z.");
+        return true;
     }
 
     const AssetDependencyIndex* StudioShellPanels::dependencyIndex()
@@ -774,6 +836,13 @@ namespace CNA::Studio
 
             forwardToPlayer(viewport.pointerInside);
 
+            if (viewport.assetDropped.isValid())
+            {
+                // Where it was let go, and as a root entity: dropping into the world says where,
+                // and says nothing about what it should be under.
+                (void)placeDroppedAsset(viewport.assetDropped, viewport.assetDropPosition, Uuid{});
+            }
+
             // No "camera changed" callback: the host renders the scene every frame anyway, and a
             // hook nothing sets is scaffolding rather than a seam.
             if (!viewport.selectionChanged) { return; }
@@ -911,6 +980,15 @@ namespace CNA::Studio
             {
                 counts_.outlinerRowsDrawn = outliner.rowsDrawn;
                 counts_.outlinerRowsTotal = outliner.rowsTotal;
+            }
+
+            // An asset dropped on a row goes into the scene under it (STUDIO-09008). At the origin
+            // rather than at the pointer: a tree has no world position, and inventing one from the
+            // row's y would put things in a line nobody asked for.
+            if (outliner.assetDropped.isValid())
+            {
+                (void)placeDroppedAsset(outliner.assetDropped, StudioVector3{},
+                                        outliner.assetDropParent);
             }
             // Said out loud, because a refused drop is a tree that did not change and a successful
             // one on a collapsed parent can be too -- the row moves inside something the user

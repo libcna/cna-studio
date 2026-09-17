@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
@@ -751,6 +753,32 @@ namespace CNA::Studio
 
         result.pointerInside = surface.hovered;
         result.pointerWorld = camera.screenToWorld(pointer);
+
+        // Dropping an asset into the view puts one in the scene where it landed (STUDIO-09008).
+        // Described in both passes, because the draw pass needs the same answer to draw the
+        // highlight that the input pass used to decide it.
+        {
+            const StudioFrame::StudioDropResult drop = frame.acceptDrop(
+                frame.ids().make("viewport.drop"), bounds, std::string{kStudioAssetDragType});
+
+            if (drop.hovered && frame.isDrawPass())
+            {
+                // The whole view, because the whole view is the target: an outline round the edge
+                // is what says "let go here" without implying a particular spot is special.
+                frame.drawList().strokeRect(bounds, frame.theme().color(StudioColorRole::Accent),
+                                            static_cast<float>(frame.theme().metric(StudioMetric::FocusRingWidth)));
+            }
+            if (drop.dropped)
+            {
+                result.assetDropped = Uuid::parse(drop.value);
+
+                // Where the pointer is, in world units, so the thing appears where it was let go
+                // rather than at the origin -- which in a scene with anything in it is under
+                // something else.
+                const StudioVector2 world = camera.screenToWorld(pointer);
+                result.assetDropPosition = StudioVector3{world.x, world.y, 0.0f};
+            }
+        }
 
         if (!frame.isInputPass()) { return result; }
 

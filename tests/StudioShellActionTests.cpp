@@ -14,6 +14,8 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+#include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -363,4 +365,91 @@ CNA_STUDIO_TEST(DeleteAndDuplicateActOnTheSelectedAssetWhenThatIsWhatIsSelected)
     CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.duplicate"));
 
     std::filesystem::remove_all(directory, code);
+}
+
+/**
+ * @brief The whole of STUDIO-09008 end to end: a dropped asset becomes an entity, undoably.
+ *
+ * Through `StudioShellPanels`, because that is where the decision lives — the viewport and the
+ * hierarchy both report a drop and one place turns it into a command, so a `.gltf` is a
+ * `ModelRenderer` wherever it lands.
+ */
+CNA_STUDIO_TEST(APlacedAssetBecomesAnEntityThatUsesItAndUndoesInOneStep)
+{
+    Fixture fixture;
+    registerBuiltinComponents(fixture.context.getComponentRegistry());
+
+    StudioLog log;
+    StudioShellPanels panels{*fixture.shell, fixture.context, log};
+
+    const Uuid model = Uuid::generate();
+    {
+        AssetRecord record;
+        record.id = model;
+        record.sourcePath = "Assets/Models/crate.gltf";
+        record.type = AssetType::Model;
+        CNA_STUDIO_EXPECT(fixture.context.getAssets().add(std::move(record)));
+    }
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+    const std::size_t entitiesBefore = fixture.context.getScene().getEntityCount();
+
+    CNA_STUDIO_EXPECT(panels.placeDroppedAsset(model, StudioVector3{7.0f, 8.0f, 9.0f}, Uuid{}));
+
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getScene().getEntityCount(), entitiesBefore + 1);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before + 1);
+
+    // Selected, so the next thing the user does happens to what they just placed -- which is
+    // almost always moving it.
+    const Uuid placed = fixture.context.getPrimarySelection();
+    CNA_STUDIO_EXPECT(placed.isValid());
+
+    const StudioEntity* entity = fixture.context.getScene().findEntity(placed);
+    CNA_STUDIO_EXPECT(entity != nullptr);
+    if (entity != nullptr)
+    {
+        CNA_STUDIO_EXPECT_EQ(entity->getName(), std::string{"crate"});
+
+        const StudioComponent* renderer =
+            entity->findComponent(BuiltinComponentIds::kModelRenderer);
+        CNA_STUDIO_EXPECT(renderer != nullptr);
+        if (renderer != nullptr)
+        {
+            CNA_STUDIO_EXPECT_EQ(
+                renderer->getProperty("model").get<PropertyValue::AssetReference>().id.toString(),
+                model.toString());
+        }
+
+        const StudioComponent* transform =
+            entity->findComponent(BuiltinComponentIds::kTransform);
+        CNA_STUDIO_EXPECT(transform != nullptr);
+        if (transform != nullptr)
+        {
+            CNA_STUDIO_EXPECT_EQ(transform->getProperty("position").get<StudioVector3>().x, 7.0f);
+        }
+    }
+
+    // One entry for the whole placement.
+    CNA_STUDIO_EXPECT(fixture.context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getScene().getEntityCount(), entitiesBefore);
+
+    // An asset with no place in a scene is refused rather than producing an empty entity.
+    const Uuid effect = Uuid::generate();
+    {
+        AssetRecord record;
+        record.id = effect;
+        record.sourcePath = "Assets/blur.fx";
+        record.type = AssetType::Effect;
+        CNA_STUDIO_EXPECT(fixture.context.getAssets().add(std::move(record)));
+    }
+    CNA_STUDIO_EXPECT(!panels.placeDroppedAsset(effect, StudioVector3{}, Uuid{}));
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getScene().getEntityCount(), entitiesBefore);
+
+    // And it said why, rather than being a gesture that did nothing.
+    bool explained = false;
+    for (const StudioLogEntry& entry : log.entries())
+    {
+        if (entry.message.find("Effect") != std::string::npos) { explained = true; }
+    }
+    CNA_STUDIO_EXPECT(explained);
 }

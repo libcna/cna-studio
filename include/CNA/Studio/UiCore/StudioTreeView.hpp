@@ -125,8 +125,17 @@ namespace CNA::Studio
         /** @brief What a drag of this row carries. Defaults to @ref id when empty. */
         std::string dragValue;
 
-        /** @brief Payload type this row accepts a drop of. Empty means it accepts none. */
-        std::string dropType;
+        /**
+         * @brief Payload types this row accepts a drop of. Empty accepts none.
+         *
+         * A *list*, because a row can mean more than one thing to a drag: an outliner row takes an
+         * entity (to reparent it) and an asset (to put one in the scene under it), and a tree that
+         * allowed one type per row would make the second of those a different widget.
+         *
+         * Offered in order and the first match wins, so a row that accepted two types a payload
+         * could satisfy has a defined answer rather than whichever the loop reached.
+         */
+        std::vector<std::string> dropTypes;
 
         /**
          * @brief A toggle at the right-hand end of the row, or `None` for no toggle.
@@ -271,6 +280,9 @@ namespace CNA::Studio
 
         /** @brief What was dropped, on the frame it was. */
         std::string droppedValue;
+
+        /** @brief Which of the row's accepted types the drop carried. */
+        std::string droppedType;
 
         /** @brief Index of the row a drag started from, on the frame it started. Input pass only. */
         std::optional<std::size_t> dragStarted;

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 10 of 17 complete `███████░░░░░`
+**Progress:** 11 of 17 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -17,7 +17,7 @@
 | `STUDIO-09005` | Search across name, type and path | ✅ | `STUDIO-09001` |
 | `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
 | `STUDIO-09007` | Favourites and recent assets | ⬜ | `STUDIO-09001` |
-| `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ⬜ | `STUDIO-03023` |
+| `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ✅ | `STUDIO-03023` |
 | `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ✅ | `STUDIO-09001` |
 | `STUDIO-09010` | Reimport, preserving Studio-side import settings | ✅ | `STUDIO-10001` |
 | `STUDIO-09011` | Reveal in the system file manager | ✅ | `STUDIO-09001` |
@@ -171,6 +171,53 @@ and the case that caught it asserts the actual sequence rather than "it is sorte
 
 **Narrowed and empty are different messages.** "This folder is empty" while a filter is on sends
 somebody looking in the wrong place; "Nothing matches" names a control they can turn off.
+
+### `STUDIO-09008` — Drag and drop into the viewport, Inspector and hierarchy
+
+**One of the three already worked.** The Inspector has accepted an asset dropped onto a reference
+field since `STUDIO-07018` — dropping the texture onto the slot that wants it, which is the gesture
+a picker is the fallback for. The viewport and the hierarchy had no drop target at all.
+
+**What an asset becomes is one decision, in one place.** `Scene/AssetDrop.hpp`: a texture is a
+`SpriteRenderer`, a model a `ModelRenderer`, a sound or a song an `AudioSource`. Two call sites each
+with their own `switch` would be two answers that drift, and the drift shows up as "it works if I
+drop it on the tree".
+
+**A prefab is not one of those.** Dropping it instantiates a whole subtree and records the link back
+to the asset — `InstantiatePrefabCommand`, a different command — so `studioAssetDropKind` names the
+three cases rather than one of them returning half of another.
+
+**A refusal names the kind.** "That cannot be dropped here" is a sentence people read twice and
+learn nothing from; the kind is what tells them whether they grabbed the wrong file. A scene gets
+the one refusal that is a *different action* rather than a missing one, so it points at the action:
+"A scene is opened rather than placed in another scene."
+
+**Dropped where it was let go.** In a scene with anything in it, the origin is under something else,
+so an editor that put every dropped thing there would make the gesture a step towards moving it
+rather than a way of placing it. A drop on a tree row has no world position and honestly says so by
+using the origin — inventing one from the row's y would put things in a line nobody asked for.
+
+**A transform first, and always**, with the component's declared defaults applied before the
+reference is set. A dropped asset behaves like one added through the inspector rather than like an
+entity carrying one property and no others.
+
+**The tree's `dropType` became `dropTypes`.** An outliner row means "reparent" to an entity and "put
+one of these in the scene" to an asset, and a widget that allowed one type per row would make the
+second of those a different widget. Told apart by the payload's *type*, reported as `droppedType`,
+rather than by guessing from the value — two UUIDs look identical.
+
+**Panels report, the binder acts** — the division every other outcome here follows. It is also what
+makes the whole gesture testable: the viewport test asserts where the drop landed without anything
+being created, and the end-to-end test asks `placeDroppedAsset` directly without a pointer.
+
+**Verification.** `tests/StudioOutlinerPanelTests.cpp`: the three kinds each becoming the right
+component with its defaults and a transform, named after the file without its extension; the
+refusals, including the scene's different wording; and — through a real shell frame — an asset drop
+on a row being reported without reparenting anything or touching the undo stack.
+`tests/StudioViewportPanelTests.cpp` drops into the view and asserts the world position is the one
+the camera gives for the pointer. `tests/StudioShellActionTests.cpp` runs the whole thing through
+`StudioShellPanels`: an entity that references the model, positioned where it was dropped, selected,
+one undo entry, and a refusal that says why.
 
 ### `STUDIO-09009` — Rename, move, duplicate and delete, all undoable
 

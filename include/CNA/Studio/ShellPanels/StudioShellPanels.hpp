@@ -273,6 +273,27 @@ namespace CNA::Studio
         [[nodiscard]] const StudioShellPanelCounts& counts() const { return counts_; }
 
         /**
+         * @brief Puts an asset into the scene as the entity that uses it (`plan.md` STUDIO-09008).
+         *
+         * One place, shared by the viewport and the hierarchy, because a `.gltf` must become a
+         * `ModelRenderer` wherever it lands — two call sites each with their own decision are two
+         * answers that drift, and the drift shows up as "it works if I drop it on the tree".
+         *
+         * Public because it is a real operation rather than a detail of one panel: a host with its
+         * own way of offering an asset, and a test that wants the whole gesture without a pointer,
+         * both ask for the same thing.
+         *
+         * @param assetId What was dropped.
+         * @param position Where to put it, in world units. The origin when the caller has no place
+         *        in mind, which is what a drop on a tree row has.
+         * @param parentId What to attach it under, or nil for a root entity.
+         * @return Whether anything was created. A refusal is reported through the Output Log,
+         *         because a gesture that did nothing and said nothing is one people repeat.
+         */
+        bool placeDroppedAsset(const Uuid& assetId, const StudioVector3& position,
+                               const Uuid& parentId);
+
+        /**
          * @brief The background job system (`plan.md` STUDIO-30001).
          *
          * Handed to whatever needs to do work off the frame, as a constructor argument rather than
@@ -616,6 +637,7 @@ namespace CNA::Studio
 
         /** @brief Polls the asset watcher, which also refreshes the presence cache. */
         void pollAssetChanges(double nowSeconds);
+
 
         void pollPlugins();
 

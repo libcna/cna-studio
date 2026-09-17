@@ -433,6 +433,18 @@ namespace CNA::Studio
          * is exactly what makes a 3D viewport feel like it is fighting the user.
          */
         bool clicked3D = false;
+
+        /**
+         * @brief An asset was dropped into the view, and is to be put in the scene. Input pass only.
+         *
+         * `plan.md` STUDIO-09008. Reported rather than acted on here, because what an asset
+         * *becomes* is one decision shared with the hierarchy (`Scene/AssetDrop.hpp`), and because
+         * creating an entity is a command and this panel already reports every other one it wants.
+         */
+        Uuid assetDropped;
+
+        /** @brief Where in the world it was dropped, which is where the new entity goes. */
+        StudioVector3 assetDropPosition;
     };
 
     /**

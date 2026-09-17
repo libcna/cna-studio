@@ -14,6 +14,11 @@
 
 #include "TestHarness.hpp"
 
+#include <tuple>
+
+#include "CNA/Studio/Scene/AssetDrop.hpp"
+#include "CNA/Studio/Scene/BuiltinComponents.hpp"
+
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
@@ -338,13 +343,20 @@ CNA_STUDIO_TEST(EveryOutlinerRowIsBothADragSourceAndADropTarget)
     for (const StudioTreeRow& row : rows)
     {
         CNA_STUDIO_EXPECT_EQ(row.dragType, std::string{kStudioEntityDragType});
-        CNA_STUDIO_EXPECT_EQ(row.dropType, std::string{kStudioEntityDragType});
         CNA_STUDIO_EXPECT_EQ(row.dragValue, row.id);
         CNA_STUDIO_EXPECT(Uuid::parse(row.dragValue).isValid());
+
+        // Two accepted types, and the order matters: a row means "reparent" to an entity and
+        // "put one of these in the scene" to an asset (STUDIO-09008).
+        CNA_STUDIO_EXPECT_EQ(row.dropTypes.size(), std::size_t{2});
+        if (row.dropTypes.size() == 2)
+        {
+            CNA_STUDIO_EXPECT_EQ(row.dropTypes[0], std::string{kStudioEntityDragType});
+            CNA_STUDIO_EXPECT_EQ(row.dropTypes[1], std::string{kStudioAssetDragType});
+        }
     }
 
-    // And it is a *different* type from the one the Content Browser drags, so a texture dropped on
-    // a row does not read as a reparent.
+    // And they are *different* types, so a texture dropped on a row does not read as a reparent.
     CNA_STUDIO_EXPECT(kStudioEntityDragType != kStudioAssetDragType);
 }
 
@@ -492,5 +504,194 @@ CNA_STUDIO_TEST(ADropThatWouldMakeACycleIsRefusedWithoutAnUndoEntry)
 
     // Nothing moved and nothing was recorded.
     CNA_STUDIO_EXPECT(fixture.context.getScene().isAncestorOf(fixture.player, fixture.weapon));
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Dropping an asset into the scene (STUDIO-09008)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AnAssetBecomesTheEntityThatUsesIt)
+{
+    // One decision, shared by the viewport and the hierarchy: a `.gltf` is a ModelRenderer wherever
+    // it lands. Two call sites each with their own switch would be two answers that drift, and the
+    // drift shows up as "it works if I drop it on the tree".
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    AssetDatabase assets;
+
+    const auto track = [&assets](const std::string& path, AssetType type) {
+        AssetRecord record;
+        record.id = Uuid::generate();
+        record.sourcePath = path;
+        record.type = type;
+        const Uuid id = record.id;
+        CNA_STUDIO_EXPECT(assets.add(std::move(record)));
+        return id;
+    };
+
+    for (const auto& [path, type, component, property] :
+         {std::tuple{"Assets/hero.png", AssetType::Texture2D,
+                     BuiltinComponentIds::kSpriteRenderer, "texture"},
+          std::tuple{"Assets/crate.gltf", AssetType::Model,
+                     BuiltinComponentIds::kModelRenderer, "model"},
+          std::tuple{"Assets/jump.wav", AssetType::SoundEffect,
+                     BuiltinComponentIds::kAudioSource, "clip"}})
+    {
+        const Uuid id = track(path, type);
+        CNA_STUDIO_EXPECT(studioAssetDropKind(type) == StudioAssetDropKind::Entity);
+
+        StudioEntity entity;
+        const StudioVector3 where{3.0f, 4.0f, 5.0f};
+        CNA_STUDIO_EXPECT(studioEntityForAsset(assets, id, registry, where, entity));
+
+        // Named after the file, without its extension: an entity called "Entity" in a scene of
+        // forty is one nobody finds twice.
+        CNA_STUDIO_EXPECT(entity.getName().find('.') == std::string::npos);
+        CNA_STUDIO_EXPECT(!entity.getName().empty());
+
+        // A transform first and always, or every viewport operation would have to special-case it.
+        const StudioComponent* transform = entity.findComponent(BuiltinComponentIds::kTransform);
+        CNA_STUDIO_EXPECT(transform != nullptr);
+        if (transform != nullptr)
+        {
+            const StudioVector3 position = transform->getProperty("position").get<StudioVector3>();
+            CNA_STUDIO_EXPECT_EQ(position.x, 3.0f);
+            CNA_STUDIO_EXPECT_EQ(position.y, 4.0f);
+        }
+
+        const StudioComponent* renderer = entity.findComponent(component);
+        CNA_STUDIO_EXPECT(renderer != nullptr);
+        if (renderer == nullptr) { continue; }
+
+        const PropertyValue reference = renderer->getProperty(property);
+        CNA_STUDIO_EXPECT(reference.getType() == PropertyType::AssetReference);
+        CNA_STUDIO_EXPECT_EQ(reference.get<PropertyValue::AssetReference>().id.toString(),
+                             id.toString());
+
+        // Defaults applied, so a dropped asset behaves like one added through the inspector rather
+        // than like an entity carrying one property and no others.
+        CNA_STUDIO_EXPECT(renderer->getProperties().size() > 1);
+    }
+}
+
+CNA_STUDIO_TEST(AnAssetWithNoPlaceInASceneIsRefusedWithAReasonThatNamesIt)
+{
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    AssetDatabase assets;
+
+    AssetRecord scene;
+    scene.id = Uuid::generate();
+    scene.sourcePath = "Assets/Level.cnascene";
+    scene.type = AssetType::Scene;
+    const Uuid sceneId = scene.id;
+    CNA_STUDIO_EXPECT(assets.add(std::move(scene)));
+
+    CNA_STUDIO_EXPECT(studioAssetDropKind(AssetType::Scene) == StudioAssetDropKind::Unsupported);
+
+    StudioEntity entity;
+    CNA_STUDIO_EXPECT(
+        !studioEntityForAsset(assets, sceneId, registry, StudioVector3{}, entity));
+
+    // The one refusal that is a *different action* rather than a missing one, so it points at the
+    // action instead of apologising.
+    const std::string reason = describeStudioAssetDropRefusal(*assets.find(sceneId));
+    CNA_STUDIO_EXPECT(!reason.empty());
+    CNA_STUDIO_EXPECT(reason.find("opened") != std::string::npos);
+
+    // A kind with no answer names the kind, because that is what tells a user whether they grabbed
+    // the wrong file.
+    AssetRecord effect;
+    effect.id = Uuid::generate();
+    effect.sourcePath = "Assets/blur.fx";
+    effect.type = AssetType::Effect;
+    const Uuid effectId = effect.id;
+    CNA_STUDIO_EXPECT(assets.add(std::move(effect)));
+
+    const std::string other = describeStudioAssetDropRefusal(*assets.find(effectId));
+    CNA_STUDIO_EXPECT(other.find(toString(AssetType::Effect)) != std::string::npos);
+
+    // And an asset that *can* be dropped is refused nothing.
+    AssetRecord texture;
+    texture.id = Uuid::generate();
+    texture.sourcePath = "Assets/hero.png";
+    texture.type = AssetType::Texture2D;
+    const Uuid textureId = texture.id;
+    CNA_STUDIO_EXPECT(assets.add(std::move(texture)));
+    CNA_STUDIO_EXPECT(describeStudioAssetDropRefusal(*assets.find(textureId)).empty());
+
+    // A prefab is neither: it is instantiated, which is a different command over a whole subtree.
+    CNA_STUDIO_EXPECT(studioAssetDropKind(AssetType::Prefab) == StudioAssetDropKind::Prefab);
+}
+
+CNA_STUDIO_TEST(DroppingAnAssetOnARowReportsItRatherThanReadingAsAReparent)
+{
+    // Told apart by the payload's *type* rather than by guessing from the id. A row means
+    // "reparent" to an entity and "put one of these in the scene" to an asset, and a tree that
+    // decided by looking at the value would do whichever the UUID happened to resolve to first.
+    Fixture fixture;
+
+    const Uuid texture = Uuid::generate();
+    {
+        AssetRecord record;
+        record.id = texture;
+        record.sourcePath = "Assets/hero.png";
+        record.type = AssetType::Texture2D;
+        CNA_STUDIO_EXPECT(fixture.context.getAssets().add(std::move(record)));
+    }
+
+    StudioTreeState state;
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("outliner"));
+
+    StudioOutlinerResult last;
+    UiRect panelBounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("outliner",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioOutlinerResult pass =
+                studioOutlinerPanel(frame, area, fixture.context, state);
+            if (frame.isInputPass() && pass.assetDropped.isValid()) { last = pass; }
+            if (frame.isDrawPass()) { panelBounds = area; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    const std::size_t before = fixture.context.getHistory().getCount();
+
+    StudioFrame::StudioDragPayload payload;
+    payload.type = std::string{kStudioAssetDragType};
+    payload.value = texture.toString();
+    payload.label = "hero.png";
+
+    // Swept down the rows, because which row is at which pixel is a metric's business.
+    bool dropped = false;
+    for (float y = panelBounds.top() + 4.0f;
+         y < panelBounds.bottom() - 4.0f && !dropped; y += 6.0f)
+    {
+        shell->renderFrame(at(panelBounds.centerX(), y, /*leftDown=*/true));
+        if (!shell->frame().beginDrag(shell->frame().ids().make("source"), payload)) { continue; }
+
+        shell->renderFrame(at(panelBounds.centerX(), y, /*leftDown=*/true));
+        shell->renderFrame(at(panelBounds.centerX(), y));
+        dropped = last.assetDropped.isValid();
+    }
+
+    if (!dropped)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "an asset dropped on an outliner row was not reported.");
+        return;
+    }
+
+    CNA_STUDIO_EXPECT_EQ(last.assetDropped.toString(), texture.toString());
+    CNA_STUDIO_EXPECT(last.assetDropParent.isValid());
+
+    // Reported rather than acted on: nothing was reparented and nothing reached the undo stack,
+    // because what an asset *becomes* is a decision the binder makes with the viewport.
+    CNA_STUDIO_EXPECT(!last.reparented);
     CNA_STUDIO_EXPECT_EQ(fixture.context.getHistory().getCount(), before);
 }

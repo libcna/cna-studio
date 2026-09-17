@@ -171,15 +171,23 @@ namespace CNA::Studio
             // And a row that says what it accepts is a target. Its own id, because a row is
             // already a control and two interactions sharing one id would be one entry.
             bool dropHovered = false;
-            if (!row.dropType.empty() && !renaming)
+            if (!renaming)
             {
-                const StudioFrame::StudioDropResult drop =
-                    frame.acceptDrop(frame.ids().make("drop"), rowBounds, row.dropType);
-                dropHovered = drop.hovered;
-                if (drop.dropped)
+                // One target id per accepted type, because two `acceptDrop` calls sharing an id
+                // would be one target that answers about whichever type asked last.
+                for (std::size_t type = 0; type < row.dropTypes.size(); ++type)
                 {
-                    result.dropped = index;
-                    result.droppedValue = drop.value;
+                    const StudioFrame::StudioDropResult drop = frame.acceptDrop(
+                        frame.ids().makeIndex(static_cast<std::int64_t>(type)), rowBounds,
+                        row.dropTypes[type]);
+
+                    dropHovered = dropHovered || drop.hovered;
+                    if (drop.dropped && !result.dropped.has_value())
+                    {
+                        result.dropped = index;
+                        result.droppedValue = drop.value;
+                        result.droppedType = row.dropTypes[type];
+                    }
                 }
             }
 

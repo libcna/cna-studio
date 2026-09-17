@@ -6,6 +6,8 @@
 
 #include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
 
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
@@ -124,7 +126,8 @@ namespace CNA::Studio
             // the user did not ask for and cannot undo into the one they wanted.
             row.dragType = std::string{kStudioEntityDragType};
             row.dragValue = id.toString();
-            row.dropType = std::string{kStudioEntityDragType};
+            row.dropTypes = {std::string{kStudioEntityDragType},
+                             std::string{kStudioAssetDragType}};
 
             // The component list is what tells a camera from a sprite at a glance, and it is the
             // first thing anybody looks for in an outliner. One name reads; five is a wall.
@@ -231,6 +234,17 @@ namespace CNA::Studio
         if (tree.dropped.has_value() && *tree.dropped < rows.size())
         {
             const Uuid parent = Uuid::parse(rows[*tree.dropped].id);
+
+            // An asset dropped on a row means "put one of these in the scene, under that"
+            // (STUDIO-09008) -- a different operation from the reparent an entity drop means, and
+            // told apart by the payload's type rather than by guessing from the id.
+            if (tree.droppedType == kStudioAssetDragType)
+            {
+                result.assetDropped = Uuid::parse(tree.droppedValue);
+                result.assetDropParent = parent;
+                return result;
+            }
+
             const Uuid child = Uuid::parse(tree.droppedValue);
 
             if (child.isValid() && parent.isValid() && child != parent)
