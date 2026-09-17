@@ -13,6 +13,7 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/AssetDependencies.hpp"
+#include "CNA/Studio/Assets/AssetDocumentCache.hpp"
 #include "CNA/Studio/Assets/AssetRelink.hpp"
 #include "CNA/Studio/Core/StudioCommand.hpp"
 #include "CNA/Studio/Assets/MaterialDocument.hpp"
@@ -574,4 +575,116 @@ CNA_STUDIO_TEST(ADifferentExtensionIsOfferedButNeverAboveAnExactName)
     CNA_STUDIO_EXPECT_EQ(candidates[0].path, std::string{"Assets/Backup/player.png"});
     CNA_STUDIO_EXPECT_EQ(candidates[1].path, std::string{"Assets/Art/player.jpg"});
     CNA_STUDIO_EXPECT_EQ(candidates[1].reason, std::string{"same name, different extension"});
+}
+
+// ------------------------------------------------------------------------------------------------
+// Documents read when they change rather than when they are drawn (STUDIO-30016)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheDocumentCacheOpensAFileOnceAndThenNotAgain)
+{
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    const ScopedProject project{"doccache"};
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+
+    MaterialDocument material;
+    material.roughness = 0.25f;
+    project.write("Assets/Stone.cnamaterial", Json::write(material.toJson(), true));
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Stone.cnamaterial")->id;
+
+    StudioAssetDocumentCache cache;
+    const MaterialDocument* first = cache.material(assets, id);
+    CNA_STUDIO_EXPECT(first != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getFileReadCount(), std::uint64_t{1});
+
+    // Ten more asks, no more reads. That is the whole task: this was one file open per frame for
+    // as long as the material was selected.
+    for (int i = 0; i < 10; ++i) { (void)cache.material(assets, id); }
+    CNA_STUDIO_EXPECT_EQ(cache.getFileReadCount(), std::uint64_t{1});
+
+    // An explicit invalidation is what Studio's own writes use, because a write changes the file
+    // without changing the record.
+    cache.invalidate(id);
+    CNA_STUDIO_EXPECT(cache.material(assets, id) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getFileReadCount(), std::uint64_t{2});
+}
+
+CNA_STUDIO_TEST(ADocumentIsRereadWhenTheRecordsStampMoves)
+{
+    // Which is what the watcher updates, so an edit made outside Studio reaches the panel the same
+    // way a deleted file reaches the browser -- within the watcher's interval, and with no syscall
+    // on the frames in between.
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    const ScopedProject project{"doccachestamp"};
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+
+    MaterialDocument material;
+    material.roughness = 0.25f;
+    project.write("Assets/Stone.cnamaterial", Json::write(material.toJson(), true));
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Stone.cnamaterial")->id;
+
+    StudioAssetDocumentCache cache;
+    const MaterialDocument* first = cache.material(assets, id);
+    CNA_STUDIO_EXPECT(first != nullptr);
+    if (first != nullptr) { CNA_STUDIO_EXPECT_EQ(first->roughness, 0.25f); }
+
+    // Rewritten outside the editor, and the record's stamp moved with it -- which is what an
+    // `AssetWatcher` poll does, spelled here without waiting half a second for one.
+    material.roughness = 0.75f;
+    project.write("Assets/Stone.cnamaterial", Json::write(material.toJson(), true));
+    assets.findMutable(id)->sourceModifiedTime += 1;
+
+    const MaterialDocument* second = cache.material(assets, id);
+    CNA_STUDIO_EXPECT(second != nullptr);
+    if (second != nullptr) { CNA_STUDIO_EXPECT_EQ(second->roughness, 0.75f); }
+    CNA_STUDIO_EXPECT_EQ(cache.getFileReadCount(), std::uint64_t{2});
+}
+
+CNA_STUDIO_TEST(ABrokenDocumentIsCachedAsBrokenRatherThanReopenedEveryFrame)
+{
+    // The case most likely to be sitting on somebody's screen: a file that will not parse is a file
+    // they are looking at *because* it will not parse.
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    const ScopedProject project{"doccachebroken"};
+    project.write("Assets/Broken.cnamaterial", "{ not json");
+    project.write("Assets/Broken.cnaprefab", "{ not json either");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid materialId = assets.findByPath("Assets/Broken.cnamaterial")->id;
+    const Uuid prefabId = assets.findByPath("Assets/Broken.cnaprefab")->id;
+
+    StudioAssetDocumentCache cache;
+    for (int i = 0; i < 5; ++i)
+    {
+        CNA_STUDIO_EXPECT(cache.material(assets, materialId) == nullptr);
+        CNA_STUDIO_EXPECT(cache.prefab(assets, prefabId, registry) == nullptr);
+    }
+    CNA_STUDIO_EXPECT_EQ(cache.getFileReadCount(), std::uint64_t{2});
+
+    // An id that is not a document of that kind is not a read at all, and not an entry either: a
+    // texture asked for as a material must not cost an open.
+    const Uuid texture = track(assets, "Assets/player.png", AssetType::Texture2D);
+    CNA_STUDIO_EXPECT(cache.material(assets, texture) == nullptr);
+    CNA_STUDIO_EXPECT(cache.prefab(assets, texture, registry) == nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getFileReadCount(), std::uint64_t{2});
+
+    cache.invalidate();
+    CNA_STUDIO_EXPECT_EQ(cache.getEntryCount(), std::size_t{0});
 }

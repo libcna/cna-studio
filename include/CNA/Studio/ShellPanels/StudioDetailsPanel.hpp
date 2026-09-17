@@ -37,6 +37,7 @@
 #pragma once
 
 #include "CNA/Studio/Assets/AssetDependencies.hpp"
+#include "CNA/Studio/Assets/AssetDocumentCache.hpp"
 #include "CNA/Studio/Core/PropertyValue.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Scene/SpriteAnimation.hpp"
@@ -138,6 +139,19 @@ namespace CNA::Studio
          * references, and those are opposite answers to the question they asked.
          */
         const AssetDependencyIndex* dependencies = nullptr;
+
+        /**
+         * @brief Materials and prefabs, read when they change rather than when they are drawn.
+         *
+         * `plan.md` STUDIO-30016. A seam rather than something the panel owns, for the reason the
+         * dependency index is: deciding *when* a file is re-read is a policy, and the function that
+         * draws a section is the wrong place for one.
+         *
+         * Unset reads the file on every frame, which is what this panel did before and is still
+         * correct — a test that constructs the panel with no services gets the same picture, more
+         * slowly.
+         */
+        StudioAssetDocumentCache* documents = nullptr;
     };
 
     /**

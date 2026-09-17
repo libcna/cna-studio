@@ -77,6 +77,11 @@ namespace CNA::Studio
             // when an asset is inspected, and rebuilding on every gizmo drag would read every
             // scene in the project sixty times a second.
             dependenciesStale_ = true;
+
+            // And any command may have written an asset *file*: a material edit, a prefab Apply.
+            // Dropping the whole cache is coarse and correct; keeping a document Studio has just
+            // overwritten would show the user the version before their own edit.
+            documents_.invalidate();
         });
 
         buildPanel_ = std::make_unique<StudioBuildPanel>(context_, build_.process());
@@ -961,6 +966,7 @@ namespace CNA::Studio
             // describes exactly the graph the input pass routed against.
             details_services.dependencies =
                 frame.isInputPass() ? dependencyIndex() : &dependencies_;
+            details_services.documents = &documents_;
 
             const StudioDetailsResult details =
                 studioDetailsPanel(frame, bounds, context_, details_services);
@@ -1025,6 +1031,7 @@ namespace CNA::Studio
             details_services.audio = services_.audio;
             details_services.thumbnail = services_.assetThumbnail;
             details_services.modelEffectName = services_.modelEffectName;
+            details_services.documents = &documents_;
 
             const StudioDetailsResult material =
                 studioMaterialPanel(frame, bounds, context_, details_services);

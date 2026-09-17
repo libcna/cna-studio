@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 5 of 16 complete `███░░░░░░░░░`
+**Progress:** 6 of 16 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -18,7 +18,7 @@
 | `STUDIO-30013` | `SceneDocument` child lookup is an index, not a scan of every entity | ✅ | — |
 | `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ✅ | `STUDIO-04028` |
 | `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ✅ | `STUDIO-30012`, `STUDIO-30014` |
-| `STUDIO-30016` | The Details panel stops opening files to draw itself | ⬜ | `STUDIO-30012` |
+| `STUDIO-30016` | The Details panel stops opening files to draw itself | ✅ | `STUDIO-30012` |
 | `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ⬜ | `STUDIO-13011` |
 | `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
 | `STUDIO-30022` | Stress benchmark: 100,000 assets | ⬜ | `STUDIO-09016` |
@@ -310,6 +310,33 @@ per frame, and the prefab one also walks a subtree that could be hundreds of ent
 Smaller than `STUDIO-30015` by a lot: those are two files while one thing is selected, against three
 thousand `stat` calls per frame on every frame the Content Browser is visible. Filed so it is not
 forgotten rather than because it is urgent.
+
+**Done.** `StudioAssetDocumentCache` holds the material and the prefab, and the panel takes it as a
+seam.
+
+**Invalidated the same two ways the presence cache is**, which is the point of having a strategy
+rather than a cache each: the record's stamp moving (what a watcher poll updates, compared with no
+syscall), and an explicit drop after anything writes an asset file. The binder drops the whole cache
+on any command — coarse on purpose, because too much costs one reload of what is on screen and too
+little is an editor showing a file it has already overwritten.
+
+**A failure is cached as a failure.** A material that will not parse is one somebody is looking at
+*because* it will not parse, and reopening it every frame is exactly the case this exists to stop.
+
+**A copy comes out, not a pointer.** The prefab section keeps its document across both passes, and
+the cache may reload underneath it on the frame a command invalidates — a section holding a pointer
+into it would be a crash on the frame somebody presses Apply.
+
+**The seam may be unset**, and then the panel reads the file as it did before. A test that builds
+the panel with no services gets the same picture, more slowly — which is what keeps every existing
+test honest rather than needing the cache to pass.
+
+**Verification.** `tests/AssetDependencyTests.cpp`: one open then ten asks with no further opens,
+an explicit invalidation costing exactly one more, a stamp moving causing a re-read that returns the
+*new* contents, a broken document opened once rather than five times, and a texture asked for as a
+material costing no open at all. `tests/StudioDetailsPanelTests.cpp` drives the real panel through a
+shell frame and asserts `getFileReadCount()` is unchanged across five frames while the material
+editor is showing its fields.
 
 ### `STUDIO-30015` — The Content Browser stops asking the filesystem about every asset every frame
 

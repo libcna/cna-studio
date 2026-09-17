@@ -587,9 +587,37 @@ namespace CNA::Studio
          * @param entityId The selected entity, anywhere inside the instance.
          * @return What it reported and did.
          */
+        /**
+         * @brief Loads @p record's prefab into @p out, through the cache when there is one.
+         *
+         * `plan.md` STUDIO-30016. A copy out of the cache rather than a pointer into it, because
+         * the section keeps the document across both passes and the cache may reload underneath it
+         * on the frame a command invalidates -- and a section holding a dangling pointer to a
+         * prefab is a crash on the frame somebody presses Apply.
+         *
+         * @return Whether a prefab came back.
+         */
+        bool loadPrefabForSection(StudioContext& context, const StudioDetailsServices& services,
+                                  const AssetRecord& record, PrefabDocument& out)
+        {
+            if (services.documents != nullptr)
+            {
+                const PrefabDocument* cached = services.documents->prefab(
+                    context.getAssets(), record.id, context.getComponentRegistry());
+                if (cached == nullptr) { return false; }
+                out = *cached;
+                return true;
+            }
+
+            return out.loadFromFile(context.getAssets().resolvePath(record.sourcePath),
+                                    context.getComponentRegistry())
+                .succeeded;
+        }
+
         StudioPrefabSectionResult studioPrefabSection(StudioFrame& frame, UiRect& area,
                                                       const StudioTheme& theme,
-                                                      StudioContext& context, const Uuid& entityId)
+                                                      StudioContext& context, const Uuid& entityId,
+                                                      const StudioDetailsServices& services)
         {
             StudioPrefabSectionResult result;
 
@@ -637,9 +665,7 @@ namespace CNA::Studio
                     summary.state = -2;
                     summary.name = assetId.toString();
                 }
-                else if (!prefab.loadFromFile(context.getAssets().resolvePath(record->sourcePath),
-                                              context.getComponentRegistry())
-                              .succeeded)
+                else if (!loadPrefabForSection(context, services, *record, prefab))
                 {
                     summary.state = -1;
                     summary.name = record->sourcePath;
@@ -2036,10 +2062,36 @@ namespace
             }
         };
 
+        // Through the cache when there is one (STUDIO-30016): this was a file open on every frame
+        // the material was selected. The seam being unset reads the file, which is what this did
+        // before and is still correct -- a panel built with no services draws the same picture.
         MaterialDocument material;
-        const MaterialLoadProblem problem =
-            loadMaterialDocument(context.getAssets(), record.id, material);
-        if (problem != MaterialLoadProblem::None)
+        bool readable = false;
+        MaterialLoadProblem problem = MaterialLoadProblem::None;
+
+        if (services.documents != nullptr)
+        {
+            if (const MaterialDocument* cached =
+                    services.documents->material(context.getAssets(), record.id))
+            {
+                material = *cached;
+                readable = true;
+            }
+            else
+            {
+                // The cache does not distinguish the two failures, and the difference matters to
+                // the user -- only one of them means "do not offer to overwrite it" -- so the
+                // reason is asked for once, on the path that is already not the fast one.
+                problem = loadMaterialDocument(context.getAssets(), record.id, material);
+            }
+        }
+        else
+        {
+            problem = loadMaterialDocument(context.getAssets(), record.id, material);
+            readable = problem == MaterialLoadProblem::None;
+        }
+
+        if (!readable)
         {
             say(nextRow(),
                 problem == MaterialLoadProblem::Unreadable
@@ -2929,7 +2981,8 @@ namespace
         {
             const std::size_t before = result.rowsDrawn;
             UiRect section = cursor;
-            result.prefab = studioPrefabSection(frame, section, theme, context, entityId);
+            result.prefab =
+                studioPrefabSection(frame, section, theme, context, entityId, services);
             if (result.prefab.present)
             {
                 const float consumed = section.y - cursor.y;

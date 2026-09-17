@@ -17,6 +17,8 @@
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/AssetDependencies.hpp"
+#include "CNA/Studio/Assets/AssetDocumentCache.hpp"
+#include "CNA/Studio/Assets/MaterialDocument.hpp"
 #include "CNA/Studio/Assets/AssetImporters.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
@@ -1580,5 +1582,78 @@ CNA_STUDIO_TEST(AnOverriddenImportSettingCanBeResetFromTheInspector)
     }
 
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+    std::filesystem::remove_all(directory, code);
+}
+
+// ------------------------------------------------------------------------------------------------
+// The Details panel stops opening files to draw itself (STUDIO-30016)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * @brief Drawing the material editor opens no file, and the test says so rather than implying it.
+ *
+ * It was one file open per frame for as long as the material was selected — already halved by
+ * working on the input pass and keeping the result for the draw pass, and still a read per frame.
+ */
+CNA_STUDIO_TEST(DrawingTheMaterialEditorOpensNoFile)
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-materialreads";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Assets", code);
+
+    MaterialDocument material;
+    material.roughness = 0.25f;
+    {
+        std::ofstream stream{directory / "Assets" / "Stone.cnamaterial", std::ios::binary};
+        stream << Json::write(material.toJson(), true);
+    }
+
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+    context.getAssets().setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid id = context.getAssets().findByPath("Assets/Stone.cnamaterial")->id;
+    context.selectAsset(id);
+
+    StudioAssetDocumentCache documents;
+    StudioDetailsServices services;
+    services.documents = &documents;
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context, services);
+            if (frame.isInputPass()) { last = pass; }
+        }));
+
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(last.materialFields > 0);
+
+    const std::uint64_t before = documents.getFileReadCount();
+    CNA_STUDIO_EXPECT(before > 0);
+
+    for (int frame = 0; frame < 5; ++frame) { shell->renderFrame(at(-1.0f, -1.0f)); }
+
+    const std::uint64_t after = documents.getFileReadCount();
+    if (after != before)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "drawing five frames of the material editor opened "
+                                         + std::to_string(after - before)
+                                         + " files; it must open none.");
+    }
+
+    // And it is still showing the material rather than passing because it drew nothing.
+    CNA_STUDIO_EXPECT(last.materialFields > 0);
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+
     std::filesystem::remove_all(directory, code);
 }

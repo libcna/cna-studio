@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "CNA/Studio/Assets/AssetDocumentCache.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Core/StudioJobs.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
@@ -661,6 +662,16 @@ namespace CNA::Studio
          */
         AssetDependencyIndex dependencies_;
         bool dependenciesStale_ = true;
+
+        /**
+         * @brief Materials and prefabs the Details panel shows (`plan.md` STUDIO-30016).
+         *
+         * Owned here rather than by the panel, because when a file is re-read is a policy and the
+         * function that draws a section is the wrong place for one. Dropped on any command, which
+         * is coarse on purpose: too much costs one reload of what is on screen, and too little is
+         * an editor showing a file it has already overwritten.
+         */
+        StudioAssetDocumentCache documents_;
 
         /** @brief Returns the index, rebuilding it first when something has changed. */
         [[nodiscard]] const AssetDependencyIndex* dependencyIndex();
