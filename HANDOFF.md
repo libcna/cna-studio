@@ -107,6 +107,17 @@ Read in this order to pick the work up:
 
 ## Verification commands
 
+**Last run, all five legs green:**
+
+| Leg | Result |
+|-----|--------|
+| Debug | 1 335 assertions, 61 CTest suites |
+| Release + `-Werror` | clean build, 61 CTest suites |
+| ASan + UBSan | 1 335 assertions, no sanitiser report |
+| CNA `SOFTWARE` | 67 CTest suites, the standalone export among them |
+| CNA `SOFTWARE`, template builds | 4 of 4: 327 s, 263 s, 244 s, 215 s |
+| CNA `OPENGL4` under Xvfb | 79 CTest suites, 16 of them windowed |
+
 The default build has no external dependencies — no CNA checkout, no GPU, no window:
 
 ```bash
@@ -1063,6 +1074,10 @@ Nothing is failing. What is **not** done, and should not be mistaken for done:
 - **Open Project has no file dialog.** It has the recent list and a path field, which is enough to
   open any project and is what a terminal user would type anyway. A real file dialog waits on a
   modal *window*, which Studio does not have (`STUDIO-03022` covers the layering, not the window).
+- **The CNA-backed suite is 67 CTest cases plus 4 slow template builds, and the `OPENGL4` leg is
+  79.** The template cases do not run on the `OPENGL4` leg's list above because that run excluded
+  them deliberately for time; CI runs everything on both legs, which is where the difference will
+  first be seen. Watch the first `OPENGL4` job that includes them.
 - **The recent-projects list is not shared with anything.** It is Studio's own file in the user's
   configuration directory, read on every frame the Hub is drawn. That is deliberate — availability
   is a fact about the filesystem, which changes while Studio is not running — and it means a
