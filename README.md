@@ -26,8 +26,8 @@ beside the two sprites.
 
 > **CNA Studio produces CNA games, not CNA Studio games.**
 
-A game authored in CNA Studio is an ordinary CNA C++ project. You can open it in CLion, configure
-it with its own `CMakeLists.txt`, build it with ordinary tools and ship it — with CNA Studio
+A game authored in CNA Studio is an ordinary CNA project. You can open it in CLion, configure it
+with its own `CMakeLists.txt`, build it with ordinary tools and ship it — with CNA Studio
 uninstalled. Studio is an authoring environment and a productivity multiplier; it is never a
 runtime dependency, never a mandatory build step, and never an opaque container the game lives
 inside.
@@ -43,7 +43,16 @@ platform + renderer + audio + input
 ```
 
 CNA must be able to survive without CNA Studio. A game must be able to survive without CNA Studio.
-Every architectural decision in this repository is tested against those two sentences.
+Every architectural decision in this repository is tested against those two sentences — and the
+second one is tested by *doing* it. CI creates a project from every template, configures it with
+nothing but CMake and a CNA checkout, compiles it and runs it, with Studio not consulted after the
+project was written.
+
+**C++-first, and not C++-welded-in.** CNA has several language bindings. C++ is the only one Studio
+implements, and it is the only one whose workflow is required to work — but the toolchain, the
+project files, the packaging and the build commands all sit behind one registered adapter, so
+nothing in the Project Hub, project creation or the Build panel knows what a compiler is. Adding a
+binding later is an addition rather than a rewrite. See `docs/ARCHITECTURE.md` §13.
 
 ---
 
@@ -52,6 +61,7 @@ Every architectural decision in this repository is tested against those two sent
 CNA Studio is **not** a new engine, and it is not part of CNA. It is a set of tools *on top of*
 CNA, built against the same public API a game uses:
 
+- a **project hub** — create from a template, open, and a recent list that greys out what has moved;
 - a **document editor** — scenes, entities, components, undo;
 - an **asset pipeline** — stable ids, importers, dependency tracking;
 - a **runtime bridge** — play mode in a separate `cna-player` process;
@@ -234,10 +244,17 @@ cna-studio/
 │   └── LEGACY-EDITOR-TASK-MAP.md   Where the prototype's ED-* tasks went
 ├── include/CNA/Studio/      Public headers
 ├── src/                     One directory per module
+│   └── project/cpp/         The C++ language adapter. Nothing else in Studio names CMake
+├── templates/               Project templates: a manifest and a content tree each, no code
 ├── third_party/cgltf/       cgltf, with its symbols prefixed
-├── tests/                   566 assertions, no third-party framework
+├── tests/                   1 334 assertions, no third-party framework
 └── examples/HelloSprites/   A project Studio opens end to end
 ```
+
+**Adding a project template is adding a directory.** `templates/<id>/template.json` and a
+`content/` tree beside it, and nothing is registered, compiled or listed anywhere — CI globs the
+same directory, so a template added that way is a template that gets created, built and run on
+every CNA-backed job.
 
 ---
 
