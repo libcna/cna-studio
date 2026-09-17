@@ -31,6 +31,7 @@
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetShortcuts.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
@@ -66,6 +67,25 @@ namespace CNA::Studio
      * share its expansion with every row that had not been given one.
      */
     inline constexpr std::string_view kStudioContentRootRowId = "<project>";
+
+    /**
+     * @brief The folder pane's id for the starred assets, which are not in any one folder.
+     *
+     * `plan.md` STUDIO-09007. Angle brackets are what make these safe to carry in the same field a
+     * real folder path uses: `describeStudioAssetNameProblem` refuses `<` and `>` in a name, so no
+     * path a user can create collides with one of these — the two live in one field and every
+     * reader of it keeps working.
+     */
+    inline constexpr std::string_view kStudioContentFavouritesRowId = "<favourites>";
+
+    /** @brief The folder pane's id for the recently used assets. */
+    inline constexpr std::string_view kStudioContentRecentRowId = "<recent>";
+
+    /** @brief Whether @p folder is one of the pane's pseudo-folders rather than a real path. */
+    [[nodiscard]] inline bool studioContentIsShortcutFolder(std::string_view folder)
+    {
+        return folder == kStudioContentFavouritesRowId || folder == kStudioContentRecentRowId;
+    }
 
     /** @brief How the Content Browser presents what a folder holds. */
     enum class StudioContentView : std::uint8_t
@@ -109,9 +129,9 @@ namespace CNA::Studio
      * @param state Expansion state; a collapsed folder hides its descendants.
      * @return The rows, outermost first, each folder's id being its project-relative path.
      */
-    [[nodiscard]] std::vector<StudioTreeRow> studioContentFolderRows(const AssetDatabase& assets,
-                                                                     const std::string& folder,
-                                                                     const StudioTreeState& state);
+    [[nodiscard]] std::vector<StudioTreeRow> studioContentFolderRows(
+        const AssetDatabase& assets, const std::string& folder, const StudioTreeState& state,
+        const StudioAssetShortcuts& shortcuts = {});
 
     /** @brief What a content listing is ordered by. */
     enum class StudioContentSort : std::uint8_t
@@ -271,7 +291,8 @@ namespace CNA::Studio
      * @return The rows, in order. Empty when there is nothing to offer.
      */
     [[nodiscard]] std::vector<StudioContextMenuItem> studioContentMenuItems(
-        const AssetDatabase& assets, const Uuid& asset, const std::string& folder);
+        const AssetDatabase& assets, const Uuid& asset, const std::string& folder,
+        bool starred = false);
 
     /** @brief What the Content Browser remembers between frames. */
     struct StudioContentBrowserState
@@ -331,6 +352,15 @@ namespace CNA::Studio
 
         /** @brief The folder the open right-click menu is about, or empty. */
         std::string menuFolder;
+
+        /**
+         * @brief The starred and recently used assets for this project (`plan.md` STUDIO-09007).
+         *
+         * Held in the browser's own state rather than in the document, because they are one
+         * person's week rather than the game: a project file that changed whenever somebody clicked
+         * an asset would make every branch conflict on it.
+         */
+        StudioAssetShortcuts shortcuts;
     };
 
     struct StudioContentBrowserResult
@@ -364,6 +394,15 @@ namespace CNA::Studio
 
         /** @brief A right-click landed on a row or a card this frame. Input pass only. */
         bool menuRequested = false;
+
+        /**
+         * @brief The favourites or the recent list changed this frame, so it wants writing.
+         *
+         * `plan.md` STUDIO-09007. Reported rather than written here: which file this project's
+         * shortcuts live in is the binder's business, and a panel that wrote one would be a panel a
+         * test cannot drive without a home directory.
+         */
+        bool shortcutsChanged = false;
 
         /** @brief The asset the right-click landed on, or nil when it was a folder. */
         Uuid menuAsset;
@@ -440,6 +479,14 @@ namespace CNA::Studio
         bool needsReimport = false;
 
         /**
+         * @brief Whether the user has starred this asset (`plan.md` STUDIO-09007).
+         *
+         * Shown wherever the asset is, not only in the Favourites list: the star is what makes
+         * "have I already starred this" answerable without going to look.
+         */
+        bool favourite = false;
+
+        /**
          * @brief The folder this asset is in, shown only in search results.
          *
          * Empty while browsing, because the breadcrumb already says where everything on screen is.
@@ -465,10 +512,9 @@ namespace CNA::Studio
      * @param selected The currently selected asset, marked on its card.
      * @return The cards, in display order.
      */
-    [[nodiscard]] std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
-                                                                     const std::string& folder,
-                                                                     const Uuid& selected,
-                                                                     const StudioContentQuery& query = {});
+    [[nodiscard]] std::vector<StudioContentCard> studioContentCards(
+        const AssetDatabase& assets, const std::string& folder, const Uuid& selected,
+        const StudioContentQuery& query = {}, const StudioAssetShortcuts& shortcuts = {});
 
     /**
      * @brief The path segments of @p folder, outermost first, for a breadcrumb.

@@ -635,6 +635,12 @@ namespace CNA::Studio
         /** @brief Closes the undo merge chain on the first frame nothing is being dragged. */
         void pollInteractionEnd();
 
+        /** @brief Reads this project's starred and recent assets, dropping ids it no longer has. */
+        void loadAssetShortcuts();
+
+        /** @brief Writes them back, saying so once when it cannot. */
+        void saveAssetShortcuts();
+
         /** @brief Polls the asset watcher, which also refreshes the presence cache. */
         void pollAssetChanges(double nowSeconds);
 
@@ -671,6 +677,15 @@ namespace CNA::Studio
 
         StudioTreeState outlinerState_;
         StudioContentBrowserState contentState_;
+
+        /**
+         * @brief Where this project's starred and recent assets live (`plan.md` STUDIO-09007).
+         *
+         * Empty until a project opens, and empty on a machine with nowhere to keep user state --
+         * on which the lists still work for the session and simply are not written, which is a
+         * better answer than refusing to star anything.
+         */
+        std::string shortcutsPath_;
 
         /**
          * @brief The asset reference graph the Details panel's dependency section reads

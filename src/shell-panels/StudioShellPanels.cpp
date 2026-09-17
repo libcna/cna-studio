@@ -9,6 +9,7 @@
 #include "CNA/Studio/ShellPanels/StudioPluginMenus.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetShortcuts.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Project/ProjectTemplate.hpp"
 
@@ -229,6 +230,29 @@ namespace CNA::Studio
         (void)jobs_.drain(8);
 
         publishStatus();
+    }
+
+    void StudioShellPanels::loadAssetShortcuts()
+    {
+        shortcutsPath_ = StudioAssetShortcutStore::defaultPathFor(context_.getProject().getFilePath());
+        contentState_.shortcuts = StudioAssetShortcutStore{shortcutsPath_}.load();
+
+        // Pruned on load, so a project somebody tidied elsewhere does not open with a list of rows
+        // that cannot be clicked -- and so the file stops carrying them.
+        if (contentState_.shortcuts.prune(context_.getAssets()) > 0) { saveAssetShortcuts(); }
+    }
+
+    void StudioShellPanels::saveAssetShortcuts()
+    {
+        if (shortcutsPath_.empty()) { return; }
+
+        std::string problem;
+        if (!StudioAssetShortcutStore{shortcutsPath_}.save(contentState_.shortcuts, &problem))
+        {
+            // Trace rather than a warning: this is a convenience file, and a user whose home
+            // directory is read-only does not need a red line every time they click an asset.
+            log_.append(LogSeverity::Trace, "Could not keep the asset shortcuts: " + problem + ".");
+        }
     }
 
     void StudioShellPanels::pollAssetChanges(double nowSeconds)
@@ -935,6 +959,9 @@ namespace CNA::Studio
         // it here would give every row the same zero and leave the ordering to file order.
         rememberProject(projectFilePath, static_cast<std::int64_t>(std::time(nullptr)));
 
+        // Before the view, so the Content Browser's first frame already has them.
+        loadAssetShortcuts();
+
         applyProjectDefaultView(shell);
 
         // The viewport, because a project that opened has a world in it and the Hub has done its
@@ -1023,6 +1050,8 @@ namespace CNA::Studio
                 counts_.contentRowsDrawn = content.rowsDrawn;
                 counts_.contentRowsTotal = content.rowsTotal;
             }
+            if (content.shortcutsChanged) { saveAssetShortcuts(); }
+
             if (!content.lastOperation.message.empty() && content.lastOperation.applied)
             {
                 log_.append(LogSeverity::Info, content.lastOperation.message + ".");

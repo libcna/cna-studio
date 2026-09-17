@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 11 of 17 complete `███████░░░░░`
+**Progress:** 12 of 17 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,7 +16,7 @@
 | `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ⬜ | `STUDIO-09003` |
 | `STUDIO-09005` | Search across name, type and path | ✅ | `STUDIO-09001` |
 | `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
-| `STUDIO-09007` | Favourites and recent assets | ⬜ | `STUDIO-09001` |
+| `STUDIO-09007` | Favourites and recent assets | ✅ | `STUDIO-09001` |
 | `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ✅ | `STUDIO-03023` |
 | `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ✅ | `STUDIO-09001` |
 | `STUDIO-09010` | Reimport, preserving Studio-side import settings | ✅ | `STUDIO-10001` |
@@ -171,6 +171,65 @@ and the case that caught it asserts the actual sequence rather than "it is sorte
 
 **Narrowed and empty are different messages.** "This folder is empty" while a filter is on sends
 somebody looking in the wrong place; "Nothing matches" names a control they can turn off.
+
+### `STUDIO-09007` — Favourites and recent assets
+
+**Done.** Two rows above the project in the folder pane, each appearing only when it has something
+in it, and a star in the right-click menu.
+
+**A real project's tree is deep and the working set is small** — the four textures this week's work
+is about, and whatever was touched five minutes ago. Without somewhere to keep them, every return
+trip is the same walk down the same folders, which is why every professional content browser has
+both of these and why neither is a feature anybody asks for by name.
+
+**They are kept apart rather than merged into one "quick access" list**, because they answer
+different questions. A favourite is a *decision* and stays until it is unmade; a recent entry is a
+side effect and is pushed out by the next thing. A list that mixed them would lose a deliberate
+choice to a morning's browsing. It also decides the ordering: favourites append (so the one starred
+last week stays where it was put) and recent moves to the front.
+
+**Ids, not paths.** A favourite survives the file being moved or renamed, exactly as a scene's
+reference does (D-08). A list of paths would quietly rot as the project is tidied, which is the one
+thing a *favourite* must not do. Entries whose asset is gone for good are pruned on load, so a
+project somebody tidied elsewhere does not open with rows that cannot be clicked.
+
+**User state, not project data.** It lives beside the user's other Studio state, because it is about
+one person's week rather than about the game — and because a project file that changed whenever
+somebody clicked an asset would make every branch conflict on it. The file is named after the
+project *and* a hash of its path: the name so somebody who opens the directory can tell which is
+which, the hash so two projects called `Game` do not share a file. The hash is FNV-1a written out
+rather than `std::hash`, whose value is allowed to differ between runs — which is the one property
+this must not have.
+
+**The pseudo-folders live in the same field a real folder path does**, and that is safe rather than
+lucky: `describeStudioAssetNameProblem` refuses `<` and `>` in a name, so `<favourites>` is a path
+no user can create. Every reader of `StudioContentBrowserState::folder` — the breadcrumb, the cards,
+the menu — keeps working unchanged.
+
+**Neither row appears while its list is empty**, because an empty "Favourites" row teaches the user
+that the feature does nothing, which is the one lesson a shortcut list must not teach.
+
+**A starred asset is marked with colour rather than a star glyph.** The shipped typeface is
+rasterised on demand and has no `U+2605`, so a star would be a tofu box beside every favourite —
+the same reason the search field has no magnifier, and the same task that fixes both
+(`STUDIO-04019`). A column of its own was the other option and is worse: one that is empty on
+ninety-nine rows in a hundred costs width and says nothing.
+
+**Recent is recorded on *selection***, because selecting is what a user does to look at an asset and
+is the only moment the browser can be sure they meant that one. Re-selecting what is already first
+reports no change, which is what stops clicking one asset rewriting the file once a frame.
+
+**The panel reports, the binder writes** — the same division as everywhere else here, and what makes
+this testable without a home directory. A machine with nowhere to keep user state still gets working
+lists for the session; they are simply not written, which is a better answer than refusing to star
+anything.
+
+**Verification.** `tests/StudioContentBrowserTests.cpp`: the two orderings and their difference,
+bounding, a nil id being no entry, a round trip through a file with pruning of an asset that went
+away, a missing file and a corrupt one both reading as empty, two same-named projects not sharing a
+file, the pane offering each row only when it has content and putting both above the project, the
+listing carrying each asset's location and its star, and the menu naming which way the toggle will
+go — including for a missing asset, which everything else in that menu refuses.
 
 ### `STUDIO-09008` — Drag and drop into the viewport, Inspector and hierarchy
 

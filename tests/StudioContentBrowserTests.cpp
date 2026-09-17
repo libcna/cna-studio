@@ -16,6 +16,7 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/AssetReimport.hpp"
+#include "CNA/Studio/Assets/AssetShortcuts.hpp"
 #include "CNA/Studio/Project/StudioReveal.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
@@ -1437,4 +1438,198 @@ CNA_STUDIO_TEST(TheBrowserReportsARevealRatherThanLaunchingOne)
     // user will find the file absent from.
     const Uuid gone = track(assets, "Assets/gone.png", AssetType::Texture2D);
     CNA_STUDIO_EXPECT(!offersEnabled(studioContentMenuItems(assets, gone, {}), "Show in Folder"));
+}
+
+// ------------------------------------------------------------------------------------------------
+// Favourites and recent assets (STUDIO-09007)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AFavouriteIsADecisionAndRecentIsASideEffect)
+{
+    // Kept apart rather than merged into one "quick access" list, because they answer different
+    // questions: a favourite stays until it is unmade, and a recent entry is pushed out by the next
+    // thing. A list that mixed them would lose a deliberate choice to a morning's browsing.
+    StudioAssetShortcuts shortcuts;
+
+    const Uuid a = Uuid::generate();
+    const Uuid b = Uuid::generate();
+    const Uuid c = Uuid::generate();
+
+    CNA_STUDIO_EXPECT(shortcuts.toggleFavourite(a));
+    CNA_STUDIO_EXPECT(shortcuts.toggleFavourite(b));
+    CNA_STUDIO_EXPECT(shortcuts.isFavourite(a));
+
+    // Appended rather than prepended: a list that reordered itself every time one was added would
+    // make the user hunt for the one they starred last week.
+    CNA_STUDIO_EXPECT_EQ(shortcuts.favourites.front().toString(), a.toString());
+
+    CNA_STUDIO_EXPECT(!shortcuts.toggleFavourite(a));
+    CNA_STUDIO_EXPECT(!shortcuts.isFavourite(a));
+    CNA_STUDIO_EXPECT_EQ(shortcuts.favourites.size(), std::size_t{1});
+
+    // Recent *is* the list that moves, and it moves to the front.
+    CNA_STUDIO_EXPECT(shortcuts.remember(a, 8));
+    CNA_STUDIO_EXPECT(shortcuts.remember(b, 8));
+    CNA_STUDIO_EXPECT(shortcuts.remember(c, 8));
+    CNA_STUDIO_EXPECT_EQ(shortcuts.recent.front().toString(), c.toString());
+
+    CNA_STUDIO_EXPECT(shortcuts.remember(a, 8));
+    CNA_STUDIO_EXPECT_EQ(shortcuts.recent.front().toString(), a.toString());
+    CNA_STUDIO_EXPECT_EQ(shortcuts.recent.size(), std::size_t{3});
+
+    // Already first, so nothing changed -- which is what stops clicking one asset rewriting the
+    // file once a frame.
+    CNA_STUDIO_EXPECT(!shortcuts.remember(a, 8));
+
+    // Bounded, oldest out first.
+    for (int i = 0; i < 10; ++i) { (void)shortcuts.remember(Uuid::generate(), 4); }
+    CNA_STUDIO_EXPECT_EQ(shortcuts.recent.size(), std::size_t{4});
+
+    // A nil id is what clearing the selection looks like, and it is not an entry.
+    CNA_STUDIO_EXPECT(!shortcuts.remember(Uuid{}, 8));
+    CNA_STUDIO_EXPECT(!shortcuts.toggleFavourite(Uuid{}));
+}
+
+CNA_STUDIO_TEST(ShortcutsSurviveARestartAndDropAssetsThatWentAway)
+{
+    ScopedProject project{"shortcutstore"};
+    project.write("Assets/a.png");
+    project.write("Assets/b.png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid a = assets.findByPath("Assets/a.png")->id;
+    const Uuid b = assets.findByPath("Assets/b.png")->id;
+    const Uuid gone = Uuid::generate();
+
+    const std::string path =
+        (std::filesystem::path{project.root()} / "shortcuts.json").generic_string();
+    const StudioAssetShortcutStore store{path};
+
+    StudioAssetShortcuts written;
+    (void)written.toggleFavourite(a);
+    (void)written.toggleFavourite(gone);
+    (void)written.remember(b, StudioAssetShortcutStore::kMaximumRecent);
+
+    std::string problem;
+    CNA_STUDIO_EXPECT(store.save(written, &problem));
+    CNA_STUDIO_EXPECT(problem.empty());
+
+    StudioAssetShortcuts read = store.load();
+    CNA_STUDIO_EXPECT_EQ(read.favourites.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(read.recent.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(read.isFavourite(a));
+
+    // Ids rather than paths, so a favourite survives the file being moved -- and pruning is what
+    // takes out the one whose asset is gone for good.
+    CNA_STUDIO_EXPECT_EQ(read.prune(assets), std::size_t{1});
+    CNA_STUDIO_EXPECT(read.isFavourite(a));
+    CNA_STUDIO_EXPECT(!read.isFavourite(gone));
+
+    // A file that is not there, and one that is not JSON, both read as empty rather than as a
+    // failure: a corrupt convenience file must not cost a project its opening.
+    CNA_STUDIO_EXPECT(StudioAssetShortcutStore{path + ".missing"}.load().isEmpty());
+    {
+        std::ofstream stream{path, std::ios::binary | std::ios::trunc};
+        stream << "{ not json";
+    }
+    CNA_STUDIO_EXPECT(store.load().isEmpty());
+
+    // Two projects with the same name in different places do not share a file.
+    const std::string one = StudioAssetShortcutStore::defaultPathFor("/a/Game/Game.cnaproject");
+    const std::string two = StudioAssetShortcutStore::defaultPathFor("/b/Game/Game.cnaproject");
+    if (!one.empty())
+    {
+        CNA_STUDIO_EXPECT(one != two);
+
+        // And the name is in there, so somebody who opens the directory can tell which is which.
+        CNA_STUDIO_EXPECT(one.find("Game") != std::string::npos);
+    }
+    CNA_STUDIO_EXPECT(StudioAssetShortcutStore::defaultPathFor({}).empty());
+}
+
+CNA_STUDIO_TEST(TheFolderPaneOffersTheTwoListsOnlyWhenTheyHaveSomethingInThem)
+{
+    // An empty "Favourites" row teaches the user that the feature does nothing, which is the one
+    // lesson a shortcut list must not teach.
+    ScopedProject project{"shortcutrows"};
+    project.write("Assets/Textures/a.png");
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid a = assets.findByPath("Assets/Textures/a.png")->id;
+
+    StudioTreeState state;
+    StudioAssetShortcuts shortcuts;
+
+    CNA_STUDIO_EXPECT(rowNamed(studioContentFolderRows(assets, {}, state, shortcuts),
+                               "Favourites") == nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(studioContentFolderRows(assets, {}, state, shortcuts),
+                               "Recent") == nullptr);
+
+    (void)shortcuts.toggleFavourite(a);
+    (void)shortcuts.remember(a, 8);
+
+    const std::vector<StudioTreeRow> rows = studioContentFolderRows(assets, {}, state, shortcuts);
+
+    // Above the project, because they are where a user goes first and a pane that put them under
+    // two hundred folders would be one where nobody found them.
+    CNA_STUDIO_EXPECT(rows.size() >= 3);
+    CNA_STUDIO_EXPECT_EQ(rows[0].label, std::string{"Favourites"});
+    CNA_STUDIO_EXPECT_EQ(rows[1].label, std::string{"Recent"});
+    CNA_STUDIO_EXPECT_EQ(rows[2].label, std::string{"Project"});
+    CNA_STUDIO_EXPECT_EQ(rows[0].detail, std::string{"1"});
+
+    // Their ids cannot collide with a folder's, because a name with angle brackets in it is one
+    // the rename rules refuse.
+    CNA_STUDIO_EXPECT(studioContentIsShortcutFolder(rows[0].id));
+    CNA_STUDIO_EXPECT(studioContentIsShortcutFolder(rows[1].id));
+    CNA_STUDIO_EXPECT(!studioContentIsShortcutFolder(rows[2].id));
+
+    // And the listing is the assets themselves, in the list's own order, each saying where it is
+    // -- these came from all over the project and a name alone does not say which is which.
+    const std::vector<StudioContentCard> cards = studioContentCards(
+        assets, std::string{kStudioContentFavouritesRowId}, Uuid{}, {}, shortcuts);
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(cards.front().assetId.toString(), a.toString());
+    CNA_STUDIO_EXPECT(cards.front().favourite);
+    CNA_STUDIO_EXPECT(!cards.front().location.empty());
+
+    // A starred asset is marked wherever it appears, so "have I already starred this" is
+    // answerable without going to look.
+    const std::vector<StudioContentCard> inFolder =
+        studioContentCards(assets, "Assets/Textures", Uuid{}, {}, shortcuts);
+    CNA_STUDIO_EXPECT_EQ(inFolder.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(inFolder.front().favourite);
+    CNA_STUDIO_EXPECT(inFolder.front().iconRole == StudioColorRole::Accent);
+}
+
+CNA_STUDIO_TEST(TheMenuStarsAnAssetAndSaysWhichWayItWillGo)
+{
+    ScopedProject project{"shortcutmenu"};
+    project.write("Assets/a.png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid a = assets.findByPath("Assets/a.png")->id;
+
+    CNA_STUDIO_EXPECT(offersEnabled(studioContentMenuItems(assets, a, {}, false),
+                                    "Add to Favourites"));
+    CNA_STUDIO_EXPECT(offersEnabled(studioContentMenuItems(assets, a, {}, true),
+                                    "Remove from Favourites"));
+
+    // Offered for a *missing* asset too, unlike everything else in the menu: a favourite is a note
+    // about the asset rather than an operation on its file, and the one a user most wants to keep
+    // hold of is the one that has gone wrong.
+    const Uuid gone = track(assets, "Assets/gone.png", AssetType::Texture2D);
+    CNA_STUDIO_EXPECT(offersEnabled(studioContentMenuItems(assets, gone, {}, false),
+                                    "Add to Favourites"));
+    CNA_STUDIO_EXPECT(!offersEnabled(studioContentMenuItems(assets, gone, {}, false), "Delete"));
 }

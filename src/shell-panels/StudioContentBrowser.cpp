@@ -46,7 +46,8 @@ namespace CNA::Studio
         const float minimum = metricOf(theme, StudioMetric::RowHeight) * 3.0f;
 
         const std::vector<StudioTreeRow> rows =
-            studioContentFolderRows(context.getAssets(), state.folder, state.folderTree);
+            studioContentFolderRows(context.getAssets(), state.folder, state.folderTree,
+                                    state.shortcuts);
         result.folderRowsTotal = rows.size();
 
         // Hidden rather than squeezed. A browser docked into a narrow strip is more useful as
@@ -275,7 +276,8 @@ namespace CNA::Studio
 
     std::vector<StudioTreeRow> studioContentFolderRows(const AssetDatabase& assets,
                                                        const std::string& folder,
-                                                       const StudioTreeState& state)
+                                                       const StudioTreeState& state,
+                                                       const StudioAssetShortcuts& shortcuts)
     {
         // How many assets sit *directly* in each folder, and which folders exist at all. Direct
         // rather than cumulative: a count that included descendants would make `Assets` read as
@@ -298,6 +300,28 @@ namespace CNA::Studio
         };
 
         std::vector<StudioTreeRow> rows;
+
+        // The two shortcut lists, above the project (STUDIO-09007). Above rather than below,
+        // because they are where a user goes *first* and a pane that put them under two hundred
+        // folders would be one where nobody found them. Each appears only when it has something in
+        // it: an empty "Favourites" row teaches the user that the feature does nothing.
+        for (const auto& [id, label, icon, ids] :
+             {std::tuple{kStudioContentFavouritesRowId, "Favourites", StudioIcon::Info,
+                         &shortcuts.favourites},
+              std::tuple{kStudioContentRecentRowId, "Recent", StudioIcon::Undo,
+                         &shortcuts.recent}})
+        {
+            if (ids->empty()) { continue; }
+
+            StudioTreeRow row;
+            row.id = std::string{id};
+            row.label = label;
+            row.icon = icon;
+            row.depth = 0;
+            row.detail = std::to_string(ids->size());
+            row.selected = folder == id;
+            rows.push_back(std::move(row));
+        }
 
         // The project root, which is a row rather than a gesture. A tree whose only way back to
         // the top is collapsing everything is a tree people navigate by clicking the breadcrumb,
@@ -400,7 +424,8 @@ namespace CNA::Studio
      */
     std::vector<StudioContentCard> studioContentSearchCards(const AssetDatabase& assets,
                                                             const StudioContentQuery& query,
-                                                            const Uuid& selected)
+                                                            const Uuid& selected,
+                                                            const StudioAssetShortcuts& shortcuts)
     {
         const std::string needle = lowered(query.search);
 
@@ -464,6 +489,17 @@ namespace CNA::Studio
                 card.needsReimport = true;
                 card.detail += "  ·  out of date";
             }
+            card.favourite = shortcuts.isFavourite(record->id);
+            if (card.favourite && !card.missing)
+            {
+                // Said with *colour* rather than with a star glyph. The shipped typeface is
+                // rasterised on demand and has no `U+2605`, so a star would be a tofu box beside
+                // every favourite -- the same reason the search field has no magnifier, and the
+                // same task that fixes both (STUDIO-04019 font fallback). A column of its own was
+                // the other option and is worse: one that is empty on ninety-nine rows in a
+                // hundred costs width and says nothing.
+                card.iconRole = StudioColorRole::Accent;
+            }
             cards.push_back(std::move(card));
         }
         return cards;
@@ -472,9 +508,69 @@ namespace CNA::Studio
     std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
                                                        const std::string& folder,
                                                        const Uuid& selected,
-                                                       const StudioContentQuery& query)
+                                                       const StudioContentQuery& query,
+                                                       const StudioAssetShortcuts& shortcuts)
     {
-        if (!query.search.empty()) { return studioContentSearchCards(assets, query, selected); }
+        if (!query.search.empty())
+        {
+            return studioContentSearchCards(assets, query, selected, shortcuts);
+        }
+
+        // The two pseudo-folders (STUDIO-09007). A *list* rather than a folder: the ids are in the
+        // order the user starred them, or the order they were used, and sorting them by name would
+        // throw away the only thing those orders are for.
+        if (studioContentIsShortcutFolder(folder))
+        {
+            const std::vector<Uuid>& ids = folder == kStudioContentFavouritesRowId
+                ? shortcuts.favourites
+                : shortcuts.recent;
+
+            std::vector<StudioContentCard> listed;
+            listed.reserve(ids.size());
+            for (const Uuid& id : ids)
+            {
+                const AssetRecord* record = assets.find(id);
+
+                // An entry whose asset has gone is simply not shown. It is pruned on load, so one
+                // being here at all means the asset went away during this session -- and a row
+                // that cannot be clicked is worse than one that is not there.
+                if (record == nullptr) { continue; }
+                if (query.type.has_value() && record->type != *query.type) { continue; }
+
+                StudioContentCard card;
+                card.assetId = record->id;
+                card.label = splitPath(record->sourcePath).second;
+                card.detail = toString(record->type);
+                card.icon = studioAssetIcon(record->type);
+                card.selected = record->id == selected;
+                card.favourite = shortcuts.isFavourite(record->id);
+            if (card.favourite && !card.missing)
+            {
+                // Said with *colour* rather than with a star glyph. The shipped typeface is
+                // rasterised on demand and has no `U+2605`, so a star would be a tofu box beside
+                // every favourite -- the same reason the search field has no magnifier, and the
+                // same task that fixes both (STUDIO-04019 font fallback). A column of its own was
+                // the other option and is worse: one that is empty on ninety-nine rows in a
+                // hundred costs width and says nothing.
+                card.iconRole = StudioColorRole::Accent;
+            }
+
+                // Where it is, always, unlike a folder listing: these came from all over the
+                // project and a name on its own does not say which `player.png` this is.
+                const std::string directory = splitPath(record->sourcePath).first;
+                card.location = directory.empty() ? "Project" : directory;
+
+                if (assets.isMissing(record->id))
+                {
+                    card.missing = true;
+                    card.detail = "missing";
+                    card.icon = StudioIcon::Warning;
+                    card.iconRole = StudioColorRole::Warning;
+                }
+                listed.push_back(std::move(card));
+            }
+            return listed;
+        }
 
         std::vector<StudioContentCard> cards;
 
@@ -577,6 +673,17 @@ namespace CNA::Studio
                 // already carries, so marking every row costs no syscall (STUDIO-30015).
                 card.needsReimport = true;
                 card.detail += "  ·  out of date";
+            }
+            card.favourite = shortcuts.isFavourite(record->id);
+            if (card.favourite && !card.missing)
+            {
+                // Said with *colour* rather than with a star glyph. The shipped typeface is
+                // rasterised on demand and has no `U+2605`, so a star would be a tofu box beside
+                // every favourite -- the same reason the search field has no magnifier, and the
+                // same task that fixes both (STUDIO-04019 font fallback). A column of its own was
+                // the other option and is worse: one that is empty on ninety-nine rows in a
+                // hundred costs width and says nothing.
+                card.iconRole = StudioColorRole::Accent;
             }
             cards.push_back(std::move(card));
         }
@@ -746,7 +853,8 @@ namespace CNA::Studio
 
     std::vector<StudioContextMenuItem> studioContentMenuItems(const AssetDatabase& assets,
                                                               const Uuid& asset,
-                                                              const std::string& folder)
+                                                              const std::string& folder,
+                                                              bool starred)
     {
         if (!folder.empty())
         {
@@ -769,7 +877,13 @@ namespace CNA::Studio
         // anyway" is a thing people do when they suspect the editor is wrong about a file, and a
         // row that greyed out unless Studio already agreed something had changed would refuse them
         // exactly then. Whether it is *due* is the row's marker, which is a different question.
-        return {StudioContextMenuItem{"Rename", true, "F2"},
+        // Starring is offered for a *missing* asset too, unlike everything else here: a favourite
+        // is a note about the asset rather than an operation on its file, and the one a user most
+        // wants to keep hold of is the one that has gone wrong.
+        return {StudioContextMenuItem{starred ? "Remove from Favourites" : "Add to Favourites",
+                                      true, {}},
+                StudioContextMenuItem{},
+                StudioContextMenuItem{"Rename", true, "F2"},
                 StudioContextMenuItem{"Duplicate", present, "Ctrl+D"},
                 StudioContextMenuItem{"Reimport", present, {}},
                 StudioContextMenuItem{"Show in Folder", present, {}},
@@ -1001,8 +1115,9 @@ namespace CNA::Studio
             studioOpenContextMenu(frame, menuId, frame.input().mouseX, frame.input().mouseY);
         }
 
-        const std::vector<StudioContextMenuItem> items =
-            studioContentMenuItems(context.getAssets(), state.menuAsset, state.menuFolder);
+        const std::vector<StudioContextMenuItem> items = studioContentMenuItems(
+            context.getAssets(), state.menuAsset, state.menuFolder,
+            state.shortcuts.isFavourite(state.menuAsset));
 
         // Dispatched on the label rather than on the index, because the rows differ between an
         // asset and a folder: an index that meant Duplicate in one menu and nothing in the other
@@ -1025,6 +1140,11 @@ namespace CNA::Studio
         else if (action == "Duplicate")
         {
             result.lastOperation = studioContentDuplicate(context, state.menuAsset);
+        }
+        else if (action == "Add to Favourites" || action == "Remove from Favourites")
+        {
+            (void)state.shortcuts.toggleFavourite(state.menuAsset);
+            result.shortcutsChanged = true;
         }
         else if (action == "Reimport")
         {
@@ -1066,7 +1186,8 @@ namespace CNA::Studio
         // tree and the grid showed one folder, so switching views also moved the user -- and the
         // folder pane STUDIO-09001 put beside them navigated only one of the two.
         const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query);
+            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query,
+                               state.shortcuts);
 
         result.rowsTotal = cards.size();
         // The count, not the list (STUDIO-30015). Building the list to call `.size()` on it was a
@@ -1087,6 +1208,7 @@ namespace CNA::Studio
             // icon.
             row.detail = card.location.empty() ? card.detail
                                                : card.location + "  ·  " + card.detail;
+
             row.icon = card.icon;
             row.iconRole = card.iconRole;
             row.selected = card.selected;
@@ -1178,6 +1300,14 @@ namespace CNA::Studio
                 // makes the inspector show one thing at a time.
                 context.selectAsset(card.assetId);
                 result.selectedAsset = card.assetId;
+
+                // Recorded on *selection* rather than on some notion of "opened", because
+                // selecting is what a user does to look at an asset -- and it is the only moment
+                // the browser can be sure they meant that one (STUDIO-09007).
+                if (state.shortcuts.remember(card.assetId, StudioAssetShortcutStore::kMaximumRecent))
+                {
+                    result.shortcutsChanged = true;
+                }
             }
         }
 
@@ -1193,7 +1323,8 @@ namespace CNA::Studio
         const AssetDatabase& assets = context.getAssets();
 
         const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query);
+            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query,
+                               state.shortcuts);
         result.rowsTotal = cards.size();
         // The count, not the list (STUDIO-30015). Building the list to call `.size()` on it was a
         // second full pass over the database with a `stat` per asset, on every pass of every frame
@@ -1379,6 +1510,11 @@ namespace CNA::Studio
                     {
                         context.selectAsset(entry.assetId);
                         result.selectedAsset = entry.assetId;
+                        if (state.shortcuts.remember(entry.assetId,
+                                                     StudioAssetShortcutStore::kMaximumRecent))
+                        {
+                            result.shortcutsChanged = true;
+                        }
                     }
                 }
 
