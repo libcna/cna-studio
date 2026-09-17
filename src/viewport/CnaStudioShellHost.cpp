@@ -262,8 +262,9 @@ namespace CNA::Studio
 
                 (void)bindStudioShellActions(*shell_, *context_, log_);
 
-                // Every ported panel, bound in one place that does not need CNA -- so the
-                // headless preview shows the same panels this window does (STUDIO-07001).
+                // Every panel, bound in one place that does not need CNA -- so the headless
+                // preview shows the same panels this window does (STUDIO-07017, over the panel
+                // content seam of STUDIO-07016).
                 StudioShellPanelServices services;
 
                 // The Details panel's preview (STUDIO-07044). Constructed here rather than at
