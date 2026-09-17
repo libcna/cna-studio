@@ -1615,4 +1615,186 @@ namespace CNA::Studio
         return result;
     }
 
+    // --- A panel's own right-click menu (STUDIO-09009) -------------------------------------------
+    //
+    // The owner's retained state carries the whole menu between the frame it is opened on and the
+    // frame something is chosen from it:
+    //
+    //   scrollX/scrollY  where the pointer was, so the popup is anchored at the click rather than
+    //                    at the widget -- which for a panel-wide menu would be its top-left corner
+    //   integer          the highlighted row, for keyboard traversal
+    //   scalar           the pending choice, as index + 1 (zero is "nothing chosen")
+    //   checked          dismissed without choosing
+    //
+    // The popup body is deferred, so it runs after the panel has been described and escapes the
+    // panel's clip; that is also why the answer cannot come back through a return value on the same
+    // pass, and arrives on the next one instead.
+
+    void studioOpenContextMenu(StudioFrame& frame, WidgetId owner, float x, float y)
+    {
+        if (!owner.isValid()) { return; }
+
+        WidgetState& state = frame.state().get(owner);
+        state.scrollX = x;
+        state.scrollY = y;
+        state.integer = -1;
+        state.scalar = 0.0f;
+        state.checked = false;
+        frame.openPopup(owner);
+    }
+
+    int studioContextMenu(StudioFrame& frame, WidgetId owner,
+                          const std::vector<StudioContextMenuItem>& items)
+    {
+        if (!owner.isValid() || items.empty()) { return -1; }
+
+        const StudioTheme& theme = frame.theme();
+        WidgetState& state = frame.state().get(owner);
+
+        int chosen = -1;
+        if (frame.isInputPass())
+        {
+            if (state.scalar != 0.0f)
+            {
+                const auto index = static_cast<int>(state.scalar) - 1;
+                state.scalar = 0.0f;
+                if (index >= 0 && static_cast<std::size_t>(index) < items.size())
+                {
+                    chosen = index;
+                }
+                if (frame.isPopupOpen(owner)) { frame.closePopup(); }
+            }
+            if (state.checked)
+            {
+                state.checked = false;
+                if (frame.isPopupOpen(owner)) { frame.closePopup(); }
+            }
+        }
+
+        if (!frame.isPopupOpen(owner)) { return chosen; }
+
+        const float rowHeight = studioMenuItemHeight(theme);
+        const float separatorHeight = studioMenuSeparatorHeight(theme);
+        const float padding = metricOf(theme, StudioMetric::SpacingSmall);
+
+        float height = padding * 2.0f;
+        float width = rowHeight * 4.0f;
+        for (const StudioContextMenuItem& item : items)
+        {
+            height += item.label.empty() ? separatorHeight : rowHeight;
+
+            // Wide enough for the longest row, because a context menu whose entries are elided is
+            // one where "Duplicate" and "Delete" become the same word.
+            float itemWidth = studioLabelWidth(frame, item.label, StudioFontRole::Body)
+                            + rowHeight * 2.0f;
+            if (!item.shortcut.empty())
+            {
+                itemWidth += studioLabelWidth(frame, item.shortcut, StudioFontRole::Body)
+                           + rowHeight;
+            }
+            width = std::max(width, itemWidth);
+        }
+        width = std::ceil(width);
+        height = std::ceil(height);
+
+        // Flipped rather than clipped, on both axes. A menu opened near the bottom-right corner
+        // whose rows fall off the screen is a menu whose last entries do not exist as far as the
+        // user is concerned -- and the last entry is usually Delete.
+        float left = state.scrollX;
+        float top = state.scrollY;
+        if (left + width > frame.input().displayWidth) { left = std::max(0.0f, left - width); }
+        if (top + height > frame.input().displayHeight) { top = std::max(0.0f, top - height); }
+        const UiRect popup{std::round(left), std::round(top), width, height};
+
+        frame.deferPopup([owner, popup, items, rowHeight, separatorHeight, padding](StudioFrame& f) {
+            const StudioTheme& popupTheme = f.theme();
+            if (f.isDrawPass())
+            {
+                f.drawList().fillRect(popup, popupTheme.color(StudioColorRole::PopupBackground));
+                f.drawList().strokeRect(popup, popupTheme.color(StudioColorRole::BorderStrong),
+                                        metricOf(popupTheme, StudioMetric::BorderWidth));
+            }
+
+            WidgetState& popupState = f.state().get(owner);
+            f.ids().push("contextmenu");
+            f.ids().pushIndex(static_cast<std::int64_t>(owner.value()));
+
+            float y = popup.top() + padding;
+            for (std::size_t i = 0; i < items.size(); ++i)
+            {
+                const StudioContextMenuItem& item = items[i];
+                if (item.label.empty())
+                {
+                    studioMenuSeparator(f, UiRect{popup.left(), y, popup.width, separatorHeight});
+                    y += separatorHeight;
+                    continue;
+                }
+
+                const UiRect row{popup.left(), std::round(y), popup.width, rowHeight};
+                y += rowHeight;
+
+                StudioMenuItemOptions options;
+                options.enabled = item.enabled;
+                options.highlighted = popupState.integer == static_cast<std::int64_t>(i);
+                options.shortcut = item.shortcut;
+
+                const StudioWidgetResult result =
+                    studioMenuItem(f, f.ids().makeIndex(static_cast<std::int64_t>(i)), row,
+                                   item.label, options);
+
+                if (!f.isInputPass()) { continue; }
+                if (result.interaction.hovered) { popupState.integer = static_cast<std::int64_t>(i); }
+                if (result.activated) { popupState.scalar = static_cast<float>(i) + 1.0f; }
+            }
+
+            f.ids().pop();
+            f.ids().pop();
+
+            if (!f.isInputPass()) { return; }
+
+            StudioInputRouter& router = f.router();
+            const auto count = static_cast<std::int64_t>(items.size());
+
+            // Traversal steps over separators and over disabled rows, so Down never parks the
+            // highlight on something Enter cannot choose.
+            const auto step = [&items, count](std::int64_t from, std::int64_t delta) {
+                for (std::int64_t i = 0; i < count; ++i)
+                {
+                    from = (from + delta + count) % count;
+                    if (!items[static_cast<std::size_t>(from)].label.empty()
+                        && items[static_cast<std::size_t>(from)].enabled)
+                    {
+                        return from;
+                    }
+                }
+                return static_cast<std::int64_t>(-1);
+            };
+
+            if (router.keyPressed(UiKey::DownArrow))
+            {
+                popupState.integer = step(popupState.integer < 0 ? count - 1 : popupState.integer, 1);
+            }
+            if (router.keyPressed(UiKey::UpArrow))
+            {
+                popupState.integer = step(popupState.integer < 0 ? 0 : popupState.integer, -1);
+            }
+            if (router.keyPressed(UiKey::Enter) && popupState.integer >= 0)
+            {
+                popupState.scalar = static_cast<float>(popupState.integer) + 1.0f;
+            }
+            if (router.keyPressed(UiKey::Escape)) { popupState.checked = true; }
+
+            // A press outside dismisses without choosing -- including a *right* press, so a second
+            // right-click somewhere else opens the menu there rather than needing a dismiss first.
+            if ((router.mousePressed(UiMouseButton::Left)
+                 || router.mousePressed(UiMouseButton::Right))
+                && !popup.contains(router.mouseX(), router.mouseY()))
+            {
+                popupState.checked = true;
+            }
+        });
+
+        return chosen;
+    }
+
 } // namespace CNA::Studio

@@ -1926,3 +1926,346 @@ CNA_STUDIO_TEST(AMaterialFromAFutureFormatVersionIsRefused)
     MaterialDocument reloaded;
     CNA_STUDIO_EXPECT(!reloaded.loadFromJson(future));
 }
+
+// --- Rename, move, duplicate and delete (STUDIO-09009) ------------------------------------------
+
+/**
+ * @brief The acceptance condition of STUDIO-09009: a move does not touch a scene.
+ *
+ * Not "the scene still loads" and not "the reference still resolves" -- the *file* is unchanged,
+ * byte for byte. That is the property decision D-08 was taken for, and it is the one a weaker
+ * assertion would let slip: a move that rewrote every scene would still pass a test that only
+ * checked the reference, and the user would find out when they reviewed a hundred-file diff.
+ */
+CNA_STUDIO_TEST(MovingAnAssetLeavesEverySceneThatReferencesItByteIdentical)
+{
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    const std::filesystem::path directory = makeScratchDirectory("assetmovescene");
+    writeFile(directory / "Assets" / "player.png", "pixels");
+    std::filesystem::create_directories(directory / "Assets" / "Characters");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid textureId = assets.findByPath("Assets/player.png")->id;
+
+    SceneDocument scene;
+    StudioEntity entity{Uuid::generate(), "Hero"};
+    StudioComponent sprite{BuiltinComponentIds::kSpriteRenderer};
+    sprite.applyDefaults(*registry.find(BuiltinComponentIds::kSpriteRenderer));
+    sprite.setProperty("texture", PropertyValue{PropertyValue::AssetReference{textureId}});
+    entity.addComponent(std::move(sprite));
+    scene.addEntity(std::move(entity));
+
+    const std::string scenePath = (directory / "Assets" / "Level.cnascene").generic_string();
+    CNA_STUDIO_EXPECT(scene.saveToFile(scenePath));
+
+    const auto read = [&scenePath] {
+        std::ifstream stream{scenePath, std::ios::binary};
+        return std::string{std::istreambuf_iterator<char>{stream},
+                           std::istreambuf_iterator<char>{}};
+    };
+    const std::string before = read();
+    CNA_STUDIO_EXPECT(!before.empty());
+
+    CommandHistory history;
+    auto move = std::make_unique<MoveAssetCommand>(assets, textureId,
+                                                   "Assets/Characters/player.png");
+    CNA_STUDIO_EXPECT(move->isValid());
+    history.execute(std::move(move));
+
+    CNA_STUDIO_EXPECT_EQ(assets.find(textureId)->sourcePath,
+                         std::string{"Assets/Characters/player.png"});
+    CNA_STUDIO_EXPECT_EQ(read(), before);
+
+    // And back again on undo, with the scene still untouched in that direction too.
+    CNA_STUDIO_EXPECT(history.undo());
+    CNA_STUDIO_EXPECT_EQ(assets.find(textureId)->sourcePath, std::string{"Assets/player.png"});
+    CNA_STUDIO_EXPECT_EQ(read(), before);
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief A rename is a move, so it keeps the id -- there is one code path, not two. */
+CNA_STUDIO_TEST(ARenameKeepsTheIdAndMovesTheSidecarWithTheFile)
+{
+    const std::filesystem::path directory = makeScratchDirectory("assetrename");
+    writeFile(directory / "Assets" / "Textures" / "old.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Textures/old.png")->id;
+
+    auto rename = std::make_unique<MoveAssetCommand>(
+        assets, id, studioAssetPathRenamedTo("Assets/Textures/old.png", "new.png"));
+    CNA_STUDIO_EXPECT(rename->isValid());
+    rename->execute();
+
+    CNA_STUDIO_EXPECT_EQ(assets.find(id)->sourcePath, std::string{"Assets/Textures/new.png"});
+    CNA_STUDIO_EXPECT(std::filesystem::exists(directory / "Assets" / "Textures" / "new.png"));
+    CNA_STUDIO_EXPECT(
+        std::filesystem::exists(directory / "Assets" / "Textures" / "new.png.cnaasset"));
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(directory / "Assets" / "Textures" / "old.png"));
+    CNA_STUDIO_EXPECT(
+        !std::filesystem::exists(directory / "Assets" / "Textures" / "old.png.cnaasset"));
+
+    std::filesystem::remove_all(directory);
+}
+
+/**
+ * @brief Names are checked against the strictest platform, not the host's.
+ *
+ * A name Linux accepts and Windows refuses is a repository one colleague cannot check out, and the
+ * person who created it never finds out.
+ */
+CNA_STUDIO_TEST(ANameIsCheckedAgainstEveryPlatformRatherThanThisOne)
+{
+    CNA_STUDIO_EXPECT(describeStudioAssetNameProblem("Crate.png").empty());
+    CNA_STUDIO_EXPECT(describeStudioAssetNameProblem(".gitignore").empty());
+    CNA_STUDIO_EXPECT(describeStudioAssetNameProblem("a b c.png").empty());
+
+    for (const std::string_view refused : {"", "a/b.png", "a\\b.png", ".", "..", "a<b.png",
+                                           "a>b.png", "a:b.png", "a\"b.png", "a|b.png",
+                                           "a?b.png", "a*b.png", "trailing.", "trailing ",
+                                           "CON.txt", "com1", "NUL"})
+    {
+        CNA_STUDIO_EXPECT(!describeStudioAssetNameProblem(refused).empty());
+    }
+
+    // A control character is the case nobody types deliberately and every filesystem handles
+    // differently. It is refused rather than sanitised: silently changing a name the user typed is
+    // how a rename produces a file they cannot find again.
+    CNA_STUDIO_EXPECT(!describeStudioAssetNameProblem(std::string_view{"bad\nname.png"}).empty());
+}
+
+/** @brief A duplicate gets a free name beside the original, and keeps the extension. */
+CNA_STUDIO_TEST(ADuplicateIsANewAssetBesideTheOldOneRatherThanASecondReferenceToIt)
+{
+    const std::filesystem::path directory = makeScratchDirectory("assetduplicate");
+    writeFile(directory / "Assets" / "Crate.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid originalId = assets.findByPath("Assets/Crate.png")->id;
+
+    CommandHistory history;
+    auto duplicate = std::make_unique<DuplicateAssetCommand>(assets, originalId);
+    CNA_STUDIO_EXPECT(duplicate->isValid());
+
+    const Uuid copyId = duplicate->getCopyId();
+    CNA_STUDIO_EXPECT_EQ(duplicate->getCopyPath(), std::string{"Assets/Crate 2.png"});
+
+    // A new id, not the old one. Two files sharing an id would leave the database unable to say
+    // which of them a scene references, and the first scan to notice would pick whichever it
+    // walked last.
+    CNA_STUDIO_EXPECT(copyId != originalId);
+    history.execute(std::move(duplicate));
+
+    CNA_STUDIO_EXPECT(std::filesystem::exists(directory / "Assets" / "Crate 2.png"));
+    CNA_STUDIO_EXPECT(std::filesystem::exists(directory / "Assets" / "Crate 2.png.cnaasset"));
+
+    // The extension comes across, because it is what decides the type on the next scan.
+    CNA_STUDIO_EXPECT(assets.find(copyId)->type == AssetType::Texture2D);
+
+    // And a second duplicate steps past the first rather than colliding with it.
+    auto second = std::make_unique<DuplicateAssetCommand>(assets, originalId);
+    CNA_STUDIO_EXPECT(second->isValid());
+    CNA_STUDIO_EXPECT_EQ(second->getCopyPath(), std::string{"Assets/Crate 3.png"});
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief Undo removes the copy; redo restores *the same* copy rather than minting a second one. */
+CNA_STUDIO_TEST(RedoingADuplicateRestoresTheSameCopyRatherThanANewOne)
+{
+    const std::filesystem::path directory = makeScratchDirectory("assetduplicateredo");
+    writeFile(directory / "Assets" / "Crate.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    auto duplicate = std::make_unique<DuplicateAssetCommand>(
+        assets, assets.findByPath("Assets/Crate.png")->id);
+    const Uuid copyId = duplicate->getCopyId();
+
+    CommandHistory history;
+    history.execute(std::move(duplicate));
+    CNA_STUDIO_EXPECT(assets.find(copyId) != nullptr);
+
+    CNA_STUDIO_EXPECT(history.undo());
+    CNA_STUDIO_EXPECT(assets.find(copyId) == nullptr);
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(directory / "Assets" / "Crate 2.png"));
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(directory / "Assets" / "Crate 2.png.cnaasset"));
+
+    // The id is the point. A redo that minted a fresh one would leave every reference the user had
+    // since made to the copy pointing at nothing.
+    CNA_STUDIO_EXPECT(history.redo());
+    CNA_STUDIO_EXPECT(assets.find(copyId) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(assets.find(copyId)->sourcePath, std::string{"Assets/Crate 2.png"});
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief A delete undoes back to the same id, the same bytes and the same importer settings. */
+CNA_STUDIO_TEST(UndoingADeleteRestoresTheAssetUnderTheIdEverySceneStillReferences)
+{
+    const std::filesystem::path directory = makeScratchDirectory("assetdelete");
+    writeFile(directory / "Assets" / "Crate.png", "the original bytes");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Crate.png")->id;
+
+    CommandHistory history;
+    history.execute(std::make_unique<SetImporterSettingCommand>(assets, id, "generateMipmaps",
+                                                                PropertyValue{false}));
+
+    auto remove = std::make_unique<DeleteAssetCommand>(assets, id);
+    CNA_STUDIO_EXPECT(remove->isValid());
+    history.execute(std::move(remove));
+
+    CNA_STUDIO_EXPECT(assets.find(id) == nullptr);
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(directory / "Assets" / "Crate.png"));
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(directory / "Assets" / "Crate.png.cnaasset"));
+
+    CNA_STUDIO_EXPECT(history.undo());
+
+    // The same id: every scene that referenced this asset was left untouched by the delete, so a
+    // restore under a new id would break exactly the references the undo is meant to repair.
+    const AssetRecord* restored = assets.find(id);
+    CNA_STUDIO_EXPECT(restored != nullptr);
+    CNA_STUDIO_EXPECT_EQ(restored->sourcePath, std::string{"Assets/Crate.png"});
+    CNA_STUDIO_EXPECT(!restored->importerSettings["generateMipmaps"].isNull());
+
+    std::ifstream stream{(directory / "Assets" / "Crate.png").generic_string(), std::ios::binary};
+    const std::string bytes{std::istreambuf_iterator<char>{stream},
+                            std::istreambuf_iterator<char>{}};
+    CNA_STUDIO_EXPECT_EQ(bytes, std::string{"the original bytes"});
+    CNA_STUDIO_EXPECT(std::filesystem::exists(directory / "Assets" / "Crate.png.cnaasset"));
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief An asset whose file has gone cannot be deleted, because the delete could not be undone. */
+CNA_STUDIO_TEST(DeletingAnAssetWhoseFileIsAlreadyGoneIsRefusedRatherThanIrreversible)
+{
+    const std::filesystem::path directory = makeScratchDirectory("assetdeletemissing");
+    writeFile(directory / "Assets" / "Gone.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Gone.png")->id;
+    std::filesystem::remove(directory / "Assets" / "Gone.png");
+
+    const DeleteAssetCommand remove{assets, id};
+    CNA_STUDIO_EXPECT(!remove.isValid());
+    CNA_STUDIO_EXPECT(!remove.getError().empty());
+
+    // And the record is still there, which is the whole reason a missing source is not dropped:
+    // the file may be one `git checkout` away from returning.
+    CNA_STUDIO_EXPECT(assets.find(id) != nullptr);
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief A duplicate of an asset whose file has gone is refused too, for the same reason. */
+CNA_STUDIO_TEST(DuplicatingAnAssetWhoseFileIsGoneIsRefusedRatherThanProducingAnEmptyOne)
+{
+    const std::filesystem::path directory = makeScratchDirectory("assetdupmissing");
+    writeFile(directory / "Assets" / "Gone.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Gone.png")->id;
+    std::filesystem::remove(directory / "Assets" / "Gone.png");
+
+    const DuplicateAssetCommand duplicate{assets, id};
+    CNA_STUDIO_EXPECT(!duplicate.isValid());
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(directory / "Assets" / "Gone 2.png"));
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief Renaming a folder moves everything under it, as one undo entry and with no new ids. */
+CNA_STUDIO_TEST(RenamingAFolderMovesItsContentsAsOneUndoEntryAndKeepsEveryId)
+{
+    const std::filesystem::path directory = makeScratchDirectory("folderrename");
+    writeFile(directory / "Assets" / "Textures" / "a.png", "a");
+    writeFile(directory / "Assets" / "Textures" / "Deep" / "b.png", "b");
+
+    // A sibling whose name is a prefix of the folder being renamed. `Textures2` is not inside
+    // `Textures`, however the two strings sort, and a prefix check without the separator would
+    // drag it along.
+    writeFile(directory / "Assets" / "Textures2" / "c.png", "c");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid deepId = assets.findByPath("Assets/Textures/Deep/b.png")->id;
+    const Uuid siblingId = assets.findByPath("Assets/Textures2/c.png")->id;
+
+    std::string error;
+    std::unique_ptr<StudioCommand> command =
+        studioMoveFolderCommand(assets, "Assets/Textures", "Assets/Art", &error);
+    CNA_STUDIO_EXPECT(command != nullptr);
+
+    CommandHistory history;
+    history.execute(std::move(command));
+
+    CNA_STUDIO_EXPECT_EQ(assets.find(deepId)->sourcePath, std::string{"Assets/Art/Deep/b.png"});
+    CNA_STUDIO_EXPECT(assets.findByPath("Assets/Art/a.png") != nullptr);
+    CNA_STUDIO_EXPECT_EQ(assets.find(siblingId)->sourcePath, std::string{"Assets/Textures2/c.png"});
+
+    // One entry: a folder that came back one file per Ctrl+Z would be a folder nobody dares
+    // rename.
+    CNA_STUDIO_EXPECT_EQ(history.getCount(), std::size_t{1});
+    CNA_STUDIO_EXPECT(history.undo());
+    CNA_STUDIO_EXPECT_EQ(assets.find(deepId)->sourcePath,
+                         std::string{"Assets/Textures/Deep/b.png"});
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief A folder cannot be moved inside itself, and a bad segment is refused before anything moves. */
+CNA_STUDIO_TEST(AFolderMoveRefusesTheDestinationsThatWouldNotSurviveIt)
+{
+    const std::filesystem::path directory = makeScratchDirectory("foldermovebad");
+    writeFile(directory / "Assets" / "Textures" / "a.png", "a");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    std::string error;
+    CNA_STUDIO_EXPECT(studioMoveFolderCommand(assets, "Assets/Textures",
+                                              "Assets/Textures/Inner", &error) == nullptr);
+    CNA_STUDIO_EXPECT(!error.empty());
+
+    // Every segment of the destination is checked, not just the last: a directory Windows refuses
+    // is as unusable as a file it refuses.
+    CNA_STUDIO_EXPECT(studioMoveFolderCommand(assets, "Assets/Textures",
+                                              "Assets/CON/Art", &error) == nullptr);
+    CNA_STUDIO_EXPECT(studioMoveFolderCommand(assets, "", "Assets/Art", &error) == nullptr);
+    CNA_STUDIO_EXPECT(studioMoveFolderCommand(assets, "Assets/Nothing", "Assets/Art", &error)
+                      == nullptr);
+
+    // Nothing moved on the way to any of those refusals.
+    CNA_STUDIO_EXPECT(assets.findByPath("Assets/Textures/a.png") != nullptr);
+
+    std::filesystem::remove_all(directory);
+}

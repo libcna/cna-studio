@@ -33,6 +33,7 @@
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioTreeView.hpp"
+#include "CNA/Studio/UiCore/StudioWidgets.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
@@ -178,6 +179,87 @@ namespace CNA::Studio
      */
     [[nodiscard]] bool studioContentMatches(const AssetRecord& record, std::string_view search);
 
+    /**
+     * @brief What one of the Content Browser's file operations did.
+     *
+     * `plan.md` STUDIO-09009. A rename that is refused and a rename that did nothing because the
+     * name was unchanged are different outcomes, and a caller given only a message cannot tell
+     * them apart -- which is how a browser ends up logging "renamed" for a rename that failed.
+     */
+    struct StudioContentOperation
+    {
+        /** @brief Whether the database changed, i.e. whether there is something to undo. */
+        bool applied = false;
+
+        /** @brief What happened, or why nothing did. Empty when nothing was attempted. */
+        std::string message;
+    };
+
+    /**
+     * @brief Renames an asset or a folder, through the undo stack.
+     *
+     * A rename *is* a move whose destination is the same folder (`AssetCommands.hpp`), which is
+     * why there is no separate command for it: the id survives either way, so no scene is touched
+     * and no reference breaks. That is `STUDIO-09009`'s whole acceptance condition, and it holds
+     * because there is one code path rather than two that could disagree.
+     *
+     * @param context The editor, for its database and its undo stack.
+     * @param asset The asset to rename, or a nil id when renaming a folder.
+     * @param folder The folder to rename, or empty when renaming an asset.
+     * @param newName The new file or folder name, without any path.
+     * @return What happened.
+     */
+    StudioContentOperation studioContentRename(StudioContext& context, const Uuid& asset,
+                                               const std::string& folder,
+                                               const std::string& newName);
+
+    /**
+     * @brief Moves @p asset into @p folder, through the undo stack.
+     *
+     * @param context The editor.
+     * @param asset The asset to move.
+     * @param folder Where it goes. Empty is the project root.
+     * @return What happened.
+     */
+    StudioContentOperation studioContentMoveInto(StudioContext& context, const Uuid& asset,
+                                                 const std::string& folder);
+
+    /**
+     * @brief Duplicates @p asset beside itself, through the undo stack, and selects the copy.
+     * @param context The editor.
+     * @param asset The asset to copy.
+     * @return What happened.
+     */
+    StudioContentOperation studioContentDuplicate(StudioContext& context, const Uuid& asset);
+
+    /**
+     * @brief Deletes @p asset's file and its sidecar, through the undo stack.
+     * @param context The editor.
+     * @param asset The asset to delete.
+     * @return What happened.
+     */
+    StudioContentOperation studioContentDelete(StudioContext& context, const Uuid& asset);
+
+    /**
+     * @brief The rows the right-click menu offers for whatever is under the pointer.
+     *
+     * `plan.md` STUDIO-09009. Separate from the drawing so that *what a menu offers* — which
+     * differs between an asset, a folder and empty space, and differs again for an asset whose
+     * file has gone — can be checked without building a frame.
+     *
+     * A folder offers only Rename. It has no Duplicate because copying a folder is copying every
+     * file under it, which is a job rather than an edit (`STUDIO-30001`), and no Delete because an
+     * undoable delete captures the bytes it removed: one file is a reasonable thing to hold in the
+     * undo stack, and a folder of four hundred textures is not.
+     *
+     * @param assets The database, consulted for whether the asset's file is still there.
+     * @param asset The asset under the pointer, or a nil id.
+     * @param folder The folder under the pointer, or empty.
+     * @return The rows, in order. Empty when there is nothing to offer.
+     */
+    [[nodiscard]] std::vector<StudioContextMenuItem> studioContentMenuItems(
+        const AssetDatabase& assets, const Uuid& asset, const std::string& folder);
+
     /** @brief What the Content Browser remembers between frames. */
     struct StudioContentBrowserState
     {
@@ -224,6 +306,18 @@ namespace CNA::Studio
 
         /** @brief Whether the filter and sort controls are showing. */
         bool filtersOpen = false;
+
+        /**
+         * @brief The asset the open right-click menu is about, or nil.
+         *
+         * Remembered rather than re-derived from the selection, because a right-click on a row
+         * that is *not* selected opens a menu about that row: a menu that acted on the selection
+         * instead would delete the wrong file for every user who did not notice.
+         */
+        Uuid menuAsset;
+
+        /** @brief The folder the open right-click menu is about, or empty. */
+        std::string menuFolder;
     };
 
     struct StudioContentBrowserResult
@@ -254,6 +348,24 @@ namespace CNA::Studio
 
         /** @brief The folder the grid is showing, for the breadcrumb and for tests. */
         std::string folder;
+
+        /** @brief A right-click landed on a row or a card this frame. Input pass only. */
+        bool menuRequested = false;
+
+        /** @brief The asset the right-click landed on, or nil when it was a folder. */
+        Uuid menuAsset;
+
+        /** @brief The folder the right-click landed on, or empty when it was an asset. */
+        std::string menuFolder;
+
+        /**
+         * @brief What the user just renamed, duplicated, deleted or moved.
+         *
+         * `plan.md` STUDIO-09009. Every one of them goes through the undo stack, so the visible
+         * effect arrives via the database; this says *that* it happened, which is what a test
+         * driving a frame has no other way to see.
+         */
+        StudioContentOperation lastOperation;
     };
 
     /**

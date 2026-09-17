@@ -247,6 +247,16 @@ namespace CNA::Studio
         /** @brief Index of the row that was clicked. Input pass only. */
         std::optional<std::size_t> clicked;
 
+        /**
+         * @brief Index of the row the secondary button was clicked on. Input pass only.
+         *
+         * Reported separately from @ref clicked and *without* changing the selection, because a
+         * right-click asks a question about the row under the pointer: a tree that selected it
+         * first would make "delete" act on the row the user was about to be shown a menu for,
+         * which is right, and lose the multi-row selection they had, which is not.
+         */
+        std::optional<std::size_t> rightClicked;
+
         /** @brief Whether the click asked to add to the selection rather than replace it. */
         bool additive = false;
 

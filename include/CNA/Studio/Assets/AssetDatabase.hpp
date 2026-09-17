@@ -194,6 +194,22 @@ namespace CNA::Studio
         [[nodiscard]] std::vector<Uuid> getMissingAssets() const;
 
         /**
+         * @brief Whether moveAsset() would be allowed to move @p id to @p newRelativePath.
+         *
+         * The same rule, asked without doing anything: an undoable move has to know *before* it is
+         * pushed onto the history whether it can succeed, because a command that lands in the undo
+         * stack and then quietly does nothing is worse than one that was refused -- the user is
+         * told it worked, and Ctrl+Z appears to do nothing too.
+         *
+         * @param id The asset.
+         * @param newRelativePath Where it would go.
+         * @param errorMessage Set when the answer is false. Optional.
+         * @return True when the move would be attempted.
+         */
+        [[nodiscard]] bool canMoveAsset(const Uuid& id, const std::string& newRelativePath,
+                                        std::string* errorMessage = nullptr) const;
+
+        /**
          * @brief Moves an asset's source file and its sidecar to @p newRelativePath.
          *
          * The asset keeps its id, so **no scene is touched** (ANALYSIS.md decision D-08). That is

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 4 of 16 complete `███░░░░░░░░░`
+**Progress:** 5 of 16 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -18,7 +18,7 @@
 | `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
 | `STUDIO-09007` | Favourites and recent assets | ⬜ | `STUDIO-09001` |
 | `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ⬜ | `STUDIO-03023` |
-| `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ⬜ | `STUDIO-09001` |
+| `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ✅ | `STUDIO-09001` |
 | `STUDIO-09010` | Reimport, preserving Studio-side import settings | ⬜ | `STUDIO-10001` |
 | `STUDIO-09011` | Reveal in the system file manager | ⬜ | `STUDIO-09001` |
 | `STUDIO-09012` | Dependency view: references-to and referenced-by | ⬜ | `STUDIO-09001` |
@@ -161,6 +161,75 @@ somebody looking in the wrong place; "Nothing matches" names a control they can 
 **Acceptance.** A move or rename preserves the asset UUID, so no scene is touched and no reference breaks
 
 **Verification.** Test: move an asset referenced by a scene; the scene file is unchanged
+
+**Done.** Rename in place in both views, move by dragging onto a folder, duplicate and delete from a
+right-click menu — all four through `CommandHistory`, and `F2`, `Ctrl+D` and `Delete` reaching the
+same operations from the keyboard.
+
+**A rename is a move, so there is one code path rather than two.** The acceptance condition holds
+because `MoveAssetCommand` is the only thing that changes an asset's path: a rename is a move whose
+destination happens to be the same folder, and a folder rename is a `CompositeCommand` of the same
+moves. Two implementations could have disagreed about whether the id survives; one cannot. The test
+asserts the *file* is byte-identical, not that the scene still loads — a move that rewrote every
+scene would pass the weaker check and the user would find out at review time.
+
+**Four decisions, each with an obvious wrong answer.**
+
+- **A duplicate gets a new id, generated once in the constructor.** New, because two files sharing
+  an id would leave the database unable to say which one a scene references, and the first scan to
+  notice would pick whichever it walked last. Once, because undo-then-redo must restore *the same*
+  copy: a redo that minted a fresh id would strand every reference the user had since made to it.
+- **A delete captures the bytes, and undo restores the same id.** A scene referencing the asset is
+  not touched by the delete — the reference dangles until the undo — so a restore under a new id
+  would break exactly the references the undo exists to repair. The bytes are read in the
+  constructor, before anything is removed, so an unreadable file produces an invalid command rather
+  than a deletion whose undo would be a menu entry that lies. That is also why an asset whose file
+  has already gone cannot be deleted at all.
+- **No confirmation dialog.** The undo stack *is* the confirmation. A dialog in front of an
+  operation that is already reversible teaches people to dismiss dialogs, and the one that matters
+  later gets dismissed too.
+- **Names are checked against the strictest platform, not the host.** `<>:"|?*`, control
+  characters, a trailing dot or space, and the DOS device names are refused on Linux as well, so a
+  project renamed here still checks out on Windows. The person who would have created that
+  repository is the one person who never finds out.
+
+**A folder offers Rename and nothing else.** Duplicating one is copying every file under it, which
+is a job rather than an edit (`STUDIO-30001`); an undoable folder delete would hold every byte
+under it in the undo stack, which is reasonable for one texture and not for four hundred. Moving a
+folder *is* offered, because it is N renames that capture nothing.
+
+**`canMoveAsset` was extracted so validity and execution cannot disagree.** The destination checks
+lived inside `moveAsset` and were therefore only discovered at execute time — which for a command
+means it lands on the undo stack, does nothing, and tells the user it worked. The rule is now asked
+once by the constructor and once by the move, from one function.
+
+**The right-click menu is the panel's own, not the shell's.** `StudioShell::openContextMenu` takes
+*action ids* from the registry, which is right for commands that also live in the menu bar and
+wrong for rows that exist only while one asset is under the pointer: registering "Duplicate" as an
+application action would put it in the command palette, where there is no pointer and nothing under
+it. So `studioContextMenu` was added beside `studioDropdown`, on the same deferred-popup mechanism.
+
+**One `F2`, one `Ctrl+D`, one `Delete`.** The entity selection and the asset selection are mutually
+exclusive by construction — `select()` clears one and `selectAsset()` clears the other — so the
+three existing edit actions were extended to act on whichever is live rather than given asset-only
+twins the user would have to know the difference between.
+
+**Right-click asks about the row under the pointer, never the selection.** A menu that read the
+selection would be right whenever the user right-clicked what they had already selected — which is
+most of the time, and never when it matters.
+
+**Verification.** `tests/ProjectAndAssetTests.cpp`: the acceptance test (a scene file byte-identical
+across a move *and* its undo), a rename keeping the id and taking the sidecar with it, name rules
+against every platform, duplicate naming and id behaviour including redo, delete-and-undo restoring
+bytes, id and importer settings, both operations refused on a missing source, a folder rename as
+one undo entry with `Textures2` left alone, and the destinations a folder move refuses.
+`tests/StudioContentBrowserTests.cpp`: the menu rows for an asset, a missing asset, a folder and
+empty space; rename, move, duplicate and delete through the browser; a refused rename changing
+nothing; and — through a real shell frame, in **both** views — a right-click asking about the row
+rather than the selection. `tests/StudioShellActionTests.cpp`: `Ctrl+D` and `Delete` acting on the
+selected asset, and greying out when nothing is selected. A guard test asserts the menu's shortcut
+hints are the chords the action registry actually binds, because a hint that has drifted is a
+promise the user stops trusting rather than a bug they report.
 
 ### `STUDIO-09015` — Source file tracking and derived-data cache separation
 

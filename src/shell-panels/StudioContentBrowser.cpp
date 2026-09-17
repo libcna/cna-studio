@@ -6,9 +6,13 @@
 
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 
+#include "CNA/Studio/Assets/AssetCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
+
+#include <memory>
+#include <utility>
 
 #include <algorithm>
 #include <cctype>
@@ -563,6 +567,164 @@ namespace CNA::Studio
         return cards;
     }
 
+    // --- Rename, move, duplicate and delete (STUDIO-09009) ---------------------------------------
+    //
+    // Each of them builds a command and hands it to the context, so all four undo, and all four
+    // undo the same way as every other document change (ANALYSIS.md decision D-06). None of them
+    // touches a scene: a reference is a Uuid, and the id survives a move, a rename and a restore
+    // from the undo stack alike -- which is the property STUDIO-09009 exists to guarantee.
+
+    namespace
+    {
+        /** @brief The last segment of @p path: the file or folder name, with no path above it. */
+        std::string lastSegment(std::string_view path)
+        {
+            const std::size_t slash = path.find_last_of('/');
+            return std::string{slash == std::string_view::npos ? path : path.substr(slash + 1)};
+        }
+
+        /** @brief What an asset or a folder is called, which is what a rename field starts with. */
+        std::string studioContentDisplayName(const AssetDatabase& assets, const Uuid& asset,
+                                             const std::string& folder)
+        {
+            if (!folder.empty()) { return lastSegment(folder); }
+            const AssetRecord* record = assets.find(asset);
+            return record == nullptr ? std::string{} : lastSegment(record->sourcePath);
+        }
+
+        /** @brief Reports @p operation to the console when it failed, and returns it. */
+        StudioContentOperation reported(StudioContext& context, StudioContentOperation operation)
+        {
+            // A refused rename that said nothing would look like a browser that had stopped
+            // responding. The console is where Studio already says what it would not do.
+            if (!operation.applied && !operation.message.empty())
+            {
+                context.log(LogSeverity::Warning, operation.message);
+            }
+            return operation;
+        }
+    }
+
+    StudioContentOperation studioContentRename(StudioContext& context, const Uuid& asset,
+                                               const std::string& folder,
+                                               const std::string& newName)
+    {
+        if (const std::string problem = describeStudioAssetNameProblem(newName); !problem.empty())
+        {
+            return reported(context, {false, problem});
+        }
+
+        if (!folder.empty())
+        {
+            std::string error;
+            std::unique_ptr<StudioCommand> command = studioMoveFolderCommand(
+                context.getAssets(), folder, studioAssetPathRenamedTo(folder, newName), &error);
+            if (command == nullptr) { return reported(context, {false, std::move(error)}); }
+
+            const std::string description = command->getDescription();
+            context.execute(std::move(command));
+            return {true, description};
+        }
+
+        const AssetRecord* record = context.getAssets().find(asset);
+        if (record == nullptr) { return reported(context, {false, "no asset with that id"}); }
+
+        auto command = std::make_unique<MoveAssetCommand>(
+            context.getAssets(), asset, studioAssetPathRenamedTo(record->sourcePath, newName));
+        if (!command->isValid())
+        {
+            return reported(context, {false, command->getError()});
+        }
+
+        const std::string description = command->getDescription();
+        context.execute(std::move(command));
+        return {true, description};
+    }
+
+    StudioContentOperation studioContentMoveInto(StudioContext& context, const Uuid& asset,
+                                                 const std::string& folder)
+    {
+        const AssetRecord* record = context.getAssets().find(asset);
+        if (record == nullptr) { return reported(context, {false, "no asset with that id"}); }
+
+        const std::size_t slash = record->sourcePath.find_last_of('/');
+        const std::string name = slash == std::string::npos ? record->sourcePath
+                                                            : record->sourcePath.substr(slash + 1);
+
+        auto command = std::make_unique<MoveAssetCommand>(
+            context.getAssets(), asset, folder.empty() ? name : folder + "/" + name);
+        if (!command->isValid())
+        {
+            // Dropping a file back into the folder it is already in is a gesture, not a mistake:
+            // it is refused silently rather than logged, because a console line every time someone
+            // changes their mind mid-drag is noise.
+            return {false, command->getError()};
+        }
+
+        const std::string description = command->getDescription();
+        context.execute(std::move(command));
+        return {true, description};
+    }
+
+    StudioContentOperation studioContentDuplicate(StudioContext& context, const Uuid& asset)
+    {
+        auto command = std::make_unique<DuplicateAssetCommand>(context.getAssets(), asset);
+        if (!command->isValid())
+        {
+            return reported(context, {false, command->getError()});
+        }
+
+        const std::string description = command->getDescription();
+        const Uuid copyId = command->getCopyId();
+        context.execute(std::move(command));
+
+        // Selected, so the next thing the user does happens to the copy. A duplicate that left the
+        // original selected is one people edit by mistake, and the mistake is invisible.
+        context.selectAsset(copyId);
+        return {true, description};
+    }
+
+    StudioContentOperation studioContentDelete(StudioContext& context, const Uuid& asset)
+    {
+        auto command = std::make_unique<DeleteAssetCommand>(context.getAssets(), asset);
+        if (!command->isValid())
+        {
+            return reported(context, {false, command->getError()});
+        }
+
+        const std::string description = command->getDescription();
+        const bool wasSelected = context.getSelectedAsset() == asset;
+        context.execute(std::move(command));
+
+        // An inspector still showing a file that no longer exists is the panel telling the user
+        // the delete did not work.
+        if (wasSelected) { context.selectAsset(Uuid{}); }
+        return {true, description};
+    }
+
+    std::vector<StudioContextMenuItem> studioContentMenuItems(const AssetDatabase& assets,
+                                                              const Uuid& asset,
+                                                              const std::string& folder)
+    {
+        if (!folder.empty())
+        {
+            return {StudioContextMenuItem{"Rename", true, "F2"}};
+        }
+
+        if (!asset.isValid()) { return {}; }
+
+        // A missing source can still be renamed -- that is metadata, and the record is what is
+        // being renamed -- but there is nothing to copy and nothing to delete. Greyed rather than
+        // absent: a menu that changes length depending on the file's state is one where the user
+        // clicks Delete and gets Duplicate.
+        const bool present = !assets.isMissing(asset);
+
+        return {StudioContextMenuItem{"Rename", true, "F2"},
+                StudioContextMenuItem{"Duplicate", present, "Ctrl+D"},
+                StudioContextMenuItem{},
+                StudioContextMenuItem{"Delete", present, "Delete"}};
+    }
+
     StudioContentBrowserResult studioContentBrowser(StudioFrame& frame, const UiRect& bounds,
                                                     StudioContext& context,
                                                     StudioContentBrowserState& state)
@@ -768,12 +930,56 @@ namespace CNA::Studio
         // one view would make switching views also mean switching how you move around.
         result = studioContentFolderPane(frame, area, context, state, std::move(result));
 
-        if (state.view == StudioContentView::Grid)
+        result = state.view == StudioContentView::Grid
+            ? studioContentGrid(frame, area, context, state, std::move(result))
+            : studioContentList(frame, area, context, state, std::move(result));
+
+        // --- The right-click menu (STUDIO-09009) --------------------------------------------
+        //
+        // Described after both presentations, so its id is the same whichever one drew: a menu
+        // whose identity depended on the view would close itself the moment the view changed under
+        // it. The panel's own menu rather than the shell's, because its rows are about the file
+        // under the pointer and registering "Duplicate" as an application action would put it in
+        // the command palette, where there is no pointer and nothing under it.
+        const WidgetId menuId = frame.ids().make("contentmenu");
+        if (frame.isInputPass() && result.menuRequested)
         {
-            return studioContentGrid(frame, area, context, state, result);
+            state.menuAsset = result.menuAsset;
+            state.menuFolder = result.menuFolder;
+            studioOpenContextMenu(frame, menuId, frame.input().mouseX, frame.input().mouseY);
         }
 
-        return studioContentList(frame, area, context, state, result);
+        const std::vector<StudioContextMenuItem> items =
+            studioContentMenuItems(context.getAssets(), state.menuAsset, state.menuFolder);
+
+        // Dispatched on the label rather than on the index, because the rows differ between an
+        // asset and a folder: an index that meant Duplicate in one menu and nothing in the other
+        // is the kind of off-by-one that deletes the wrong file.
+        const int chosen = studioContextMenu(frame, menuId, items);
+        const std::string_view action =
+            chosen >= 0 && static_cast<std::size_t>(chosen) < items.size()
+                ? std::string_view{items[static_cast<std::size_t>(chosen)].label}
+                : std::string_view{};
+
+        if (action == "Rename")
+        {
+            // Renaming begins where the name is, in whichever view is showing. The tree's rename
+            // state carries it and the grid reads the same field, so switching view part-way
+            // through an edit keeps the edit.
+            state.tree.beginRename(
+                state.menuFolder.empty() ? state.menuAsset.toString() : state.menuFolder,
+                studioContentDisplayName(context.getAssets(), state.menuAsset, state.menuFolder));
+        }
+        else if (action == "Duplicate")
+        {
+            result.lastOperation = studioContentDuplicate(context, state.menuAsset);
+        }
+        else if (action == "Delete")
+        {
+            result.lastOperation = studioContentDelete(context, state.menuAsset);
+        }
+
+        return result;
     }
 
     namespace
@@ -830,6 +1036,13 @@ namespace CNA::Studio
                 row.dragType = std::string{kStudioAssetDragType};
                 row.dragValue = row.id;
             }
+            else
+            {
+                // And a folder takes one, which is how a file is moved (STUDIO-09009). Dragging is
+                // the gesture people reach for first; the menu exists for the file that is already
+                // where the drag would have to start from.
+                row.dropType = std::string{kStudioAssetDragType};
+            }
 
             rows.push_back(std::move(row));
         }
@@ -844,6 +1057,36 @@ namespace CNA::Studio
 
         const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state.tree, empty);
         result.rowsDrawn = tree.rowsDrawn;
+
+        // A rename commits into the same move that a drag would produce (STUDIO-09009). The tree
+        // owns the field and the keys; what the new name *means* is the browser's to say.
+        if (tree.renamed.has_value())
+        {
+            const StudioContentCard& card = cards[*tree.renamed];
+            result.lastOperation = studioContentRename(context, card.assetId, card.folder,
+                                                      tree.renamedTo);
+        }
+
+        if (tree.rightClicked.has_value())
+        {
+            const StudioContentCard& card = cards[*tree.rightClicked];
+            result.menuAsset = card.assetId;
+            result.menuFolder = card.folder;
+            result.menuRequested = true;
+        }
+
+        // A drop onto a folder row moves the asset there. The same operation the menu's rename
+        // performs and the same command behind it, so a moved file keeps its id either way and no
+        // scene is touched.
+        if (tree.dropped.has_value())
+        {
+            const StudioContentCard& card = cards[*tree.dropped];
+            if (card.isFolder())
+            {
+                result.lastOperation =
+                    studioContentMoveInto(context, Uuid::parse(tree.droppedValue), card.folder);
+            }
+        }
 
         if (tree.clicked.has_value())
         {
@@ -942,8 +1185,24 @@ namespace CNA::Studio
             }
 
             frame.ids().pushIndex(static_cast<std::int64_t>(index));
-            const StudioInteraction interaction =
-                frame.interact(frame.ids().make("card"), box, /*enabled=*/true);
+
+            const std::string entryId =
+                entry.isFolder() ? entry.folder : entry.assetId.toString();
+            const bool renaming = !state.tree.renaming().empty()
+                               && state.tree.renaming() == entryId;
+
+            // A card being renamed is a text field, not a card: clicking to place the caret must
+            // not also enter the folder, and dragging to select a word must not pick the asset up.
+            const StudioInteraction interaction = renaming
+                ? StudioInteraction{}
+                : frame.interact(frame.ids().make("card"), box, /*enabled=*/true);
+
+            // Outside the draw pass, because the rename field below needs the same rectangle the
+            // label would have used: an editor that appeared somewhere other than where the name
+            // was would make the user check afterwards which card they edited.
+            UiRect caption{box.left() + spacing * 0.5f, box.top() + card,
+                           std::max(0.0f, box.width - spacing), labelHeight};
+            const UiRect nameRow = caption.splitTop(labelHeight * 0.55f);
 
             if (frame.isDrawPass())
             {
@@ -971,17 +1230,17 @@ namespace CNA::Studio
                                theme.color(entry.missing ? StudioColorRole::Warning
                                                          : StudioColorRole::TextSecondary));
 
-                UiRect caption{box.left() + spacing * 0.5f, box.top() + card,
-                               std::max(0.0f, box.width - spacing), labelHeight};
-                const UiRect nameRow = caption.splitTop(labelHeight * 0.55f);
-
                 // Centred, and truncated rather than wrapped: two lines of file name would make
                 // the cards different heights, and a grid whose rows do not line up is not a grid.
-                studioDrawText(frame, nameRow,
-                               studioTruncateText(frame, theme.font(StudioFontRole::BodySmall),
-                                                  entry.label, nameRow.width),
-                               StudioFontRole::BodySmall,
-                               theme.color(StudioColorRole::TextPrimary), StudioTextAlign::Center);
+                if (!renaming)
+                {
+                    studioDrawText(frame, nameRow,
+                                   studioTruncateText(frame, theme.font(StudioFontRole::BodySmall),
+                                                      entry.label, nameRow.width),
+                                   StudioFontRole::BodySmall,
+                                   theme.color(StudioColorRole::TextPrimary),
+                                   StudioTextAlign::Center);
+                }
                 studioDrawText(frame, caption,
                                studioTruncateText(frame, theme.font(StudioFontRole::Caption),
                                                   entry.detail, caption.width),
@@ -990,6 +1249,45 @@ namespace CNA::Studio
                                                          : StudioColorRole::TextSecondary),
                                StudioTextAlign::Center);
                 ++result.cardsDrawn;
+            }
+
+            // Renamed in place, exactly as in the list (STUDIO-09009). One rename state, shared by
+            // both presentations, so switching view part-way through an edit keeps the edit rather
+            // than silently abandoning it.
+            if (renaming)
+            {
+                const WidgetId renameId = frame.ids().make("rename");
+                if (state.tree.renameStarting())
+                {
+                    frame.router().setFocus(renameId);
+                    state.tree.clearRenameStarting();
+                }
+
+                StudioTextFieldOptions renameOptions;
+                renameOptions.selectAllOnFocus = true;
+                renameOptions.font = StudioFontRole::BodySmall;
+
+                const StudioTextFieldResult edit = studioTextField(
+                    frame, renameId, nameRow, state.tree.renameText(), renameOptions);
+
+                if (frame.isInputPass())
+                {
+                    if (edit.cancelled) { state.tree.cancelRename(); }
+                    else if (edit.committed || !edit.interaction.focused)
+                    {
+                        std::string name = state.tree.renameText();
+                        state.tree.cancelRename();
+                        if (!name.empty() && name != entry.label)
+                        {
+                            result.lastOperation = studioContentRename(
+                                context, entry.isFolder() ? Uuid{} : entry.assetId,
+                                entry.folder, name);
+                        }
+                    }
+                }
+
+                frame.ids().pop();
+                continue;
             }
 
             if (frame.isInputPass())
@@ -1007,6 +1305,13 @@ namespace CNA::Studio
                         result.selectedAsset = entry.assetId;
                     }
                 }
+
+                if (interaction.rightClicked)
+                {
+                    result.menuAsset = entry.assetId;
+                    result.menuFolder = entry.folder;
+                    result.menuRequested = true;
+                }
             }
 
             // Draggable onto anything that takes an asset, exactly as the list's rows are. A
@@ -1019,6 +1324,22 @@ namespace CNA::Studio
                 payload.value = entry.assetId.toString();
                 payload.label = entry.label;
                 studioDragSource(frame, frame.ids().make("card"), interaction, std::move(payload));
+            }
+            else
+            {
+                const StudioFrame::StudioDropResult drop =
+                    frame.acceptDrop(frame.ids().make("drop"), box,
+                                     std::string{kStudioAssetDragType});
+                if (drop.hovered && frame.isDrawPass())
+                {
+                    frame.drawList().strokeRect(box, theme.color(StudioColorRole::Accent),
+                                                metricOf(theme, StudioMetric::BorderWidth) * 2.0f);
+                }
+                if (drop.dropped)
+                {
+                    result.lastOperation =
+                        studioContentMoveInto(context, Uuid::parse(drop.value), entry.folder);
+                }
             }
 
             frame.ids().pop();

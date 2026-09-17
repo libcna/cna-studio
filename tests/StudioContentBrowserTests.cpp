@@ -17,6 +17,7 @@
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/StudioContext.hpp"
+#include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <filesystem>
@@ -771,4 +772,325 @@ CNA_STUDIO_TEST(BothSortOrdersHaveAName)
     // Stored in preferences and printed in tests, so a rename would be a silent format change.
     CNA_STUDIO_EXPECT_EQ(studioContentSortName(StudioContentSort::Name), std::string_view{"name"});
     CNA_STUDIO_EXPECT_EQ(studioContentSortName(StudioContentSort::Type), std::string_view{"type"});
+}
+
+// ------------------------------------------------------------------------------------------------
+// Rename, move, duplicate and delete (STUDIO-09009)
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief An input snapshot with the *secondary* button in a given state. */
+    UiInputState rightAt(float x, float y, bool down)
+    {
+        UiInputState input = at(x, y);
+        input.setMouseDown(UiMouseButton::Right, down);
+        return input;
+    }
+
+    /** @brief Whether any row of @p items is labelled @p label and enabled. */
+    bool offersEnabled(const std::vector<StudioContextMenuItem>& items, std::string_view label)
+    {
+        for (const StudioContextMenuItem& item : items)
+        {
+            if (item.label == label) { return item.enabled; }
+        }
+        return false;
+    }
+
+    /** @brief Whether any row of @p items is labelled @p label at all. */
+    bool offers(const std::vector<StudioContextMenuItem>& items, std::string_view label)
+    {
+        for (const StudioContextMenuItem& item : items)
+        {
+            if (item.label == label) { return true; }
+        }
+        return false;
+    }
+}
+
+CNA_STUDIO_TEST(TheMenuOffersOnlyWhatTheThingUnderThePointerCanActuallyDo)
+{
+    ScopedProject project{"menurows"};
+    project.write("Assets/Textures/player.png");
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+    const Uuid present = track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+    const Uuid gone = track(assets, "Assets/Textures/deleted.png", AssetType::Texture2D);
+
+    const std::vector<StudioContextMenuItem> asset = studioContentMenuItems(assets, present, {});
+    CNA_STUDIO_EXPECT(offersEnabled(asset, "Rename"));
+    CNA_STUDIO_EXPECT(offersEnabled(asset, "Duplicate"));
+    CNA_STUDIO_EXPECT(offersEnabled(asset, "Delete"));
+
+    // A missing source can still be renamed -- that is metadata, and the record is what is being
+    // renamed -- but there is nothing to copy and nothing to delete. Greyed rather than absent: a
+    // menu that changes length depending on the file's state is one where the user aims at Delete
+    // and hits Duplicate.
+    const std::vector<StudioContextMenuItem> missing = studioContentMenuItems(assets, gone, {});
+    CNA_STUDIO_EXPECT_EQ(missing.size(), asset.size());
+    CNA_STUDIO_EXPECT(offersEnabled(missing, "Rename"));
+    CNA_STUDIO_EXPECT(!offersEnabled(missing, "Duplicate"));
+    CNA_STUDIO_EXPECT(!offersEnabled(missing, "Delete"));
+
+    // A folder offers rename and nothing else: duplicating one is copying every file under it,
+    // which is a job rather than an edit, and an undoable folder delete would hold every byte in
+    // it in the undo stack.
+    const std::vector<StudioContextMenuItem> folder =
+        studioContentMenuItems(assets, Uuid{}, "Assets/Textures");
+    CNA_STUDIO_EXPECT_EQ(folder.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(offersEnabled(folder, "Rename"));
+    CNA_STUDIO_EXPECT(!offers(folder, "Duplicate"));
+    CNA_STUDIO_EXPECT(!offers(folder, "Delete"));
+
+    // Empty space has nothing to offer, and an empty menu is not drawn at all rather than shown as
+    // a rectangle the user has to click away.
+    CNA_STUDIO_EXPECT(studioContentMenuItems(assets, Uuid{}, {}).empty());
+}
+
+CNA_STUDIO_TEST(RenamingThroughTheBrowserKeepsTheIdAndIsOneUndo)
+{
+    ScopedProject project{"browserrename"};
+    project.write("Assets/Textures/old.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid id = context.getAssets().findByPath("Assets/Textures/old.png")->id;
+
+    const StudioContentOperation renamed = studioContentRename(context, id, {}, "new.png");
+    CNA_STUDIO_EXPECT(renamed.applied);
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(id)->sourcePath,
+                         std::string{"Assets/Textures/new.png"});
+
+    // Through the history like every other document change, so Ctrl+Z puts the name back.
+    CNA_STUDIO_EXPECT_EQ(context.getHistory().getCount(), std::size_t{1});
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(id)->sourcePath,
+                         std::string{"Assets/Textures/old.png"});
+}
+
+CNA_STUDIO_TEST(ARefusedRenameChangesNothingAndSaysWhy)
+{
+    ScopedProject project{"renamerefused"};
+    project.write("Assets/a.png");
+    project.write("Assets/b.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid id = context.getAssets().findByPath("Assets/a.png")->id;
+
+    for (const std::string_view name : {"", "Sub/a.png", "a<b.png", "trailing.", "b.png"})
+    {
+        const StudioContentOperation refused =
+            studioContentRename(context, id, {}, std::string{name});
+        CNA_STUDIO_EXPECT(!refused.applied);
+
+        // A refusal with no explanation is a browser that looks like it has stopped responding.
+        CNA_STUDIO_EXPECT(!refused.message.empty());
+    }
+
+    // Nothing was renamed on the way through any of those, and nothing is on the undo stack.
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(id)->sourcePath, std::string{"Assets/a.png"});
+    CNA_STUDIO_EXPECT_EQ(context.getHistory().getCount(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(DroppingAnAssetOnAFolderMovesItThereAndKeepsItsId)
+{
+    ScopedProject project{"browsermove"};
+    project.write("Assets/player.png");
+    project.write("Assets/Characters/other.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid id = context.getAssets().findByPath("Assets/player.png")->id;
+
+    const StudioContentOperation moved =
+        studioContentMoveInto(context, id, "Assets/Characters");
+    CNA_STUDIO_EXPECT(moved.applied);
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(id)->sourcePath,
+                         std::string{"Assets/Characters/player.png"});
+
+    // Back to the project root, which is the empty path rather than a special case.
+    const StudioContentOperation back = studioContentMoveInto(context, id, {});
+    CNA_STUDIO_EXPECT(back.applied);
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(id)->sourcePath, std::string{"player.png"});
+
+    // Dropping a file into the folder it is already in is a change of mind, not a failure: it is
+    // refused without a message, so the console does not fill up with them.
+    const StudioContentOperation again = studioContentMoveInto(context, id, {});
+    CNA_STUDIO_EXPECT(!again.applied);
+}
+
+CNA_STUDIO_TEST(DuplicatingSelectsTheCopyAndDeletingClearsTheInspector)
+{
+    ScopedProject project{"browserduplicate"};
+    project.write("Assets/Crate.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid original = context.getAssets().findByPath("Assets/Crate.png")->id;
+    context.selectAsset(original);
+
+    const StudioContentOperation copied = studioContentDuplicate(context, original);
+    CNA_STUDIO_EXPECT(copied.applied);
+
+    // The copy is selected, so the next thing the user does happens to it. A duplicate that left
+    // the original selected is one people edit by mistake, invisibly.
+    const Uuid selected = context.getSelectedAsset();
+    CNA_STUDIO_EXPECT(selected.isValid());
+    CNA_STUDIO_EXPECT(selected != original);
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(selected)->sourcePath,
+                         std::string{"Assets/Crate 2.png"});
+
+    // Deleting what the inspector is showing clears it: a panel still describing a file that no
+    // longer exists is the panel telling the user the delete did not work.
+    const StudioContentOperation deleted = studioContentDelete(context, selected);
+    CNA_STUDIO_EXPECT(deleted.applied);
+    CNA_STUDIO_EXPECT(!context.getSelectedAsset().isValid());
+    CNA_STUDIO_EXPECT(context.getAssets().find(selected) == nullptr);
+
+    // And undo brings it back, under the id every scene would still be referencing.
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT(context.getAssets().find(selected) != nullptr);
+}
+
+CNA_STUDIO_TEST(RenamingAFolderThroughTheBrowserMovesEverythingUnderIt)
+{
+    ScopedProject project{"browserfolderrename"};
+    project.write("Assets/Textures/a.png");
+    project.write("Assets/Textures/Deep/b.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid deep = context.getAssets().findByPath("Assets/Textures/Deep/b.png")->id;
+
+    const StudioContentOperation renamed =
+        studioContentRename(context, Uuid{}, "Assets/Textures", "Art");
+    CNA_STUDIO_EXPECT(renamed.applied);
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(deep)->sourcePath,
+                         std::string{"Assets/Art/Deep/b.png"});
+
+    // One entry, so the folder comes back on one Ctrl+Z rather than on one press per file in it.
+    CNA_STUDIO_EXPECT_EQ(context.getHistory().getCount(), std::size_t{1});
+    CNA_STUDIO_EXPECT(context.getHistory().undo());
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().find(deep)->sourcePath,
+                         std::string{"Assets/Textures/Deep/b.png"});
+}
+
+CNA_STUDIO_TEST(ARightClickAsksAboutTheRowUnderThePointerRatherThanTheSelection)
+{
+    // The distinction that decides which file gets deleted. A menu that acted on the selection
+    // would be right whenever the user right-clicked what they had already selected -- which is
+    // most of the time, and never when it matters.
+    for (const StudioContentView view : {StudioContentView::Grid, StudioContentView::List})
+    {
+        ScopedProject project{"rightclick"};
+        project.write("Assets/first.png");
+        project.write("Assets/second.png");
+
+        StudioContext context;
+        context.getAssets().setProjectRoot(project.root());
+        CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+        // Something else is selected, so a menu that read the selection would name the wrong file.
+        const Uuid selected = context.getAssets().findByPath("Assets/second.png")->id;
+        context.selectAsset(selected);
+
+        StudioContentBrowserState state;
+        state.view = view;
+        state.folderPaneWidth = 0.0f;
+
+        // Standing in the folder that holds the files: at the project root the browser shows only
+        // the `Assets` folder, and a right-click there would be asking about a folder.
+        state.folder = "Assets";
+
+        auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+        shell->resetLayout();
+        shell->renderFrame(at(-1.0f, -1.0f));
+        CNA_STUDIO_EXPECT(shell->activatePanel("content"));
+
+        UiRect bounds;
+        CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+            [&](StudioFrame& frame, const UiRect& area) {
+                studioContentBrowser(frame, area, context, state);
+                if (frame.isDrawPass()) { bounds = area; }
+            }));
+        shell->renderFrame(at(-1.0f, -1.0f));
+
+        // Swept rather than assuming a row or card size, so a metric change cannot turn this into
+        // a test that right-clicks empty space and passes for the wrong reason.
+        bool opened = false;
+        for (float y = bounds.top() + 4.0f; y < bounds.bottom() - 4.0f && !opened; y += 6.0f)
+        {
+            const float x = bounds.left() + 30.0f;
+            shell->renderFrame(rightAt(x, y, false));
+            shell->renderFrame(rightAt(x, y, true));
+            shell->renderFrame(rightAt(x, y, false));
+            opened = state.menuAsset.isValid();
+        }
+
+        if (!opened)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"a right-click opened no menu in "}
+                + std::string{studioContentViewName(view)} + " view.");
+            continue;
+        }
+
+        // Whatever it landed on, it is the row under the pointer -- and the selection it did not
+        // land on is untouched.
+        CNA_STUDIO_EXPECT(context.getAssets().find(state.menuAsset) != nullptr);
+        CNA_STUDIO_EXPECT_EQ(context.getSelectedAsset().toString(), selected.toString());
+        CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+    }
+}
+
+CNA_STUDIO_TEST(TheMenusShortcutHintsAreTheShortcutsTheRegistryActuallyBinds)
+{
+    // A hint is a promise. The menu and the action registry are two places that would drift the
+    // day someone rebinds Duplicate, and the symptom -- a menu that tells the user to press a key
+    // that does something else -- is one nobody reports, because they stop trusting the hints
+    // instead.
+    StudioActionRegistry registry;
+    registerCoreStudioActions(registry);
+
+    ScopedProject project{"menushortcuts"};
+    project.write("Assets/Crate.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    const Uuid id = track(context.getAssets(), "Assets/Crate.png", AssetType::Texture2D);
+
+    const std::vector<StudioContextMenuItem> items =
+        studioContentMenuItems(context.getAssets(), id, {});
+
+    for (const auto& [label, actionId] : {std::pair{"Rename", "studio.edit.rename"},
+                                          std::pair{"Duplicate", "studio.edit.duplicate"},
+                                          std::pair{"Delete", "studio.edit.delete"}})
+    {
+        const StudioAction* action = registry.find(actionId);
+        CNA_STUDIO_EXPECT(action != nullptr);
+        if (action == nullptr) { continue; }
+
+        bool found = false;
+        for (const StudioContextMenuItem& item : items)
+        {
+            if (item.label != label) { continue; }
+            found = true;
+            CNA_STUDIO_EXPECT_EQ(item.shortcut, describeStudioShortcut(action->shortcut));
+        }
+        CNA_STUDIO_EXPECT(found);
+    }
 }

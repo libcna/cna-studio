@@ -179,15 +179,15 @@ namespace CNA::Studio
         return true;
     }
 
-    bool AssetDatabase::moveAsset(const Uuid& id, const std::string& newRelativePath,
-                                  std::string* errorMessage)
+    bool AssetDatabase::canMoveAsset(const Uuid& id, const std::string& newRelativePath,
+                                     std::string* errorMessage) const
     {
         const auto fail = [&](std::string reason) {
             if (errorMessage != nullptr) { *errorMessage = std::move(reason); }
             return false;
         };
 
-        AssetRecord* record = findMutable(id);
+        const AssetRecord* record = find(id);
         if (record == nullptr) { return fail("no asset with that id"); }
         if (newRelativePath.empty()) { return fail("destination path is empty"); }
         if (record->sourcePath == newRelativePath) { return true; }
@@ -202,13 +202,42 @@ namespace CNA::Studio
         }
 
         const std::string destination = normalised.generic_string();
-        if (findByPath(destination) != nullptr) { return fail("'" + destination + "' is already tracked"); }
+        if (findByPath(destination) != nullptr)
+        {
+            return fail("'" + destination + "' is already tracked");
+        }
+
+        std::error_code errorCode;
+        if (std::filesystem::exists(resolvePath(destination), errorCode))
+        {
+            return fail("'" + destination + "' already exists");
+        }
+
+        return true;
+    }
+
+    bool AssetDatabase::moveAsset(const Uuid& id, const std::string& newRelativePath,
+                                  std::string* errorMessage)
+    {
+        const auto fail = [&](std::string reason) {
+            if (errorMessage != nullptr) { *errorMessage = std::move(reason); }
+            return false;
+        };
+
+        // The same rule the command asked before it was pushed onto the undo stack, rather than a
+        // second copy of it here: a command whose validity and whose execution disagreed would be
+        // one that lands in the history and then quietly does nothing.
+        if (!canMoveAsset(id, newRelativePath, errorMessage)) { return false; }
+
+        AssetRecord* record = findMutable(id);
+        if (record->sourcePath == newRelativePath) { return true; }
+
+        const std::string destination =
+            std::filesystem::path{newRelativePath}.lexically_normal().generic_string();
 
         std::error_code errorCode;
         const std::filesystem::path from{resolvePath(record->sourcePath)};
         const std::filesystem::path to{resolvePath(destination)};
-
-        if (std::filesystem::exists(to, errorCode)) { return fail("'" + destination + "' already exists"); }
 
         std::filesystem::create_directories(to.parent_path(), errorCode);
         if (errorCode) { return fail("cannot create '" + to.parent_path().generic_string() + "'"); }

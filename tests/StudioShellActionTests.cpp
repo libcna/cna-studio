@@ -22,6 +22,8 @@
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -306,4 +308,59 @@ CNA_STUDIO_TEST(EveryPanelWithoutContentIsNamedRatherThanBeingAnEmptyRectangle)
                 "was waiting on " + reason + ").");
         }
     }
+}
+
+/**
+ * @brief One Delete and one Ctrl+D, acting on whatever the inspector is showing (STUDIO-09009).
+ *
+ * The two selections are mutually exclusive by construction — selecting an asset clears the entity
+ * selection and vice versa — so a single shortcut can mean both without ambiguity. A second pair of
+ * shortcuts for assets would have been a pair the user has to know the difference between, and the
+ * difference would depend on which panel they last clicked.
+ */
+CNA_STUDIO_TEST(DeleteAndDuplicateActOnTheSelectedAssetWhenThatIsWhatIsSelected)
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-assetshortcuts";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Assets", code);
+    {
+        std::ofstream stream{directory / "Assets" / "Crate.png", std::ios::binary};
+        stream << "pixels";
+    }
+
+    Fixture fixture;
+    fixture.context.getAssets().setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(fixture.context.getAssets().scan("Assets").succeeded);
+
+    const Uuid assetId = fixture.context.getAssets().findByPath("Assets/Crate.png")->id;
+
+    // Selecting the asset clears the entity selection, so what follows is unambiguous.
+    fixture.context.selectAsset(assetId);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+
+    CNA_STUDIO_EXPECT(fixture.shell->actions().isEnabled("studio.edit.duplicate"));
+    fixture.shell->invoke("studio.edit.duplicate");
+
+    const Uuid copyId = fixture.context.getSelectedAsset();
+    CNA_STUDIO_EXPECT(copyId != assetId);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getAssets().find(copyId)->sourcePath,
+                         std::string{"Assets/Crate 2.png"});
+
+    CNA_STUDIO_EXPECT(fixture.shell->actions().isEnabled("studio.edit.delete"));
+    fixture.shell->invoke("studio.edit.delete");
+    CNA_STUDIO_EXPECT(fixture.context.getAssets().find(copyId) == nullptr);
+
+    // Undoable like every other edit, and back under the id a scene would still be referencing.
+    fixture.shell->invoke("studio.edit.undo");
+    CNA_STUDIO_EXPECT(fixture.context.getAssets().find(copyId) != nullptr);
+
+    // With neither an entity nor an asset selected, both grey out rather than staying bright and
+    // doing nothing.
+    fixture.context.selectAsset(Uuid{});
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.delete"));
+    CNA_STUDIO_EXPECT(!fixture.shell->actions().isEnabled("studio.edit.duplicate"));
+
+    std::filesystem::remove_all(directory, code);
 }

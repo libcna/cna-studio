@@ -1047,9 +1047,32 @@ namespace CNA::Studio
         if (const StudioAction* found = shell.actions().find("studio.edit.rename"))
         {
             StudioAction rename = *found;
-            rename.isEnabled = [this] { return context_.getPrimarySelection().isValid(); };
+            rename.isEnabled = [this] {
+                return context_.getPrimarySelection().isValid()
+                    || context_.getAssets().find(context_.getSelectedAsset()) != nullptr;
+            };
             rename.run = [this] {
                 if (shell_ == nullptr) { return; }
+
+                // One F2, acting on whatever the inspector is showing (STUDIO-09009). The entity
+                // selection and the asset selection are mutually exclusive by construction, so
+                // there is no question of which this means.
+                if (!context_.getPrimarySelection().isValid())
+                {
+                    const AssetRecord* record =
+                        context_.getAssets().find(context_.getSelectedAsset());
+                    if (record == nullptr) { return; }
+
+                    (void)shell_->openPanel("content");
+                    (void)shell_->activatePanel("content");
+
+                    const std::size_t slash = record->sourcePath.find_last_of('/');
+                    contentState_.tree.beginRename(
+                        record->id.toString(),
+                        slash == std::string::npos ? record->sourcePath
+                                                   : record->sourcePath.substr(slash + 1));
+                    return;
+                }
 
                 // The panel first, then the rename. Pressing F2 with the outliner behind another
                 // tab would otherwise start an edit on a field nobody can see, and swallow the

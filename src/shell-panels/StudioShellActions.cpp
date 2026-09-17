@@ -7,6 +7,7 @@
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 
 #include "CNA/Studio/Core/StudioCommand.hpp"
+#include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/Project/Project.hpp"
@@ -109,9 +110,28 @@ namespace CNA::Studio
              });
 
         bind("studio.edit.delete",
-             [&context] { return !context.getSelection().empty(); },
+             [&context] {
+                 return !context.getSelection().empty()
+                     || context.getAssets().find(context.getSelectedAsset()) != nullptr;
+             },
              [&context, &log] {
-                 if (context.getSelection().empty()) { return; }
+                 // One Delete, acting on whatever the inspector is showing (STUDIO-09009). The two
+                 // selections are mutually exclusive by construction -- selecting an asset clears
+                 // the entity selection and vice versa -- so there is never a question of which
+                 // this means, and a second shortcut for assets would have been one the user has
+                 // to know the difference between.
+                 if (context.getSelection().empty())
+                 {
+                     const StudioContentOperation deleted =
+                         studioContentDelete(context, context.getSelectedAsset());
+                     if (!deleted.message.empty())
+                     {
+                         log.append(deleted.applied ? LogSeverity::Info : LogSeverity::Error,
+                                    deleted.applied ? deleted.message + "."
+                                                    : "Could not delete: " + deleted.message + ".");
+                     }
+                     return;
+                 }
 
                  // **Every** selected entity, not the last one (STUDIO-07047). Deleting one of a
                  // selection of five and clearing the selection is the shape of bug a user reports
@@ -171,8 +191,26 @@ namespace CNA::Studio
              });
 
         bind("studio.edit.duplicate",
-             [&context] { return !context.getSelection().empty(); },
+             [&context] {
+                 return !context.getSelection().empty()
+                     || context.getAssets().find(context.getSelectedAsset()) != nullptr;
+             },
              [&context, &log] {
+                 // The asset the inspector is showing, when that is what is selected -- the same
+                 // bargain Delete strikes above, and for the same reason.
+                 if (context.getSelection().empty())
+                 {
+                     const StudioContentOperation copied =
+                         studioContentDuplicate(context, context.getSelectedAsset());
+                     if (!copied.message.empty())
+                     {
+                         log.append(copied.applied ? LogSeverity::Info : LogSeverity::Error,
+                                    copied.applied ? copied.message + "."
+                                                   : "Could not duplicate: " + copied.message + ".");
+                     }
+                     return;
+                 }
+
                  // Snapshotted, because the copies are selected as they are made and iterating the
                  // live selection would duplicate the copies as well.
                  const std::vector<Uuid> sources = context.getSelection();

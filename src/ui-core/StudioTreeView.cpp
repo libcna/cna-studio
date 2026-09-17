@@ -148,6 +148,11 @@ namespace CNA::Studio
                                || frame.input().modifiers.shift;
             }
 
+            if (frame.isInputPass() && interaction.rightClicked)
+            {
+                result.rightClicked = index;
+            }
+
             // A row that says what it carries can be dragged off. Declared on the row rather than
             // wired up by the caller, so there is no second list to keep in step with these.
             if (!row.dragType.empty() && row.enabled && !renaming)

@@ -374,6 +374,53 @@ namespace CNA::Studio
      */
     [[nodiscard]] float studioMenuSeparatorHeight(const StudioTheme& theme);
 
+    /** @brief One row of a panel's own right-click menu. */
+    struct StudioContextMenuItem
+    {
+        /** @brief What it says. Empty draws a separator, which cannot be chosen. */
+        std::string label;
+
+        /** @brief False to grey it out. A row that is absent tells the user less than one that is
+         *         present and unavailable, because absence looks the same as "this menu is short". */
+        bool enabled = true;
+
+        /** @brief Shortcut hint, right-aligned, e.g. `"F2"`. */
+        std::string shortcut;
+    };
+
+    /**
+     * @brief Opens @p owner's right-click menu at a point.
+     *
+     * `plan.md` STUDIO-09009. A panel's own menu, distinct from `StudioShell::openContextMenu`:
+     * the shell's rows are *action ids* from the registry, which is right for the commands that
+     * also live in the menu bar and wrong for rows that exist only while one asset is under the
+     * pointer. Registering "Duplicate 'Crate.png'" as an application action to show it in a menu
+     * would leave it in the command palette too.
+     *
+     * @param frame Frame to describe into.
+     * @param owner The widget the menu belongs to -- the panel, not the row.
+     * @param x Where the pointer was, in logical units.
+     * @param y Where the pointer was, in logical units.
+     */
+    void studioOpenContextMenu(StudioFrame& frame, WidgetId owner, float x, float y);
+
+    /**
+     * @brief Draws @p owner's right-click menu, if it is open, and reports what was chosen.
+     *
+     * Called every frame in both passes, like any other widget: the draw pass paints the rows the
+     * input pass routed. The body is deferred, so the menu escapes the panel it belongs to rather
+     * than being clipped to it -- a menu opened on the last row of a short panel would otherwise
+     * show two of its five entries.
+     *
+     * @param frame Frame to describe into.
+     * @param owner The same id passed to @ref studioOpenContextMenu.
+     * @param items The rows. Captured by value, because a caller that builds them inline hands
+     *        this a vector that is gone by the time the deferred body runs.
+     * @return The index of the row chosen since the last call, or -1. Input pass only.
+     */
+    [[nodiscard]] int studioContextMenu(StudioFrame& frame, WidgetId owner,
+                                        const std::vector<StudioContextMenuItem>& items);
+
     // ---------------------------------------------------------------------------------------
     // Scrolling
     // ---------------------------------------------------------------------------------------
