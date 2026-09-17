@@ -371,6 +371,21 @@ namespace CNA::Studio
         /** @brief How many rows the database and the current expansion produced. */
         std::size_t rowsTotal = 0;
 
+        /**
+         * @brief How many cards the panel actually *built* this pass (`plan.md` STUDIO-09016).
+         *
+         * Reported because it is the number the virtualisation is about, and it is not the same as
+         * @ref rowsDrawn. A view that builds a hundred thousand cards and then draws forty of them
+         * has a perfectly bounded @ref rowsDrawn and is exactly the thing this panel must not do:
+         * the expensive half of a large folder is constructing the model, not painting it.
+         *
+         * So a test can assert the property directly rather than inferring it from a clock, which
+         * on a shared machine is a test that fails for reasons that have nothing to do with the
+         * code. Where the ordering cannot be answered by position — a search, a sort by size — the
+         * listing genuinely has to be built to be sliced, and this says so honestly.
+         */
+        std::size_t rowsBuilt = 0;
+
         /** @brief How many listed assets have no source file on disk. */
         std::size_t missingCount = 0;
 
@@ -515,6 +530,46 @@ namespace CNA::Studio
     [[nodiscard]] std::vector<StudioContentCard> studioContentCards(
         const AssetDatabase& assets, const std::string& folder, const Uuid& selected,
         const StudioContentQuery& query = {}, const StudioAssetShortcuts& shortcuts = {});
+
+    /**
+     * @brief How many cards a listing has, without building any of them.
+     *
+     * `plan.md` STUDIO-09016. The number the scroll extent needs, and the number that decides the
+     * window — asked before any card exists, because building a hundred thousand of them to learn
+     * there are a hundred thousand is the cost this exists to avoid.
+     *
+     * A search or a kind filter has to look at what it is filtering, so those answer in a pass over
+     * the project or the folder. An ordinary browse answers from the database's own counts.
+     */
+    [[nodiscard]] std::size_t studioContentCardCount(const AssetDatabase& assets,
+                                                     const std::string& folder,
+                                                     const StudioContentQuery& query = {},
+                                                     const StudioAssetShortcuts& shortcuts = {});
+
+    /**
+     * @brief The cards at `[first, first + count)` of a listing.
+     *
+     * `plan.md` STUDIO-09016. The same listing @ref studioContentCards produces, built for a window
+     * rather than in full — so a folder holding a hundred thousand files costs a screenful to show.
+     *
+     * The orders that can be answered positionally (an ordinary browse, or a shortcut list) walk
+     * only as far as the window. The ones that cannot — a kind filter, a sort by kind, a reversed
+     * order, a search — have to consider every candidate to know what is at position *n* at all,
+     * and say so by building the listing and taking a slice of it. That is not a shortcut: sorting
+     * by something requires looking at everything, and pretending otherwise would be a listing that
+     * is wrong rather than one that is slow.
+     *
+     * @param first Index of the first card wanted.
+     * @param count How many. `npos` means "to the end".
+     * @param outCardsBuilt Optional: how many cards were constructed to answer, which is the same
+     *        as the returned size on the positional path and the size of the whole listing on the
+     *        one that has to sort. Reported rather than inferred, so the panel's `rowsBuilt` says
+     *        what actually happened instead of what the caller assumes happened.
+     */
+    [[nodiscard]] std::vector<StudioContentCard> studioContentCardWindow(
+        const AssetDatabase& assets, const std::string& folder, const Uuid& selected,
+        const StudioContentQuery& query, const StudioAssetShortcuts& shortcuts, std::size_t first,
+        std::size_t count, std::size_t* outCardsBuilt = nullptr);
 
     /**
      * @brief The path segments of @p folder, outermost first, for a breadcrumb.

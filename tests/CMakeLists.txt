@@ -41,6 +41,7 @@ add_executable(cna-studio-tests
     AssetDependencyTests.cpp
     StudioJobTests.cpp
     StudioVirtualisationTests.cpp
+    StudioLargeProjectTests.cpp
     StudioDialogTests.cpp
     StudioDockDragTests.cpp
     StudioEmptyStateTests.cpp

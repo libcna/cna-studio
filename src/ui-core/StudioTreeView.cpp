@@ -51,6 +51,28 @@ namespace CNA::Studio
         }
     }
 
+    float studioTreeRowHeight(const StudioTheme& theme)
+    {
+        return std::max(metricOf(theme, StudioMetric::RowHeight),
+                        metricOf(theme, StudioMetric::MinimumHitTarget));
+    }
+
+    StudioTreeWindow studioTreeWindow(const StudioScrollResult& view, std::size_t totalRows,
+                                      const StudioTheme& theme)
+    {
+        StudioTreeWindow window;
+        window.totalRows = totalRows;
+        if (totalRows == 0) { return window; }
+
+        std::size_t first = 0;
+        std::size_t last = 0;
+        view.visibleRows(studioTreeRowHeight(theme), totalRows, first, last);
+
+        window.firstRow = first;
+        window.rowCount = last - first;
+        return window;
+    }
+
     StudioTreeResult studioTreeView(StudioFrame& frame, const UiRect& bounds,
                                     const std::vector<StudioTreeRow>& rows,
                                     StudioTreeState& state,
@@ -60,11 +82,6 @@ namespace CNA::Studio
         const StudioTheme& theme = frame.theme();
 
         if (bounds.width <= 0.0f || bounds.height <= 0.0f) { return result; }
-
-        const float rowHeight = std::max(metricOf(theme, StudioMetric::RowHeight),
-                                         metricOf(theme, StudioMetric::MinimumHitTarget));
-        const float indent = metricOf(theme, StudioMetric::IndentWidth);
-        const float padding = metricOf(theme, StudioMetric::SpacingSmall);
 
         if (rows.empty())
         {
@@ -78,20 +95,54 @@ namespace CNA::Studio
         }
 
         StudioScrollOptions scroll;
-        scroll.contentHeight = static_cast<float>(rows.size()) * rowHeight;
-        scroll.wheelStep = rowHeight * 3.0f;
+        scroll.contentHeight = static_cast<float>(rows.size()) * studioTreeRowHeight(theme);
+        scroll.wheelStep = studioTreeRowHeight(theme) * 3.0f;
 
         const StudioScrollResult view =
             studioBeginScroll(frame, frame.ids().make("treescroll"), bounds, scroll);
 
+        result = studioTreeRows(frame, view, rows, state);
+
+        studioEndScroll(frame);
+        return result;
+    }
+
+    StudioTreeResult studioTreeRows(StudioFrame& frame, const StudioScrollResult& view,
+                                    const std::vector<StudioTreeRow>& rows,
+                                    StudioTreeState& state, const StudioTreeWindow& window)
+    {
+        StudioTreeResult result;
+        const StudioTheme& theme = frame.theme();
+
+        if (rows.empty()) { return result; }
+
+        const float rowHeight = studioTreeRowHeight(theme);
+        const float indent = metricOf(theme, StudioMetric::IndentWidth);
+        const float padding = metricOf(theme, StudioMetric::SpacingSmall);
+
+        // The whole list, which is what the scroll region was sized from and therefore what the
+        // visible range has to be computed against. `index` below is a position in *that*, so a
+        // windowed caller's rows land where the scrollbar says they are.
+        const std::size_t total = window.isWindowed() ? window.totalRows : rows.size();
+        const std::size_t windowFirst = window.isWindowed() ? window.firstRow : 0;
+
         std::size_t first = 0;
         std::size_t last = 0;
-        view.visibleRows(rowHeight, rows.size(), first, last);
+        view.visibleRows(rowHeight, total, first, last);
+
+        // Clamped to what the caller actually built. A window is asked for and then filled, and a
+        // caller whose list shrank between the two -- a filter applied on the input pass, a watcher
+        // dropping a record -- must get an empty range rather than an index past the end.
+        first = std::max(first, windowFirst);
+        last = std::min(last, windowFirst + rows.size());
+        if (first > last) { first = last; }
         result.rowsDrawn = last - first;
 
         for (std::size_t index = first; index < last; ++index)
         {
-            const StudioTreeRow& row = rows[index];
+            // Reported in the result, because a windowed caller holds the slice and not the whole.
+            const std::size_t slot = index - windowFirst;
+            const StudioTreeRow& row = rows[slot];
 
             const UiRect rowBounds{
                 view.viewport.left(),
@@ -131,7 +182,7 @@ namespace CNA::Studio
                 {
                     expanded = !expanded;
                     state.setExpanded(row.id, expanded);
-                    result.toggled = index;
+                    result.toggled = slot;
                 }
                 // Remembered rather than drawn here. The row's background -- selection, hover,
                 // the alternating fill and the indent guides -- is decided further down, and
@@ -143,14 +194,14 @@ namespace CNA::Studio
 
             if (frame.isInputPass() && interaction.clicked && !result.toggled.has_value())
             {
-                result.clicked = index;
+                result.clicked = slot;
                 result.additive = frame.input().modifiers.control
                                || frame.input().modifiers.shift;
             }
 
             if (frame.isInputPass() && interaction.rightClicked)
             {
-                result.rightClicked = index;
+                result.rightClicked = slot;
             }
 
             // A row that says what it carries can be dragged off. Declared on the row rather than
@@ -164,7 +215,7 @@ namespace CNA::Studio
                 if (studioDragSource(frame, frame.ids().make("row"), interaction,
                                      std::move(payload)))
                 {
-                    result.dragStarted = index;
+                    result.dragStarted = slot;
                 }
             }
 
@@ -184,7 +235,7 @@ namespace CNA::Studio
                     dropHovered = dropHovered || drop.hovered;
                     if (drop.dropped && !result.dropped.has_value())
                     {
-                        result.dropped = index;
+                        result.dropped = slot;
                         result.droppedValue = drop.value;
                         result.droppedType = row.dropTypes[type];
                     }
@@ -229,7 +280,7 @@ namespace CNA::Studio
                         state.cancelRename();
                         if (!name.empty() && name != row.label)
                         {
-                            result.renamed = index;
+                            result.renamed = slot;
                             result.renamedTo = std::move(name);
                         }
                     }
@@ -271,7 +322,7 @@ namespace CNA::Studio
                 {
                     (void)frame.requestTooltip(toggleId, row.toggleTooltip, toggleBox);
                 }
-                if (frame.isInputPass() && toggle.clicked) { result.toggledRowAction = index; }
+                if (frame.isInputPass() && toggle.clicked) { result.toggledRowAction = slot; }
 
                 // Shown only while the row is hovered or the toggle is off, which is what every
                 // outliner that has one does: a column of forty identical eyes is a column of
@@ -415,7 +466,6 @@ namespace CNA::Studio
             frame.ids().pop();
         }
 
-        studioEndScroll(frame);
         return result;
     }
 }

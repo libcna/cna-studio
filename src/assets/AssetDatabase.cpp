@@ -171,6 +171,7 @@ namespace CNA::Studio
         if (const auto existing = recordsById_.find(record.id); existing != recordsById_.end())
         {
             idsByPath_.erase(existing->second.sourcePath);
+            countPath(existing->second.sourcePath, false);
         }
 
         // A record being replaced stops counting before the new one starts, or two adds of one id
@@ -191,7 +192,11 @@ namespace CNA::Studio
         record.sourcePresent = present;
 
         recordsById_[id] = std::move(record);
-        if (!path.empty()) { idsByPath_[path] = id; }
+        if (!path.empty())
+        {
+            idsByPath_[path] = id;
+            countPath(path, true);
+        }
         if (!present) { ++missingCount_; }
         return true;
     }
@@ -284,8 +289,10 @@ namespace CNA::Studio
         }
 
         idsByPath_.erase(record->sourcePath);
+        countPath(record->sourcePath, false);
         record->sourcePath = destination;
         idsByPath_[destination] = id;
+        countPath(destination, true);
 
         // Rewritten because the sidecar records its own path nowhere -- but its stamp is about the
         // file, and a move is a good moment to be sure the two agree.
@@ -324,8 +331,10 @@ namespace CNA::Studio
         }
 
         idsByPath_.erase(record->sourcePath);
+        countPath(record->sourcePath, false);
         record->sourcePath = destination;
         idsByPath_[destination] = id;
+        countPath(destination, true);
 
         // The record now points somewhere else, so what was cached about the old path says nothing
         // about this one. This is the repair for a *missing* asset, so getting it wrong would leave
@@ -346,6 +355,7 @@ namespace CNA::Studio
 
         if (!found->second.sourcePresent) { --missingCount_; }
         idsByPath_.erase(found->second.sourcePath);
+        countPath(found->second.sourcePath, false);
         recordsById_.erase(found);
         return true;
     }
@@ -390,6 +400,76 @@ namespace CNA::Studio
             setPresence(record, present);
         }
         return changed;
+    }
+
+    void AssetDatabase::countPath(const std::string& relativePath, bool added)
+    {
+        if (relativePath.empty()) { return; }
+
+        const std::size_t slash = relativePath.find_last_of('/');
+        const std::string folder =
+            slash == std::string::npos ? std::string{} : relativePath.substr(0, slash);
+
+        // The folder itself, and then every ancestor for the cumulative count. A path is at most a
+        // handful of levels deep, so this is a short loop once per add or move rather than a walk
+        // over the project once per frame.
+        const auto bump = [added](std::map<std::string, std::size_t>& counts,
+                                  const std::string& key) {
+            if (added) { ++counts[key]; return; }
+
+            const auto found = counts.find(key);
+            if (found == counts.end()) { return; }
+
+            // Erased at zero rather than left as an entry meaning nothing: the keys are "folders
+            // that hold something", and a zero entry would make an emptied folder look like one
+            // that is still there when the last file in it moves away.
+            if (--found->second == 0) { counts.erase(found); }
+        };
+
+        bump(folderCounts_, folder);
+        bump(folderTotals_, folder);
+
+        std::string ancestor = folder;
+        while (!ancestor.empty())
+        {
+            const std::size_t slash = ancestor.find_last_of('/');
+            ancestor = slash == std::string::npos ? std::string{} : ancestor.substr(0, slash);
+            bump(folderTotals_, ancestor);
+        }
+    }
+
+    std::size_t AssetDatabase::getTotalAssetCount(std::string_view folder) const
+    {
+        const auto found = folderTotals_.find(std::string{folder});
+        return found == folderTotals_.end() ? 0 : found->second;
+    }
+
+    std::size_t AssetDatabase::getDirectAssetCount(std::string_view folder) const
+    {
+        const auto found = folderCounts_.find(std::string{folder});
+        return found == folderCounts_.end() ? 0 : found->second;
+    }
+
+    std::vector<std::string> AssetDatabase::getFolderPaths() const
+    {
+        std::set<std::string> folders;
+        for (const auto& [folder, count] : folderCounts_)
+        {
+            (void)count;
+            if (folder.empty()) { continue; }
+
+            // Every ancestor too, because a folder that holds only other folders holds nothing
+            // directly and so has no count entry -- and it is still a folder the user can be in.
+            std::size_t from = 0;
+            while (true)
+            {
+                const std::size_t slash = folder.find('/', from);
+                if (slash == std::string::npos) { folders.insert(folder); break; }
+                folders.insert(folder.substr(0, slash));
+                from = slash + 1;
+            }
+        }
+        return {folders.begin(), folders.end()};
     }
 
     bool AssetDatabase::setAssetPresent(const Uuid& id, bool present)
@@ -682,6 +762,8 @@ namespace CNA::Studio
     {
         recordsById_.clear();
         idsByPath_.clear();
+        folderCounts_.clear();
+        folderTotals_.clear();
         missingCount_ = 0;
     }
 }

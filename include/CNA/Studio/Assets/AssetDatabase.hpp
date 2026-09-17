@@ -198,6 +198,63 @@ namespace CNA::Studio
         /** @brief Returns every record, ordered by source path. */
         [[nodiscard]] std::vector<const AssetRecord*> getAll() const;
 
+        /**
+         * @brief The path-to-id index, in path order (`plan.md` STUDIO-09016).
+         *
+         * Exposed deliberately, and the container type is part of the contract: what a content
+         * browser needs from a hundred-thousand-asset project is *range* queries — everything under
+         * one folder, and the ability to skip a whole subtree by seeking past it — and an ordered
+         * map is what answers those. `getAll()` cannot: it copies every pointer in the project to
+         * show forty of them, which is the cost this exists to avoid.
+         *
+         * Read-only, so nothing outside can put the index out of step with the records.
+         */
+        [[nodiscard]] const std::map<std::string, Uuid>& getPathIndex() const { return idsByPath_; }
+
+        /**
+         * @brief How many assets sit **directly** in each folder, keyed by the folder's path.
+         *
+         * `plan.md` STUDIO-09016. Maintained incrementally, the way the missing count is, because
+         * the Content Browser's folder pane wants it once per row on every frame — and deriving it
+         * by walking every record was an O(project) pass per frame that nothing noticed at two
+         * hundred assets and nothing survives at a hundred thousand.
+         *
+         * *Directly*, not cumulatively, which is the decision `STUDIO-09001` already made for the
+         * pane and which the grid's folder cards now agree with: a cumulative count makes `Assets`
+         * read as holding the whole project — true, and useless.
+         *
+         * The project root is the empty key. Folders with nothing directly in them have no entry;
+         * they exist because something is under them, which is what @ref getFolderPaths answers.
+         */
+        [[nodiscard]] const std::map<std::string, std::size_t>& getFolderCounts() const
+        {
+            return folderCounts_;
+        }
+
+        /** @brief How many assets sit directly in @p folder. Zero for one that holds only folders. */
+        [[nodiscard]] std::size_t getDirectAssetCount(std::string_view folder) const;
+
+        /**
+         * @brief How many assets sit in @p folder **or anywhere under it**.
+         *
+         * Kept beside the direct count rather than instead of it, because the two answer questions
+         * the browser asks in different places and both answers were arrived at deliberately. The
+         * folder *pane* shows the direct count — "how much will I see when I click this"
+         * (`STUDIO-09001`); a folder *card* in the grid shows this one — "is it worth opening"
+         * (`STUDIO-07008`). Deriving either on demand is a walk; maintaining both is two integers
+         * per folder and a loop over the path's ancestors when one asset moves.
+         */
+        [[nodiscard]] std::size_t getTotalAssetCount(std::string_view folder) const;
+
+        /**
+         * @brief Every folder the tracked paths imply, in path order, the project root excluded.
+         *
+         * Derived from the folders that hold something plus their ancestors, so a folder exists
+         * exactly when something tracked is in it or under it — the rule `STUDIO-09001` set, now
+         * answered without walking every asset.
+         */
+        [[nodiscard]] std::vector<std::string> getFolderPaths() const;
+
         /** @brief Returns the number of tracked assets. */
         [[nodiscard]] std::size_t getCount() const { return recordsById_.size(); }
 
@@ -374,8 +431,17 @@ namespace CNA::Studio
         std::unordered_map<Uuid, AssetRecord> recordsById_;
         std::map<std::string, Uuid> idsByPath_;
 
+        /** @brief Adds or removes @p relativePath's folder from @ref folderCounts_. */
+        void countPath(const std::string& relativePath, bool added);
+
         /** @brief How many records have `sourcePresent == false`, maintained incrementally. */
         std::size_t missingCount_ = 0;
+
+        /** @brief Direct asset count per folder, maintained incrementally. See getFolderCounts(). */
+        std::map<std::string, std::size_t> folderCounts_;
+
+        /** @brief Count including descendants, per folder. See getTotalAssetCount(). */
+        std::map<std::string, std::size_t> folderTotals_;
 
         /** @brief Counts filesystem presence checks, so a test can assert drawing makes none. */
         mutable std::uint64_t presenceProbes_ = 0;

@@ -29,6 +29,7 @@
 
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
+#include "CNA/Studio/UiCore/StudioWidgets.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
 
 #include <cstddef>
@@ -311,4 +312,95 @@ namespace CNA::Studio
                                     const std::vector<StudioTreeRow>& rows,
                                     StudioTreeState& state,
                                     std::string_view emptyMessage = {});
+
+    // ---------------------------------------------------------------------------------------
+    // Building only the window (`plan.md` STUDIO-09016)
+    // ---------------------------------------------------------------------------------------
+    //
+    // `studioTreeView` virtualises its *drawing* on its own: only the rows on screen are measured,
+    // laid out or described. What it cannot do while it owns the scroll region is stop the caller
+    // **building** the rows, and for a content browser over a hundred thousand assets that is the
+    // expensive half — a hundred thousand `StudioTreeRow`s, each with three strings, constructed
+    // twice a frame to show forty.
+    //
+    // The window can only be asked once the scroll region exists, because where the view sits is
+    // what decides it. So a caller that wants to build only the window opens the region itself and
+    // draws the rows into it, which is the same shape the content browser's grid already uses:
+    //
+    // ```
+    // StudioScrollOptions options;
+    // options.contentHeight = static_cast<float>(total) * studioTreeRowHeight(frame.theme());
+    // const StudioScrollResult view = studioBeginScroll(frame, id, bounds, options);
+    //
+    // StudioTreeWindow window = studioTreeWindow(view, total, frame.theme());
+    // const std::vector<StudioTreeRow> rows = buildOnly(window.firstRow, window.rowCount);
+    //
+    // const StudioTreeResult result = studioTreeRows(frame, view, rows, state, window);
+    // studioEndScroll(frame);
+    // ```
+    //
+    // Deliberately *not* a peek at the scroll offset before the region is opened. The offset a pass
+    // resolves to depends on the wheel and on a scrollbar thumb being dragged, both of which are
+    // consumed by `studioBeginScroll` on the input pass only — so a window asked beforehand would
+    // answer differently in the two passes of a scrolling frame, and two passes that disagree about
+    // which rows exist are two passes that disagree about widget identity.
+
+    /**
+     * @brief How tall one tree row is, for a caller sizing its own scroll region.
+     *
+     * The row height and the minimum hit target, whichever is larger: a row shorter than a finger
+     * is a row that cannot be tapped, and the extent has to be computed from the same number the
+     * layout uses or the list scrolls past its own last row.
+     *
+     * @param theme The theme in force.
+     * @return The height of one row, in physical pixels.
+     */
+    [[nodiscard]] float studioTreeRowHeight(const StudioTheme& theme);
+
+    /** @brief Which slice of a longer list a caller has built. */
+    struct StudioTreeWindow
+    {
+        /** @brief The index of `rows.front()` in the whole list. */
+        std::size_t firstRow = 0;
+
+        /** @brief How many rows the slice holds, or should hold. */
+        std::size_t rowCount = 0;
+
+        /** @brief How long the whole list is. Zero means the rows are all of it. */
+        std::size_t totalRows = 0;
+
+        /** @brief Whether this is a slice rather than the whole list. */
+        [[nodiscard]] bool isWindowed() const { return totalRows > 0; }
+    };
+
+    /**
+     * @brief Which rows of a list of @p totalRows are worth building.
+     *
+     * @param view The open scroll region the rows will be drawn into.
+     * @param totalRows How long the whole list is.
+     * @param theme The theme in force, for the row height.
+     * @return The window, ready to hand back to @ref studioTreeRows.
+     */
+    [[nodiscard]] StudioTreeWindow studioTreeWindow(const StudioScrollResult& view,
+                                                    std::size_t totalRows,
+                                                    const StudioTheme& theme);
+
+    /**
+     * @brief Draws tree rows into a scroll region the caller has already opened.
+     *
+     * Indices reported in the result — `clicked`, `dropped`, `renamed` and the rest — are into
+     * @p rows, not into the whole list, so a caller that holds only the slice can index it
+     * directly. Adding @ref StudioTreeWindow::firstRow gives the position in the whole.
+     *
+     * @param frame The frame.
+     * @param view The scroll region, from @ref studioBeginScroll.
+     * @param rows The rows of the window, in display order.
+     * @param state Expansion and rename state.
+     * @param window Where @p rows sits in the whole list. A default one means @p rows is all of it.
+     * @return What the user did.
+     */
+    StudioTreeResult studioTreeRows(StudioFrame& frame, const StudioScrollResult& view,
+                                    const std::vector<StudioTreeRow>& rows,
+                                    StudioTreeState& state,
+                                    const StudioTreeWindow& window = {});
 }

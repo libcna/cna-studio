@@ -33,6 +33,26 @@ namespace CNA::Studio
             return static_cast<float>(theme.metric(metric));
         }
 
+        /**
+         * @brief What an empty browser says, for whichever kind of empty it is.
+         *
+         * Four states, not one. "No assets" in a project that has two hundred of them is the sort
+         * of message that makes a user think the database is broken, and "this folder is empty"
+         * while a filter is on sends them looking in the wrong place.
+         *
+         * Shared by both presentations because it is one answer about one folder: the list and the
+         * grid disagreeing about why there is nothing here would be the browser contradicting
+         * itself as the user pressed the view toggle.
+         */
+        std::string_view studioContentEmptyMessage(const StudioContext& context,
+                                                   const StudioContentBrowserState& state)
+        {
+            if (!context.hasProject()) { return "No project is open."; }
+            if (state.query.isNarrowed()) { return "Nothing matches."; }
+            if (state.folder.empty()) { return "This project has no assets yet."; }
+            return "This folder is empty.";
+        }
+
         // Forward-declared so the entry point above them can read as the decision it is -- a bar,
         // then one of two presentations -- rather than as two large functions with a switch buried
         // at the bottom of the second.
@@ -279,21 +299,17 @@ namespace CNA::Studio
                                                        const StudioTreeState& state,
                                                        const StudioAssetShortcuts& shortcuts)
     {
-        // How many assets sit *directly* in each folder, and which folders exist at all. Direct
-        // rather than cumulative: a count that included descendants would make `Assets` read as
-        // holding everything in the project, which is true and useless -- the number a user wants
-        // beside a folder is how much they will see when they click it.
-        std::map<std::string, std::size_t> directCount;
-        std::set<std::string> folders;
-
-        for (const AssetRecord* record : assets.getAll())
-        {
-            if (record == nullptr) { continue; }
-
-            const std::string directory = splitPath(record->sourcePath).first;
-            ++directCount[directory];
-            for (const std::string& ancestor : ancestorsOf(directory)) { folders.insert(ancestor); }
-        }
+        // How many assets sit *directly* in each folder, and which folders exist at all. Both come
+        // from the database's own indexes rather than from a walk over every record (STUDIO-09016):
+        // this runs once per row on every frame, and an O(project) pass here is what a hundred
+        // thousand assets cannot afford.
+        //
+        // Direct rather than cumulative: a count that included descendants would make `Assets` read
+        // as holding everything in the project, which is true and useless -- the number a user
+        // wants beside a folder is how much they will see when they click it.
+        const std::map<std::string, std::size_t>& directCount = assets.getFolderCounts();
+        const std::vector<std::string> folderList = assets.getFolderPaths();
+        const std::set<std::string> folders{folderList.begin(), folderList.end()};
 
         const auto depthOf = [](const std::string& path) {
             return static_cast<int>(std::count(path.begin(), path.end(), '/'));
@@ -505,6 +521,205 @@ namespace CNA::Studio
         return cards;
     }
 
+    namespace
+    {
+        /**
+         * @brief Whether a listing's order can be answered position by position.
+         *
+         * True for an ordinary browse: subfolders alphabetically, then files in path order, which
+         * is the order the path index is already in. False the moment something has to be
+         * *considered* to know what is at position n -- a kind filter, a sort by kind, a reversal.
+         */
+        bool isPositionalOrder(const StudioContentQuery& query)
+        {
+            return query.search.empty() && !query.type.has_value()
+                && query.sort == StudioContentSort::Name && !query.descending;
+        }
+
+        /** @brief The immediate subfolders of @p folder, in path order, from the path index. */
+        std::vector<std::string> immediateSubfolders(const AssetDatabase& assets,
+                                                     const std::string& folder)
+        {
+            std::vector<std::string> subfolders;
+
+            const std::string prefix = folder.empty() ? std::string{} : folder + "/";
+            const std::map<std::string, Uuid>& index = assets.getPathIndex();
+
+            for (auto entry = index.lower_bound(prefix); entry != index.end();)
+            {
+                const std::string& path = entry->first;
+                if (path.compare(0, prefix.size(), prefix) != 0) { break; }
+
+                const std::string rest = path.substr(prefix.size());
+                const std::size_t slash = rest.find('/');
+                if (slash == std::string::npos) { ++entry; continue; }
+
+                // Recorded once and the whole of it skipped. `'/' + 1` is the first character that
+                // sorts after every path inside it, so one seek replaces walking however many
+                // thousand assets are under there.
+                const std::string child = prefix + rest.substr(0, slash);
+                subfolders.push_back(child);
+                entry = index.lower_bound(child + static_cast<char>('/' + 1));
+            }
+            return subfolders;
+        }
+
+        /** @brief A folder card for @p path, with the count a card answers with. */
+        StudioContentCard folderCard(const AssetDatabase& assets, const std::string& path)
+        {
+            StudioContentCard card;
+            card.folder = path;
+            card.label = leafName(path);
+            card.icon = StudioIcon::Folder;
+
+            // Everything underneath, which is the question a *card* answers: "is opening this worth
+            // the click" (STUDIO-07008). The pane beside it shows the direct count, which answers
+            // "how much will I see when I click" (STUDIO-09001) -- two questions asked in two
+            // places, and both decided deliberately.
+            const std::size_t contents = assets.getTotalAssetCount(path);
+            card.detail = std::to_string(contents) + (contents == 1 ? " item" : " items");
+            return card;
+        }
+
+        /** @brief An asset card for @p record, with everything a listing says about it. */
+        StudioContentCard assetCard(const AssetDatabase& assets, const AssetRecord& record,
+                                    const Uuid& selected, const StudioAssetShortcuts& shortcuts)
+        {
+            StudioContentCard card;
+            card.assetId = record.id;
+            card.label = splitPath(record.sourcePath).second;
+            card.detail = toString(record.type);
+            card.icon = studioAssetIcon(record.type);
+            card.selected = record.id == selected;
+
+            if (assets.isMissing(record.id))
+            {
+                // Coloured, unlike every other card. A missing asset is the one whose *state*
+                // matters more than its kind, and the warning colour is what makes it findable in
+                // a folder of two hundred without reading any of them.
+                card.missing = true;
+                card.detail = "missing";
+                card.icon = StudioIcon::Warning;
+                card.iconRole = StudioColorRole::Warning;
+            }
+            else if (studioSourceChangedSinceImport(record))
+            {
+                card.needsReimport = true;
+                card.detail += "  ·  out of date";
+            }
+
+            card.favourite = shortcuts.isFavourite(record.id);
+            if (card.favourite && !card.missing)
+            {
+                // Said with *colour* rather than with a star glyph: the shipped typeface has no
+                // `U+2605`, and a tofu box beside every favourite is worse than none -- the same
+                // reason the search field has no magnifier (STUDIO-04019).
+                card.iconRole = StudioColorRole::Accent;
+            }
+            return card;
+        }
+    }
+
+    std::size_t studioContentCardCount(const AssetDatabase& assets, const std::string& folder,
+                                       const StudioContentQuery& query,
+                                       const StudioAssetShortcuts& shortcuts)
+    {
+        if (isPositionalOrder(query) && !studioContentIsShortcutFolder(folder))
+        {
+            // From the database's own counts: the folders under this one, and what is directly in
+            // it. No card is built and no record is touched.
+            return immediateSubfolders(assets, folder).size() + assets.getDirectAssetCount(folder);
+        }
+
+        // Anything that filters has to look at what it is filtering.
+        return studioContentCards(assets, folder, Uuid{}, query, shortcuts).size();
+    }
+
+    std::vector<StudioContentCard> studioContentCardWindow(const AssetDatabase& assets,
+                                                           const std::string& folder,
+                                                           const Uuid& selected,
+                                                           const StudioContentQuery& query,
+                                                           const StudioAssetShortcuts& shortcuts,
+                                                           std::size_t first, std::size_t count,
+                                                           std::size_t* outCardsBuilt)
+    {
+        const auto built = [outCardsBuilt](std::size_t cards) {
+            if (outCardsBuilt != nullptr) { *outCardsBuilt = cards; }
+        };
+        built(0);
+
+        if (count == 0) { return {}; }
+
+        if (!isPositionalOrder(query) || studioContentIsShortcutFolder(folder))
+        {
+            // The order cannot be answered by position, so the listing is built and sliced. Slow
+            // and correct beats fast and wrong: sorting by something requires looking at
+            // everything.
+            std::vector<StudioContentCard> all =
+                studioContentCards(assets, folder, selected, query, shortcuts);
+
+            // The whole listing, because the whole listing is what was constructed. Reporting the
+            // slice here would make the counter say the one thing it exists to disprove.
+            built(all.size());
+            if (first >= all.size()) { return {}; }
+
+            const std::size_t last =
+                count == std::string::npos ? all.size() : std::min(all.size(), first + count);
+            return {std::make_move_iterator(all.begin() + static_cast<std::ptrdiff_t>(first)),
+                    std::make_move_iterator(all.begin() + static_cast<std::ptrdiff_t>(last))};
+        }
+
+        std::vector<StudioContentCard> window;
+
+        // Folders first, because a user navigating is looking for a folder and a user browsing is
+        // looking at assets -- and the first of those is the one interrupted by scanning past two
+        // hundred textures.
+        const std::vector<std::string> subfolders = immediateSubfolders(assets, folder);
+
+        std::size_t index = 0;
+        for (const std::string& path : subfolders)
+        {
+            if (window.size() == count) { built(window.size()); return window; }
+            if (index++ < first) { continue; }
+            window.push_back(folderCard(assets, path));
+        }
+
+        // Then the files, in path order, walked from the folder's own range. Reaching position
+        // `first` costs `first` steps of an iterator rather than `first` cards, which is the
+        // difference between a folder of a hundred thousand being browsable and not.
+        const std::string prefix = folder.empty() ? std::string{} : folder + "/";
+        const std::map<std::string, Uuid>& pathIndex = assets.getPathIndex();
+
+        for (auto entry = pathIndex.lower_bound(prefix); entry != pathIndex.end();)
+        {
+            if (window.size() == count) { break; }
+
+            const std::string& path = entry->first;
+            if (path.compare(0, prefix.size(), prefix) != 0) { break; }
+
+            const std::string rest = path.substr(prefix.size());
+            const std::size_t slash = rest.find('/');
+            if (slash != std::string::npos)
+            {
+                entry = pathIndex.lower_bound(prefix + rest.substr(0, slash)
+                                              + static_cast<char>('/' + 1));
+                continue;
+            }
+
+            if (index++ >= first)
+            {
+                if (const AssetRecord* record = assets.find(entry->second); record != nullptr)
+                {
+                    window.push_back(assetCard(assets, *record, selected, shortcuts));
+                }
+            }
+            ++entry;
+        }
+
+        built(window.size());
+        return window;
+    }
+
     std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
                                                        const std::string& folder,
                                                        const Uuid& selected,
@@ -577,26 +792,44 @@ namespace CNA::Studio
         // Immediate children only, in both halves. A grid of every asset under a folder is a wall,
         // and the folder a user is *in* is the unit they think in -- which is the whole difference
         // between this presentation and the tree beside it.
+        //
+        // Walked over the *folder's own range* of the path index rather than over every record
+        // (STUDIO-09016). The index is ordered by path, so a folder's contents are contiguous in
+        // it, and a subtree is skipped by seeking past its last possible key -- which makes showing
+        // a folder cost what that folder holds rather than what the project holds.
         std::set<std::string> subfolders;
         std::vector<const AssetRecord*> files;
 
-        for (const AssetRecord* record : assets.getAll())
         {
-            const std::string directory = splitPath(record->sourcePath).first;
-            if (directory == folder)
-            {
-                files.push_back(record);
-                continue;
-            }
-
             const std::string prefix = folder.empty() ? std::string{} : folder + "/";
-            if (directory.rfind(prefix, 0) != 0) { continue; }
+            const std::map<std::string, Uuid>& index = assets.getPathIndex();
 
-            const std::string rest = directory.substr(prefix.size());
-            if (rest.empty()) { continue; }
+            auto entry = index.lower_bound(prefix);
+            while (entry != index.end())
+            {
+                const std::string& path = entry->first;
+                if (path.compare(0, prefix.size(), prefix) != 0) { break; }
 
-            const std::size_t slash = rest.find('/');
-            subfolders.insert(prefix + (slash == std::string::npos ? rest : rest.substr(0, slash)));
+                const std::string rest = path.substr(prefix.size());
+                const std::size_t slash = rest.find('/');
+
+                if (slash == std::string::npos)
+                {
+                    if (const AssetRecord* record = assets.find(entry->second); record != nullptr)
+                    {
+                        files.push_back(record);
+                    }
+                    ++entry;
+                    continue;
+                }
+
+                // A subfolder: recorded once, and the whole of it skipped. `'/' + 1` is the first
+                // character that sorts after every path inside it, so one seek replaces walking
+                // however many thousand assets are under there.
+                const std::string child = prefix + rest.substr(0, slash);
+                subfolders.insert(child);
+                entry = index.lower_bound(child + static_cast<char>('/' + 1));
+            }
         }
 
         // Folders first: a user navigating is looking for a folder and a user browsing is looking
@@ -609,13 +842,14 @@ namespace CNA::Studio
             card.label = leafName(path);
             card.icon = StudioIcon::Folder;
 
-            std::size_t contents = 0;
-            const std::string prefix = path + "/";
-            for (const AssetRecord* record : assets.getAll())
-            {
-                const std::string directory = splitPath(record->sourcePath).first;
-                if (directory == path || directory.rfind(prefix, 0) == 0) { ++contents; }
-            }
+            // Everything underneath, which is the question a *card* answers: "is opening this
+            // worth the click" (STUDIO-07008). The pane beside it shows the direct count, which
+            // answers "how much will I see when I click" (STUDIO-09001) -- two questions asked in
+            // two places, and both decided deliberately.
+            //
+            // From the index rather than from a walk per subfolder, which was quadratic and is
+            // what made the grid unusable at a hundred thousand assets (STUDIO-09016).
+            const std::size_t contents = assets.getTotalAssetCount(path);
             card.detail = std::to_string(contents) + (contents == 1 ? " item" : " items");
             cards.push_back(std::move(card));
         }
@@ -1179,21 +1413,50 @@ namespace CNA::Studio
                                                  StudioContentBrowserState& state,
                                                  StudioContentBrowserResult result)
     {
+        const StudioTheme& theme = frame.theme();
         const AssetDatabase& assets = context.getAssets();
 
-        // The same model the grid draws (STUDIO-09002). Two presentations of one folder, rather
-        // than two browsers sharing a panel: before this the list showed the whole project as a
-        // tree and the grid showed one folder, so switching views also moved the user -- and the
-        // folder pane STUDIO-09001 put beside them navigated only one of the two.
-        const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query,
-                               state.shortcuts);
+        // The *count* first, then the window (STUDIO-09016), exactly as the grid does it. The same
+        // model the grid draws (STUDIO-09002): two presentations of one folder rather than two
+        // browsers sharing a panel, so switching view does not also move the user.
+        const std::size_t total =
+            studioContentCardCount(assets, state.folder, state.query, state.shortcuts);
+        result.rowsTotal = total;
 
-        result.rowsTotal = cards.size();
         // The count, not the list (STUDIO-30015). Building the list to call `.size()` on it was a
         // second full pass over the database with a `stat` per asset, on every pass of every frame
         // -- half the 3 000 syscalls a frame `STUDIO-30014` measured at 1 500 assets.
         result.missingCount = assets.getMissingCount();
+
+        if (total == 0)
+        {
+            if (frame.isDrawPass())
+            {
+                studioDrawText(frame,
+                               bounds.inset(UiEdges{metricOf(theme, StudioMetric::SpacingMedium)}),
+                               studioContentEmptyMessage(context, state), StudioFontRole::Body,
+                               theme.color(StudioColorRole::TextSecondary));
+            }
+            return result;
+        }
+
+        // Opened here rather than inside the tree, because the window can only be asked once the
+        // view's position is resolved -- and that is what decides which rows are worth building.
+        StudioScrollOptions scroll;
+        scroll.contentHeight =
+            static_cast<float>(total) * studioTreeRowHeight(theme);
+        scroll.wheelStep = studioTreeRowHeight(theme) * 3.0f;
+
+        const StudioScrollResult view =
+            studioBeginScroll(frame, frame.ids().make("treescroll"), bounds, scroll);
+
+        const StudioTreeWindow window = studioTreeWindow(view, total, theme);
+
+        // Only the window is built. This is the line that makes a folder of a hundred thousand
+        // files browsable in the list view rather than merely drawable.
+        const std::vector<StudioContentCard> cards = studioContentCardWindow(
+            assets, state.folder, context.getSelectedAsset(), state.query, state.shortcuts,
+            window.firstRow, window.rowCount, &result.rowsBuilt);
 
         std::vector<StudioTreeRow> rows;
         rows.reserve(cards.size());
@@ -1242,15 +1505,8 @@ namespace CNA::Studio
             rows.push_back(std::move(row));
         }
 
-        // Three states, not two. "No assets" in a project with two hundred of them is the sort of
-        // message that makes a user think the database is broken.
-        const std::string_view empty =
-            !context.hasProject()      ? std::string_view{"No project is open."}
-            : state.query.isNarrowed() ? std::string_view{"Nothing matches."}
-            : state.folder.empty()     ? std::string_view{"This project has no assets yet."}
-                                       : std::string_view{"This folder is empty."};
-
-        const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state.tree, empty);
+        const StudioTreeResult tree = studioTreeRows(frame, view, rows, state.tree, window);
+        studioEndScroll(frame);
         result.rowsDrawn = tree.rowsDrawn;
 
         // A rename commits into the same move that a drag would produce (STUDIO-09009). The tree
@@ -1322,30 +1578,25 @@ namespace CNA::Studio
         const StudioTheme& theme = frame.theme();
         const AssetDatabase& assets = context.getAssets();
 
-        const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query,
-                               state.shortcuts);
-        result.rowsTotal = cards.size();
+        // The *count* first, then the window (STUDIO-09016). Building the whole listing to learn
+        // how long it is was the last O(project) pass in this panel: at a hundred thousand assets
+        // that is a hundred thousand cards, each with its own strings, built twice a frame to show
+        // forty of them.
+        const std::size_t total =
+            studioContentCardCount(assets, state.folder, state.query, state.shortcuts);
+        result.rowsTotal = total;
+
         // The count, not the list (STUDIO-30015). Building the list to call `.size()` on it was a
         // second full pass over the database with a `stat` per asset, on every pass of every frame
         // -- half the 3 000 syscalls a frame `STUDIO-30014` measured at 1 500 assets.
         result.missingCount = assets.getMissingCount();
 
-        if (cards.empty())
+        if (total == 0)
         {
             // A folder with nothing in it is a place, not a failure, and it says which place.
-            // "No assets" in a project that has two hundred of them is the sort of message that
-            // makes a user think the database is broken.
             if (frame.isDrawPass())
             {
-                // Four states, not two. "No assets" in a project with two hundred of them is the
-                // sort of message that makes a user think the database is broken, and "this
-                // folder is empty" while a filter is on sends them looking in the wrong place.
-                studioDrawText(frame, bounds,
-                               !context.hasProject()      ? "No project is open."
-                               : state.query.isNarrowed() ? "Nothing matches."
-                               : state.folder.empty()     ? "This project has no assets yet."
-                                                          : "This folder is empty.",
+                studioDrawText(frame, bounds, studioContentEmptyMessage(context, state),
                                StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
             }
             return result;
@@ -1362,7 +1613,7 @@ namespace CNA::Studio
         // extent and the layout are computed in different places, and a grid whose two ideas of the
         // column count disagreed would scroll past its own last row.
         scroll.contentHeight =
-            studioGridContentHeight(bounds.width, card, cardHeight, spacing, cards.size());
+            studioGridContentHeight(bounds.width, card, cardHeight, spacing, total);
         scroll.wheelStep = (cardHeight + spacing) * 0.5f;
 
         const StudioScrollResult view =
@@ -1374,13 +1625,19 @@ namespace CNA::Studio
         std::size_t columns = 1;
         std::size_t firstVisible = 0;
         std::size_t lastVisible = 0;
-        view.visibleCells(card, cardHeight, spacing, cards.size(), columns, firstVisible,
-                          lastVisible);
+        view.visibleCells(card, cardHeight, spacing, total, columns, firstVisible, lastVisible);
+
+        // Only the window is built. This is the line that makes a folder of a hundred thousand
+        // files browsable rather than merely drawable.
+        const std::vector<StudioContentCard> cards = studioContentCardWindow(
+            assets, state.folder, context.getSelectedAsset(), state.query, state.shortcuts,
+            firstVisible, lastVisible - firstVisible, &result.rowsBuilt);
 
         frame.ids().push("cards");
-        for (std::size_t index = firstVisible; index < lastVisible; ++index)
+        for (std::size_t offset = 0; offset < cards.size(); ++offset)
         {
-            const StudioContentCard& entry = cards[index];
+            const std::size_t index = firstVisible + offset;
+            const StudioContentCard& entry = cards[offset];
             const std::size_t column = index % columns;
             const std::size_t row = index / columns;
 

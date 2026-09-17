@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 13 of 17 complete `█████████░░░`
+**Progress:** 14 of 17 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -25,7 +25,7 @@
 | `STUDIO-09013` | Missing asset handling with a clear path to relink | ✅ | `STUDIO-09012` |
 | `STUDIO-09014` | Asset metadata and import settings UI | ✅ | `STUDIO-09001` |
 | `STUDIO-09015` | Source file tracking and derived-data cache separation | ⬜ | `STUDIO-09004` |
-| `STUDIO-09016` | Virtualised browsing for very large asset counts | ⬜ | `STUDIO-30010` |
+| `STUDIO-09016` | Virtualised browsing for very large asset counts | ✅ | `STUDIO-30010` |
 | `STUDIO-09017` | A reference on a component with no descriptor survives a save and reload | ✅ | — |
 
 ## Acceptance and verification
@@ -552,6 +552,49 @@ control the inspector offers, then undone.
 **Acceptance.** Scales toward 100,000 assets without rescanning or rehashing everything
 
 **Verification.** Stress test at 100,000 synthetic assets
+
+**Done.** A folder holding a hundred thousand files costs a screenful to browse, in both
+presentations and in the folder pane, and `tests/StudioLargeProjectTests.cpp` holds it there at the
+full hundred thousand.
+
+**The bound that was missing was on *building*, not on drawing.** `studioTreeView` has culled its
+drawing since `STUDIO-03034` and the grid since `STUDIO-30010`, and both looked virtualised: the
+number of widgets described was already a screenful. What neither could bound is the model the
+caller hands them. The list built a `StudioTreeRow` per asset — three strings each — twice a frame,
+and the grid built a `StudioContentCard` per asset to call `.size()` on it. At two hundred assets
+that is invisible. At a hundred thousand it is the whole frame, and no amount of culling inside the
+loop touches it, because the loop is not where the cost is.
+
+So the panel now asks *how many* (`studioContentCardCount`, from the database's own folder counts),
+sizes the scroll region from that, asks which slice is worth having, and builds only that slice
+(`studioContentCardWindow`). The grid did this at `STUDIO-30010`; this task is the list, and the
+`AssetDatabase` indexes both of them stand on.
+
+**The window is asked after the scroll region is open, not before.** This is the part that reads
+like an awkward API and is not negotiable. Where a pass has scrolled to depends on the wheel and on
+a scrollbar thumb being dragged, and `studioBeginScroll` consumes both — on the input pass only, so
+that the draw pass sees the same position the input pass acted on. A window computed *before* that
+would answer differently in the two passes of a scrolling frame, and two passes that disagree about
+which rows exist are two passes that disagree about widget identity: a click would land on the row
+that was there before the wheel turned.
+
+That is why `studioTreeView` was split rather than given a window parameter. A caller that wants to
+build only the window opens the scroll region itself, asks `studioTreeWindow`, builds the slice, and
+draws it with `studioTreeRows` — which is the shape the grid already had. `studioTreeView` is now
+that sequence for a caller that holds the whole list, so every other tree in Studio is unchanged.
+
+**Counted, not timed.** `StudioContentBrowserResult::rowsBuilt` reports how many cards the panel
+constructed, because `rowsDrawn` cannot tell the two failures apart: a view that builds a hundred
+thousand rows and draws forty has a perfectly bounded `rowsDrawn` and is exactly what this task
+existed to remove. A wall-clock assertion would have said the same thing and said it differently on
+every machine. Where the order cannot be answered by position — a search, a sort by size — the
+listing genuinely has to be built to be sliced, and `rowsBuilt` says so rather than flattering the
+panel.
+
+**Also asserted: the window and the drawing agree.** `ScrollingAHundredThousandAssetsShowsTheRowsTheScrollbarSaysItDoes` scrolls six hundred rows down by the wheel and clicks. A slice indexed from
+its own start, or positioned at its own offset rather than the list's, selects the first file in the
+folder; that is the failure a window makes possible and a full list cannot, and it is not visible in
+a screenshot of a folder of identically named files.
 
 
 ### `STUDIO-09017` — A reference on a component with no descriptor survives a save and reload
