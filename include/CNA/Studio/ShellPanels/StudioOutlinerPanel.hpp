@@ -50,6 +50,16 @@ namespace CNA::Studio
         /** @brief How many rows the scene and the current expansion produced. */
         std::size_t rowsTotal = 0;
 
+        /**
+         * @brief How many rows the panel actually *built* this pass (`plan.md` STUDIO-13011).
+         *
+         * Not the same as @ref rowsDrawn, and the difference is the whole of the task. The tree
+         * has culled its drawing since `STUDIO-03034`, so a panel that flattened fifty thousand
+         * entities and drew forty of them already had a bounded @ref rowsDrawn — and was spending
+         * the frame building rows nobody would see. This is the number that says otherwise.
+         */
+        std::size_t rowsBuilt = 0;
+
         /** @brief Whether the selection changed this frame. Input pass only. */
         bool selectionChanged = false;
 
@@ -124,6 +134,38 @@ namespace CNA::Studio
      * @param state Which rows are open.
      * @return Rows in display order, parents before their children.
      */
+    /**
+     * @brief How many rows the outliner would show for @p scene under @p state.
+     *
+     * `plan.md` STUDIO-13011. Asked before any row is built, because the scroll region needs the
+     * count to size itself and the caller needs the size to know which rows are worth building.
+     * Walks the tree and constructs nothing.
+     *
+     * @param scene The scene.
+     * @param state Which rows are open.
+     * @return The number of visible rows.
+     */
+    [[nodiscard]] std::size_t studioOutlinerRowCount(const SceneDocument& scene,
+                                                     const StudioTreeState& state);
+
+    /**
+     * @brief The rows at `[first, first + count)` of the flattened scene.
+     *
+     * The same rows @ref studioOutlinerRows produces, built for a window rather than in full.
+     * Reaching position @p first still costs @p first steps of the walk — a hierarchy has no index
+     * to seek into — but a step is a lookup and an increment, where a row is three strings.
+     *
+     * @param scene The scene.
+     * @param selection Ids currently selected.
+     * @param state Which rows are open.
+     * @param first Index of the first row wanted.
+     * @param count How many. `SIZE_MAX` means "to the end".
+     * @return The rows of that window, in display order.
+     */
+    [[nodiscard]] std::vector<StudioTreeRow> studioOutlinerRowWindow(
+        const SceneDocument& scene, const std::vector<Uuid>& selection,
+        const StudioTreeState& state, std::size_t first, std::size_t count);
+
     [[nodiscard]] std::vector<StudioTreeRow> studioOutlinerRows(const SceneDocument& scene,
                                                                 const std::vector<Uuid>& selection,
                                                                 const StudioTreeState& state);

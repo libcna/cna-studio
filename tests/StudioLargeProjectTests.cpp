@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MS-PL
 /**
  * @file StudioLargeProjectTests.cpp
- * @brief A hundred thousand assets, browsed (`plan.md` STUDIO-09016, STUDIO-30022).
+ * @brief A large project, browsed (`plan.md` STUDIO-09016, STUDIO-13011, STUDIO-30022).
  *
  * The property under test is the one that does not show up in a screenshot and that every editor
- * loses gradually: **what a project costs to browse must depend on the folder, not on the project.**
- * Every pass that was O(project) here was invisible at two hundred assets and fatal at a hundred
- * thousand, and each of them looked perfectly reasonable when it was written.
+ * loses gradually: **what a project costs to browse must depend on what is on screen, not on what
+ * is in the project.** Every pass that was O(project) here was invisible at two hundred assets and
+ * fatal at a hundred thousand, and each of them looked perfectly reasonable when it was written.
+ *
+ * Both surfaces that flatten something large into rows are here: the Content Browser over a
+ * hundred thousand assets, and the World Outliner over a deeply nested scene. They fail the same
+ * way and they have to be held to the same rule.
  *
  * These are counted rather than timed. A wall-clock assertion on a shared CI machine is a test that
  * fails for reasons that have nothing to do with the code; counting *how much work is done* says
@@ -17,6 +21,8 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
+#include "CNA/Studio/ShellPanels/StudioOutlinerPanel.hpp"
+#include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
@@ -345,4 +351,171 @@ CNA_STUDIO_TEST(ScrollingAHundredThousandAssetsShowsTheRowsTheScrollbarSaysItDoe
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// A deeply nested scene, outlined (`plan.md` STUDIO-13011)
+// ---------------------------------------------------------------------------------------------
 
+namespace
+{
+    /** @brief How many entities the outliner stress cases use. */
+    constexpr std::size_t kEntities = 20000;
+
+    /** @brief How deep each chain of them runs. Under the walk's depth limit, deliberately. */
+    constexpr std::size_t kChainDepth = 50;
+
+    /**
+     * @brief Fills @p scene with @p kEntities entities in chains @p kChainDepth deep.
+     *
+     * Deep rather than flat, because the two fail differently: a flat list of twenty thousand is a
+     * loop, and a hierarchy is a recursion whose cost is in the walk rather than in the rows. The
+     * verification `STUDIO-13011` asks for says "with deep nesting" for that reason.
+     */
+    std::vector<Uuid> fillDeepScene(SceneDocument& scene)
+    {
+        scene.clear();
+
+        std::vector<Uuid> ids;
+        ids.reserve(kEntities);
+
+        Uuid parent;
+        for (std::size_t i = 0; i < kEntities; ++i)
+        {
+            StudioEntity entity{Uuid::generate(), "Entity " + std::to_string(i)};
+            if (i % kChainDepth != 0) { entity.setParentId(parent); }
+
+            const Uuid id = entity.getId();
+            scene.addEntity(std::move(entity));
+            ids.push_back(id);
+            parent = id;
+        }
+        return ids;
+    }
+}
+
+CNA_STUDIO_TEST(TheOutlinersWindowIsTheSameRowsTheWholeListWouldHaveHadThere)
+{
+    // The assertion that makes a windowed walk trustworthy, and the only one that can: the slice
+    // has to be *identical* to the corresponding part of the whole. A count and a build that walk
+    // by slightly different rules put the scrollbar and the rows quietly out of step, and the
+    // symptom is the last entity in a large scene being unreachable -- which nobody reports,
+    // because nobody can tell it is missing.
+    SceneDocument scene;
+    const std::vector<Uuid> ids = fillDeepScene(scene);
+    CNA_STUDIO_EXPECT_EQ(scene.getEntityCount(), kEntities);
+
+    StudioTreeState state;
+    CNA_STUDIO_EXPECT_EQ(studioOutlinerRowCount(scene, state), kEntities);
+
+    const std::vector<Uuid> selection{ids[7], ids[kEntities - 3]};
+    const std::vector<StudioTreeRow> all = studioOutlinerRows(scene, selection, state);
+    CNA_STUDIO_EXPECT_EQ(all.size(), kEntities);
+
+    // At the start, in the middle, across a chain boundary, and running off the end.
+    for (const auto& [first, count] : {std::pair<std::size_t, std::size_t>{0, 40},
+                                       std::pair<std::size_t, std::size_t>{9997, 60},
+                                       std::pair<std::size_t, std::size_t>{kChainDepth - 3, 9},
+                                       std::pair<std::size_t, std::size_t>{kEntities - 5, 40}})
+    {
+        const std::vector<StudioTreeRow> window =
+            studioOutlinerRowWindow(scene, selection, state, first, count);
+
+        CNA_STUDIO_EXPECT_EQ(window.size(), std::min(count, kEntities - first));
+        for (std::size_t i = 0; i < window.size(); ++i)
+        {
+            const StudioTreeRow& expected = all[first + i];
+            CNA_STUDIO_EXPECT_EQ(window[i].id, expected.id);
+            CNA_STUDIO_EXPECT_EQ(window[i].label, expected.label);
+            CNA_STUDIO_EXPECT_EQ(window[i].depth, expected.depth);
+            CNA_STUDIO_EXPECT(window[i].selected == expected.selected);
+            CNA_STUDIO_EXPECT(window[i].hasChildren == expected.hasChildren);
+        }
+    }
+
+    // Past the end, and nothing asked for, are answers rather than crashes.
+    CNA_STUDIO_EXPECT(studioOutlinerRowWindow(scene, selection, state, kEntities, 40).empty());
+    CNA_STUDIO_EXPECT(studioOutlinerRowWindow(scene, selection, state, 0, 0).empty());
+
+    // And collapsing takes a subtree out of both answers at once, which is the case where a count
+    // maintained separately from the walk goes wrong first.
+    state.setExpanded(ids[0].toString(), false);
+    CNA_STUDIO_EXPECT_EQ(studioOutlinerRowCount(scene, state), kEntities - (kChainDepth - 1));
+    CNA_STUDIO_EXPECT_EQ(studioOutlinerRows(scene, selection, state).size(),
+                         kEntities - (kChainDepth - 1));
+}
+
+CNA_STUDIO_TEST(OutliningTwentyThousandEntitiesDescribesAScreenfulRatherThanAScene)
+{
+    // STUDIO-13011 through the real panel. The tree has culled its *drawing* since STUDIO-03034,
+    // so `rowsDrawn` was already a screenful and looked like virtualisation; what it could not
+    // bound is the twenty thousand rows the panel handed it, three strings each, twice a frame.
+    StudioContext context;
+    fillDeepScene(context.getScene());
+
+    StudioTreeState state;
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("outliner"));
+
+    StudioOutlinerResult drawn;
+    UiRect bounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("outliner",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioOutlinerResult pass = studioOutlinerPanel(frame, area, context, state);
+            if (frame.isDrawPass())
+            {
+                drawn = pass;
+                bounds = area;
+            }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT_EQ(drawn.rowsTotal, kEntities);
+    CNA_STUDIO_EXPECT(bounds.height > 0.0f);
+
+    if (drawn.rowsBuilt == 0 || drawn.rowsBuilt > 400)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "the outliner built " + std::to_string(drawn.rowsBuilt)
+                                         + " rows for a screenful of a "
+                                         + std::to_string(kEntities) + "-entity scene.");
+    }
+    CNA_STUDIO_EXPECT(drawn.rowsDrawn > 0);
+    CNA_STUDIO_EXPECT(drawn.rowsDrawn <= drawn.rowsBuilt);
+
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(shell->frame().ids().collisionCount(), std::size_t{0});
+
+    // Scrolled a long way down, then clicked: the row under the pointer is the one the scrollbar
+    // says is there, not the first root. This is the failure a window makes possible and a whole
+    // list cannot -- a slice positioned at its own offset rather than the list's.
+    const float insideX = bounds.left() + 40.0f;
+    const float insideY = bounds.centerY();
+
+    for (int turn = 0; turn < 120; ++turn)
+    {
+        UiInputState input = at(insideX, insideY);
+        input.wheelY = -1.0f;
+        shell->renderFrame(input);
+    }
+    shell->renderFrame(at(insideX, insideY));
+
+    CNA_STUDIO_EXPECT(drawn.rowsBuilt <= 400);
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+
+    shell->renderFrame(at(insideX, insideY, /*leftDown=*/true));
+    shell->renderFrame(at(insideX, insideY, /*leftDown=*/false));
+
+    CNA_STUDIO_EXPECT_EQ(context.getSelection().size(), std::size_t{1});
+    if (context.getSelection().size() == 1)
+    {
+        const StudioEntity* entity = context.getScene().findEntity(context.getSelection().front());
+        CNA_STUDIO_EXPECT(entity != nullptr);
+        if (entity != nullptr)
+        {
+            // Not "Entity 0", which is what a slice indexed or positioned from its own start gives.
+            CNA_STUDIO_EXPECT(entity->getName() != "Entity 0");
+        }
+    }
+}

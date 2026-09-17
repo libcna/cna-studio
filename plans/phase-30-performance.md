@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 8 of 16 complete `██████░░░░░░`
+**Progress:** 9 of 16 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,7 +19,7 @@
 | `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ✅ | `STUDIO-04028` |
 | `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ✅ | `STUDIO-30012`, `STUDIO-30014` |
 | `STUDIO-30016` | The Details panel stops opening files to draw itself | ✅ | `STUDIO-30012` |
-| `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ⬜ | `STUDIO-13011` |
+| `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ✅ | `STUDIO-13011` |
 | `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
 | `STUDIO-30022` | Stress benchmark: 100,000 assets | ✅ | `STUDIO-09016` |
 | `STUDIO-30023` | Stress benchmark: very large logs | ⬜ | `STUDIO-27021` |
@@ -443,3 +443,30 @@ every timed frame of every scenario put together, so `fillAssets` keeps its scra
 between runs and only rebuilds it when it is not there. A benchmark that spent two minutes
 recreating a directory it had just deleted is a benchmark people stop running, which is the only
 way a benchmark actually fails.
+
+### `STUDIO-30020` — Stress benchmark: 10,000+ scene entities
+
+**Done.** Three scenarios in `--ui-benchmark`: `outliner-20000`, `outliner-20000-deep` and
+`outliner-20000-scrolling`.
+
+**Deep as well as wide**, because the two fail differently. `outliner-2000` gives every root seven
+children and nothing below them, which is a loop wearing a tree's clothes: it exercises neither the
+recursion nor the indent guides, and a scene that is genuinely nested costs about two and a half
+times as much at the same entity count. `outliner-20000-scrolling` is there because a window that
+stands still can be answered by any cache keyed on its first row, and a user scrolling is the case
+that cannot.
+
+**What it found.** `STUDIO-13011`'s entry has the before-and-after table; the short version is that
+the Outliner was flattening the whole scene into rows twice a frame behind a perfectly bounded draw
+count, and fixing that took `outliner-20000` from 30.5 ms to 8.1 ms and the deep scene from 37.9 ms
+to 20.7 ms.
+
+**And what it leaves.** Twenty thousand entities in chains fifty deep still cost about 20 ms a
+frame, and the benchmark attributes it: `SceneDocument::getChildrenByParent()`, a pass over every
+entity per drawing pass, deliberately uncached because a stale hierarchy index presents as entities
+vanishing from the outliner. That is `STUDIO-30011`'s to remove, and `STUDIO-30030` is where an
+interactive target decides how much of it has to go.
+
+**Measured in Release, not in the debug tree.** The debug build reads about four times higher —
+75 ms against 8 ms for `outliner-20000` — and a number nobody could act on is worse than no number.
+The rows above and in `STUDIO-13011` are `build-werror`.

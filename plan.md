@@ -59,13 +59,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**288 of 575 tasks complete** `████████████░░░░░░░░░░░░░`  50.1%
+**290 of 575 tasks complete** `████████████░░░░░░░░░░░░░`  50.4%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 288 |
+| ✅ Complete | 290 |
 | 🔄 In progress | 8 |
-| ⬜ Not started | 269 |
+| ⬜ Not started | 267 |
 | ⛔ Deferred | 3 |
 | 🔬 Blocked | 6 |
 | ⊘ Superseded | 1 |
@@ -94,7 +94,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 10 | [Asset pipeline and importing](plans/phase-10-asset-pipeline.md) | `STUDIO-10NNN` | ⬜ | 14 | 1 | `░░░░░░░░░░` |
 | 11 | [3D viewport 2](plans/phase-11-viewport.md) | `STUDIO-11NNN` | 🔄 | 15 | 6 | `████░░░░░░` |
 | 12 | [Selection and gizmos 2](plans/phase-12-gizmos.md) | `STUDIO-12NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
-| 13 | [World Outliner 2](plans/phase-13-outliner.md) | `STUDIO-13NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
+| 13 | [World Outliner 2](plans/phase-13-outliner.md) | `STUDIO-13NNN` | ⬜ | 12 | 1 | `░░░░░░░░░░` |
 | 14 | [Details Inspector 2](plans/phase-14-inspector.md) | `STUDIO-14NNN` | ⬜ | 18 | 0 | `░░░░░░░░░░` |
 | 15 | [C++ gameplay component workflow](plans/phase-15-cpp-gameplay.md) | `STUDIO-15NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 16 | [Play In Editor 2](plans/phase-16-play-in-editor.md) | `STUDIO-16NNN` | 🔄 | 18 | 4 | `██░░░░░░░░` |
@@ -111,7 +111,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 27 | [Profiling and diagnostics](plans/phase-27-profiling.md) | `STUDIO-27NNN` | ⬜ | 14 | 0 | `░░░░░░░░░░` |
 | 28 | [Plugins and SDK](plans/phase-28-plugins.md) | `STUDIO-28NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 29 | [Renderer and platform matrix](plans/phase-29-renderer-matrix.md) | `STUDIO-29NNN` | 🔄 | 7 | 5 | `███████░░░` |
-| 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | 🔄 | 16 | 8 | `█████░░░░░` |
+| 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | 🔄 | 16 | 9 | `█████░░░░░` |
 | 31 | [Reliability](plans/phase-31-reliability.md) | `STUDIO-31NNN` | 🔄 | 13 | 1 | `░░░░░░░░░░` |
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 21 | 11 | `█████░░░░░` |

@@ -16,6 +16,7 @@
 #include <memory>
 
 #include <algorithm>
+#include <limits>
 #include <unordered_map>
 
 namespace CNA::Studio
@@ -68,7 +69,7 @@ namespace CNA::Studio
         }
 
         /**
-         * @brief Appends @p id and, when it is open, its children.
+         * @brief Visits @p id and, when it is open, its children, in display order.
          *
          * Depth-limited rather than cycle-detecting. A scene document is kept acyclic by every
          * operation that can reparent, so a cycle here would be a bug elsewhere -- but it would
@@ -79,12 +80,24 @@ namespace CNA::Studio
          * O(n²) -- 9 ms a frame at 250 entities and 309 ms at 2 000, measured by `--ui-benchmark`.
          * Rows are virtualised, so the *drawing* was already flat and nothing in a capture or a
          * draw-call assertion could have shown it.
+         *
+         * `STUDIO-13011`: and one function counts *and* builds, rather than two that agree by
+         * inspection. The panel has to know how many rows there are before it can know which ones
+         * are worth building, and a count that walked the tree by slightly different rules than the
+         * build would put the scrollbar and the rows quietly out of step -- the sort of defect that
+         * shows up as the last entity in a large scene being unreachable.
+         *
+         * @param index Running position in the whole list; advanced once per visited row.
+         * @param first First position worth building. Everything before it is counted only.
+         * @param last One past the last worth building; `npos` for "to the end".
+         * @param out Where rows land, or null to count without building any.
          */
-        void flatten(const SceneDocument& scene,
-                     const std::unordered_map<Uuid, std::vector<Uuid>>& hierarchy,
-                     const Uuid& id, int depth,
-                     const std::vector<Uuid>& selection, const StudioTreeState& state,
-                     std::vector<StudioTreeRow>& out)
+        void walk(const SceneDocument& scene,
+                  const std::unordered_map<Uuid, std::vector<Uuid>>& hierarchy,
+                  const Uuid& id, int depth,
+                  const std::vector<Uuid>& selection, const StudioTreeState& state,
+                  std::size_t& index, std::size_t first, std::size_t last,
+                  std::vector<StudioTreeRow>* out)
         {
             constexpr int kMaxDepth = 64;
 
@@ -94,6 +107,33 @@ namespace CNA::Studio
             const auto found = hierarchy.find(id);
             const std::vector<Uuid>& children =
                 found == hierarchy.end() ? noChildren() : found->second;
+
+            const std::size_t position = index++;
+            const bool wanted = out != nullptr && position >= first && position < last;
+
+            // Counted without being built. This is the whole of STUDIO-13011: a scene of fifty
+            // thousand entities costs fifty thousand `findEntity` lookups and one increment each,
+            // rather than fifty thousand rows carrying three strings apiece -- twice a frame, to
+            // show forty.
+            if (!wanted)
+            {
+                if (out != nullptr && position >= last) { return; }
+
+                // `collapsedCount()` first, so a tree with nothing collapsed -- which is every
+                // tree until the user closes something -- never formats the id at all. Counting
+                // twenty thousand entities was building forty thousand thirty-six-character
+                // strings a frame to ask a set that was empty.
+                if (state.collapsedCount() == 0 || state.isExpanded(id.toString()))
+                {
+                    for (const Uuid& child : children)
+                    {
+                        walk(scene, hierarchy, child, depth + 1, selection, state, index, first,
+                             last, out);
+                        if (out != nullptr && index >= last) { return; }
+                    }
+                }
+                return;
+            }
 
             StudioTreeRow row;
             row.id = id.toString();
@@ -140,34 +180,70 @@ namespace CNA::Studio
                 row.detail = std::to_string(entity->getComponents().size()) + " components";
             }
 
-            out.push_back(std::move(row));
+            out->push_back(std::move(row));
 
-            if (!state.isExpanded(id.toString())) { return; }
+            // The row's own id, already formatted just above, rather than a second `toString()`.
+            if (state.collapsedCount() != 0 && !state.isExpanded(out->back().id)) { return; }
             for (const Uuid& child : children)
             {
-                flatten(scene, hierarchy, child, depth + 1, selection, state, out);
+                walk(scene, hierarchy, child, depth + 1, selection, state, index, first, last, out);
+                if (index >= last) { return; }
             }
         }
+
+        /** @brief Walks every root of @p scene, and answers how many rows there were. */
+        std::size_t walkRoots(const SceneDocument& scene,
+                              const std::unordered_map<Uuid, std::vector<Uuid>>& hierarchy,
+                              const std::vector<Uuid>& selection, const StudioTreeState& state,
+                              std::size_t first, std::size_t last,
+                              std::vector<StudioTreeRow>* out)
+        {
+            // The nil Uuid's entry is the roots, so this also replaces `getRootEntities()` --
+            // which is the same scan under another name.
+            const auto roots = hierarchy.find(Uuid{});
+            if (roots == hierarchy.end()) { return 0; }
+
+            std::size_t index = 0;
+            for (const Uuid& root : roots->second)
+            {
+                walk(scene, hierarchy, root, 0, selection, state, index, first, last, out);
+                if (out != nullptr && index >= last) { break; }
+            }
+            return index;
+        }
+    }
+
+    std::size_t studioOutlinerRowCount(const SceneDocument& scene, const StudioTreeState& state)
+    {
+        // Once for the whole walk (STUDIO-30013): `getChildrenByParent` is a pass over the scene,
+        // and asking for it per node is what made this O(n^2) in the first place.
+        return walkRoots(scene, scene.getChildrenByParent(), {}, state, 0,
+                         std::numeric_limits<std::size_t>::max(), nullptr);
+    }
+
+    std::vector<StudioTreeRow> studioOutlinerRowWindow(const SceneDocument& scene,
+                                                       const std::vector<Uuid>& selection,
+                                                       const StudioTreeState& state,
+                                                       std::size_t first, std::size_t count)
+    {
+        if (count == 0) { return {}; }
+
+        std::vector<StudioTreeRow> rows;
+        rows.reserve(std::min(count, scene.getEntityCount()));
+
+        const std::size_t last = count == std::numeric_limits<std::size_t>::max()
+            ? count
+            : first + count;
+        (void)walkRoots(scene, scene.getChildrenByParent(), selection, state, first, last, &rows);
+        return rows;
     }
 
     std::vector<StudioTreeRow> studioOutlinerRows(const SceneDocument& scene,
                                                   const std::vector<Uuid>& selection,
                                                   const StudioTreeState& state)
     {
-        std::vector<StudioTreeRow> rows;
-        rows.reserve(scene.getEntityCount());
-
-        // Once for the whole walk (STUDIO-30013). The nil Uuid's entry is the roots, so this also
-        // replaces getRootEntities() -- which is the same scan under another name.
-        const std::unordered_map<Uuid, std::vector<Uuid>> hierarchy = scene.getChildrenByParent();
-        const auto roots = hierarchy.find(Uuid{});
-        if (roots == hierarchy.end()) { return rows; }
-
-        for (const Uuid& root : roots->second)
-        {
-            flatten(scene, hierarchy, root, 0, selection, state, rows);
-        }
-        return rows;
+        return studioOutlinerRowWindow(scene, selection, state, 0,
+                                       std::numeric_limits<std::size_t>::max());
     }
 
     bool studioBeginOutlinerRename(const SceneDocument& scene, const Uuid& entityId,
@@ -185,9 +261,8 @@ namespace CNA::Studio
     {
         StudioOutlinerResult result;
 
-        const std::vector<StudioTreeRow> rows =
-            studioOutlinerRows(context.getScene(), context.getSelection(), state);
-        result.rowsTotal = rows.size();
+        const StudioTheme& theme = frame.theme();
+        const SceneDocument& scene = context.getScene();
 
         // Two empties, said apart. "No scene is open" and "this scene is empty" call for different
         // next actions, and a panel that gave the same words for both would send half its readers
@@ -196,7 +271,51 @@ namespace CNA::Studio
             ? std::string_view{"This scene has no entities yet."}
             : std::string_view{"No project is open."};
 
-        const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state, empty);
+        if (bounds.width <= 0.0f || bounds.height <= 0.0f) { return result; }
+
+        // Derived once and shared by the count and the window (STUDIO-13011). `getChildrenByParent`
+        // is a pass over the scene, deliberately uncached because `findEntity` hands out a mutable
+        // entity and a stale hierarchy index presents as entities vanishing from the outliner. One
+        // pass per drawing pass is the price of that correctness; two would be carelessness.
+        const std::unordered_map<Uuid, std::vector<Uuid>> hierarchy = scene.getChildrenByParent();
+
+        // The count first, then the window. Counting walks the tree and builds nothing, which is
+        // the difference between a scene of fifty thousand entities costing fifty thousand
+        // increments and costing fifty thousand rows of three strings each, twice a frame.
+        const std::size_t total = walkRoots(scene, hierarchy, {}, state, 0,
+                                            std::numeric_limits<std::size_t>::max(), nullptr);
+        result.rowsTotal = total;
+
+        if (total == 0)
+        {
+            if (frame.isDrawPass())
+            {
+                studioDrawText(
+                    frame,
+                    bounds.inset(UiEdges{static_cast<float>(theme.metric(
+                        StudioMetric::SpacingMedium))}),
+                    empty, StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
+            }
+            return result;
+        }
+
+        StudioScrollOptions scroll;
+        scroll.contentHeight = static_cast<float>(total) * studioTreeRowHeight(theme);
+        scroll.wheelStep = studioTreeRowHeight(theme) * 3.0f;
+
+        const StudioScrollResult view =
+            studioBeginScroll(frame, frame.ids().make("treescroll"), bounds, scroll);
+
+        const StudioTreeWindow window = studioTreeWindow(view, total, theme);
+
+        std::vector<StudioTreeRow> rows;
+        rows.reserve(window.rowCount);
+        (void)walkRoots(scene, hierarchy, context.getSelection(), state, window.firstRow,
+                        window.firstRow + window.rowCount, &rows);
+        result.rowsBuilt = rows.size();
+
+        const StudioTreeResult tree = studioTreeRows(frame, view, rows, state, window);
+        studioEndScroll(frame);
         result.rowsDrawn = tree.rowsDrawn;
 
         if (tree.renamed.has_value())

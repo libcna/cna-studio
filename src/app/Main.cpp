@@ -225,6 +225,31 @@ namespace
         }
     }
 
+    /**
+     * @brief Adds @p count entities to @p scene in chains @p depth deep.
+     *
+     * `plan.md` STUDIO-30020. Deep rather than shallow, because the two fail differently: a flat
+     * list is a loop, and a hierarchy is a recursion whose cost is in the walk rather than in the
+     * rows. `fillScene` gives every root seven children and nothing below them, which exercises
+     * neither the recursion nor the indent guides.
+     */
+    void fillDeepScene(CNA::Studio::SceneDocument& scene, int count, int depth)
+    {
+        scene.clear();
+
+        CNA::Studio::Uuid parent;
+        for (int i = 0; i < count; ++i)
+        {
+            CNA::Studio::StudioEntity entity{CNA::Studio::Uuid::generate(),
+                                             "Entity " + std::to_string(i)};
+            if (i % depth != 0) { entity.setParentId(parent); }
+
+            const CNA::Studio::Uuid id = entity.getId();
+            scene.addEntity(std::move(entity));
+            parent = id;
+        }
+    }
+
     /** @brief Adds @p count assets to @p assets, spread across the kinds the grid has icons for. */
     /**
      * @brief Fills @p assets with @p count records, backed by real files under a real root.
@@ -316,6 +341,41 @@ namespace
             [](StudioShell&, StudioContext& context, Panels&) { fillScene(context.getScene(), 2000); },
             [](UiInputState input, int frame) {
                 // Over the outliner, which is where the wheel has to be for the scroll to land.
+                input.mouseX = 160.0f;
+                input.mouseY = 300.0f;
+                input.mouseInWindow = true;
+                input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
+                return input;
+            }});
+
+        // `STUDIO-30020`. Ten thousand entities is the number the Outliner was made to survive and
+        // twenty thousand is where the walk stops being free. Deep as well as wide, because a
+        // hierarchy's cost is in the recursion: `outliner-2000` gives every root seven children and
+        // nothing below them, which is a loop wearing a tree's clothes.
+        scenarios.push_back(UiBenchmarkScenario{
+            "outliner-20000", "a 20,000-entity scene, seven children to a root",
+            "outliner",
+            [](StudioShell&, StudioContext& context, Panels&) {
+                fillScene(context.getScene(), 20000);
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "outliner-20000-deep", "the same 20,000 entities in chains fifty deep",
+            "outliner",
+            [](StudioShell&, StudioContext& context, Panels&) {
+                fillDeepScene(context.getScene(), 20000, 50);
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "outliner-20000-scrolling",
+            "the same deep scene, scrolled a notch every frame -- the window moving, not standing",
+            "outliner",
+            [](StudioShell&, StudioContext& context, Panels&) {
+                fillDeepScene(context.getScene(), 20000, 50);
+            },
+            [](UiInputState input, int frame) {
                 input.mouseX = 160.0f;
                 input.mouseY = 300.0f;
                 input.mouseInWindow = true;
