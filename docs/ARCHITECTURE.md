@@ -568,7 +568,7 @@ language that does not exist yet — the seam is the size of the boundaries that
 | toolchain availability | `probeToolchain` — asked before anything is offered, never after a failure |
 | configure/build commands | `planBuild`, returning a `StudioBuildJob` the language-neutral `BuildProcess` runs |
 | creation of source/project files | `projectFiles`, given a `StudioProjectScaffold` |
-| run/debug/Play integration | the built executable is where `planBuild` put it; `cna-player` is language-neutral and stays so |
+| run/debug/Play integration | **language-neutral today, and stays so where it can be.** Play runs `cna-player` over the project's *data* (§6), which no language is involved in. Launching the project's own built executable is Phase 16/17 work and will ask the adapter, whose `planBuild` already names the directory it put one in |
 | opening the project and source files in an external IDE | `StudioLanguageDescriptor::sourceFileExtensions` and `sourceDirectory` locate them (`STUDIO-15010`) |
 | gameplay-component metadata | the files it is read from are `sourceDirectory` + `sourceFileExtensions`; the mechanism is `STUDIO-15001`, still open |
 | generated code ownership | `generatedDirectory`, a subtree the tool owns outright |

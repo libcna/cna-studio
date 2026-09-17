@@ -304,9 +304,15 @@ jobs:
 
       - name: CTest
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
-        # Everything, the slow standalone-export case included. That case is the concrete form of
-        # "CNA Studio produces CNA games, not CNA Studio games", and an invariant excluded from CI
-        # for being slow is an invariant that rots.
+        # Everything, the slow build cases included: the standalone export (STUDIO-02051) and one
+        # per project template (STUDIO-08011). Between them they are the concrete form of "CNA
+        # Studio produces CNA games, not CNA Studio games" -- for a project that was exported and
+        # for a project a user created -- and an invariant excluded from CI for being slow is an
+        # invariant that rots.
+        #
+        # They hold a RESOURCE_LOCK against each other, so ctest runs them one at a time however
+        # much parallelism it is given: each compiles CNA into its own tree, and several at once is
+        # how a runner runs out of memory.
         #
         # No SDL_VIDEODRIVER here. How a windowed case gets a surface is decided per test in
         # tests/CMakeLists from the renderer -- `SDL_VIDEODRIVER=dummy` for SOFTWARE, `DISPLAY=:99`
