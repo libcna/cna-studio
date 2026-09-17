@@ -2,41 +2,56 @@
 
 State of the work in progress, for whoever continues it. Updated at the end of each long session.
 
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-17
 
 ---
 
 ## What this session did
 
-**It finished the guard, extracted the last two services, measured the renderer question that four
-tasks had been assuming an answer to, and attempted a deletion that turned out to be blocked by
-something nobody had written down.**
+**It corrected one architectural assumption before it hardened, closed out the two Phase 7 rows that
+had become zombies, and shipped the Project Hub — including the first CI proof that a project a
+*user creates* builds and runs with Studio uninstalled.**
 
-Three dependency chains were in front of it. Here is what each one turned out to be.
-
-| Chain | Where it stood | Where it stands |
+| Piece | Where it stood | Where it stands |
 |-------|----------------|-----------------|
-| **Shell decomposition** | The guard was unblocked and unwritten; two of four services extracted | Guard written **first**, then `StudioComparisonService` and `StudioPreferencesService`. `STUDIO-02058` (per-panel binders) is the one left |
-| **Retire the classic UI backend** | Blocked on "CI cannot run a shader-capable renderer" | That blocker is **gone and proved gone**. A different one was found in its place: the Dear ImGui host draws through the classic backend unconditionally, so `STUDIO-04027` depends on `STUDIO-07030` |
-| **Retire Dear ImGui** | Five Inspector sections with no native answer | Four. `STUDIO-07045`, the asset inspector, is closed — and was not only a missing section |
+| **The invariant** | "A CNA Studio project remains a CNA **C++** project" — C++ inside Studio's model | Generalised. One `StudioLanguageAdapter`, one implementation, and three guard tests that refuse the `if (language == …)` chain before it can be written |
+| **Phase 7** | 44 of 46, two rows open, one of them impossible | 45 of 46 and closed. `STUDIO-07003` proved and ticked; `STUDIO-07001` ⊘ superseded rather than back-dated |
+| **Phase 8** | 0 of 12 | 12 of 12, with four templates and a CTest case per template that creates, reopens, configures, compiles and runs |
 
-**The benchmark is the piece with the longest shadow.** `STUDIO-04028` existed because
-`StudioModernUiRenderer` was written on the assumption that persistent GPU buffers beat per-draw user
-arrays, and that assumption had been repeated for four tasks without a number behind it. It is a
-number now — **the classic backend puts 17–18× as much geometry on the bus, on every one of eight
-frame shapes** — and it found three things nobody was looking for: the classic backend had been
-reporting zero upload bytes for its entire existence, a CNA UI vertex costs 56 bytes to carry 20
-bytes of data, and **the World Outliner was O(n²) in scene size**, which made the whole editor run at
-three frames a second on a 2 000-entity scene. The last of those is fixed and is 16× faster.
+**The language seam is the piece with the longest shadow, and it had to go first.** CNA has several
+language bindings, and the old invariant put C++ in *Studio's model* rather than in a project.
+Phase 8 is the tranche that would have written most of the consequences — the Project Hub, project
+creation, build orchestration, packaging — one individually reasonable `if` at a time. Doing it
+afterwards would have been a rewrite of every panel that grew one. Doing it first cost one
+interface, one implementation and a header split; the Hub that followed cannot name a compiler,
+and that is checked rather than intended.
 
-**And an honest non-result.** `STUDIO-04027` was attempted, not deferred. The evidence for deleting
-the classic backend is now decisive — no CI coverage is lost (the `OPENGL4` leg's test set is a
-strict superset of the `SOFTWARE` leg's), it submits 17× the geometry, and it cannot draw the
-material and shader previews Phases 19, 20 and 22 are built on. It is still here because
-`CnaStudioHost::LoadContent` constructs it with no chooser, and that host is `STUDIO-07030`'s to
-delete. The task stays open rather than being closed over a justification: writing down "it stays
-because it cannot yet go" and calling that the acceptance would be closing a row over an obstacle
-rather than over a decision.
+**`STUDIO-07003` was true and the plan did not know.** Its last open row was the prototype's 2D/3D
+toolbar control, waiting on Phase 11 — which shipped it, and nothing edited the phase file to say
+so. It is closed on a check now, at the level its acceptance is written at: *reachable*, not
+registered. A command that exists and is on no menu, no toolbar and no viewport strip is one a user
+cannot press, and the pre-existing command check passed it happily.
+
+**`STUDIO-07001` could not be made true and was not pretended into one.** It was the temporary
+compatibility adapter for the Dear ImGui migration; the migration finished and `STUDIO-07030`/`07031`
+deleted Dear ImGui, so the condition it waited on — both UIs in one running Studio — has nothing on
+the other side of it. The plan gained a ⊘ status for exactly this case, and the guard that adds up
+its status column gained the row. Resurrecting a deleted UI to earn a tick would have been the wrong
+answer to a bookkeeping problem.
+
+**`STUDIO-08011` is the result that matters most.** `STUDIO-02051` has proved since Phase 2 that an
+*exported* project builds with no Studio. Every project a user actually makes comes out of the
+Project Hub instead, and until this session that path had never been compiled by anything — a
+template producing a tree that does not build would have been found by the first person to press
+New Project. There is now one CTest case per template directory, discovered by globbing
+`templates/`, that creates a project, reopens it in Studio, configures it with nothing but CMake and
+a CNA checkout, compiles it and requires the game to *say* what it did.
+
+**And two defects the new tests found.** An XNA-compatible project was created already reporting a
+missing startup scene, because `Project::createDefault` fills in a conventional scene path that is a
+dangling reference for a project kind with no scenes. And `studioBuiltInLanguages().all()` binds a
+reference into a temporary — a factory returning by value is the right shape and it is a shape that
+is easy to use wrongly, which `-Wdangling-reference` caught on the first build.
 
 ## Where things are
 
@@ -96,6 +111,24 @@ cmake -S . -B build -G Ninja
 cmake --build build -j4
 ctest --test-dir build --output-on-failure
 ```
+
+The whole Project Hub story, from a build directory, with no GPU and no display:
+
+```bash
+./build/cna-studio --list-templates
+./build/cna-studio --new-project=/tmp/MyGame --template=empty-3d --project-name="My Game"
+./build/cna-studio --project="/tmp/MyGame/My Game.cnaproject" --headless --frames=2
+
+# And the half that matters: the same directory, built with no Studio anywhere.
+cmake -S /tmp/MyGame -B /tmp/MyGame/build -DCNA_ROOT=/path/to/cna -DCNA_GRAPHICS_RENDERER=SOFTWARE
+cmake --build /tmp/MyGame/build -j4
+cd /tmp/MyGame/build && SDL_VIDEODRIVER=dummy ./My_Game --frames=10
+# -> My_Game: loaded 2 entities, drew 0 sprites
+```
+
+`ctest -R CnaStudioTemplateBuilds` is that sequence for every template, on a CNA-backed build. Both
+it and `CnaStudioStandaloneExport` are labelled `slow` and hold a `RESOURCE_LOCK`, because each
+compiles CNA into its own tree and running four at once is how a CI job runs out of memory.
 
 CI runs all five configurations below, `OPENGL4` included as of `STUDIO-04029`. Run them all
 locally before a push anyway: the CNA jobs
@@ -1013,6 +1046,25 @@ reason `STUDIO-03041` is filed as a structural task rather than as a third guard
 
 Nothing is failing. What is **not** done, and should not be mistaken for done:
 
+- **Studio is C++-only, and the seam does not change that.** `STUDIO-02080`–`02086` make adding a
+  CNA binding an *addition* rather than a rewrite. No second adapter exists, none is planned in this
+  tranche, and the Project Hub's language chooser holds one entry. Anybody reading the architecture
+  and expecting a second language to be near should read §13.7, which says what this deliberately
+  does not do.
+- **`StudioPreferences::cmakePath` is the seam's one known non-generic remainder** (`STUDIO-02087`,
+  ⛔ deferred). It is a persisted preferences key with one language behind it, and generalising it
+  to a per-language map today would buy nothing and cost a format migration.
+- **The Project Hub is functional and is not designed.** Rows of full-width buttons, a text field
+  for the project location, and no template pictures. `STUDIO-08001`'s acceptance is the window and
+  its layout; a template gallery belongs in Phase 35 and does not have a task yet.
+- **Open Project has no file dialog.** It has the recent list and a path field, which is enough to
+  open any project and is what a terminal user would type anyway. A real file dialog waits on a
+  modal *window*, which Studio does not have (`STUDIO-03022` covers the layering, not the window).
+- **The recent-projects list is not shared with anything.** It is Studio's own file in the user's
+  configuration directory, read on every frame the Hub is drawn. That is deliberate — availability
+  is a fact about the filesystem, which changes while Studio is not running — and it means a
+  thousand-entry list would cost a stat per row per frame. It is bounded at twenty.
+
 - **Dear ImGui is gone, all the way down.** `STUDIO-07030` deleted every panel, `ImGuiStudioUi`,
   `StudioApplication` and `CnaStudioHost` — `cna-studio` with no flag opens the native shell, and
   there is no longer a `--ui=imgui` window to open instead; that name is kept only as one
@@ -1104,40 +1156,33 @@ FFmpeg is optional: `CNA_ENABLE_VIDEO=AUTO` detects its absence and disables vid
 
 Read from the phase files, not remembered. Ids, titles and blockers are copied from the rows.
 
-**The Dear ImGui chain is closed, all of it.** `STUDIO-07042`–`07046` are done, `STUDIO-07030`
-deleted the prototype itself, `STUDIO-07031` removed the `CNA_STUDIO_WITH_IMGUI` option and the
-vendored `third_party/imgui/` source (eleven files, 3.5 MB), and `STUDIO-07099` widened the guard
-that used to be scoped to `ui-core` alone to the whole tree, plus a check over `CMakeLists.txt` and
-`tests/CMakeLists.txt` for the option or the vendor target returning with no line of C++ to show
-for it. Nothing in this chain is open any more. `STUDIO-04027` is **still not** fully unblocked —
-see below.
+**Phases 6, 7 and 8 are closed.** The Dear ImGui chain is finished, the two Phase 7 zombies are
+resolved, and the Project Hub is complete with its build proof. Nothing in those three is open.
 
-### The chain: retire Dear ImGui, and the classic UI backend behind it
+### The most logical next chain: Content Browser 2, which the Hub has just given something to browse
+
+Until this session there was one project to open — the example — so the asset workflow was never
+under pressure. A Hub that creates projects makes Phase 9 the tranche where a real one starts to
+hurt, and Phase 10 is behind it.
 
 | Id | Task | Blocked by |
 |----|------|-----------|
-| `STUDIO-07042` | Prefab overrides in the native Details panel: report, revert, apply | `STUDIO-07041` ✅ — done |
-| `STUDIO-07043` | Sprite animation preview in the native Details panel | `STUDIO-07041` ✅ — done |
-| `STUDIO-07044` | Audio preview in the native Details panel | `STUDIO-07041` ✅ — done |
-| `STUDIO-07046` | The material asset editor the prototype already has | `STUDIO-07041` ✅ — done |
-| `STUDIO-07030` | Remove the Dear ImGui panel implementations | the four above, all ✅ — **done** |
-| `STUDIO-07031` | Remove the `CNA_STUDIO_WITH_IMGUI` option and the vendored source | `07030` ✅ — **done** |
-| `STUDIO-07099` | Guard test: production Studio UI has no dependency on Dear ImGui | `07031` ✅ — **done** |
-| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | `STUDIO-04029` ✅, `STUDIO-07030` ✅ — see below |
-| `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | `STUDIO-04026` ✅ |
+| `STUDIO-09001` … `09016` | Content Browser 2 | Nothing; Phase 8 is done |
+| `STUDIO-10002` | Importer registry, which `STUDIO-28003` waits on | Phase 9's browser |
+| `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | `STUDIO-30012`, which wants `STUDIO-09004` |
 
-**`STUDIO-04027` found a second consumer once the first was deleted.** `CnaStudioHost` — the
-prototype's own host, and the one this row's dependency used to name — is gone with the rest of the
-prototype. `CnaStudioShellHost`, the *native* host, still constructs a `CnaUiRenderer` of its own: as
-a compatibility fallback, and again behind `--ui-renderer=compat`. Neither of those was there to find
-before `07030` shipped, because nobody had reason to look past the prototype's own consumer while it
-was still standing. `04027`'s own acceptance now has to decide whether that fallback goes too, or
-gets written down as the reason the backend stays.
+### The gameplay-language chain, now that the seam exists to hang it on
 
-**The evidence `STUDIO-04027` needs is otherwise already gathered**: no CI coverage is lost,
-17–18× the geometry submitted, and a path that cannot draw the material and shader previews Phases
-19, 20 and 22 are built on. `STUDIO-07099` should also refuse a UI-render-backend dependency in
-`src/player`, which `ThePlayerDependsOnNoUiRenderBackend` already does for that module.
+`STUDIO-15001` is the decision that gates Phase 15, and the language seam has changed what it is a
+decision *about*: the reflection mechanism is now the C++ adapter's answer to the
+gameplay-component-metadata boundary (`docs/ARCHITECTURE.md` §13.3) rather than a Studio-wide one.
+That is a narrower question than it was, and it should be settled before Phase 15 starts.
+
+| Id | Task | Blocked by |
+|----|------|-----------|
+| `STUDIO-15001` | Which reflection mechanism for project-defined C++ components | An architectural decision. Narrower now: it is one adapter's answer, not Studio's |
+| `STUDIO-15010` | Open project in IDE, open source file, open component source | `STUDIO-06009`. The adapter's `sourceDirectory` and `sourceFileExtensions` are what locate them |
+| `STUDIO-28005` | Plugins contribute panels | Nothing — its dependency moved from the retired `STUDIO-07001` to `STUDIO-07016`, which is ✅ |
 
 ### Finish the shell decomposition
 
@@ -1145,19 +1190,16 @@ gets written down as the reason the backend stays.
 |----|------|-----------|
 | `STUDIO-02058` | Move panel binding out of `StudioShellPanels` into per-panel binders | `STUDIO-02050` ✅ |
 
-The last of four. `StudioShellPanels` is down from 1 421 lines to about 1 000, and what is left is
-mostly `bind()`. **Do not move the lambdas into methods that still take `StudioShellPanels&`** —
-that moves code rather than separating concerns, which is the failure `STUDIO-02054`'s note warns
-about. Each binder should name the few things its panel needs, the way the services do, and
-`STUDIO-02059` will not catch it if they do not, because a constructor argument is a legal dependency
-however large it is.
+The last of four, and it got bigger this session: the Project Hub's binding is another ~70 lines in
+`bind()`. **Do not move the lambdas into methods that still take `StudioShellPanels&`** — that moves
+code rather than separating concerns, which is the failure `STUDIO-02054`'s note warns about. Each
+binder should name the few things its panel needs, the way the services do.
 
-### Structural, and filed this session
+### Structural, and still open
 
 | Id | Task | Blocked by |
 |----|------|-----------|
 | `STUDIO-03041` | Make paint order separable from input order | `STUDIO-03009` ✅ |
-| `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | `STUDIO-30012`, `STUDIO-30014` ✅ |
 | `STUDIO-30012` | Caching strategy with explicit invalidation | `STUDIO-09004` |
 
 `STUDIO-03041` is the one worth doing sooner rather than later: three widgets have been drawn under
@@ -1166,17 +1208,22 @@ from the same trap. It wants design, not an edit.
 
 ### Visual Quality 1.0, in the order the panels are looked at
 
-Each is independent. Verified as still open by looking at a 1920×1080 capture this session.
+Each is independent. The Project Hub adds one to the list.
 
 | Id | Task |
 |----|------|
-| `STUDIO-35033` | Property grid alignment: label column, value column, nesting, reset markers — and `studioPropertyEditor` is now the one seam it needs |
+| `STUDIO-35033` | Property grid alignment: label column, value column, nesting, reset markers |
 | `STUDIO-35053` | Selection feedback in the viewport: outline, pivot, bounds |
 | `STUDIO-35051` | Viewport grid that reads as a ground plane, with origin axes |
 | `STUDIO-35041` | Real content thumbnails, cached and generated off the frame |
 | `STUDIO-35042` | Content Browser search and type filters |
 | `STUDIO-35061` | World Outliner: search, filter and prefab indicators |
 | `STUDIO-35082` | Tolerant golden comparison and region-occupancy probes |
+
+The Hub is *functional* and is not yet designed: it is rows of full-width buttons. A template
+gallery with a picture per template is the obvious next thing and does not have a task yet — file
+one against Phase 35 rather than reopening `STUDIO-08001`, whose acceptance is the layout and not
+its polish.
 
 ### Not on any chain, and each worth doing on its own
 
@@ -1189,15 +1236,14 @@ Each is independent. Verified as still open by looking at a 1920×1080 capture t
 | `STUDIO-03013` | Accessibility metadata on every widget: role, name, value, state |
 | `STUDIO-11003` … `11012` | Focus selection, standard views, adaptive grid, outlines, wireframe mode |
 
+`STUDIO-02037` is closer than it looks now: `CreatingTheSameProjectTwiceProducesTheSameBytes` is
+the same assertion over generated project files, and the machinery generalises.
+
 **Blocked, not forgotten.** `STUDIO-33010` (graphical CI on a real GPU) is narrower than it was:
 llvmpipe under Xvfb is in CI now, so what is missing is a *driver* rather than any renderer.
-`STUDIO-05015` (a second OS window) is research. `STUDIO-15001` (the C++ reflection mechanism) is
-blocked on an architectural decision that should be made before Phase 15 starts.
-
-**One thing to check first, before picking any of this up.** `STUDIO-04029` added a second CI matrix
-leg and nobody has watched it run. Look at the first `Linux CNA-backed (OPENGL4)` job on GitHub
-Actions: it should take about the same time as the `SOFTWARE` one, print `UI renderer: modern`, and
-run 79 CTest suites to the `SOFTWARE` leg's 78.
+`STUDIO-05015` (a second OS window) is research. `STUDIO-02087` (a per-language toolchain-path
+preference) is ⛔ deferred and written down, so the second adapter finds it rather than trips over
+it.
 
 ## What a reviewer should be sceptical about
 

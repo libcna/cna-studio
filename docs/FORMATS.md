@@ -29,6 +29,8 @@ project is relative to it and uses forward slashes on all platforms.
   "formatVersion": 1,
   "name": "MyGame",
   "kind": "CnaNative",
+  "language": "cpp",
+  "defaultView": "3d",
   "startupScene": "Scenes/MainMenu.cnascene",
   "assetDirectory": "Assets",
   "sceneDirectory": "Scenes",
@@ -46,6 +48,8 @@ project is relative to it and uses forward slashes on all platforms.
 | `formatVersion` | int | — | Required. Currently `1` |
 | `name` | string | `"Untitled"` | Display name |
 | `kind` | enum | `"CnaNative"` | `CnaNative` or `XnaCompatible` — see below |
+| `language` | string | absent | Which language the gameplay code is written in. Written only when set — see below |
+| `defaultView` | string | absent | `"2d"` or `"3d"`: which viewport the project opens in. Written only when set |
 | `startupScene` | string | `""` | Project-relative. Ignored for `XnaCompatible` |
 | `assetDirectory` | string | `"Assets"` | Scanned by the asset database |
 | `sceneDirectory` | string | `"Scenes"` | Where new scenes are created |
@@ -55,6 +59,34 @@ project is relative to it and uses forward slashes on all platforms.
 | `targetPlatforms` | string[] | `["linux-x64"]` | Offered by the build dialog |
 | `modules` | string[] | `["cna-core"]` | CNA modules the game links |
 | `plugins` | string[] | `[]` | Plugin ids to load for this project |
+
+### `language`
+
+The id of the language adapter that owns this project's toolchain: which build system Studio
+drives, which files a new project is given, and how it is packaged
+(`CNA/Studio/Project/LanguageAdapter.hpp`, `docs/ARCHITECTURE.md` §13). `"cpp"` is the only value
+this build of Studio implements.
+
+Additive, like `gridSnap`: no `formatVersion` bump, and written only when set. **An absent key and
+`"cpp"` mean the same thing today**, because C++ is the only language Studio has ever authored, and
+the registry resolves an empty id to its default rather than refusing to open the file. The key
+exists so that the two can stop meaning the same thing without a migration when they must.
+
+A value naming a language this build has no adapter for does **not** fall back to the default. The
+project opens, its scenes and assets are editable, and building and packaging report that this
+Studio cannot do them — building it as something it is not would produce a failure a long way from
+its cause.
+
+### `defaultView`
+
+Which viewport the project opens in. A property of the project rather than a preference, because it
+is a fact about what kind of game it is: a 3D world opened in the 2D view is a grid with the level
+somewhere off the edge of it.
+
+Not a lock. It decides the view a project *opens* in and nothing else; switching is still `2` and
+`3`, and Studio never writes this back from the viewport — so a project's answer does not drift
+because somebody glanced at the other view. Additive and written only when set; an absent key means
+Studio's own default, which is 2D.
 
 ### `gridSnap`
 

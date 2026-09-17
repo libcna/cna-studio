@@ -33,6 +33,23 @@ Tasks whose completion condition is not obvious from the title.
 
 **Verification.** Decision recorded in `docs/ARCHITECTURE.md` before implementation begins
 
+### `STUDIO-15010` — Open project in IDE, open source file, open component source
+
+**Where the answer lives, decided in advance by `STUDIO-02080`.** *Which* files a user edits and
+*where* they are is the language adapter's: `StudioLanguageDescriptor::sourceDirectory` and
+`sourceFileExtensions` (`docs/ARCHITECTURE.md` §13.3). What to launch is
+`StudioPreferences::externalEditor`, which already exists and has no caller yet.
+
+Studio does not build an IDE (`plan.md`, *Deliberately not built*). This opens the user's.
+
+### `STUDIO-15001` — the decision is narrower than it was
+
+The language seam changed what this is a decision *about*. Gameplay-component metadata is one of
+the boundaries the C++ adapter owns, so the reflection mechanism is **that adapter's answer** rather
+than a Studio-wide one — a second CNA binding would answer it differently and would not be waiting
+on this. Still 🔬, still to be recorded in `docs/ARCHITECTURE.md` before implementation, and still
+the row that gates the rest of this phase.
+
 ### `STUDIO-15006` — Studio reads project component metadata without loading game code into Studio
 
 **Acceptance.** The game process remains where game C++ executes
