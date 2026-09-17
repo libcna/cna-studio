@@ -3,24 +3,29 @@
 
 /**
  * @file CNA/Studio/Project/BuildRunner.hpp
- * @brief Building a game from the editor, by driving the project's own CMake.
+ * @brief Running a planned build: the commands, their state, and the process that executes them.
  *
- * plan.md ED-308. Three decisions are worth stating, because each had a plausible alternative.
+ * `plan.md` ED-308, generalised by `STUDIO-02081`. Three decisions are worth stating, because each
+ * had a plausible alternative.
  *
- * **The editor shells out to `cmake` rather than writing a script for the user to run.** Shelling
- * out means the editor has the exit code to report and the output to show, which is what makes this
- * a build *command* rather than a note; and the machinery already exists, since play mode spawns and
- * supervises a child process. The cost is that a real build has options the editor does not model,
- * which is why the exact command line is shown before it runs and the build directory is left where
- * the user can drive it by hand.
+ * **Studio shells out rather than writing a script for the user to run.** Shelling out means
+ * Studio has the exit code to report and the output to show, which is what makes this a build
+ * *command* rather than a note; and the machinery already exists, since play mode spawns and
+ * supervises a child process. The cost is that a real build has options Studio does not model,
+ * which is why the exact command line is shown before it runs and the build directory is left
+ * where the user can drive it by hand.
  *
- * **The editor drives the *project's* CMakeLists, not one it generates.** A game's build is the
+ * **Studio drives the *project's* build system, not one it generates.** A game's build is the
  * game's business: it has its own targets, its own dependencies and possibly its own options. All
- * the editor contributes is what it actually knows -- which backend to select and where to put the
+ * Studio contributes is what it actually knows — which renderer to select and where to put the
  * output.
  *
- * **A missing toolchain is detected before anything is offered.** Anyone who installed an editor and
- * not a compiler is the common case, and "nothing happened" is the worst possible answer.
+ * **Nothing here knows which build system that is.** A `BuildStep` is an executable and its
+ * arguments; a @ref StudioBuildJob is a list of them and a directory to run them into. Which
+ * commands those are is decided by the project's language adapter
+ * (`CNA/Studio/Project/LanguageAdapter.hpp`), and for a C++ project that adapter runs CMake exactly
+ * as Studio always has. Keeping the *runner* free of that is what lets the Build panel, the
+ * notifications and the log be written once rather than once per language.
  */
 
 #include <memory>
@@ -29,49 +34,6 @@
 
 namespace CNA::Studio
 {
-    class Project;
-
-    /** @brief What to build, and where to put it. */
-    struct BuildRequest
-    {
-        /** @brief Absolute path to the directory holding the project's `CMakeLists.txt`. */
-        std::string projectRoot;
-
-        /** @brief Absolute path for the build tree. Empty means the default beside the project. */
-        std::string buildDirectory;
-
-        /** @brief The platform from the project's `targetPlatforms`, e.g. "linux-x64". */
-        std::string targetPlatform;
-
-        /**
-         * @brief CNA's `CNA_GRAPHICS_RENDERER` value, e.g. `"OPENGLES3"`.
-         *
-         * The field keeps its name because callers and saved settings use it; what changed is the
-         * *variable it sets*. Studio passed `CNA_GRAPHICS_BACKEND`, which current CNA does not
-         * define — so every game Studio configured silently took CNA's default renderer instead of
-         * the one the user chose, and the build succeeded, which is what made it hard to notice.
-         */
-        std::string graphicsBackend;
-
-        /** @brief CNA's `CNA_PLATFORM` value, e.g. `"SDL3"`. Empty leaves CNA's default. */
-        std::string platform;
-
-        /**
-         * @brief Extra `-D` arguments, in order, from the target profile.
-         *
-         * Everything beyond renderer and platform that the profile decides: the feature options,
-         * each passed explicitly on or off. Carried as a list rather than reconstructed here so
-         * that the Build panel can show exactly what it is about to run.
-         */
-        std::vector<std::string> extraDefinitions;
-
-        /** @brief CMake build type, e.g. "Release". */
-        std::string configuration = "Release";
-
-        /** @brief The `cmake` executable to run. Empty means look on the PATH. */
-        std::string cmakePath;
-    };
-
     /** @brief One command the build runs, as an executable and its arguments. */
     struct BuildStep
     {
@@ -84,58 +46,26 @@ namespace CNA::Studio
     };
 
     /**
-     * @brief Returns the default build directory for @p request: `<root>/build/<platform>`.
+     * @brief A build that has been planned and not yet run.
      *
-     * Beside the project rather than in a temporary directory, because a build people iterate on
-     * has to be incremental, and because they will want to open it in their own tools. It is not
-     * added to `.gitignore` -- the editor does not edit a user's repository configuration -- so
-     * the panel says where it went.
+     * The currency between a language adapter, which decides what to run, and everything else,
+     * which reports on it. Empty @ref steps means the project cannot be built; the adapter's
+     * `describeBuildProblem` says why, in a sentence meant for a user.
      */
-    [[nodiscard]] std::string getDefaultBuildDirectory(const BuildRequest& request);
+    struct StudioBuildJob
+    {
+        /** @brief The commands, in the order they must run. */
+        std::vector<BuildStep> steps;
 
-    /**
-     * @brief Returns the configure and build commands, in the order they must run.
-     *
-     * Pure: no filesystem, no process, no clock. That is what makes the *interesting* part of this
-     * feature -- which options are passed and in which order -- testable without a compiler on the
-     * machine running the tests.
-     *
-     * Returns an empty list when the request is unusable, which the caller reports; see
-     * `describeBuildProblem`.
-     */
-    [[nodiscard]] std::vector<BuildStep> planBuild(const BuildRequest& request);
+        /** @brief Absolute path of the directory the build writes into, and the log with it. */
+        std::string buildDirectory;
 
-    /**
-     * @brief Returns why @p request cannot be built, or an empty string when it can.
-     *
-     * Checked before anything is offered rather than after something fails, because the failure of
-     * a missing compiler arrives as a wall of CMake output that says nothing a user can act on.
-     */
-    [[nodiscard]] std::string describeBuildProblem(const BuildRequest& request);
+        /** @brief What this build is, for the log's first line, e.g. `"linux-x64, Release"`. */
+        std::string description;
 
-    /**
-     * @brief Returns the full path to a usable `cmake`, or an empty string.
-     *
-     * Searched on the PATH rather than at a fixed location, since every platform installs it
-     * somewhere different and a user may well have several.
-     */
-    [[nodiscard]] std::string findCMake();
-
-    /** @brief Fills in a request from @p project, leaving the caller's explicit choices alone. */
-    [[nodiscard]] BuildRequest makeBuildRequest(const Project& project,
-                                                std::string targetPlatform,
-                                                std::string graphicsBackend);
-
-    /**
-     * @brief Fills in a request from a project's active target profile.
-     *
-     * Prefer this: the profile is where a project's renderer, platform, configuration and features
-     * are decided, and a request assembled from anywhere else is a second opinion.
-     *
-     * @param project Project to build.
-     * @return The request.
-     */
-    [[nodiscard]] BuildRequest makeBuildRequestFromActiveProfile(const Project& project);
+        /** @brief Whether there is anything to run. */
+        [[nodiscard]] bool empty() const { return steps.empty(); }
+    };
 
     /** @brief Where a build has got to. */
     enum class BuildState
@@ -150,7 +80,7 @@ namespace CNA::Studio
     const char* toString(BuildState state);
 
     /**
-     * @brief Runs a build's steps one after another, logging to a file.
+     * @brief Runs a job's steps one after another, logging to a file.
      *
      * A file rather than a pipe, deliberately: it survives the editor, the user can open it in
      * whatever they read logs with, and a build that failed an hour ago is still explainable. The
@@ -166,11 +96,15 @@ namespace CNA::Studio
         BuildProcess& operator=(const BuildProcess&) = delete;
 
         /**
-         * @brief Starts @p request, replacing any finished build.
-         * @return False when a build is already running or the request is unusable; @p errorMessage
+         * @brief Starts @p job, replacing any finished build.
+         *
+         * The job arrives already planned. A runner that planned its own build would have to know
+         * which build system to plan for, which is the one thing this type is kept ignorant of.
+         *
+         * @return False when a build is already running or @p job has no steps; @p errorMessage
          *         says which.
          */
-        bool start(const BuildRequest& request, std::string* errorMessage = nullptr);
+        bool start(const StudioBuildJob& job, std::string* errorMessage = nullptr);
 
         /**
          * @brief Advances the build: reaps a finished step and starts the next.

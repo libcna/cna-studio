@@ -25,6 +25,7 @@
 #pragma once
 
 #include "CNA/Studio/Project/BuildRunner.hpp"
+#include "CNA/Studio/Project/LanguageAdapter.hpp"
 #include "CNA/Studio/Project/TargetProfile.hpp"
 #include "CNA/Studio/UiCore/StudioFrame.hpp"
 #include "CNA/Studio/UiCore/UiRect.hpp"
@@ -77,8 +78,16 @@ namespace CNA::Studio
          */
         StudioBuildPanelResult draw(StudioFrame& frame, const UiRect& body);
 
-        /** @brief The build this panel would start, from the project's active profile. */
-        [[nodiscard]] BuildRequest makeRequest() const;
+        /**
+         * @brief The build this panel would start, from the project's active profile.
+         *
+         * Planned by the project's language adapter, not here. The panel shows the commands and
+         * presses the button; which commands those are is the language's answer, and a panel that
+         * knew it would be a panel that had to be edited for every language Studio grows.
+         *
+         * @return The planned job, or one with no steps when there is no adapter or nothing to run.
+         */
+        [[nodiscard]] StudioBuildJob planBuild() const;
 
         /** @brief How many lines of the build log the panel shows. */
         static constexpr std::size_t kLogTailLines = 12;
@@ -97,8 +106,13 @@ namespace CNA::Studio
         StudioContext& context_;
         BuildProcess& build_;
 
-        /** @brief Resolved once: finding CMake walks the PATH, which is not a per-frame cost. */
-        std::string cmakePath_;
-        bool cmakeResolved_ = false;
+        /**
+         * @brief Resolved once: probing a toolchain walks the PATH, which is not a per-frame cost.
+         *
+         * Held rather than asked for each frame, and the field is the adapter's *report* rather
+         * than a path, so the reason a toolchain is unusable survives to the row that shows it.
+         */
+        StudioToolchainReport toolchain_;
+        bool toolchainProbed_ = false;
     };
 }

@@ -93,6 +93,24 @@ namespace CNA::Studio
         [[nodiscard]] ProjectKind getKind() const { return kind_; }
         void setKind(ProjectKind kind) { kind_ = kind; }
 
+        /**
+         * @brief The id of the language this project's gameplay code is written in, e.g. `"cpp"`.
+         *
+         * A *declaration*, not a preference: it is what decides which toolchain Studio drives,
+         * which files a new project is given, and how it is packaged — all of it through the
+         * adapter registered under this id (`CNA/Studio/Project/LanguageAdapter.hpp`). Nothing in
+         * Studio branches on the value; the registry resolves it to an adapter once, and the
+         * adapter answers.
+         *
+         * Empty on a `.cnaproject` written before the key existed. Every such project is C++,
+         * because C++ is the only language Studio has ever authored, and the registry resolves an
+         * empty id to its default rather than refusing to open the file.
+         */
+        [[nodiscard]] const std::string& getLanguage() const { return language_; }
+
+        /** @brief Sets the language id. Empty means "whatever this build's default is". */
+        void setLanguage(std::string id) { language_ = std::move(id); }
+
         /** @brief Absolute path of the directory containing the `.cnaproject` file. */
         [[nodiscard]] const std::string& getRootPath() const { return rootPath_; }
 
@@ -215,6 +233,9 @@ namespace CNA::Studio
     private:
         std::string name_ = "Untitled";
         ProjectKind kind_ = ProjectKind::CnaNative;
+
+        /** @brief Language id, or empty for this build's default. See @ref getLanguage. */
+        std::string language_;
         std::string rootPath_;
         std::string filePath_;
         std::string startupScene_;

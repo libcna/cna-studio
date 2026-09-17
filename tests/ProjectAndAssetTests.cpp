@@ -28,6 +28,7 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Plugins/Plugin.hpp"
 #include "CNA/Studio/Project/BuildRunner.hpp"
+#include "CNA/Studio/Project/Cpp/CppToolchain.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/ProjectCommands.hpp"
 #include "CNA/Studio/Project/RecoveryStore.hpp"
@@ -1753,9 +1754,17 @@ CNA_STUDIO_TEST(ABuildRunsItsStepsAndReportsTheOutcome)
         return;
     }
 
+    // Planned by the C++ toolchain and run by the language-neutral runner beside it -- the two
+    // halves STUDIO-02081 separated, exercised together, which is the only place the split can go
+    // wrong without a compile error.
+    StudioBuildJob job;
+    job.steps = planBuild(request);
+    job.buildDirectory = request.buildDirectory;
+    job.description = request.targetPlatform + ", " + request.configuration;
+
     BuildProcess process;
     std::string errorMessage;
-    CNA_STUDIO_EXPECT(process.start(request, &errorMessage));
+    CNA_STUDIO_EXPECT(process.start(job, &errorMessage));
     CNA_STUDIO_EXPECT(errorMessage.empty());
     CNA_STUDIO_EXPECT(process.getState() == BuildState::Running);
 
@@ -1784,8 +1793,8 @@ CNA_STUDIO_TEST(ABuildRunsItsStepsAndReportsTheOutcome)
     CNA_STUDIO_EXPECT(sawHeader);
 
     // Starting a second build over a finished one is allowed; over a running one is not.
-    CNA_STUDIO_EXPECT(process.start(request, &errorMessage));
-    CNA_STUDIO_EXPECT(!process.start(request, &errorMessage));
+    CNA_STUDIO_EXPECT(process.start(job, &errorMessage));
+    CNA_STUDIO_EXPECT(!process.start(job, &errorMessage));
     CNA_STUDIO_EXPECT_EQ(errorMessage, std::string{"a build is already running"});
 
     process.cancel();

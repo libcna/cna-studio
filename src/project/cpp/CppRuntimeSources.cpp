@@ -4,7 +4,7 @@
  * @brief Assembles the embedded runtime table from the byte arrays CMake generates.
  */
 
-#include "CNA/Studio/Project/StudioRuntimeSources.hpp"
+#include "CNA/Studio/Project/Cpp/CppRuntimeSources.hpp"
 
 namespace CNA::Studio::Generated
 {

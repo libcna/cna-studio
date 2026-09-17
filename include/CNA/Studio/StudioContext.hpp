@@ -28,6 +28,7 @@
 #include "CNA/Studio/Core/ComponentDescriptor.hpp"
 #include "CNA/Studio/Core/StudioCommand.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
+#include "CNA/Studio/Project/LanguageAdapter.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Ui/StudioUi.hpp"
@@ -51,6 +52,29 @@ namespace CNA::Studio
 
         [[nodiscard]] Project& getProject() { return project_; }
         [[nodiscard]] const Project& getProject() const { return project_; }
+
+        /**
+         * @brief The languages this build of Studio can author in.
+         *
+         * Held here for the same reason the component registry is: it is shared, non-UI state that
+         * every panel needs and none should construct for itself. It is not a locator — it is a
+         * member of an object that is already a constructor argument everywhere, which is the
+         * distinction `docs/ARCHITECTURE.md` §10.1 draws.
+         */
+        [[nodiscard]] StudioLanguageRegistry& getLanguages() { return languages_; }
+        [[nodiscard]] const StudioLanguageRegistry& getLanguages() const { return languages_; }
+
+        /**
+         * @brief The adapter for the open project's language, or null when nothing implements it.
+         *
+         * Null is a real answer and callers must handle it: a `.cnaproject` naming a language this
+         * build has no adapter for is a project Studio can show and cannot build, and saying so is
+         * better than quietly treating it as something else.
+         */
+        [[nodiscard]] const StudioLanguageAdapter* getLanguage() const
+        {
+            return languages_.forProject(project_);
+        }
 
         [[nodiscard]] SceneDocument& getScene() { return scene_; }
         [[nodiscard]] const SceneDocument& getScene() const { return scene_; }
@@ -212,6 +236,10 @@ namespace CNA::Studio
 
     private:
         Project project_;
+
+        /** @brief Every language adapter this build ships. See @ref getLanguages. */
+        StudioLanguageRegistry languages_ = studioBuiltInLanguages();
+
         SceneDocument scene_;
         ComponentRegistry components_;
         PluginExtensionRegistry pluginExtensions_;

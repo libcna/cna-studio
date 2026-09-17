@@ -430,26 +430,6 @@ namespace CNA::Studio
         return known != nullptr ? std::string{known->cnaIdentity} : uppered(platform);
     }
 
-    std::vector<std::string> studioTargetProfileCMakeArguments(const StudioTargetProfile& profile)
-    {
-        std::vector<std::string> arguments;
-        arguments.push_back("-DCMAKE_BUILD_TYPE="
-                            + std::string{studioBuildConfigurationName(profile.configuration)});
-        arguments.push_back("-DCNA_GRAPHICS_RENDERER=" + studioRendererCnaIdentity(profile.renderer));
-        arguments.push_back("-DCNA_PLATFORM=" + studioPlatformCnaIdentity(profile.platform));
-
-        // Every known feature, on or off explicitly. Passing only the enabled ones would let a
-        // stale cache keep a feature the profile turned off -- which is the kind of build that
-        // works for whoever configured it and for nobody else.
-        for (const StudioFeatureOption& feature : getKnownStudioFeatures())
-        {
-            arguments.push_back("-D" + std::string{feature.cnaOption} + "="
-                                + std::string{profile.hasFeature(feature.name) ? feature.enabledValue
-                                                                              : std::string_view{"OFF"}});
-        }
-        return arguments;
-    }
-
     JsonValue studioTargetProfileToJson(const StudioTargetProfile& profile)
     {
         JsonValue value = JsonValue::makeObject();

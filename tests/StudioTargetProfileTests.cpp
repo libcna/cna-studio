@@ -14,6 +14,7 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/Project/BuildRunner.hpp"
+#include "CNA/Studio/Project/Cpp/CppToolchain.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"

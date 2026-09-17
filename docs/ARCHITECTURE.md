@@ -14,25 +14,44 @@
 
 ## 1. The invariant
 
-> **CNA is the framework. CNA Studio is the professional authoring environment. A CNA Studio
-> project remains a CNA C++ project.**
+> **CNA is the framework. CNA Studio is the professional authoring environment. A project authored
+> by Studio remains a normal project for CNA or one of its supported bindings, and builds and runs
+> without CNA Studio.**
 
-Every decision below is tested against that sentence. Three consequences follow, and they are not
+For the one language implemented today, that reads:
+
+```
+C++ project ──▶ the project's own CMake ──▶ CNA
+```
+
+**This used to say "a CNA Studio project remains a CNA *C++* project"**, and the change is a
+generalisation rather than a widening of scope. CNA has several language bindings, and a project
+authored for one of them is still a CNA project; the old wording made C++ a property of Studio's
+*model* rather than of a project, which is the assumption §13 exists to keep out of the Project
+Hub, project creation, build orchestration, source opening, component metadata and packaging. C++
+remains the only required and fully implemented gameplay-language workflow.
+
+Every decision below is tested against that sentence. Four consequences follow, and they are not
 negotiable:
 
 1. **Studio is never a runtime dependency.** A game authored in Studio builds and runs with Studio
    uninstalled — and preferably rebuilds from source with Studio uninstalled too. There is no
    Studio-only runtime container, no proprietary project format that hides the source, and no
    mandatory Studio-generated build step that cannot be reproduced by hand.
-2. **Studio drives the project's own CMake.** It does not replace it. Studio may *create* and
-   *maintain* a sensible default `CMakeLists.txt` for a project it created, but that file stays
-   editable, and the exact configure and build commands Studio runs are always visible.
-3. **Handwritten C++ is never overwritten.** Code generation writes to a clearly separated
-   `Generated/` subtree with deterministic, reviewable output.
+2. **Studio drives the project's own build system, and never replaces it.** For a C++ project that
+   is the project's own CMake. Studio may *create* and *maintain* a sensible default build file for
+   a project it created, but that file stays editable, and the exact configure and build commands
+   Studio runs are always visible.
+3. **Hand-written source is never overwritten.** Code generation writes to a clearly separated
+   generated subtree — `Generated/` for C++, and whatever the language's adapter names — with
+   deterministic, reviewable output.
+4. **Game and user code runs outside the Studio process.** Play mode is a separate `cna-player`
+   process (§6), and a packaged game has no Studio in it at all.
 
-This is enforced by test, not by good intentions: `STUDIO-18020`'s standalone-export test exports a
-project, copies it to a clean directory, makes Studio unavailable, configures it with its own
-CMake, builds it and runs a smoke test.
+This is enforced by test, not by good intentions: `STUDIO-02051` exports a project into an empty
+directory, configures it with nothing but CMake and a CNA checkout, compiles it and runs it, with
+Studio not consulted after the export; `STUDIO-08011` does the same for every project template,
+from creation rather than from export.
 
 ---
 
@@ -465,3 +484,138 @@ Recorded rather than guessed at. Each has a task id in `plan.md`.
 | `STUDIO-16020` | How does player output reach a Studio viewport efficiently without compromising the separate-process architecture? |
 | `STUDIO-16021` | Does native code hot reload beyond "rebuild and restart the player with state restored" earn its reliability cost? |
 | `STUDIO-02010` | Which of the 50 renderer identities actually exhibit G-03's render-target flip? |
+
+---
+
+## 13. The language and toolchain seam
+
+**Decision.** Studio addresses a project's language through one registered adapter
+(`CNA/Studio/Project/LanguageAdapter.hpp`). C++ is the only implementation and the only language
+whose workflow is required to work; nothing in the generic model branches on which language a
+project is written in. Recorded here, with what was rejected, because the decision is not
+reversible cheaply once it has been made the other way.
+
+### 13.1 Why the invariant had to be generalised
+
+The invariant this whole product is held to used to read:
+
+> CNA is the framework. CNA Studio is the professional authoring environment. A CNA Studio project
+> remains a CNA **C++** project.
+
+That is right about what is being built first and wrong as a permanent architectural statement, for
+a reason that has nothing to do with ambition: **CNA has several language bindings**, and a project
+authored for one of them is still a CNA project. The sentence as written makes C++ a property of
+*Studio's model* rather than of a project, and a model with that in it grows the shape below without
+anybody deciding to:
+
+```
+if (language == Cpp)  { … }
+else if (language == …) { … }
+```
+
+in the Project Hub, in project creation, in build orchestration, in opening a source file, in
+component metadata, in packaging. Each addition is individually reasonable; the sum is a rewrite of
+every panel that grew one. So the invariant is now:
+
+> **CNA is the framework. CNA Studio is the authoring environment. A project authored by Studio
+> remains a normal project for CNA or one of its supported bindings, and builds and runs without
+> CNA Studio.**
+
+and for C++ specifically:
+
+```
+C++ project ──▶ the project's own CMake ──▶ CNA
+```
+
+Studio drives the native build system of the selected project language. It never replaces it. The
+three consequences in §1 are unchanged and apply to every language: Studio is never a runtime
+dependency, hand-written source is never overwritten, and authored data stays human-readable,
+deterministic and version-control friendly. Game and user code continues to execute outside the
+Studio process.
+
+### 13.2 The shape
+
+```
+CNA Studio
+    |
+    +-- StudioLanguageRegistry          an ordinary object, constructed and handed to what needs it
+            |
+            +-- C++ adapter             implemented; drives CMake
+            +-- binding adapter         future; none written on speculation
+            +-- ...
+```
+
+`StudioContext` holds the registry, next to the component registry and for the same reason: it is
+shared, non-UI state that every panel needs and none should construct for itself. It is not a
+service locator — it is a member of an object that is already a constructor argument everywhere,
+which is the distinction §10.1 draws.
+
+A `.cnaproject` carries `"language": "cpp"`. The key is written only when set, so an existing
+project file does not gain a diff the first time Studio touches it; an absent key means "this
+build's default", which the registry resolves, and which is C++ because C++ is the only language
+Studio has ever authored.
+
+### 13.3 What the adapter owns
+
+Each row is a boundary that was already present in the code or in the plan. None was invented for a
+language that does not exist yet — the seam is the size of the boundaries that are real today, and
+`STUDIO-02085`'s guard test checks that this table and the interface still agree.
+
+| Boundary | Where it lives now |
+|----------|--------------------|
+| project language/toolchain identity | `StudioLanguageDescriptor::id`, `displayName`, `toolchainName` |
+| project/template compatibility with a language | `supportsProjectKind`, and a template's `languages` list |
+| toolchain availability | `probeToolchain` — asked before anything is offered, never after a failure |
+| configure/build commands | `planBuild`, returning a `StudioBuildJob` the language-neutral `BuildProcess` runs |
+| creation of source/project files | `projectFiles`, given a `StudioProjectScaffold` |
+| run/debug/Play integration | the built executable is where `planBuild` put it; `cna-player` is language-neutral and stays so |
+| opening the project and source files in an external IDE | `StudioLanguageDescriptor::sourceFileExtensions` and `sourceDirectory` locate them (`STUDIO-15011`) |
+| gameplay-component metadata | the files it is read from are `sourceDirectory` + `sourceFileExtensions`; the mechanism is `STUDIO-15001`, still open |
+| generated code ownership | `generatedDirectory`, a subtree the tool owns outright |
+| hand-written source ownership | `sourceDirectory`, which generation never writes into |
+| package/export workflow | `exportStandalone` |
+| standalone build verification | `standaloneBuildInstructions`, which is what `--export` prints and what CI runs |
+
+### 13.4 What the C++ adapter owns, concretely
+
+Everything under `include/CNA/Studio/Project/Cpp/` and `src/project/cpp/`: CMake discovery, the
+configure and build command lines, the translation of a `StudioTargetProfile` into `-D` cache
+entries, the generated `CMakeLists.txt` and `Source/Main.cpp`, the project-owned scene runtime that
+travels inside an exported tree, and the standalone export itself. It reproduces exactly what
+Studio did before the seam existed; introducing an abstraction and a behaviour change together is
+how a regression becomes impossible to attribute.
+
+### 13.5 How the boundary is enforced
+
+Three guard tests, not prose:
+
+| Guard | What it prevents |
+|-------|------------------|
+| `OnlyTheCppLanguageAdapterKnowsHowACppProjectIsBuilt` | Any file outside the adapter's two directories including one of its headers or naming one of its symbols |
+| `NoStudioCodeBranchesOnWhichLanguageAProjectIsWrittenIn` | The `if (language == …)` chain, in the generic model |
+| `TheLanguageSeamStillCarriesEveryBoundaryItWasIntroducedFor` | §13.3 and the interface drifting apart |
+
+The rule is a **directory**, not a list of exempt files: a list has to be edited when a file is
+added, which means it gets edited by whoever is adding the file that breaks it. There is exactly one
+named exemption, `src/project/StudioBuiltInLanguages.cpp` — somewhere has to name the adapters a
+build ships, and that file holds that one function and nothing else, so the exemption cannot quietly
+come to cover something more.
+
+### 13.6 Rejected alternatives
+
+| Rejected | Why |
+|----------|-----|
+| **Leave it. C++ is the only language and may be the only one** | The cost of the seam is one interface with one implementation. The cost of not having it is discovering, when a binding is finally wanted, that the answer is spread across the Hub, the Build panel, the export command and the packaging workflow. The two costs are not comparable, and only one of them is paid later |
+| **A plugin framework: discovery, manifests, dynamic registration** | Every part of that is machinery for a problem nobody has. There is one adapter, compiled in, listed in one function. A registration protocol before there is anything to register is a protocol designed against imagined requirements |
+| **Speculative adapters for CNA's other bindings** | Writing an adapter for a binding whose actual contract has not been inspected produces a guess that later has to be *unpicked* rather than extended — and it would be the only implementation nobody could test. The seam's value is that adding one is an addition |
+| **A `ProjectLanguage` enum in the generic model** | An enum is a branch waiting to be written, and the compiler encourages it: every `switch` over it with a `default` is a place a new language silently does the wrong thing. A string id resolved once to an adapter has no such site |
+| **Put the seam at the build step only** | Building is the loudest boundary but not the only one, and the others are the ones that would have rotted quietly: creating a project's files, packaging it, locating its source. A seam around the build alone would have let the Project Hub learn what a `CMakeLists.txt` is, which is the failure this exists to prevent |
+| **Generalise the toolchain path preference to a per-language map now** | Not earned. `StudioPreferences::cmakePath` is a persisted key with one language behind it; a map with one entry buys nothing and costs a format migration. Recorded as a known non-generic remainder on `STUDIO-02087` rather than done on speculation |
+| **A visual scripting language as the second "binding"** | Out of scope by an existing decision (`plan.md`, *Deliberately not built*). C++ first, and excellent, before anything else |
+
+### 13.7 What this deliberately does not do
+
+It does not make Studio multi-language. The language chooser in the Project Hub offers what the
+registry holds, which today is C++ alone. It does not build an embedded IDE, add visual scripting,
+or move any gameplay or runtime responsibility out of CNA or a binding and into Studio. It buys one
+property and no others: **adding a CNA binding later is an addition, not a rewrite.**

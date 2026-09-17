@@ -55,6 +55,14 @@ namespace CNA::Studio
         json.set("formatVersion", JsonValue{kFormatVersion});
         json.set("name", JsonValue{name_});
         json.set("kind", JsonValue{toString(kind_)});
+
+        // Written only when set, for the reason `gridSnap` is: an additive key that appeared in
+        // every file the moment the editor touched it would make the first save of every existing
+        // project a diff nobody asked for. A project that names no language is C++ -- see
+        // Project::getLanguage -- so the absent key and "cpp" mean the same thing today, and the
+        // key exists so that they stop meaning the same thing without a migration when they must.
+        if (!language_.empty()) { json.set("language", JsonValue{language_}); }
+
         json.set("startupScene", JsonValue{startupScene_});
         json.set("assetDirectory", JsonValue{assetDirectory_});
         json.set("sceneDirectory", JsonValue{sceneDirectory_});
@@ -153,6 +161,13 @@ namespace CNA::Studio
 
         name_ = document["name"].asString("Untitled");
         kind_ = parseProjectKind(document["kind"].asString("CnaNative"));
+
+        // Left empty when the key is absent rather than defaulted to a name this file has no
+        // business knowing. Which language an unmarked project is written in is a question for the
+        // registry that knows what this build implements, and answering it here would put a second
+        // opinion in the loader.
+        language_ = document["language"].asString();
+
         startupScene_ = document["startupScene"].asString();
         assetDirectory_ = document["assetDirectory"].asString("Assets");
         sceneDirectory_ = document["sceneDirectory"].asString("Scenes");

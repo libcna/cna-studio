@@ -12,6 +12,7 @@
 
 #include "TestHarness.hpp"
 
+#include "CNA/Studio/Project/Cpp/CppToolchain.hpp"
 #include "CNA/Studio/ShellPanels/StudioBuildPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
@@ -209,12 +210,12 @@ CNA_STUDIO_TEST(TheBuildItWouldRunIsTheOneTheProjectsActiveProfileDescribes)
     Harness harness{"request"};
     harness.settle();
 
-    const BuildRequest fromPanel = harness.panel.makeRequest();
+    const StudioBuildJob fromPanel = harness.panel.planBuild();
     const BuildRequest fromProject =
         makeBuildRequestFromActiveProfile(harness.context.getProject());
 
-    CNA_STUDIO_EXPECT_EQ(fromPanel.buildDirectory, fromProject.buildDirectory);
-    CNA_STUDIO_EXPECT_EQ(fromPanel.configuration, fromProject.configuration);
+    CNA_STUDIO_EXPECT_EQ(fromPanel.buildDirectory, getDefaultBuildDirectory(fromProject));
+    CNA_STUDIO_EXPECT(fromPanel.description.find(fromProject.configuration) != std::string::npos);
 }
 
 CNA_STUDIO_TEST(TurningAnOptionalSubsystemOnIsRecordedOnTheProfile)

@@ -292,9 +292,6 @@ namespace CNA::Studio
      */
     [[nodiscard]] std::string studioPlatformCnaIdentity(std::string_view platform);
 
-    [[nodiscard]] std::vector<std::string> studioTargetProfileCMakeArguments(
-        const StudioTargetProfile& profile);
-
     /**
      * @brief Serializes a profile.
      * @param profile Profile to write.

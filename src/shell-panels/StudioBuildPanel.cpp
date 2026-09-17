@@ -148,11 +148,11 @@ namespace CNA::Studio
     {
     }
 
-    BuildRequest StudioBuildPanel::makeRequest() const
+    StudioBuildJob StudioBuildPanel::planBuild() const
     {
-        BuildRequest request = makeBuildRequestFromActiveProfile(context_.getProject());
-        request.cmakePath = cmakePath_;
-        return request;
+        const StudioLanguageAdapter* language = context_.getLanguage();
+        if (language == nullptr) { return StudioBuildJob{}; }
+        return language->planBuild(context_.getProject(), toolchain_);
     }
 
     UiRect StudioBuildPanel::labelledRow(StudioFrame& frame, UiRect& cursor,
@@ -233,10 +233,11 @@ namespace CNA::Studio
                        kUnboundedContentHeight};
         const float contentTop = content.top();
 
-        if (!cmakeResolved_)
+        const StudioLanguageAdapter* language = context_.getLanguage();
+        if (!toolchainProbed_ && language != nullptr)
         {
-            cmakePath_ = findCMake();
-            cmakeResolved_ = true;
+            toolchain_ = language->probeToolchain(std::string_view{});
+            toolchainProbed_ = true;
         }
 
         Project& project = context_.getProject();
@@ -398,8 +399,14 @@ namespace CNA::Studio
         }
 
         // --- What it would run -------------------------------------------------------------------
-        BuildRequest request = makeRequest();
-        const std::string problem = describeBuildProblem(request);
+        // Everything below this line is language-neutral: a problem to say, a directory to name and
+        // a list of commands to show. What those are is the adapter's answer.
+        const StudioBuildJob job = planBuild();
+        const std::string problem =
+            language == nullptr
+                ? "this build of Studio has no support for the '" + project.getLanguage()
+                      + "' language"
+                : language->describeBuildProblem(project, toolchain_);
 
         if (!problem.empty())
         {
@@ -420,7 +427,7 @@ namespace CNA::Studio
             if (frame.isDrawPass())
             {
                 studioDrawText(frame, content.splitTop(lineHeight),
-                               "Output: " + request.buildDirectory, StudioFontRole::BodySmall,
+                               "Output: " + job.buildDirectory, StudioFontRole::BodySmall,
                                theme.color(StudioColorRole::TextSecondary));
             }
             else
@@ -428,7 +435,7 @@ namespace CNA::Studio
                 content.splitTop(lineHeight);
             }
 
-            for (const BuildStep& step : planBuild(request))
+            for (const BuildStep& step : job.steps)
             {
                 // The exact commands, because a real build has options the editor does not model
                 // and somebody who needs one has to be able to take it away and run it by hand.

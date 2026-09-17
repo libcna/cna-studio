@@ -22,8 +22,8 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/Project/Project.hpp"
-#include "CNA/Studio/Project/ProjectExport.hpp"
-#include "CNA/Studio/Project/StudioRuntimeSources.hpp"
+#include "CNA/Studio/Project/Cpp/CppProjectExport.hpp"
+#include "CNA/Studio/Project/Cpp/CppRuntimeSources.hpp"
 
 #include <algorithm>
 #include <filesystem>

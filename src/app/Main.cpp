@@ -19,7 +19,7 @@
 #include <memory>
 
 #include "CNA/Studio/Project/Project.hpp"
-#include "CNA/Studio/Project/ProjectExport.hpp"
+#include "CNA/Studio/Project/LanguageAdapter.hpp"
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
@@ -1101,12 +1101,25 @@ int main(int argc, char** argv)
             return 4;
         }
 
+        // Through the project's language adapter, not through a named export function: which
+        // files a standalone project consists of is the language's answer, and --export's job is
+        // to pass on where they go and report what happened.
+        const CNA::Studio::StudioLanguageRegistry languages = CNA::Studio::studioBuiltInLanguages();
+        const CNA::Studio::StudioLanguageAdapter* const language = languages.forProject(project);
+        if (language == nullptr)
+        {
+            std::cerr << "cna-studio: '" << options.projectPath << "' is written in the '"
+                      << project.getLanguage()
+                      << "' language, which this build of Studio has no support for.\n";
+            return 5;
+        }
+
         CNA::Studio::StudioExportRequest request;
         request.outputDirectory = options.exportPath;
         request.overwrite = options.exportOverwrite;
 
         const CNA::Studio::StudioExportResult result =
-            CNA::Studio::exportStandaloneProject(project, request);
+            language->exportStandalone(project, request);
 
         for (const std::string& warning : result.warnings)
         {
@@ -1120,10 +1133,11 @@ int main(int argc, char** argv)
 
         std::cout << "cna-studio: exported " << result.writtenFiles.size() << " files to '"
                   << options.exportPath << "'\n"
-                  << "Build it with:\n"
-                  << "  cmake -S " << options.exportPath << " -B " << options.exportPath
-                  << "/build -DCNA_ROOT=/path/to/cna\n"
-                  << "  cmake --build " << options.exportPath << "/build\n";
+                  << "Build it with:\n";
+        for (const std::string& line : language->standaloneBuildInstructions(options.exportPath))
+        {
+            std::cout << "  " << line << "\n";
+        }
         return 0;
     }
 

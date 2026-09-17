@@ -178,6 +178,11 @@ add_library(cna-studio-assets STATIC
 target_link_libraries(cna-studio-assets PUBLIC cna-studio-core PRIVATE cna-studio-cgltf-vendor)
 
 # cna-studio-project -- the .cnaproject format and the backend capability table.
+# The C++ language adapter lives under src/project/cpp/, and STUDIO-02085's guard test refuses a
+# reference to CMake -- the executable, its cache variables, its CMakeLists.txt -- anywhere else in
+# Studio. Everything above that line is language-neutral: the Project Hub, the Build panel, the
+# export command and the packaging workflow reach a project's toolchain through
+# StudioLanguageAdapter and cannot learn from it what a compiler is.
 add_library(cna-studio-project STATIC
     src/project/RendererCatalog.cpp
     src/project/StudioHostRequirements.cpp
@@ -185,8 +190,13 @@ add_library(cna-studio-project STATIC
     src/project/Project.cpp
     src/project/RecoveryStore.cpp
     src/project/BuildRunner.cpp
-    src/project/StudioRuntimeSources.cpp
-    src/project/ProjectExport.cpp
+    src/project/LanguageAdapter.cpp
+    src/project/StudioBuiltInLanguages.cpp
+    src/project/ProjectPackaging.cpp
+    src/project/cpp/CppLanguage.cpp
+    src/project/cpp/CppToolchain.cpp
+    src/project/cpp/CppRuntimeSources.cpp
+    src/project/cpp/CppProjectExport.cpp
     ${CNA_STUDIO_EMBEDDED_RUNTIME_SOURCES})
 target_link_libraries(cna-studio-project PUBLIC cna-studio-core)
 

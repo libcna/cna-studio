@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 34 of 39 complete `████████░░░░`
+**Progress:** 41 of 47 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -49,6 +49,14 @@
 | `STUDIO-02072` | Choose a UI render backend from the two profile verdicts, and announce it | ✅ | `STUDIO-02070` |
 | `STUDIO-02073` | Guard test: failing the Studio host contract never disqualifies a game target | ✅ | `STUDIO-02070` |
 | `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | ✅ | `STUDIO-04026` |
+| `STUDIO-02080` | Generalise the invariant: a Studio project is a project for CNA or one of its bindings | ✅ | `STUDIO-02001` |
+| `STUDIO-02081` | Separate running a build from deciding what a build is | ✅ | `STUDIO-02080` |
+| `STUDIO-02082` | Separate the vocabulary of packaging from the language that does it | ✅ | `STUDIO-02080` |
+| `STUDIO-02083` | The C++ language adapter, reproducing current behaviour exactly | ✅ | `STUDIO-02081`, `STUDIO-02082` |
+| `STUDIO-02084` | A project declares its language, and the registry resolves it | ✅ | `STUDIO-02083` |
+| `STUDIO-02085` | Guard test: only the C++ adapter knows how a C++ project is built | ✅ | `STUDIO-02083` |
+| `STUDIO-02086` | Prove the seam changed no behaviour | ✅ | `STUDIO-02083` |
+| `STUDIO-02087` | The toolchain-path preference becomes per-language when a second language exists | ⛔ | `STUDIO-02084` |
 
 ## Acceptance and verification
 
@@ -635,3 +643,129 @@ adapter, whose hooks have nowhere instance-shaped to live because ImGui's clipbo
 function pointers reached through a global context. `EveryRecordedExceptionIsStillARealViolation`
 requires it to still match something, so the entry fails the suite the day `STUDIO-07030` deletes
 the file — an allowlist that can outlive what it excused is a licence.
+
+### `STUDIO-02080` — Generalise the invariant: a Studio project is a project for CNA or one of its bindings
+
+**Acceptance.** `docs/ARCHITECTURE.md` §1 states the invariant in a form that does not make C++ a
+property of Studio's model, records the C++ form beneath it, and §13 records the decision with the
+alternatives that were rejected.
+
+**Why this had to change before Phase 8 rather than after.** The old invariant read *"a CNA Studio
+project remains a CNA **C++** project"*. That is right about what is being built first and wrong as
+a permanent architectural statement, for a reason that has nothing to do with ambition: CNA has
+several language bindings, and a project authored for one of them is still a CNA project. The
+wording put C++ in the *model* rather than in the project, and a model with that in it grows
+
+```
+if (language == Cpp) … else if (language == …) …
+```
+
+through the Project Hub, project creation, build orchestration, source opening, component metadata
+and packaging, one individually reasonable addition at a time. Phase 8 is the tranche that would
+have written most of those, which is why this is in front of it rather than behind it.
+
+**C++ remains the only required and fully implemented workflow.** Nothing here is a commitment to a
+second language, and `STUDIO-02084`'s registry ships exactly one adapter.
+
+### `STUDIO-02081` — Separate running a build from deciding what a build is
+
+**Acceptance.** `BuildProcess` runs a planned job and contains no reference to any build system.
+`BuildRequest` and the CMake command construction move to the C++ adapter's own directory.
+
+**What it cost.** `BuildProcess::start` used to take a `BuildRequest` and call `describeBuildProblem`,
+`planBuild` and `getDefaultBuildDirectory` itself — so the runner, the log, the notifications and
+the Build panel all knew what CMake was. It now takes a `StudioBuildJob`: the steps, the directory
+and a description for the log's first line. `src/project/BuildRunner.cpp` kept the process
+supervision and lost 169 lines to `src/project/cpp/CppToolchain.cpp`, which is the whole of what
+Studio knows about driving CMake.
+
+`studioTargetProfileCMakeArguments` moved with it, out of `TargetProfile.cpp`. The profile is a
+*project* fact every language shares — os, architecture, renderer, platform, configuration,
+features — and `-DCMAKE_BUILD_TYPE=` is not: a binding with a different build system answers the
+same profile with different words.
+
+### `STUDIO-02082` — Separate the vocabulary of packaging from the language that does it
+
+**Acceptance.** `StudioExportRequest`, `StudioExportResult` and `studioExportTargetName` are
+language-neutral; `exportStandaloneProject` is the C++ adapter's.
+
+A caller fills in a request and reads a result without learning which build system wrote the tree.
+Target-name reduction stays generic because every build system this is likely to meet wants an
+identifier, and a project called `2048` should get the same executable name in any language.
+
+### `STUDIO-02083` — The C++ language adapter, reproducing current behaviour exactly
+
+**Acceptance.** One `StudioLanguageAdapter` implementation, under
+`include/CNA/Studio/Project/Cpp/` and `src/project/cpp/`, that answers every boundary in
+`docs/ARCHITECTURE.md` §13.3 by delegating to code that already existed.
+
+**Deliberately a facade, with no behaviour change in the same commit.** An abstraction introduced
+together with a behaviour change is one whose regressions cannot be attributed. `STUDIO-02086` is
+the mechanical proof that nothing moved.
+
+**One generator was genuinely extended**, and it was extended rather than duplicated:
+`cmakeListsFor` now takes the directories to stage rather than assuming `Content/`, so the same
+generator serves `--export` (one `Content` tree) and a project created in place (`Scenes/` and
+`Assets/` where the editor writes them). Writing them twice would mean an export and a new project
+that drift, and only one of the two has a build test.
+
+### `STUDIO-02084` — A project declares its language, and the registry resolves it
+
+**Acceptance.** `.cnaproject` carries `"language"`; `StudioLanguageRegistry` resolves it to an
+adapter; `StudioContext` holds the registry as it holds the component registry.
+
+**Two resolution rules, and each has a wrong answer that nothing would report.** An *absent* key
+resolves to the registry's default, because every project file written before the key existed is
+C++ and refusing them would be adding a required field to a format people have files in. An
+*unknown* language resolves to **null**, because falling back to the default would build a project
+as something it is not, and the failure would appear a long way from its cause.
+
+The key is written only when set, for the reason `gridSnap` is: an additive key that appeared in
+every file the moment Studio touched it would make the first save of every existing project a diff
+nobody asked for.
+
+**Not a locator.** `studioBuiltInLanguages()` returns a registry **by value** — a factory, not an
+accessor — and `StudioContext` holds one as a member. `STUDIO-02059`'s guard refuses a `static`
+function handing out a reference to a Studio type, and would have refused the obvious shape.
+
+### `STUDIO-02085` — Guard test: only the C++ adapter knows how a C++ project is built
+
+**Acceptance.** Three tests, each failing on a different way the boundary erodes.
+
+| Guard | What it refuses |
+|-------|-----------------|
+| `OnlyTheCppLanguageAdapterKnowsHowACppProjectIsBuilt` | A file outside the adapter's two directories including one of its headers or naming one of its symbols |
+| `NoStudioCodeBranchesOnWhichLanguageAProjectIsWrittenIn` | `== "cpp"`, `!= "cpp"` and the `kCppLanguageId` comparisons, in the generic model |
+| `TheLanguageSeamStillCarriesEveryBoundaryItWasIntroducedFor` | §13.3's table and the interface drifting apart, in either direction |
+
+**The rule is a directory, not a list of exempt files.** A list has to be edited when a file is
+added, which means it gets edited by whoever is adding the file that breaks it. There is exactly
+one named exemption — `src/project/StudioBuiltInLanguages.cpp` — and it is a whole file holding one
+function, so the exemption cannot quietly come to cover something else. Somewhere has to name the
+adapters a build ships, or nothing is registered.
+
+**The include check reads raw text and the symbol check reads stripped code**, because an
+`#include` path is a string literal and the scanner blanks string contents — a check written
+against stripped code would have silently matched nothing.
+
+### `STUDIO-02086` — Prove the seam changed no behaviour
+
+**Acceptance.** `TheCppAdapterPlansExactlyTheBuildTheToolchainFunctionsDo` compares the adapter's
+`planBuild` against `planBuild(makeBuildRequestFromActiveProfile(project))` command line by command
+line, its build directory against `getDefaultBuildDirectory`, and its problem sentence against
+`describeBuildProblem` — so a change to either side without the other fails here rather than in
+somebody's build.
+
+Around it, the properties the seam is supposed to buy, each asserted rather than asserted *about*:
+generated and hand-written source live in different, non-nested directories and a newly created
+project writes nothing into the generated one; generating a project twice produces the same bytes;
+a new project carries its own runtime as ordinary source; the standalone build instructions name
+the directory they apply to.
+
+### `STUDIO-02087` — The toolchain-path preference becomes per-language when a second language exists
+
+**⛔ Deferred, and recorded rather than done.** `StudioPreferences::cmakePath` is a persisted key
+with one language behind it. Generalising it to a map keyed by language id today would buy nothing
+— there is one entry — and cost a preferences format migration, which is a real cost paid against
+an imagined requirement. It is the one known non-generic remainder of the seam, and it is written
+down here so that the second adapter finds it rather than trips over it.

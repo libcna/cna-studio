@@ -19,8 +19,16 @@ decomposition that grows as work approaches rather than one invented up front.
 
 > **CNA Studio produces CNA games, not CNA Studio games.**
 
-A game authored in Studio is an ordinary CNA C++ project that builds, runs and ships with Studio
-uninstalled. Any task that would compromise that is wrong, however convenient it is.
+A game authored in Studio is an ordinary project for CNA or one of its supported bindings, and it
+builds, runs and ships with Studio uninstalled. Any task that would compromise that is wrong,
+however convenient it is.
+
+C++ is the only language whose workflow is required to work, and for a C++ project the rule reads
+`C++ project → the project's own CMake → CNA`. It is stated in the general form because CNA has
+several language bindings and the difference is architectural rather than aspirational: the narrow
+wording puts C++ inside Studio's model, where it becomes a branch in the Project Hub, in project
+creation, in build orchestration and in packaging. `docs/ARCHITECTURE.md` §13 records the decision,
+the one adapter that exists, and the alternatives that were rejected.
 
 ## Status legend
 
@@ -51,19 +59,19 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**246 of 564 tasks complete** `██████████░░░░░░░░░░░░░░░`  43.6%
+**253 of 572 tasks complete** `███████████░░░░░░░░░░░░░░`  44.2%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 246 |
+| ✅ Complete | 253 |
 | 🔄 In progress | 8 |
 | ⬜ Not started | 303 |
-| ⛔ Deferred | 2 |
+| ⛔ Deferred | 3 |
 | 🔬 Blocked | 4 |
 | ⊘ Superseded | 1 |
-| **Total** | **564** |
+| **Total** | **572** |
 
-> **On the task count.** 564 tasks are decomposed today. That is not the final number: the
+> **On the task count.** 572 tasks are decomposed today. That is not the final number: the
 > programme is expected to reach the low thousands as the later phases are broken down on approach.
 > Tasks are added when the work is understood well enough to state a completion condition — never
 > to reach a number. A phase whose detail is still coarse says so by having few rows, which is
@@ -75,7 +83,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 |------:|-------|-----|:------:|------:|-----:|----------|
 | 0 | [Audit and baseline](plans/phase-00-audit-baseline.md) | `STUDIO-00NNN` | 🔄 | 15 | 14 | `█████████░` |
 | 1 | [Product rename](plans/phase-01-product-rename.md) | `STUDIO-01NNN` | 🔄 | 16 | 13 | `████████░░` |
-| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 39 | 34 | `████████░░` |
+| 2 | [Architecture refresh](plans/phase-02-architecture-refresh.md) | `STUDIO-02NNN` | 🔄 | 47 | 41 | `████████░░` |
 | 3 | [Studio UI core](plans/phase-03-ui-core.md) | `STUDIO-03NNN` | 🔄 | 34 | 30 | `████████░░` |
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 29 | 25 | `████████░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 15 | 14 | `█████████░` |
@@ -275,10 +283,10 @@ Recorded so that the absence is a decision rather than an oversight.
 | Not building | Why |
 |--------------|-----|
 | An embedded C++ IDE | Studio opens the user's real IDE. Building a worse one before basic game production is excellent would be a large subsystem serving nobody |
-| Visual scripting | C++ is the primary gameplay language. Visual scripting ahead of an excellent C++ workflow would be solving the wrong problem |
+| Visual scripting | C++ is the primary gameplay language. Visual scripting ahead of an excellent C++ workflow would be solving the wrong problem — and it is not what the language seam (`STUDIO-02080`) is for, which is CNA's *existing* bindings |
 | A new physics engine | Studio provides editor integration for a runtime's physics. Wanting collider widgets is not a reason to own a physics engine |
 | A new particle runtime inside Studio | Studio authors what the CNA runtime can execute. Runtime ownership stays with CNA or a project plugin |
-| A proprietary build system | The project's own CMake is the build. Studio drives it and never replaces it |
+| A proprietary build system | The project's own build system is the build — CMake, for a C++ project. Studio drives it and never replaces it |
 | A mandatory binary project database | Authored data stays human-readable, diffable and version-control friendly |
 | World partitioning and streaming | Deferred (`STUDIO-25007`) until a real project demonstrates the need |
 | Remote profiling | Deferred (`STUDIO-27013`) until local profiling is good |

@@ -10,7 +10,6 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Project/Project.hpp"
-#include "CNA/Studio/Project/ProjectExport.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
@@ -814,7 +813,7 @@ namespace CNA::Studio
             if (panel.buildRequested)
             {
                 std::string problem;
-                if (build_.process().start(buildPanel_->makeRequest(), &problem))
+                if (build_.process().start(buildPanel_->planBuild(), &problem))
                 {
                     log_.append(LogSeverity::Info, "Build started; log at " + build_.process().getLogPath());
                 }
@@ -863,7 +862,7 @@ namespace CNA::Studio
             };
             build.run = [this] {
                 std::string problem;
-                if (build_.process().start(buildPanel_->makeRequest(), &problem))
+                if (build_.process().start(buildPanel_->planBuild(), &problem))
                 {
                     log_.append(LogSeverity::Info, "Build started; log at " + build_.process().getLogPath());
                 }

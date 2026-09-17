@@ -403,6 +403,209 @@ CNA_STUDIO_TEST(NoTwoPublicHeadersDeclareTheSameTypeName)
     CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
 }
 
+// -------------------------------------------------------------------------------------------
+// The language seam (STUDIO-02085)
+//
+// CNA Studio is C++-first and, for a long time yet, C++-only. That is a product decision and this
+// guard does not argue with it. What it refuses is the *other* thing, which arrives by accident and
+// is not recoverable: C++ welded into the Studio model, one call at a time, until the Project Hub,
+// the Build panel and the export command each know what a compiler is and each has to be rewritten
+// before a second CNA binding can be authored at all.
+//
+// The rule is a directory. Everything under `Project/Cpp/` and `src/project/cpp/` is the C++
+// language adapter; nothing else in Studio may include one of its headers or name one of its
+// symbols. Generic code reaches a project's toolchain through `StudioLanguageAdapter`, which can
+// tell it the toolchain's *name* and nothing about how to drive one.
+//
+// A directory rather than a list of exempt files, deliberately. A list has to be edited when a file
+// is added, which means it is edited by whoever is adding the file that breaks the rule.
+// -------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief Whether @p relativePath is part of the C++ language adapter. */
+    bool isCppAdapterFile(const std::string& relativePath)
+    {
+        return relativePath.rfind("include/CNA/Studio/Project/Cpp/", 0) == 0
+            || relativePath.rfind("src/project/cpp/", 0) == 0;
+    }
+}
+
+CNA_STUDIO_TEST(OnlyTheCppLanguageAdapterKnowsHowACppProjectIsBuilt)
+{
+    std::size_t violations = 0;
+    std::size_t adapterFiles = 0;
+    std::size_t otherFiles = 0;
+
+    for (const SourceFile& file : collectSources({"src", "include"}))
+    {
+        if (isCppAdapterFile(file.relativePath)) { ++adapterFiles; continue; }
+
+        // The one exempt site, named rather than pattern-matched. Somewhere has to list the
+        // adapters a build ships or nothing is registered, and `studioBuiltInLanguages` is that
+        // list and nothing else -- which is why it is a file of its own: an exemption granted to a
+        // file that does one thing cannot quietly come to cover a second.
+        if (file.relativePath == "src/project/StudioBuiltInLanguages.cpp") { continue; }
+
+        ++otherFiles;
+
+        // The include, from the raw text: an `#include` path is a string literal, so the stripped
+        // code the symbol scan below reads has already blanked it. One reference here is enough --
+        // a file that cannot include the header cannot name what is in it.
+        const std::size_t included = file.text.find("CNA/Studio/Project/Cpp/");
+        if (included != std::string::npos)
+        {
+            ++violations;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                file.relativePath + ":" + std::to_string(lineOf(file.text, included))
+                + " includes a C++ language-adapter header. Whatever it needs, ask "
+                  "StudioLanguageAdapter for it: that is what keeps the rest of Studio buildable "
+                  "against a CNA binding that is not C++.");
+        }
+
+        // And the symbols, in case one is ever reached without the header -- a forward declaration,
+        // or a header that grows an include of its own.
+        const std::string code = stripCommentsAndStrings(file.text);
+        for (const char* symbol : {"findCMake", "makeBuildRequestFromActiveProfile",
+                                   "makeBuildRequest", "getDefaultBuildDirectory",
+                                   "studioTargetProfileCMakeArguments", "exportStandaloneProject",
+                                   "studioCppProjectFiles", "studioRuntimeSources",
+                                   "StudioRuntimeSource", "kStudioRuntimeDirectory",
+                                   "BuildRequest", "kCppLanguageId"})
+        {
+            const std::size_t position = code.find(symbol);
+            if (position == std::string::npos) { continue; }
+
+            ++violations;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                file.relativePath + ":" + std::to_string(lineOf(code, position)) + " names '"
+                + symbol + "', which belongs to the C++ language adapter. Generic Studio code goes "
+                  "through StudioLanguageAdapter.");
+        }
+    }
+
+    // A scan that found no adapter -- because it moved, or because the prefixes went stale --
+    // would report a clean tree by checking one.
+    CNA_STUDIO_EXPECT(adapterFiles >= 6);
+    CNA_STUDIO_EXPECT(otherFiles >= 100);
+    CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
+}
+
+CNA_STUDIO_TEST(NoStudioCodeBranchesOnWhichLanguageAProjectIsWrittenIn)
+{
+    // The shape this whole seam exists to prevent:
+    //
+    //     if (language == "cpp") { ... } else if (language == ...) { ... }
+    //
+    // spread through code that has no business knowing. One registered adapter owns
+    // language-specific behaviour; everything else asks it. The registry's own resolution of an id
+    // to an adapter is the one comparison there is, and it is inside the registry.
+    std::size_t violations = 0;
+    std::size_t scanned = 0;
+
+    for (const SourceFile& file : collectSources({"src", "include"}))
+    {
+        if (isCppAdapterFile(file.relativePath)) { continue; }
+        ++scanned;
+
+        // Raw text: the interesting half of `== "cpp"` is a string literal, which the stripper
+        // blanks. Spelled out rather than pattern-matched, because a pattern loose enough to catch
+        // every spacing would also catch prose.
+        for (const char* comparison : {"== \"cpp\"", "!= \"cpp\"", "== kCppLanguageId",
+                                       "!= kCppLanguageId"})
+        {
+            const std::size_t position = file.text.find(comparison);
+            if (position == std::string::npos) { continue; }
+
+            ++violations;
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                file.relativePath + ":" + std::to_string(lineOf(file.text, position))
+                + " branches on a language id. Ask the project's adapter what to do instead; a "
+                  "chain of these is what makes a second CNA binding a rewrite rather than an "
+                  "addition.");
+        }
+    }
+
+    CNA_STUDIO_EXPECT(scanned >= 100);
+    CNA_STUDIO_EXPECT_EQ(violations, std::size_t{0});
+}
+
+namespace
+{
+    /** @brief One responsibility the language seam claims, and where the interface carries it. */
+    struct LanguageResponsibility
+    {
+        /** @brief The boundary, as `docs/ARCHITECTURE.md` §13 names it. */
+        const char* boundary;
+        /** @brief A declaration that must appear in `LanguageAdapter.hpp`. */
+        const char* declaration;
+    };
+
+    /**
+     * @brief Every boundary the seam was introduced to own.
+     *
+     * A table rather than prose, for the reason `STUDIO-07003` needed one: a document claiming the
+     * seam covers ten things can stop being true without anybody editing it, and the interface is
+     * the only place the claim can be checked against. A boundary dropped from the interface fails
+     * here; a boundary dropped from the document fails the pairing below.
+     */
+    const std::vector<LanguageResponsibility>& languageResponsibilities()
+    {
+        static const std::vector<LanguageResponsibility> responsibilities = {
+            {"project language/toolchain identity", "descriptor() const = 0"},
+            {"project/template compatibility with a language", "supportsProjectKind("},
+            {"creation of source/project files", "projectFiles("},
+            {"configure/build commands", "planBuild("},
+            {"toolchain availability", "probeToolchain("},
+            {"package/export workflow", "exportStandalone("},
+            {"standalone build verification", "standaloneBuildInstructions("},
+            {"generated code ownership", "generatedDirectory"},
+            {"hand-written source ownership", "sourceDirectory"},
+            {"gameplay-component metadata", "sourceFileExtensions"},
+        };
+        return responsibilities;
+    }
+}
+
+CNA_STUDIO_TEST(TheLanguageSeamStillCarriesEveryBoundaryItWasIntroducedFor)
+{
+    std::ifstream stream{sourceRoot() / "include" / "CNA" / "Studio" / "Project"
+                         / "LanguageAdapter.hpp", std::ios::binary};
+    const std::string header{std::istreambuf_iterator<char>{stream},
+                             std::istreambuf_iterator<char>{}};
+    CNA_STUDIO_EXPECT(!header.empty());
+
+    for (const LanguageResponsibility& responsibility : languageResponsibilities())
+    {
+        if (header.find(responsibility.declaration) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"the language seam no longer declares '"} + responsibility.declaration
+                + "', so nothing owns '" + responsibility.boundary
+                + "'. Either it moved and this table is stale, or it went back into generic code.");
+        }
+    }
+
+    // And the architecture document lists the same boundaries, so the two cannot drift apart in
+    // the direction a test would otherwise not notice: an interface that keeps a method the
+    // document has stopped claiming is fine; a document claiming coverage the interface dropped is
+    // the failure above, and a boundary in neither is one nobody will remember was considered.
+    std::ifstream doc{sourceRoot() / "docs" / "ARCHITECTURE.md", std::ios::binary};
+    const std::string architecture{std::istreambuf_iterator<char>{doc},
+                                   std::istreambuf_iterator<char>{}};
+    CNA_STUDIO_EXPECT(!architecture.empty());
+
+    for (const LanguageResponsibility& responsibility : languageResponsibilities())
+    {
+        if (architecture.find(responsibility.boundary) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"docs/ARCHITECTURE.md does not mention the boundary '"}
+                + responsibility.boundary + "', which the language seam claims to own.");
+        }
+    }
+}
+
 CNA_STUDIO_TEST(NoStudioCodeHardCodesARendererName)
 {
     // `docs/ARCHITECTURE.md` §2.2 and the roadmap's rule against hard-coding today's renderer

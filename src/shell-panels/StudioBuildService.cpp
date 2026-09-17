@@ -7,7 +7,7 @@
 #include "CNA/Studio/ShellPanels/StudioBuildService.hpp"
 
 #include "CNA/Studio/Project/Project.hpp"
-#include "CNA/Studio/Project/ProjectExport.hpp"
+#include "CNA/Studio/Project/LanguageAdapter.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
@@ -45,6 +45,22 @@ namespace CNA::Studio
     {
         const Project& project = context_.getProject();
 
+        // Which files a package consists of, and how they are built, is the language's business.
+        // This service's business is where it goes and how the outcome is announced -- which is
+        // the same in every language, and is why it is written once.
+        const StudioLanguageAdapter* language = context_.getLanguage();
+        if (language == nullptr)
+        {
+            StudioNotification refused;
+            refused.id = "studio.package";
+            refused.severity = StudioNotificationSeverity::Error;
+            refused.title = "Could not package the project";
+            refused.detail = "This build of Studio has no support for the '"
+                           + project.getLanguage() + "' language.";
+            if (notify_) { notify_(std::move(refused)); }
+            return false;
+        }
+
         // Beside the project, in a directory named for it. A file dialog would be the better
         // answer and there is no modal yet (STUDIO-03022 covers the layering, not the window), so
         // the export goes somewhere predictable and the log says exactly where -- which is more
@@ -54,7 +70,7 @@ namespace CNA::Studio
             (std::filesystem::path{project.getRootPath()} / "Exported").generic_string();
         request.overwrite = true;
 
-        const StudioExportResult result = exportStandaloneProject(project, request);
+        const StudioExportResult result = language->exportStandalone(project, request);
 
         StudioNotification notification;
         notification.id = "studio.package";
@@ -79,7 +95,8 @@ namespace CNA::Studio
                                                         : StudioNotificationSeverity::Warning;
         notification.title = "Packaged " + std::to_string(result.writtenFiles.size()) + " files";
         notification.detail = result.warnings.empty()
-            ? request.outputDirectory + " -- builds with CMake and a CNA checkout, without Studio"
+            ? request.outputDirectory + " -- builds with "
+                  + language->descriptor().toolchainName + " and a CNA checkout, without Studio"
             : request.outputDirectory + " -- with " + std::to_string(result.warnings.size())
                   + " warning(s) in the Output Log";
         if (notify_) { notify_(std::move(notification)); }
