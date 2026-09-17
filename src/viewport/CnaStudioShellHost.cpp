@@ -41,11 +41,9 @@
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/StudioContext.hpp"
-#include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Plugins/Plugin.hpp"
 #include "CNA/Studio/Plugins/PluginStartup.hpp"
 #include "CNA/Studio/ShellPanels/StudioPluginMenus.hpp"
-#include "CNA/Studio/StudioAssetReload.hpp"
 #include "CNA/Studio/StudioStartupDocument.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
@@ -278,6 +276,12 @@ namespace CNA::Studio
                 // than captured directly, because the scene viewport is created later -- the
                 // panels are bound before there is a device, which is what lets the headless
                 // preview bind the same ones.
+                // What the watcher in `StudioShellPanels` cannot do itself: only the module with
+                // a device holds a rendered texture to drop (STUDIO-30012).
+                services.invalidateRenderedAsset = [this](const Uuid& assetId) {
+                    if (sceneViewport_ != nullptr) { sceneViewport_->invalidateAsset(assetId); }
+                };
+
                 services.assetThumbnail = [this](const Uuid& assetId) {
                     return sceneViewport_ != nullptr ? sceneViewport_->getAssetThumbnail(assetId)
                                                      : kUiTextureNone;
@@ -429,34 +433,6 @@ namespace CNA::Studio
              * get this right today and would stop doing so the moment somebody reorders the
              * members, which is not a thing a reviewer notices.
              */
-            /**
-             * @brief Notices assets edited outside Studio and drops whatever went stale.
-             *
-             * The two sinks are the parts that are not the context's business: a rendered texture
-             * belongs to the viewport, and a running game belongs to the play service. Both are
-             * held here and neither exists on every host, so both are checked.
-             */
-            void pollAssetChanges(double deltaSeconds)
-            {
-                if (context_ == nullptr) { return; }
-
-                StudioAssetReloadSinks sinks;
-                if (sceneViewport_ != nullptr)
-                {
-                    sinks.invalidateRendered = [this](const Uuid& assetId) {
-                        sceneViewport_->invalidateAsset(assetId);
-                    };
-                }
-                if (panels_ != nullptr)
-                {
-                    sinks.reloadInPlayer = [this](const Uuid& assetId) {
-                        (void)panels_->play().reloadAsset(assetId);
-                    };
-                }
-
-                (void)studioPollAssetChanges(watcher_, *context_, sinks, deltaSeconds);
-            }
-
             void unloadPlugins()
             {
                 if (context_ == nullptr) { return; }
@@ -711,16 +687,15 @@ namespace CNA::Studio
                 elapsedSeconds_ += static_cast<double>(deltaSeconds);
                 panels_->poll(elapsedSeconds_);
 
-                // Assets edited outside Studio (STUDIO-07051). `AssetWatcher` was polled by the
-                // prototype and by nothing else, so on this shell a texture edited in another
-                // program was never noticed: the editor kept drawing the art from before the edit,
-                // the mesh cache kept the old model, and a running game was never told.
+                // Assets edited outside Studio (STUDIO-07051) are watched inside `panels_->poll`
+                // above, which is also what refreshes the asset database's presence cache
+                // (STUDIO-30012). It was polled here, in the CNA-backed host only, which meant the
+                // cache's invalidation ran in one of the two builds -- and the headless preview and
+                // every test are the other one.
                 //
-                // Before the scene is rendered rather than after, so the frame that reports the
-                // change is also the frame that shows it. Reporting an edit and then drawing the
-                // old art for one more frame is a flicker nobody can explain.
-                pollAssetChanges(static_cast<double>(deltaSeconds));
-
+                // Still before the scene is rendered, because the frame that reports a change has
+                // to be the frame that shows it: reporting an edit and then drawing the old art for
+                // one more frame is a flicker nobody can explain.
                 renderSceneIntoViewport();
 
                 shell_->renderFrame(input);
@@ -1028,7 +1003,6 @@ namespace CNA::Studio
              * Declared after the context whose database it reads. It holds no reference of its own
              * -- the database is handed to `poll` -- but the order still says which owns which.
              */
-            AssetWatcher watcher_;
 
             /**
              * @brief The audio preview, declared before the panels that borrow it.

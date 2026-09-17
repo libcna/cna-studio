@@ -28,10 +28,12 @@
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
+#include "CNA/Studio/StudioAssetReload.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioLogPanel.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -151,6 +153,7 @@ namespace CNA::Studio
         counts_.playerMessages += play_.poll();
         (void)comparison_.poll(nowSeconds);
         pollInteractionEnd();
+        pollAssetChanges(nowSeconds);
 
         // The one crossing background work makes into the document (STUDIO-30001). Budgeted, so a
         // burst of jobs finishing together is spread over frames rather than producing one long
@@ -158,6 +161,25 @@ namespace CNA::Studio
         (void)jobs_.drain(8);
 
         publishStatus();
+    }
+
+    void StudioShellPanels::pollAssetChanges(double nowSeconds)
+    {
+        // A delta from a monotonic clock, because that is what paces the watcher and what a test
+        // drives. The first call produces zero rather than "everything since the epoch", which
+        // would make the first frame of a session poll whether it was due or not.
+        const double delta = lastPollSeconds_ < 0.0 ? 0.0
+                                                    : std::max(0.0, nowSeconds - lastPollSeconds_);
+        lastPollSeconds_ = nowSeconds;
+
+        StudioAssetReloadSinks sinks;
+        if (services_.invalidateRenderedAsset)
+        {
+            sinks.invalidateRendered = services_.invalidateRenderedAsset;
+        }
+        sinks.reloadInPlayer = [this](const Uuid& assetId) { (void)play_.reloadAsset(assetId); };
+
+        (void)studioPollAssetChanges(watcher_, context_, sinks, delta);
     }
 
     void StudioShellPanels::notify(StudioNotification notification)

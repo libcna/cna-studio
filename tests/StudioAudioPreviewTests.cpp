@@ -195,9 +195,9 @@ namespace
         record.sourcePath = path;
         record.type = AssetType::SoundEffect;
         record.importerId = AssetDatabase::defaultImporterFor(record.type);
-        const Uuid id = record.id;
-        (void)context.getAssets().add(std::move(record));
-
+        // Written *before* the record is added, because adding one asks the filesystem whether
+        // its file is there (STUDIO-30012) -- and an asset tracked before its file exists is a
+        // missing asset, which is a different state with a different inspector.
         if (!context.getAssets().getProjectRoot().empty())
         {
             const std::filesystem::path file{context.getAssets().resolvePath(path)};
@@ -206,6 +206,9 @@ namespace
             std::ofstream stream{file, std::ios::binary};
             stream << "not really a wav";
         }
+
+        const Uuid id = record.id;
+        (void)context.getAssets().add(std::move(record));
         return id;
     }
 

@@ -89,6 +89,19 @@ namespace CNA::Studio
          */
         std::uint64_t sourceSize = 0;
         std::int64_t sourceModifiedTime = 0;
+
+        /**
+         * @brief Whether the source file was on disk the last time anybody looked.
+         *
+         * `plan.md` STUDIO-30012. Cached rather than asked, because the Content Browser asks once
+         * per row per pass and the answer changes only when something changes it. Maintained by
+         * `AssetDatabase` for everything Studio does, and refreshed by `AssetWatcher` for what it
+         * does not -- see `AssetDatabase::isMissing` for when.
+         *
+         * Not serialised: a sidecar recording that a file existed on somebody else's machine last
+         * Tuesday would be a fact about their disk, not about this one.
+         */
+        bool sourcePresent = true;
     };
 
     /** @brief Outcome of a scan or load, with any non-fatal problems collected for the console. */
@@ -187,11 +200,73 @@ namespace CNA::Studio
          */
         bool removeRecord(const Uuid& id);
 
-        /** @brief Returns true when @p id is tracked but its source file is not on disk. */
+        /**
+         * @brief Returns true when @p id is tracked but its source file is not on disk.
+         *
+         * Reads a **cached** answer and touches no filesystem (`plan.md` STUDIO-30012). It used to
+         * be a `std::filesystem::exists()` per call, which the Content Browser makes once per row
+         * per pass: about 3 000 stat calls a frame at 1 500 assets, synchronously, in the middle of
+         * describing the UI, and 61% of that panel's frame cost (`STUDIO-30014`).
+         *
+         * ### When the answer is refreshed, which is a product decision rather than an optimisation
+         *
+         * - **Immediately**, for anything Studio does itself: a scan, an add, a move, a relink.
+         *   Those go through this class, so the cache cannot be behind them.
+         * - **Within the watcher's interval** — half a second by default — for a file added or
+         *   removed by something else. `AssetWatcher` already stats every tracked file on its poll,
+         *   so keeping the cache up to date there costs nothing that was not being spent.
+         * - **On demand**, through @ref refreshPresence, for an explicit Refresh.
+         *
+         * Never noticing would be wrong: "what did I break when I moved that folder" is the
+         * question a content browser is most often opened to answer. Noticing per frame is what
+         * used to happen and is what made it expensive.
+         */
         [[nodiscard]] bool isMissing(const Uuid& id) const;
 
         /** @brief Returns the ids of every tracked asset whose source file is absent. */
         [[nodiscard]] std::vector<Uuid> getMissingAssets() const;
+
+        /**
+         * @brief How many tracked assets have no source file, in constant time.
+         *
+         * The Content Browser wants the *number*, not the list, on every frame; building the list
+         * to call `.size()` on it was a second full pass over the database (`STUDIO-30014`).
+         */
+        [[nodiscard]] std::size_t getMissingCount() const { return missingCount_; }
+
+        /**
+         * @brief Asks the filesystem again about every tracked asset, or about one.
+         *
+         * The explicit invalidation half of the caching strategy. Costs one stat per record, so it
+         * belongs to a scan, a watcher poll or a Refresh — never to drawing.
+         *
+         * @param id One asset, or the nil id for all of them.
+         * @return How many records changed their presence.
+         */
+        std::size_t refreshPresence(const Uuid& id = {});
+
+        /**
+         * @brief Records that @p id's file is or is not there, without asking the filesystem.
+         *
+         * For a caller that has *just looked* -- `AssetWatcher`, which stats every tracked file on
+         * its poll anyway. It goes through the database rather than writing `sourcePresent`
+         * directly so that the missing *count* is maintained with it: two places deciding what
+         * "missing" means is how a count and a list come to disagree.
+         *
+         * @param id The asset. Unknown ids are ignored.
+         * @param present What the caller saw.
+         * @return True when this changed the answer.
+         */
+        bool setAssetPresent(const Uuid& id, bool present);
+
+        /**
+         * @brief How many times this database has asked the operating system whether a file exists.
+         *
+         * Exposed so that "drawing performs no filesystem access proportional to the number of
+         * assets" is something a **test** can assert rather than something a benchmark implies.
+         * A number that only ever goes up, and whose *not* going up is the property under test.
+         */
+        [[nodiscard]] std::uint64_t getPresenceProbeCount() const { return presenceProbes_; }
 
         /**
          * @brief Whether moveAsset() would be allowed to move @p id to @p newRelativePath.
@@ -271,8 +346,20 @@ namespace CNA::Studio
         [[nodiscard]] static JsonValue recordToJson(const AssetRecord& record);
         [[nodiscard]] static AssetRecord recordFromJson(const JsonValue& json, std::string relativePath);
 
+        /** @brief Stats @p path, counting the probe, and returns whether it is there. */
+        [[nodiscard]] bool probe(const std::string& relativePath) const;
+
+        /** @brief Sets @p record's presence, keeping @ref missingCount_ in step. */
+        void setPresence(AssetRecord& record, bool present);
+
         std::string projectRoot_;
         std::unordered_map<Uuid, AssetRecord> recordsById_;
         std::map<std::string, Uuid> idsByPath_;
+
+        /** @brief How many records have `sourcePresent == false`, maintained incrementally. */
+        std::size_t missingCount_ = 0;
+
+        /** @brief Counts filesystem presence checks, so a test can assert drawing makes none. */
+        mutable std::uint64_t presenceProbes_ = 0;
     };
 }

@@ -7,6 +7,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 namespace CNA::Studio
@@ -172,10 +173,26 @@ namespace CNA::Studio
             idsByPath_.erase(existing->second.sourcePath);
         }
 
+        // A record being replaced stops counting before the new one starts, or two adds of one id
+        // would leave the missing count carrying the first one for ever.
+        if (const auto existing = recordsById_.find(record.id); existing != recordsById_.end())
+        {
+            if (!existing->second.sourcePresent) { --missingCount_; }
+        }
+
         const Uuid id = record.id;
         const std::string path = record.sourcePath;
+
+        // Asked once, here, rather than trusted from the caller: a record handed in by a test, by
+        // an undone delete or by a scan has no reliable idea whether its file is on disk, and a
+        // cache seeded from a guess is worse than no cache. A scan pays exactly one probe per
+        // record overall -- this one for the files it walked, and the pass at its end for the rest.
+        const bool present = !path.empty() && probe(path);
+        record.sourcePresent = present;
+
         recordsById_[id] = std::move(record);
         if (!path.empty()) { idsByPath_[path] = id; }
+        if (!present) { ++missingCount_; }
         return true;
     }
 
@@ -310,6 +327,11 @@ namespace CNA::Studio
         record->sourcePath = destination;
         idsByPath_[destination] = id;
 
+        // The record now points somewhere else, so what was cached about the old path says nothing
+        // about this one. This is the repair for a *missing* asset, so getting it wrong would leave
+        // the browser showing a file it had just found as still gone.
+        setPresence(*record, probe(destination));
+
         // At the new location, because that is what makes the repair survive a restart: with no
         // sidecar beside it the next scan gives the file a fresh id and breaks every reference
         // again, which is the failure this exists to end.
@@ -322,24 +344,81 @@ namespace CNA::Studio
         const auto found = recordsById_.find(id);
         if (found == recordsById_.end()) { return false; }
 
+        if (!found->second.sourcePresent) { --missingCount_; }
         idsByPath_.erase(found->second.sourcePath);
         recordsById_.erase(found);
         return true;
+    }
+
+    bool AssetDatabase::probe(const std::string& relativePath) const
+    {
+        // The one place this class touches the filesystem to answer "is it there", so the counter
+        // is complete by construction rather than by everyone remembering to increment it.
+        ++presenceProbes_;
+        std::error_code error;
+        return std::filesystem::exists(resolvePath(relativePath), error) && !error;
+    }
+
+    void AssetDatabase::setPresence(AssetRecord& record, bool present)
+    {
+        if (record.sourcePresent == present) { return; }
+        record.sourcePresent = present;
+        if (present) { --missingCount_; }
+        else { ++missingCount_; }
+    }
+
+    std::size_t AssetDatabase::refreshPresence(const Uuid& id)
+    {
+        std::size_t changed = 0;
+
+        if (id.isValid())
+        {
+            const auto found = recordsById_.find(id);
+            if (found == recordsById_.end()) { return 0; }
+
+            const bool present = probe(found->second.sourcePath);
+            if (found->second.sourcePresent != present) { ++changed; }
+            setPresence(found->second, present);
+            return changed;
+        }
+
+        for (auto& [recordId, record] : recordsById_)
+        {
+            (void)recordId;
+            const bool present = probe(record.sourcePath);
+            if (record.sourcePresent != present) { ++changed; }
+            setPresence(record, present);
+        }
+        return changed;
+    }
+
+    bool AssetDatabase::setAssetPresent(const Uuid& id, bool present)
+    {
+        const auto found = recordsById_.find(id);
+        if (found == recordsById_.end()) { return false; }
+
+        const bool changed = found->second.sourcePresent != present;
+        setPresence(found->second, present);
+        return changed;
     }
 
     bool AssetDatabase::isMissing(const Uuid& id) const
     {
         const AssetRecord* record = find(id);
         if (record == nullptr) { return false; }
-        return !std::filesystem::exists(resolvePath(record->sourcePath));
+
+        // The cached answer. This used to be a stat, and the Content Browser calls it once per row
+        // per pass -- see the header for when the cache is refreshed and why never is not an option.
+        return !record->sourcePresent;
     }
 
     std::vector<Uuid> AssetDatabase::getMissingAssets() const
     {
         std::vector<Uuid> missing;
+        missing.reserve(missingCount_);
         for (const auto& [id, record] : recordsById_)
         {
-            if (!std::filesystem::exists(resolvePath(record.sourcePath))) { missing.push_back(id); }
+            if (!record.sourcePresent) { missing.push_back(id); }
         }
         std::sort(missing.begin(), missing.end());
         return missing;
@@ -425,6 +504,9 @@ namespace CNA::Studio
     AssetScanResult AssetDatabase::scan(const std::string& relativeAssetDirectory)
     {
         AssetScanResult result;
+
+        /** @brief Ids the walk stood on, so the presence pass below probes only the rest. */
+        std::set<Uuid> seen;
 
         if (projectRoot_.empty())
         {
@@ -558,6 +640,9 @@ namespace CNA::Studio
                           : std::chrono::duration_cast<std::chrono::seconds>(writeTime.time_since_epoch()).count();
             errorCode.clear();
 
+            // Recorded so the presence pass at the end of the scan probes only the records the
+            // walk did not reach -- add() has already asked about this one.
+            seen.insert(record.id);
             add(record);
 
             if (isNew && !writeSidecar(record.id))
@@ -567,7 +652,13 @@ namespace CNA::Studio
             }
         }
 
-        result.missingCount = getMissingAssets().size();
+        for (auto& [recordId, stored] : recordsById_)
+        {
+            if (seen.count(recordId) != 0) { continue; }
+            setPresence(stored, probe(stored.sourcePath));
+        }
+
+        result.missingCount = missingCount_;
         result.succeeded = true;
         return result;
     }
@@ -576,5 +667,6 @@ namespace CNA::Studio
     {
         recordsById_.clear();
         idsByPath_.clear();
+        missingCount_ = 0;
     }
 }

@@ -413,8 +413,22 @@ CNA_STUDIO_TEST(AssetDatabaseReportsMissingSourcesRatherThanDroppingThem)
     // The record survives: a file that is gone today may be one git checkout away from returning,
     // and deleting the record would break every reference to it permanently.
     CNA_STUDIO_EXPECT(database.find(id) != nullptr);
+
+    // Not yet, and that is the strategy rather than a bug (STUDIO-30012). `isMissing` reads a
+    // cache, because the Content Browser asks it once per row per pass; a file removed by
+    // something outside Studio becomes visible at the watcher's next poll or on an explicit
+    // refresh. Asking the filesystem on every call is what used to happen and is what made the
+    // panel cost 23 ms a frame at 1 500 assets.
+    CNA_STUDIO_EXPECT(!database.isMissing(id));
+
+    CNA_STUDIO_EXPECT_EQ(database.refreshPresence(), std::size_t{1});
     CNA_STUDIO_EXPECT(database.isMissing(id));
     CNA_STUDIO_EXPECT_EQ(database.getMissingAssets().size(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(database.getMissingCount(), std::size_t{1});
+
+    // And a second refresh finds nothing new to say, so a Refresh that changed nothing reports
+    // nothing rather than a line per asset.
+    CNA_STUDIO_EXPECT_EQ(database.refreshPresence(), std::size_t{0});
 
     std::filesystem::remove_all(directory);
 }

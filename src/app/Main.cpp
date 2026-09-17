@@ -15,6 +15,7 @@
 #include <functional>
 #include <iomanip>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 
@@ -217,10 +218,30 @@ namespace
     }
 
     /** @brief Adds @p count assets to @p assets, spread across the kinds the grid has icons for. */
+    /**
+     * @brief Fills @p assets with @p count records, backed by real files under a real root.
+     *
+     * The files matter (`STUDIO-30014`): with no project root the paths resolve under a directory
+     * that does not exist and every `stat` fails early, which made the benchmark measure the
+     * *cheap* case -- 8.6 ms against 21.5 ms for the same 1 500 assets in a real project. A
+     * benchmark that only ever sees the fast path is a benchmark that cannot see the problem.
+     *
+     * The directory is a scratch one and is left behind: a benchmark that deleted 1 500 files on
+     * its way out would spend most of its wall clock doing that, and a temporary directory is the
+     * operating system's to reclaim.
+     */
     void fillAssets(CNA::Studio::AssetDatabase& assets, int count)
     {
         static const char* const kKinds[] = {".png", ".ogg", ".gltf", ".cnascene", ".cnaprefab",
                                              ".ttf", ".frag", ".txt"};
+
+        std::error_code code;
+        const std::filesystem::path root =
+            std::filesystem::temp_directory_path() / "cna-studio-benchmark-assets";
+        std::filesystem::remove_all(root, code);
+        std::filesystem::create_directories(root, code);
+        assets.setProjectRoot(root.generic_string());
+
         for (int i = 0; i < count; ++i)
         {
             CNA::Studio::AssetRecord record;
@@ -231,6 +252,11 @@ namespace
                               + std::to_string(i) + kKinds[static_cast<std::size_t>(i) % 8];
             record.type = CNA::Studio::AssetDatabase::guessTypeFromExtension(record.sourcePath);
             record.importerId = CNA::Studio::AssetDatabase::defaultImporterFor(record.type);
+
+            const std::filesystem::path file = root / record.sourcePath;
+            std::filesystem::create_directories(file.parent_path(), code);
+            std::ofstream{file, std::ios::binary} << "x";
+
             (void)assets.add(std::move(record));
         }
     }

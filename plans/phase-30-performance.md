@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 3 of 16 complete `██░░░░░░░░░░`
+**Progress:** 5 of 16 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -14,10 +14,10 @@
 | `STUDIO-30002` | Bounded queues and backpressure for job submission | ⬜ | `STUDIO-30001` |
 | `STUDIO-30010` | Virtualised list and tree infrastructure | ⬜ | `STUDIO-03015` |
 | `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ⬜ | `STUDIO-30010` |
-| `STUDIO-30012` | Caching strategy with explicit invalidation | ⬜ | `STUDIO-09004` |
+| `STUDIO-30012` | Caching strategy with explicit invalidation | ✅ | — |
 | `STUDIO-30013` | `SceneDocument` child lookup is an index, not a scan of every entity | ✅ | — |
 | `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ✅ | `STUDIO-04028` |
-| `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ⬜ | `STUDIO-30012`, `STUDIO-30014` |
+| `STUDIO-30015` | The Content Browser stops asking the filesystem about every asset every frame | ✅ | `STUDIO-30012`, `STUDIO-30014` |
 | `STUDIO-30016` | The Details panel stops opening files to draw itself | ⬜ | `STUDIO-30012` |
 | `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ⬜ | `STUDIO-13011` |
 | `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
@@ -99,6 +99,92 @@ on the system's own lock, shutdown running no handler, the worker count never be
 mode running one body per drain, and sixty-four jobs over four workers each arriving exactly once.
 
 **Run under ThreadSanitizer**, in a build configured for it: 1 401 tests, no data races reported.
+
+### `STUDIO-30012` — Caching strategy with explicit invalidation
+
+**Its dependency on `STUDIO-09004` was wrong and has been dropped**, which is the first thing to
+record because it changes the plan. The row read "depends on the thumbnail cache", and that bundled
+two different caches into one task: a thumbnail cache is invalidated by a *reimport*, and the cache
+that actually costs something today is the asset **presence** cache, invalidated by a file appearing
+or disappearing. The second needs nothing from the first. Doing this now is what unblocks
+`STUDIO-30015`, which `STUDIO-30014` measured as 61% of the Content Browser's frame cost. The
+thumbnail cache still follows the strategy stated here when `STUDIO-09004` arrives.
+
+**The question this had to answer**, in `STUDIO-30015`'s words: *when does a file deleted outside
+the editor become visible as missing?* The answer:
+
+- **Immediately** for anything Studio does itself — a scan, an add, a move, a delete, a relink. Those
+  all go through `AssetDatabase`, so the cache cannot be behind them.
+- **Within half a second** for anything else, because `AssetWatcher` already stats every tracked
+  file on its poll. Keeping the cache in step there costs nothing that was not being spent.
+- **On demand**, through `AssetDatabase::refreshPresence`, for an explicit Refresh.
+
+"Never" was rejected: *what did I break when I moved that folder* is the question a content browser
+is most often opened to answer. "Every frame" is what used to happen and is what made it expensive.
+
+**The watcher moved from the CNA-backed host into `StudioShellPanels`.** It was polled by
+`CnaStudioShellHost` and by nothing else, which was tolerable while it only reloaded textures and is
+not now that it is what invalidates the cache: an invalidation that ran in one of the two builds
+would make the cache right in one of them — and the headless preview and every test are the other.
+What the panels cannot do themselves, dropping a rendered texture, is a seam the host now fills.
+
+**`getPresenceProbeCount()` is the instrument.** Every filesystem presence check this class makes
+goes through one private function that counts it, so "drawing performs no filesystem access
+proportional to the number of assets" is something a test asserts rather than something a benchmark
+implies. A number whose *not* going up is the property under test.
+
+**`add()` probes rather than trusting the caller.** A record handed in by a test, by an undone
+delete or by a scan has no reliable idea whether its file is on disk, and a cache seeded from a
+guess is worse than no cache. A scan still pays exactly one probe per record overall: this one for
+the files it walked, and the pass at its end for the rest.
+
+**`getMissingCount()` is maintained incrementally**, so the browser can ask for the number without
+anybody building the list.
+
+**Verification.** `tests/ProjectAndAssetTests.cpp` asserts the strategy directly — a file removed
+outside the editor is *not* missing until something looks, is missing after `refreshPresence`, and a
+second refresh reports no change. `tests/StudioContentBrowserTests.cpp`: the probe count unchanged
+across five frames of drawing 400 assets in **both** views, one probe per record on a refresh and
+exactly one for a single asset, the watcher making an outside deletion and its return visible, and
+`StudioShellPanels::poll` doing that in a build with no CNA at all.
+
+### `STUDIO-30015` — The Content Browser stops asking the filesystem about every asset every frame
+
+**Acceptance.** Drawing the Content Browser performs no filesystem access proportional to the number
+of assets, and a test says so rather than a benchmark implying it.
+
+**Done, and the test says so.** `DrawingTheContentBrowserAsksTheFilesystemAboutNothing` draws five
+frames over 400 assets in both views and asserts `AssetDatabase::getPresenceProbeCount()` is
+unchanged — not smaller, unchanged. It also asserts the browser drew all 400 rows, so it cannot pass
+by drawing nothing.
+
+**Both halves of `STUDIO-30014`'s finding are gone.** `isMissing` reads the cached flag instead of
+calling `exists()` once per row per pass, and `missingCount` reads `getMissingCount()` instead of
+building the whole missing list to take its `.size()` — which was a second full pass with another
+stat per asset.
+
+**The cost has moved rather than vanished**, and that is recorded rather than glossed: it is now one
+probe per record on a watcher poll (twice a second at most, on a loop that was already stat-ing every
+file) or on an explicit refresh. The design decision that makes that acceptable is
+`STUDIO-30012`'s, which is why this waited for it.
+
+**Measured, at 1 500 assets in a real project, `--ui-benchmark=content`:**
+
+| | Per frame |
+|---|---:|
+| `STUDIO-30014`, real project root | 21.5 ms |
+| `STUDIO-30014`, both `exists()` calls stubbed out | 8.3 ms |
+| **Now, real project root, nothing stubbed** | **9.5 ms** |
+
+Which is the predicted landing zone rather than a surprise: the finding said 61% of the panel's cost
+was the filesystem, and removing it leaves the rest.
+
+**The benchmark itself was measuring the wrong case and now does not.** `fillAssets` added records
+with no project root, so every path resolved under a directory that does not exist and every `stat`
+failed early — 8.6 ms against the 21.5 ms a real project cost. It now writes real files under a real
+root. A benchmark that only ever sees the fast path cannot see the problem, which is the thing this
+one exists for; that it now reports 9.5 ms *with* a root where it reported 9.4 ms without one is
+itself the result, because with the cache having a project stopped costing anything.
 
 ### `STUDIO-30013` — `SceneDocument` child lookup is an index, not a scan of every entity
 

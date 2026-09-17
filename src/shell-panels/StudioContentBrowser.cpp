@@ -999,7 +999,10 @@ namespace CNA::Studio
             studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query);
 
         result.rowsTotal = cards.size();
-        result.missingCount = assets.getMissingAssets().size();
+        // The count, not the list (STUDIO-30015). Building the list to call `.size()` on it was a
+        // second full pass over the database with a `stat` per asset, on every pass of every frame
+        // -- half the 3 000 syscalls a frame `STUDIO-30014` measured at 1 500 assets.
+        result.missingCount = assets.getMissingCount();
 
         std::vector<StudioTreeRow> rows;
         rows.reserve(cards.size());
@@ -1122,7 +1125,10 @@ namespace CNA::Studio
         const std::vector<StudioContentCard> cards =
             studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query);
         result.rowsTotal = cards.size();
-        result.missingCount = assets.getMissingAssets().size();
+        // The count, not the list (STUDIO-30015). Building the list to call `.size()` on it was a
+        // second full pass over the database with a `stat` per asset, on every pass of every frame
+        // -- half the 3 000 syscalls a frame `STUDIO-30014` measured at 1 500 assets.
+        result.missingCount = assets.getMissingCount();
 
         if (cards.empty())
         {

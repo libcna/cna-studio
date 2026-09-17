@@ -61,6 +61,12 @@ namespace CNA::Studio
         {
             const FileStamp stamp = stampOf(assets.resolvePath(record->sourcePath));
 
+            // The presence cache is refreshed here rather than by whoever asks (STUDIO-30012).
+            // This loop already stats every tracked file, so keeping the cache in step costs
+            // nothing that was not being spent -- and it is what makes `isMissing` free everywhere
+            // else, including once per row per pass in the Content Browser.
+            (void)assets.setAssetPresent(record->id, stamp.exists);
+
             // A record that has never been stamped -- size and time both zero -- is one whose file
             // was already absent when it was scanned. Comparing against that would report it as
             // changed on the first poll of every session.

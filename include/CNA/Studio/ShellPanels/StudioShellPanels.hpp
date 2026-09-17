@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Core/StudioJobs.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Project/BuildRunner.hpp"
@@ -136,6 +137,17 @@ namespace CNA::Studio
          * which the Output Log reports rather than silently doing nothing.
          */
         std::function<bool(const std::string&)> setClipboardText;
+
+        /**
+         * @brief Drops a rendered texture, so the next frame fetches the new one.
+         *
+         * `plan.md` STUDIO-30012. The asset watcher lives here rather than in the CNA-backed host,
+         * so that "a file changed outside Studio is noticed within half a second" is true of *every*
+         * build — including the headless preview and the tests, which is where the presence cache's
+         * invalidation is actually checked. What the watcher cannot do itself is drop a texture,
+         * because only the module with a device has one; unset means this build has none to drop.
+         */
+        std::function<void(const Uuid&)> invalidateRenderedAsset;
     };
 
     /** @brief What the panels reported over the last frame, for diagnostics and smoke tests. */
@@ -601,6 +613,9 @@ namespace CNA::Studio
         /** @brief Closes the undo merge chain on the first frame nothing is being dragged. */
         void pollInteractionEnd();
 
+        /** @brief Polls the asset watcher, which also refreshes the presence cache. */
+        void pollAssetChanges(double nowSeconds);
+
         void pollPlugins();
 
 
@@ -659,6 +674,18 @@ namespace CNA::Studio
          * the main thread from @ref poll, so a job's result reaches the document between frames.
          */
         StudioJobSystem jobs_;
+
+        /**
+         * @brief Notices assets changed outside Studio (`plan.md` STUDIO-07051, STUDIO-30012).
+         *
+         * Here rather than in the CNA-backed host, where it used to be: it is what refreshes the
+         * asset database's presence cache, and a cache whose invalidation only ran in one of the
+         * two builds would be a cache that is right in one of them.
+         */
+        AssetWatcher watcher_;
+
+        /** @brief The previous `poll()` timestamp, so the watcher gets a delta. Negative until one. */
+        double lastPollSeconds_ = -1.0;
 
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;

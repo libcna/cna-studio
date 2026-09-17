@@ -15,6 +15,9 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetWatcher.hpp"
+#include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
+#include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
@@ -1093,4 +1096,172 @@ CNA_STUDIO_TEST(TheMenusShortcutHintsAreTheShortcutsTheRegistryActuallyBinds)
         }
         CNA_STUDIO_EXPECT(found);
     }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Drawing asks the filesystem nothing (STUDIO-30012, STUDIO-30015)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * @brief Drawing the Content Browser performs no filesystem access proportional to the asset count.
+ *
+ * Asserted with a counter rather than implied by a benchmark, which is what `STUDIO-30015`'s
+ * acceptance asks for. `STUDIO-30014` measured the old behaviour: `isMissing` was a `stat` and the
+ * browser called it once per row per pass, plus a second full pass to count the missing ones —
+ * about 3 000 syscalls a frame at 1 500 assets, and 61% of the panel's frame cost.
+ */
+CNA_STUDIO_TEST(DrawingTheContentBrowserAsksTheFilesystemAboutNothing)
+{
+    ScopedProject project{"nostats"};
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+
+    // Enough that a per-asset syscall would be unmistakable in the count.
+    constexpr int kAssets = 400;
+    for (int i = 0; i < kAssets; ++i)
+    {
+        const std::string path = "Assets/Textures/asset" + std::to_string(i) + ".png";
+        project.write(path);
+        track(assets, path, AssetType::Texture2D);
+    }
+
+    for (const StudioContentView view : {StudioContentView::Grid, StudioContentView::List})
+    {
+        StudioContentBrowserState state;
+        state.view = view;
+        state.folder = "Assets/Textures";
+
+        auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+        shell->resetLayout();
+        shell->renderFrame(at(-1.0f, -1.0f));
+        CNA_STUDIO_EXPECT(shell->activatePanel("content"));
+
+        StudioContentBrowserResult drawn;
+        CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+            [&](StudioFrame& frame, const UiRect& area) {
+                const StudioContentBrowserResult pass =
+                    studioContentBrowser(frame, area, context, state);
+                if (frame.isDrawPass()) { drawn = pass; }
+            }));
+
+        // One frame to settle whatever the shell does on its first, then the frames under test.
+        shell->renderFrame(at(-1.0f, -1.0f));
+        const std::uint64_t before = assets.getPresenceProbeCount();
+
+        for (int frame = 0; frame < 5; ++frame) { shell->renderFrame(at(-1.0f, -1.0f)); }
+
+        const std::uint64_t after = assets.getPresenceProbeCount();
+        if (after != before)
+        {
+            CnaStudioTest::reportFailure(
+                __FILE__, __LINE__,
+                std::string{"drawing five frames in "} + std::string{studioContentViewName(view)}
+                    + " view made " + std::to_string(after - before)
+                    + " filesystem presence checks; it must make none.");
+        }
+
+        // And it drew the folder, so this is not a test that passes because nothing happened.
+        CNA_STUDIO_EXPECT_EQ(drawn.rowsTotal, static_cast<std::size_t>(kAssets));
+        CNA_STUDIO_EXPECT(drawn.rowsDrawn > 0);
+        CNA_STUDIO_EXPECT_EQ(drawn.missingCount, std::size_t{0});
+    }
+}
+
+CNA_STUDIO_TEST(AnExplicitRefreshIsWhereTheFilesystemCostGoesInstead)
+{
+    // The other half of the strategy: the cost has not vanished, it has moved somewhere a user
+    // asked for it. One probe per record, and the answer changes.
+    ScopedProject project{"refreshcost"};
+    project.write("Assets/a.png");
+    project.write("Assets/b.png");
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+    CNA_STUDIO_EXPECT_EQ(assets.getMissingCount(), std::size_t{0});
+
+    const Uuid gone = assets.findByPath("Assets/a.png")->id;
+    std::filesystem::remove(std::filesystem::path{project.root()} / "Assets" / "a.png");
+
+    // Still nothing, because nobody has looked. That is the cache being a cache rather than a
+    // guess, and it is why "never notice" was not an option and "notice per frame" was the cost.
+    CNA_STUDIO_EXPECT(!assets.isMissing(gone));
+
+    const std::uint64_t before = assets.getPresenceProbeCount();
+    CNA_STUDIO_EXPECT_EQ(assets.refreshPresence(), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(assets.getPresenceProbeCount() - before, std::uint64_t{2});
+
+    CNA_STUDIO_EXPECT(assets.isMissing(gone));
+    CNA_STUDIO_EXPECT_EQ(assets.getMissingCount(), std::size_t{1});
+
+    // A single asset can be refreshed on its own, which is one probe rather than the project.
+    const std::uint64_t beforeOne = assets.getPresenceProbeCount();
+    (void)assets.refreshPresence(gone);
+    CNA_STUDIO_EXPECT_EQ(assets.getPresenceProbeCount() - beforeOne, std::uint64_t{1});
+}
+
+CNA_STUDIO_TEST(TheWatcherIsWhatMakesAnOutsideDeletionVisible)
+{
+    // The strategy's default path: half a second, paid by a loop that was already stat-ing every
+    // tracked file. Nothing else in Studio has to remember to refresh anything.
+    ScopedProject project{"watcherpresence"};
+    project.write("Assets/a.png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/a.png")->id;
+    std::filesystem::remove(std::filesystem::path{project.root()} / "Assets" / "a.png");
+    CNA_STUDIO_EXPECT(!assets.isMissing(id));
+
+    AssetWatcher watcher;
+    const AssetWatchResult result = watcher.poll(assets, watcher.getInterval());
+    CNA_STUDIO_EXPECT(result.polled);
+    CNA_STUDIO_EXPECT_EQ(result.removed.size(), std::size_t{1});
+
+    CNA_STUDIO_EXPECT(assets.isMissing(id));
+    CNA_STUDIO_EXPECT_EQ(assets.getMissingCount(), std::size_t{1});
+
+    // And back again when the file returns, so a `git checkout` fixes the browser without a
+    // restart.
+    project.write("Assets/a.png");
+    const AssetWatchResult back = watcher.poll(assets, watcher.getInterval());
+    CNA_STUDIO_EXPECT(back.polled);
+    CNA_STUDIO_EXPECT(!assets.isMissing(id));
+    CNA_STUDIO_EXPECT_EQ(assets.getMissingCount(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(ThePanelsPollTheWatcherInEveryBuildRatherThanOnlyTheCnaBackedOne)
+{
+    // The watcher used to be polled by the CNA-backed host and by nothing else, which was tolerable
+    // while it only reloaded textures and is not now that it is what invalidates the presence
+    // cache: a cache whose invalidation ran in one of the two builds is a cache that is right in
+    // one of them.
+    ScopedProject project{"panelwatch"};
+    project.write("Assets/a.png");
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    const Uuid id = context.getAssets().findByPath("Assets/a.png")->id;
+
+    StudioLog log;
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    StudioShellPanels panels{*shell, context, log};
+
+    std::filesystem::remove(std::filesystem::path{project.root()} / "Assets" / "a.png");
+    CNA_STUDIO_EXPECT(!context.getAssets().isMissing(id));
+
+    // The first poll establishes the clock rather than firing, so a session's first frame does not
+    // poll whether or not it is due.
+    panels.poll(0.0);
+    panels.poll(5.0);
+
+    CNA_STUDIO_EXPECT(context.getAssets().isMissing(id));
+    CNA_STUDIO_EXPECT_EQ(context.getAssets().getMissingCount(), std::size_t{1});
 }
