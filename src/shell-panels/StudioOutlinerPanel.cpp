@@ -273,11 +273,11 @@ namespace CNA::Studio
 
         if (bounds.width <= 0.0f || bounds.height <= 0.0f) { return result; }
 
-        // Derived once and shared by the count and the window (STUDIO-13011). `getChildrenByParent`
-        // is a pass over the scene, deliberately uncached because `findEntity` hands out a mutable
-        // entity and a stale hierarchy index presents as entities vanishing from the outliner. One
-        // pass per drawing pass is the price of that correctness; two would be carelessness.
-        const std::unordered_map<Uuid, std::vector<Uuid>> hierarchy = scene.getChildrenByParent();
+        // Derived once and shared by the count and the window (STUDIO-13011), and since
+        // STUDIO-30011 the document keeps it between frames -- so a scene nobody has changed is
+        // walked without being rebuilt at all. A reference rather than a copy: at twenty thousand
+        // entities the copy was twenty thousand vectors, which is most of what the cache saves.
+        const std::unordered_map<Uuid, std::vector<Uuid>>& hierarchy = scene.getChildrenByParent();
 
         // The count first, then the window. Counting walks the tree and builds nothing, which is
         // the difference between a scene of fifty thousand entities costing fifty thousand

@@ -6,14 +6,14 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 9 of 16 complete `██████░░░░░░`
+**Progress:** 10 of 16 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-30001` | Background job system: progress, cancellation, errors, clean shutdown | ✅ | `STUDIO-02050` |
 | `STUDIO-30002` | Bounded queues and backpressure for job submission | ⬜ | `STUDIO-30001` |
 | `STUDIO-30010` | Virtualised list and tree infrastructure | ✅ | `STUDIO-03015` |
-| `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ⬜ | `STUDIO-30010` |
+| `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ✅ | `STUDIO-30010` |
 | `STUDIO-30012` | Caching strategy with explicit invalidation | ✅ | — |
 | `STUDIO-30013` | `SceneDocument` child lookup is an index, not a scan of every entity | ✅ | — |
 | `STUDIO-30014` | Find what makes the Content Browser cost 23 ms a frame at 1 500 assets | ✅ | `STUDIO-04028` |
@@ -470,3 +470,61 @@ interactive target decides how much of it has to go.
 **Measured in Release, not in the debug tree.** The debug build reads about four times higher —
 75 ms against 8 ms for `outliner-20000` — and a number nobody could act on is worse than no number.
 The rows above and in `STUDIO-13011` are `build-werror`.
+
+### `STUDIO-30011` — Incremental update rather than per-frame rebuild
+
+**Done** for the one rebuild both stress benchmarks pointed at: `SceneDocument`'s hierarchy index.
+It is now kept between frames, and the invalidation is explicit rather than avoided.
+
+**What was there, and why it was defensible.** `getChildrenByParent()` was rebuilt on every call,
+on purpose. `findEntity` hands out a mutable `StudioEntity*` and `setParentId` is public, so the
+document could not know when a parent changed — and a silently stale hierarchy does not present as
+a cache bug, it presents as *entities vanishing from the outliner*, which reads as data loss. Being
+afraid of that was right. "Rebuild it every time" was a strategy for not knowing, and
+`STUDIO-30020` put a number on what not knowing cost: about 20 ms a frame at twenty thousand
+entities, with the rows already virtualised.
+
+**So the document now knows, and the rule is one sentence.** Every mutator invalidates, and
+**asking for a changeable entity is itself an invalidation**: the non-const `findEntity` is the
+only handle through which a parent, a name or a sort order can change behind the document's back —
+the first decides the index's shape, the other two the order within a parent — so handing one out
+marks it stale. Conservative on purpose. It costs a rebuild that may not have been needed and it
+cannot be wrong, and a reader that only reads never triggers one, which is the case that mattered:
+every hierarchy walk in Studio takes a `const SceneDocument&`.
+
+Deliberately not a revision counter compared per frame, and deliberately not a narrower rule that
+only `setParentId` invalidates. Both would be correct today and silently wrong the first time
+somebody sorts children by something else, and the failure mode is the one above.
+
+**Counted, so it stays true.** `getHierarchyRebuildCount()` exists for the same reason
+`AssetDatabase` counts its filesystem probes: "drawing a frame rebuilds nothing" is a claim that
+decays the day somebody puts a non-const lookup on a draw path, and nothing else would notice.
+`OutliningTwentyThousandEntitiesDescribesAScreenfulRatherThanAScene` asserts it across two frames;
+`TheHierarchyIndexIsBuiltOnceAndGivenUpByEveryWayOfChangingTheScene` enumerates the ways it must be
+given up, the mutable-handle hole included.
+
+**Measured** (`--ui-benchmark=outliner`, Release, 120 frames at 1920×1080, median µs/frame). The
+middle column is `STUDIO-13011`'s result — the rows already virtualised — so this column pair is
+this task alone:
+
+| scenario | rebuilt per frame | cached | total, from before `STUDIO-13011` |
+|---|---:|---:|---:|
+| `outliner-2000` | 660 | 398 | 2587 → 398 |
+| `outliner-scrolling` | 779 | 386 | 2384 → 386 |
+| `outliner-20000` | 8101 | 3429 | 30 490 → 3429 |
+| `outliner-20000-deep` | 20 674 | 5126 | 37 934 → 5126 |
+| `outliner-20000-scrolling` | 20 798 | 5164 | 44 721 → 5164 |
+
+**What is left, and it is not a rebuild.** Twenty thousand entities in chains fifty deep still cost
+about 5 ms, and it is the walk itself: counting the visible rows visits every open node, because a
+hierarchy has no maintained row count to read. Removing *that* means maintaining a visible-row
+count against the expansion state, which is a different index with a different invalidation
+story — worth doing only if `STUDIO-30030`'s interactive target says 5 ms is too much, and not
+worth guessing at before then.
+
+**Scoped to this rebuild, not to "throughout".** The other per-frame rebuilds this phase named have
+already gone their own way: `STUDIO-30015` for the Content Browser's filesystem probes,
+`STUDIO-30016` for the Details panel's file reads, `STUDIO-30012` for the caching strategy they
+share, and `STUDIO-09016`/`STUDIO-13011` for the models the two trees were building. What remains
+under this title is nothing anybody has measured a cost for, and a task kept open for work nobody
+can name is a task that never closes.

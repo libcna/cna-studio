@@ -3397,3 +3397,133 @@ CNA_STUDIO_TEST(FlatteningTheOutlinerCostsLinearTimeInTheSceneRatherThanQuadrati
     }
     CNA_STUDIO_EXPECT(ratio <= 8.0);
 }
+
+// ------------------------------------------------------------------------------------------------
+// Hierarchy index caching (STUDIO-30011)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheHierarchyIndexIsBuiltOnceAndGivenUpByEveryWayOfChangingTheScene)
+{
+    // The index used to be rebuilt on every call, deliberately, because the document could not
+    // know when a parent changed and a silently stale hierarchy presents as entities *vanishing
+    // from the outliner* -- a failure that looks like data loss rather than like a cache. Caching
+    // it is only allowed if every way of changing the scene gives it up, so this enumerates them.
+    SceneDocument scene;
+
+    StudioEntity first{Uuid::generate(), "First"};
+    const Uuid firstId = first.getId();
+    scene.addEntity(std::move(first));
+
+    StudioEntity second{Uuid::generate(), "Second"};
+    const Uuid secondId = second.getId();
+    scene.addEntity(std::move(second));
+
+    // Built once and then reused, however many times it is asked for.
+    const std::uint64_t afterFirstAsk = [&] {
+        (void)scene.getChildrenByParent();
+        return scene.getHierarchyRebuildCount();
+    }();
+    (void)scene.getChildrenByParent();
+    (void)scene.getChildrenByParent();
+    CNA_STUDIO_EXPECT_EQ(scene.getHierarchyRebuildCount(), afterFirstAsk);
+
+    const auto rebuildsAfter = [&](auto&& change) {
+        (void)scene.getChildrenByParent();
+        const std::uint64_t before = scene.getHierarchyRebuildCount();
+        change();
+        (void)scene.getChildrenByParent();
+        return scene.getHierarchyRebuildCount() > before;
+    };
+
+    // Adding.
+    Uuid thirdId;
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] {
+        StudioEntity third{Uuid::generate(), "Third"};
+        thirdId = third.getId();
+        scene.addEntity(std::move(third));
+    }));
+
+    // Reparenting through the document.
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] {
+        CNA_STUDIO_EXPECT(scene.reparentEntity(secondId, firstId));
+    }));
+    CNA_STUDIO_EXPECT_EQ(scene.getChildrenByParent().at(firstId).size(), std::size_t{1});
+
+    // And the hole this was left uncached for: a parent changed through the mutable entity the
+    // document hands out, behind its back. Asking for that handle is what invalidates, because it
+    // is the only moment the document can still see coming.
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] {
+        StudioEntity* entity = scene.findEntity(thirdId);
+        CNA_STUDIO_EXPECT(entity != nullptr);
+        if (entity != nullptr) { entity->setParentId(firstId); }
+    }));
+    CNA_STUDIO_EXPECT_EQ(scene.getChildrenByParent().at(firstId).size(), std::size_t{2});
+
+    // A rename through the same handle reorders a parent's children, which is the same index.
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] {
+        StudioEntity* entity = scene.findEntity(thirdId);
+        if (entity != nullptr) { entity->setName("AAA"); }
+    }));
+    CNA_STUDIO_EXPECT_EQ(scene.getChildrenByParent().at(firstId).front().toString(),
+                         thirdId.toString());
+
+    // Removing.
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] {
+        CNA_STUDIO_EXPECT_EQ(scene.removeEntityRecursive(thirdId).size(), std::size_t{1});
+    }));
+    CNA_STUDIO_EXPECT_EQ(scene.getChildrenByParent().at(firstId).size(), std::size_t{1});
+
+    // Loading, which replaces every entity at once.
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+    const JsonValue saved = scene.toJson();
+
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] {
+        CNA_STUDIO_EXPECT(scene.loadFromJson(saved, registry).succeeded);
+    }));
+
+    // Clearing.
+    CNA_STUDIO_EXPECT(rebuildsAfter([&] { scene.clear(); }));
+    CNA_STUDIO_EXPECT(scene.getChildrenByParent().empty());
+}
+
+CNA_STUDIO_TEST(ACachedHierarchyIsTheSameHierarchyAsARebuiltOne)
+{
+    // The cache must be indistinguishable from the pass it replaces, including the *order* within
+    // each parent -- two orderings of one hierarchy show as an outliner whose rows move when
+    // something unrelated rebuilt them, which nobody can reproduce on demand.
+    SceneDocument scene;
+    std::vector<Uuid> ids;
+    Uuid parent;
+    for (int i = 0; i < 80; ++i)
+    {
+        StudioEntity entity{Uuid::generate(), "Entity " + std::to_string((i * 11) % 80)};
+        entity.setSortOrder(i % 4);
+        if (i % 7 != 0) { entity.setParentId(parent); }
+        const Uuid id = entity.getId();
+        scene.addEntity(std::move(entity));
+        ids.push_back(id);
+        if (i % 7 == 0) { parent = id; }
+    }
+
+    const std::unordered_map<Uuid, std::vector<Uuid>> cached = scene.getChildrenByParent();
+
+    // Every parent, against the scan the grouped form exists to replace.
+    CNA_STUDIO_EXPECT(cached.at(Uuid{}) == scene.getRootEntities());
+    for (const Uuid& id : ids)
+    {
+        const std::vector<Uuid> expected = scene.getChildren(id);
+        const auto found = cached.find(id);
+        if (expected.empty()) { CNA_STUDIO_EXPECT(found == cached.end()); }
+        else
+        {
+            CNA_STUDIO_EXPECT(found != cached.end());
+            if (found != cached.end()) { CNA_STUDIO_EXPECT(found->second == expected); }
+        }
+    }
+
+    // And asking again gives the same answer rather than an accumulated one -- a cache rebuilt
+    // into a container it forgot to clear would double every child list.
+    scene.invalidateHierarchy();
+    CNA_STUDIO_EXPECT(scene.getChildrenByParent() == cached);
+}

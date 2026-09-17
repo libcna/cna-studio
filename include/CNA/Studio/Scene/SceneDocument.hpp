@@ -15,6 +15,7 @@
 
 #include <optional>
 #include <string>
+#include <cstdint>
 #include <unordered_map>
 #include <vector>
 
@@ -126,17 +127,53 @@ namespace CNA::Studio
          * This is one pass and one sort per group: O(n log k) for the whole document, against
          * O(n²) for n calls to `getChildren`.
          *
-         * **Returned rather than cached**, deliberately. `findEntity` hands out a mutable
-         * `StudioEntity*` and `StudioEntity::setParentId` is public, so the document cannot know
-         * when a parent changes — a cached index would go stale silently, and a stale hierarchy
-         * index shows up as entities that vanish from the outliner rather than as a failure.
-         * Rebuilding is cheap enough that correctness wins: the caller holds it for one walk.
+         * ### Cached, with the invalidation made explicit (`plan.md` STUDIO-30011)
+         *
+         * It used to be rebuilt on every call, deliberately: `findEntity` hands out a mutable
+         * `StudioEntity*` and `StudioEntity::setParentId` is public, so the document could not know
+         * when a parent changed, and a silently stale hierarchy presents as entities *vanishing
+         * from the outliner* rather than as a failure. That is the right thing to be afraid of —
+         * but "rebuild it every time" is a strategy for not knowing, and at twenty thousand
+         * entities it cost about 20 ms a frame with the Outliner open (`STUDIO-30020`).
+         *
+         * So the document now knows. Every mutator invalidates, and **asking for a changeable
+         * entity is itself an invalidation**: the non-const @ref findEntity hands out the only
+         * handle through which a parent, a name or a sort order can change behind the document's
+         * back, so handing one out marks the index stale. Conservative on purpose — it costs a
+         * rebuild that may not have been needed, and it cannot be wrong. A reader that only reads
+         * (the Outliner, every hierarchy walk) never triggers one, which is the case that mattered.
+         *
+         * @ref getHierarchyRebuildCount exists so that "drawing a frame rebuilds nothing" is a
+         * test rather than a hope.
+         *
+         * The returned reference is valid until the next mutation or the next non-const
+         * @ref findEntity. Callers hold it for one walk, which is what they did with the copy.
          *
          * The nil Uuid's entry holds the root entities, so a walk needs no special case for them.
          *
          * @return Parent id to its children, ordered. Parents with no children are absent.
          */
-        [[nodiscard]] std::unordered_map<Uuid, std::vector<Uuid>> getChildrenByParent() const;
+        [[nodiscard]] const std::unordered_map<Uuid, std::vector<Uuid>>& getChildrenByParent() const;
+
+        /**
+         * @brief How many times the hierarchy index has been built (`plan.md` STUDIO-30011).
+         *
+         * Counted rather than timed, for the same reason `AssetDatabase` counts its filesystem
+         * probes: a wall-clock assertion on a shared machine fails for reasons that have nothing
+         * to do with the code, and "a frame of drawing rebuilds nothing" is exactly the sort of
+         * claim that decays silently the day somebody adds a non-const lookup to a draw path.
+         */
+        [[nodiscard]] std::uint64_t getHierarchyRebuildCount() const { return hierarchyRebuilds_; }
+
+        /**
+         * @brief Marks the hierarchy index stale.
+         *
+         * Called by every mutator and by the non-const @ref findEntity. Public as well, because a
+         * caller that reaches around the document — a migration writing entities in place, a test
+         * arranging a scene — needs a way to say so, and an escape hatch that exists is better
+         * than one that gets invented locally.
+         */
+        void invalidateHierarchy() const { hierarchyStale_ = true; }
 
         /** @brief Returns the ids of every entity with no parent, ordered by sort order then name. */
         [[nodiscard]] std::vector<Uuid> getRootEntities() const;
@@ -191,5 +228,14 @@ namespace CNA::Studio
         SceneEnvironment environment_;
         std::vector<StudioEntity> entities_;
         std::unordered_map<Uuid, std::size_t> indexById_;
+
+        /** @brief The cached hierarchy. Mutable because building it is not a change to the scene. */
+        mutable std::unordered_map<Uuid, std::vector<Uuid>> childrenByParent_;
+
+        /** @brief Whether @ref childrenByParent_ still describes the document. */
+        mutable bool hierarchyStale_ = true;
+
+        /** @brief How many times it has been built. See getHierarchyRebuildCount(). */
+        mutable std::uint64_t hierarchyRebuilds_ = 0;
     };
 }

@@ -32,7 +32,15 @@ namespace CNA::Studio
     StudioEntity* SceneDocument::findEntity(const Uuid& id)
     {
         const auto found = indexById_.find(id);
-        return found == indexById_.end() ? nullptr : &entities_[found->second];
+        if (found == indexById_.end()) { return nullptr; }
+
+        // Handing out a changeable entity is itself an invalidation (STUDIO-30011). This is the
+        // only handle through which a parent, a name or a sort order can change behind the
+        // document's back, and all three decide the hierarchy index -- the first its shape, the
+        // other two the order of a parent's children. Conservative on purpose: it costs a rebuild
+        // that may not have been needed, and it cannot be wrong.
+        invalidateHierarchy();
+        return &entities_[found->second];
     }
 
     Uuid SceneDocument::addEntity(StudioEntity entity)
@@ -43,6 +51,7 @@ namespace CNA::Studio
         const Uuid id = entity.getId();
         indexById_.emplace(id, entities_.size());
         entities_.push_back(std::move(entity));
+        invalidateHierarchy();
         return id;
     }
 
@@ -104,18 +113,25 @@ namespace CNA::Studio
         }
 
         child->setParentId(newParentId);
+        invalidateHierarchy();
         return true;
     }
 
-    std::unordered_map<Uuid, std::vector<Uuid>> SceneDocument::getChildrenByParent() const
+    const std::unordered_map<Uuid, std::vector<Uuid>>& SceneDocument::getChildrenByParent() const
     {
+        if (!hierarchyStale_) { return childrenByParent_; }
+
+        ++hierarchyRebuilds_;
+        hierarchyStale_ = false;
+
         std::unordered_map<Uuid, std::vector<const StudioEntity*>> grouped;
         for (const StudioEntity& entity : entities_)
         {
             grouped[entity.getParentId()].push_back(&entity);
         }
 
-        std::unordered_map<Uuid, std::vector<Uuid>> children;
+        std::unordered_map<Uuid, std::vector<Uuid>>& children = childrenByParent_;
+        children.clear();
         children.reserve(grouped.size());
         for (auto& [parent, group] : grouped)
         {
@@ -408,10 +424,14 @@ namespace CNA::Studio
         entities_.clear();
         indexById_.clear();
         sceneId_ = Uuid::generate();
+        invalidateHierarchy();
     }
 
     void SceneDocument::rebuildIndex()
     {
+        // Every path that replaces the entity list ends here -- a load, a migration, a restore --
+        // so this is the one place the hierarchy has to be given up along with the id index.
+        invalidateHierarchy();
         indexById_.clear();
         for (std::size_t index = 0; index < entities_.size(); ++index)
         {
