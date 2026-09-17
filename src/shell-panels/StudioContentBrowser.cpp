@@ -754,7 +754,7 @@ namespace CNA::Studio
             // exactly the supported case, and the other two open it as readily as they select a
             // file in it.
             return {StudioContextMenuItem{"Rename", true, "F2"},
-                    StudioContextMenuItem{"Show in Folder"}};
+                    StudioContextMenuItem{"Show in Folder", true, {}}};
         }
 
         if (!asset.isValid()) { return {}; }
@@ -771,8 +771,8 @@ namespace CNA::Studio
         // exactly then. Whether it is *due* is the row's marker, which is a different question.
         return {StudioContextMenuItem{"Rename", true, "F2"},
                 StudioContextMenuItem{"Duplicate", present, "Ctrl+D"},
-                StudioContextMenuItem{"Reimport", present},
-                StudioContextMenuItem{"Show in Folder", present},
+                StudioContextMenuItem{"Reimport", present, {}},
+                StudioContextMenuItem{"Show in Folder", present, {}},
                 StudioContextMenuItem{},
                 StudioContextMenuItem{"Delete", present, "Delete"}};
     }
