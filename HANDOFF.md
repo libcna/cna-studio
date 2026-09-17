@@ -294,7 +294,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **243 of 564 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **244 of 564 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -306,7 +306,7 @@ exactly the failure the first was written to prevent in the other file.
 **Phase 1 — Product rename** (13 of 16). `cna-studio` executable, `cna-studio-*` targets, the
 `CNA::Studio` namespace, `CNA_STUDIO_*` options. 94 files moved with `git mv`.
 
-**Phase 2 — Architecture refresh** (33 of 39). The architecture record, the CNA gap register, the
+**Phase 2 — Architecture refresh** (34 of 39). The architecture record, the CNA gap register, the
 roadmap, sixteen architecture guard tests, the restored CNA-backed build, the Studio host
 capability contract, the six-axis build target model, and **the standalone export**: `--export=DIR`
 writes a project that builds and runs with Studio uninstalled, and `STUDIO-02051` proves it by
@@ -315,10 +315,16 @@ doing so. **The modern-API requirement is a requirement now, not a sentence in a
 unconditionally; it is read from `CNA_CNAEXT` and `getEngineLayerVersion()` (which also catches a
 header and a library that disagree about the layer version), it is the first outcome the host
 evaluation emits, and it decides `canHostStudio()` — with Cases A–D naming what each combination of
-modern and compatibility support does, including the two that say no. Two named host profiles,
-`Modern` and `Compatibility`, keep that enforceable without locking out the only renderer CI has,
-and `resolveStudioUiBackend` turns the two verdicts into a backend choice carrying the reason it
-was made — announced at start-up, and refusable with `--ui-renderer=modern`.
+modern and compatibility support does, including the two that say no. **The compatibility host
+profile is retired now (`STUDIO-02074`).** `StudioHostProfile` has one member, `Modern`;
+`resolveStudioUiBackend` takes one evaluation and returns the modern backend or refuses, with no
+second profile left to fall back to. It held on for a reason — `SOFTWARE` cannot execute a shader
+and was, until `STUDIO-04029` put `OPENGL4` under Xvfb into CI, the only renderer this project's CI
+could build at all — and it was retired only once that reason stopped holding. `SOFTWARE`'s CI leg
+is repurposed rather than dropped: it still builds and tests `cna-studio` and
+`cna-player-software` (a valid *game*-target renderer, capability contract Case D), and now asserts
+Studio's refusal diagnostic instead of hosting Studio via the compatibility renderer. This unblocks
+`STUDIO-04027`: `CnaUiRenderer` is constructed nowhere left in `src/` or `include/`.
 
 **No service can reach another through a locator or a singleton, and that is a test.**
 `STUDIO-02059` scans for the four structures every locator is actually built from — a mutable

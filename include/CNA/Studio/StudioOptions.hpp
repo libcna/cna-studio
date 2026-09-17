@@ -239,13 +239,14 @@ namespace CNA::Studio
         bool hostCapabilities = false;
 
         /**
-         * @brief Which UI render backend the host should use: `"auto"` or `"modern"`.
+         * @brief Parsed and validated, but no longer read by anything.
          *
-         * `plan.md` STUDIO-02072. `auto` — the default — uses the modern CNAEXT UI renderer where
-         * the host meets its profile and the classic one where it does not, announcing the fallback
-         * rather than taking it silently. `modern` refuses to start on a host that cannot run the
-         * intended renderer, which is what a release build asks for and what makes "Studio requires
-         * the modern API" checkable from a script rather than only from a document.
+         * `plan.md` STUDIO-02072, retired by `STUDIO-02074`. Used to choose between the modern
+         * CNAEXT UI renderer and a classic fallback for a host that could not meet its profile.
+         * `STUDIO-02074` retired that fallback: a host that cannot run the modern renderer refuses
+         * to start regardless of what this names. Kept as a no-op, accepting the same three values
+         * (`auto`, `modern`, `compat`), so a script that already passes it does not get an
+         * unknown-flag error.
          */
         std::string uiRenderer = "auto";
 

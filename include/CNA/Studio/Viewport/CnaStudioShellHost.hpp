@@ -7,21 +7,23 @@
  *
  * `plan.md` STUDIO-06015, STUDIO-04001.
  *
- * `CnaStudioHost` does this for the Dear ImGui UI. This is the same job for the shell the Studio UI
- * core builds, and it is deliberately a second host rather than a flag on the first: the two draw
- * completely different things, and the migration ends by deleting one of them. A single host with a
- * branch at every step would end with the branch, not with the deletion.
+ * `CnaStudioHost` used to do this for the Dear ImGui UI; that host and the prototype it drew are
+ * gone (`STUDIO-07030`). This is the shell the Studio UI core builds, and the only host left.
  *
  * What it proves is the sentence the whole UI workstream is built on — *the native UI renders
  * through CNA's public API* — as something that runs rather than something that is argued. The
- * shell produces `UiDrawData`; `CnaUiRenderer` has drawn `UiDrawData` through CNA's public graphics
- * API since the prototype; `CnaUiPlatform` fills `UiInputState` from CNA's public input API. This
- * host owns the window and wires the three together, and contains no UI code of its own.
+ * shell produces `UiDrawData`; `StudioModernUiRenderer` draws it through CNA's public graphics API;
+ * `CnaUiPlatform` fills `UiInputState` from CNA's public input API. This host owns the window and
+ * wires the three together, and contains no UI code of its own.
  *
- * **The header names no CNA type**, for the same reason `CnaStudioHost.hpp` does not: a `Game`
- * subclass cannot hide behind a pimpl, so exposing it would drag CNA's headers into every target
- * that links `cna-studio-viewport` and break the layering rule `STUDIO-02033` enforces. A free
- * function returning a result keeps the subclass inside the `.cpp`.
+ * A host that cannot run the modern renderer refuses to start (`STUDIO-02074`) rather than falling
+ * back to a second one: `CnaUiRenderer`, the classic path that used to stand in for it, has no
+ * caller left as a result, which is `STUDIO-04027`'s to finish.
+ *
+ * **The header names no CNA type.** A `Game` subclass cannot hide behind a pimpl, so exposing it
+ * would drag CNA's headers into every target that links `cna-studio-viewport` and break the
+ * layering rule `STUDIO-02033` enforces. A free function returning a result keeps the subclass
+ * inside the `.cpp`.
  */
 
 #include <cstddef>
@@ -81,25 +83,6 @@ namespace CNA::Studio
          * made it a flag that would break the day `STUDIO-07030` deleted that path.
          */
         bool checkCapabilitiesOnly = false;
-
-        /**
-         * @brief Whether the classic UI renderer may be used when the modern profile is unmet.
-         *
-         * `plan.md` STUDIO-02072. True by default, because the renderer this project's CI can build
-         * — `SOFTWARE`, which needs no display and no GPU — cannot execute a shader, and a Studio
-         * that refused to start there would have no automated coverage at all. `--ui-renderer=modern`
-         * sets it false, which is what a release build and anybody checking the intended contract
-         * should ask for: the fallback then refuses rather than silently degrading.
-         */
-        bool allowCompatibilityUiRenderer = true;
-
-        /**
-         * @brief Use the classic UI renderer even on a host that meets the modern profile.
-         *
-         * `--ui-renderer=compat`. For `STUDIO-04025`'s A/B comparison, and for the first question
-         * anybody asks about something that draws wrong: does it happen on the other renderer.
-         */
-        bool forceCompatibilityUiRenderer = false;
 
         /**
          * @brief Where to remember the workspace arrangement between runs. Empty disables it.

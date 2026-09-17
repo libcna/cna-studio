@@ -158,12 +158,18 @@ draws its entire UI through a `ShaderEffect` Studio compiled from a `ShaderPacka
 API: CNA engine layer 18`, `UI renderer: modern`, 1920x1080, 90 draw calls, 16140 triangles, with
 text, icons, the composited scene and tinted log rows all drawn by it.
 
-**Stage 6 is deliberately not done**, and the reason is stage 6's own acceptance condition: the
-classic backend is retained *with the justification written down*. CNA's `SOFTWARE` renderer cannot
-execute a shader, and it is the renderer that needs no display and no GPU. Deleting the
-compatibility backend today would leave Studio unable to start in the configuration all of its
-dependency-free automation runs in. `STUDIO-04029` makes `OPENGL4` a second CI configuration;
-`STUDIO-04027` and `STUDIO-02074` come after that, not before.
+**Stage 6 is next, and what used to hold it back is now resolved.** For a while the classic backend
+was retained *with the justification written down*: CNA's `SOFTWARE` renderer cannot execute a
+shader, and until `STUDIO-04029` it was the only renderer this project's CI could build at all —
+deleting the compatibility backend then would have left Studio's only dependency-free automated
+configuration unable to start it at all. `STUDIO-04029` put `OPENGL4` under Xvfb into CI as a real,
+running leg, which is the condition stage 6 was waiting on. `STUDIO-02074` then retired the
+compatibility *profile* one layer up: `StudioHostProfile` has one member, `resolveStudioUiBackend`
+no longer has a second backend to fall back to, and a host that cannot meet the modern profile
+refuses to start rather than falling back — the SOFTWARE CI leg now builds `cna-studio` and
+`cna-player-software` and asserts that exact refusal instead of hosting Studio. `STUDIO-04027` is
+what stage 6 still needs: `CnaUiRenderer` itself, `cna-studio-ui-renderer`'s split, and the classic
+GPU calls this document traced are code with no caller left, not yet deleted.
 
 ### The A/B result, which was not the expected one
 
@@ -173,11 +179,13 @@ not — both backends submit the same geometry, in the same order, with the same
 scissor state, and only the program and the buffer route differ. Neither changes where a triangle
 lands or what colour it is.
 
-So `CnaStudioUiRenderBackendsAgree` asserts **byte equality**, which is a far stronger contract than
-any threshold would have been, and it holds. It also refuses to become a tautology: before comparing
-anything it checks that each run used the backend it asked for, because a host that quietly ran the
-same backend twice is the single most likely way for an A/B comparison to pass while proving
-nothing.
+So `CnaStudioUiRenderBackendsAgree` asserted **byte equality**, which is a far stronger contract than
+any threshold would have been, and it held for as long as there were two backends to compare. It also
+refused to become a tautology: before comparing anything it checked that each run used the backend it
+asked for, because a host that quietly ran the same backend twice is the single most likely way for
+an A/B comparison to pass while proving nothing. `STUDIO-02074` retired the test along with the
+compatibility backend it compared against — there is no longer a second route through this host for
+a frame to take, so there is nothing left for it to disagree with.
 
 ### Three defects the migration produced, and the one assertion that caught all three
 

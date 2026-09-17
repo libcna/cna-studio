@@ -413,7 +413,7 @@ namespace CNA::Studio
         // still takes no input.
         if (services_.camera == nullptr)
         {
-            shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {
+            shell.setPanelContent("viewport", [](StudioFrame& frame, const UiRect& bounds) {
                 sayViewportIsEmpty(frame, bounds, "This build has no graphics device.",
                                    "The viewport cannot draw the scene without one.");
             });

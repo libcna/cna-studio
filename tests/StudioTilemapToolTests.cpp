@@ -347,7 +347,6 @@ CNA_STUDIO_TEST(PaintingWithNoTilemapSelectedSaysSoOncePerPress)
 
     StudioCamera2D camera;
 
-    StudioCamera3D camera3D;
     camera.setViewportSize(StudioVector2{kWidth, kHeight});
     StudioFrame frame{StudioTheme::dark()};
     StudioViewportState state;

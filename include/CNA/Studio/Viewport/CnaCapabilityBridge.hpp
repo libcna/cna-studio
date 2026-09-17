@@ -97,10 +97,11 @@ namespace CNA::Studio
     /**
      * @brief Everything a host needs to decide whether and how to draw.
      *
-     * `plan.md` STUDIO-02072. One type rather than four locals in two hosts: the ImGui host and the
-     * native shell host asked the same three questions in the same order, and the day they stopped
-     * agreeing would have been a day one of them started on a different renderer than the other
-     * with nothing saying so.
+     * `plan.md` STUDIO-02072. One type rather than locals in each host: this used to serve the
+     * Dear ImGui host and the native shell host both, and the day they stopped agreeing about a
+     * device would have been a day one of them started on a different renderer than the other with
+     * nothing saying so. The prototype's host is gone (`STUDIO-07030`), but the native shell is
+     * still the one caller and the shape still earns its keep.
      */
     struct StudioHostAssessment
     {
@@ -108,24 +109,10 @@ namespace CNA::Studio
         StudioModernApiState modernApi;
         /** @brief The verdict under the modern profile. */
         StudioHostEvaluation modern;
-        /** @brief The verdict under the compatibility profile. */
-        StudioHostEvaluation compatibility;
         /** @brief Which backend to draw with, and the sentence explaining it. */
         StudioUiBackendDecision decision;
 
-        /**
-         * @brief The verdict a host reports and refuses on.
-         *
-         * The chosen profile's, so that `--host-capabilities` and the refusal diagnostic describe
-         * the contract actually in force. When nothing was chosen it is the modern one, because
-         * that is the requirement that was not met.
-         */
-        [[nodiscard]] const StudioHostEvaluation& effective() const
-        {
-            return decision.choice == StudioUiBackendChoice::Compatibility ? compatibility : modern;
-        }
-
-        /** @brief Whether any backend can draw on this host. */
+        /** @brief Whether Studio can host on this device. */
         [[nodiscard]] bool canHostStudio() const
         {
             return decision.choice != StudioUiBackendChoice::None;
@@ -133,17 +120,15 @@ namespace CNA::Studio
     };
 
     /**
-     * @brief Asks a live device both profiles and resolves a backend.
+     * @brief Asks a live device the modern profile's question and resolves a backend.
      *
      * @param device The device to interrogate.
      * @param platformName The CNA platform implementation's name.
-     * @param allowCompatibilityFallback Whether the classic backend may be used when the modern
-     *        profile is unmet. `--ui-renderer=modern` passes false.
      * @return The assessment.
      */
     [[nodiscard]] StudioHostAssessment assessStudioHost(
         const Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
-        std::string platformName, bool allowCompatibilityFallback = true);
+        std::string platformName);
 
     /**
      * @brief The name of the CNA platform implementation this build runs on.

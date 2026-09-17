@@ -368,7 +368,6 @@ Important boundaries are enforced by machinery, not by comments. The guards, eac
 | Unknown components survive save/load | Losing a user's data when a plugin is missing |
 | Files are byte-deterministic across saves | Version-control churn |
 | `plan.md`'s status breakdown matches the phase files | A ledger that is quoted and wrong |
-| The two UI render backends draw the same frame | A rewritten GPU path drifting from the one it replaces |
 | No service reaches another through a locator or a singleton | Services that were separated on paper and still talk through globals |
 
 ### 10.1 Dependencies are constructor arguments

@@ -20,18 +20,19 @@
 # and an invariant left to a human to remember to check is an invariant that rots.
 #
 #   SOFTWARE rasterises on the CPU and is happy with SDL's dummy video driver, so it needs neither
-#   a display nor a GPU. It is what Studio's *classic* UI render backend runs on, because SOFTWARE
-#   cannot execute a shader.
+#   a display nor a GPU. It cannot execute a shader, so it cannot meet the modern UI renderer's
+#   profile; `STUDIO-02074` retired the compatibility backend that used to let it host Studio's own
+#   UI anyway, so this leg builds `cna-studio`/`cna-player-software` and asserts the refusal instead
+#   of hosting Studio -- it remains a valid *game*-target renderer (capability contract Case D)
+#   even though it can no longer be a Studio-hosting one.
 #
-#   OPENGL4 is `STUDIO-04029`, and it is the first renderer this project has automated that can.
-#   Until it existed, Studio's only automated renderer was the one renderer its intended UI path
-#   cannot run on at all: the modern CNAEXT backend, the default on any capable host, was covered
-#   by nothing but somebody running it locally. It needs a display but not a GPU -- Xvfb with
-#   Mesa's llvmpipe gives a real GL 4.x context on a runner with no graphics hardware -- which is
-#   what `docs/CNA-GAPS.md` G-10 recorded as impossible, having stopped its search at the GL
-#   *family*. Only this leg can run `CnaStudioUiRenderBackendsAgree`, the A/B that draws the same
-#   shell through both backends and compares the PNGs byte for byte, because a renderer that can
-#   run only one of the two cannot compare them.
+#   OPENGL4 is `STUDIO-04029`, and it is the first renderer this project has automated that meets
+#   the modern UI renderer's profile. Until it existed, Studio's only automated renderer was one its
+#   intended UI path cannot run on at all: the modern CNAEXT backend, the default on any capable
+#   host, was covered by nothing but somebody running it locally. It needs a display but not a GPU
+#   -- Xvfb with Mesa's llvmpipe gives a real GL 4.x context on a runner with no graphics hardware --
+#   which is what `docs/CNA-GAPS.md` G-10 recorded as impossible, having stopped its search at the
+#   GL *family*. It is the only leg that opens the native shell at all now that SOFTWARE refuses.
 #
 # A matrix rather than a second job, so the twenty-odd steps of checkout, submodules, dependencies
 # and export cannot drift between the two. `fail-fast: false` because which renderer failed is the
@@ -159,11 +160,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Rasterises on the CPU: no display, no GPU, and the classic UI render backend.
+          # Rasterises on the CPU: no display, no GPU, and it cannot meet the modern UI renderer's
+          # profile, so Studio refuses to host itself here (STUDIO-02074). Still built and tested
+          # as a game-target renderer -- `expect_backend: none` is that refusal, not a hosting mode.
           - renderer: SOFTWARE
             ctest_runner: ""
             extra_packages: ""
-            expect_backend: compatibility
+            expect_backend: none
           # A real GL 4.x context from Mesa's llvmpipe under Xvfb: no GPU, and the *modern* CNAEXT
           # UI render backend, which is the default everywhere it can run and which SOFTWARE
           # cannot execute at all.
@@ -245,9 +248,10 @@ jobs:
         # building it would be several minutes spent on a decoder nothing here calls.
         #
         # CNAEXT on for both legs, because it is what decides whether the host reports the modern
-        # graphics API at all -- and therefore whether `resolveStudioUiBackend` is choosing between
-        # two backends or falling back to the only one it has. Off, the OPENGL4 leg would build,
-        # pass, and quietly exercise the classic path it exists to stop being the only one tested.
+        # graphics API at all -- and therefore whether `resolveStudioUiBackend` finds a host that
+        # meets the modern UI renderer's profile or refuses to start (STUDIO-02074: there is no
+        # second backend left to fall back to). Off, the OPENGL4 leg would build, pass, and quietly
+        # exercise the refusal path it exists to stop being the only one tested.
         #
         # CNA_STUDIO_TEST_DISPLAY is where the windowed ctests look for a graphics context, and it
         # must agree with the Xvfb server number below. Harmless on SOFTWARE, which takes SDL's
@@ -274,23 +278,25 @@ jobs:
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
         run: ./build-cna/tests/cna-studio-tests
 
-      - name: This leg must get the UI render backend it exists to cover
+      - name: This leg must get the UI renderer outcome it exists to cover
         if: steps.cna_checkout.outcome == 'success' && steps.sharp_checkout.outcome == 'success'
         # An assertion rather than a printed line. The whole value of the OPENGL4 leg is that it
-        # runs the *modern* backend, and a host that quietly fell back to the classic one would
-        # produce an identical green tick while covering exactly what SOFTWARE already covers --
-        # which is the failure mode this job was added to close, not one to reintroduce.
+        # runs the *modern* backend; a host that quietly reported something else would produce an
+        # identical green tick while covering nothing the modern renderer needs -- which is the
+        # failure mode this job was added to close, not one to reintroduce.
         #
-        # Both legs are asserted, not just the new one. SOFTWARE reporting `modern` would mean the
-        # capability report is claiming a shader path a CPU rasteriser does not have, which is the
-        # class of defect `STUDIO-02070` exists for: `modernApiAvailable` was a hard-coded `true`
-        # that nothing read for six phases.
+        # Both legs are asserted, not just the OPENGL4 one. `STUDIO-02074` retired the compatibility
+        # backend SOFTWARE used to fall back to, so SOFTWARE reporting `modern` or `compatibility`
+        # here would mean the capability report is claiming a shader path a CPU rasteriser does not
+        # have -- the class of defect `STUDIO-02070` exists for: `modernApiAvailable` was a
+        # hard-coded `true` that nothing read for six phases. `none` is SOFTWARE's correct answer:
+        # it still builds and ships as a game-target renderer, it just cannot host Studio's own UI.
         run: |
           ${{ matrix.ctest_runner }} ./build-cna/cna-studio --host-capabilities | tee capabilities.txt
           if ! grep -q "UI renderer: ${{ matrix.expect_backend }}" capabilities.txt; then
-            echo "::error::${{ matrix.renderer }} was expected to host the" \
-                 "'${{ matrix.expect_backend }}' UI render backend and did not. This leg covers" \
-                 "that backend and nothing else does; a fallback here is a silent loss of" \
+            echo "::error::${{ matrix.renderer }} was expected to report the" \
+                 "'${{ matrix.expect_backend }}' UI renderer and did not. This leg covers" \
+                 "that outcome and nothing else does; a different answer here is a silent loss of" \
                  "coverage, not a degraded run."
             grep "UI renderer:" capabilities.txt || echo "(no UI renderer line was printed at all)"
             exit 1

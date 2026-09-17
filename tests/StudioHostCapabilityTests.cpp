@@ -355,16 +355,6 @@ CNA_STUDIO_TEST(AnEvaluationIsDeterministicAndOrderedAsDeclared)
         CNA_STUDIO_EXPECT_EQ(first.outcomes[i + 1].subject,
                              studioHostFeatureRequirements()[i].feature);
     }
-
-    // And the compatibility profile reports the same shape without it, so a reader of either
-    // report is never left wondering whether a missing row means unmet or means not asked.
-    const StudioHostEvaluation compatibility =
-        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility);
-    CNA_STUDIO_EXPECT_EQ(
-        compatibility.outcomes.size(),
-        studioHostFeatureRequirements(StudioHostProfile::Compatibility).size()
-            + studioHostLimitRequirements(StudioHostProfile::Compatibility).size());
-    CNA_STUDIO_EXPECT_EQ(compatibility.outcomes.front().subject, std::string{"ThreeDimensionalPipeline"});
 }
 
 CNA_STUDIO_TEST(EveryAnswerAndStatusHasAName)
@@ -523,94 +513,40 @@ CNA_STUDIO_TEST(CaseDARendererThatCannotHostStudioIsStillAValidGameTarget)
 }
 
 // ------------------------------------------------------------------------------------------------
-// Choosing a backend from the two verdicts (STUDIO-02072)
+// Choosing a backend from the verdict (STUDIO-02072, STUDIO-02074)
 // ------------------------------------------------------------------------------------------------
 
 CNA_STUDIO_TEST(AHostMeetingTheModernProfileGetsTheModernRenderer)
 {
     const StudioCapabilitySnapshot snapshot = capableDevice();
-    const StudioUiBackendDecision decision = resolveStudioUiBackend(
-        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
-        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility));
+    const StudioUiBackendDecision decision = resolveStudioUiBackend(evaluateStudioHost(snapshot));
 
     CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::Modern);
     CNA_STUDIO_EXPECT(!decision.reason.empty());
 }
 
-CNA_STUDIO_TEST(AClassicOnlyHostFallsBackAndTheReasonNamesWhatIsMissing)
+CNA_STUDIO_TEST(AClassicOnlyHostGetsNothingAndTheReasonNamesWhatIsMissing)
 {
+    // STUDIO-02074 retired the classic UI renderer this used to fall back to: a host that cannot
+    // meet the modern profile refuses to start rather than degrading to a second UI GPU stack.
     const StudioCapabilitySnapshot snapshot = classicOnlyDevice();
-    const StudioUiBackendDecision decision = resolveStudioUiBackend(
-        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
-        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility));
+    const StudioUiBackendDecision decision = resolveStudioUiBackend(evaluateStudioHost(snapshot));
 
-    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::Compatibility);
-    // The whole point of the fallback being announced rather than silent: a bug report that says
-    // "materials do not preview" is answered by this sentence and by nothing else in the product.
+    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::None);
+    // The whole point of naming what is missing: a bug report that says "Studio will not start"
+    // is answered by this sentence and by nothing else in the product.
     CNA_STUDIO_EXPECT(decision.reason.find(std::string{kStudioModernApiSubject}) != std::string::npos);
     CNA_STUDIO_EXPECT(decision.reason.find("ShaderEffects") != std::string::npos);
 }
 
-CNA_STUDIO_TEST(TheFallbackCanBeRefusedAndThenAClassicOnlyHostGetsNothing)
-{
-    const StudioCapabilitySnapshot snapshot = classicOnlyDevice();
-    const StudioUiBackendDecision decision = resolveStudioUiBackend(
-        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
-        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility),
-        /*allowCompatibilityFallback=*/false);
-
-    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::None);
-    CNA_STUDIO_EXPECT(decision.reason.find("required") != std::string::npos);
-}
-
-CNA_STUDIO_TEST(AHostMeetingNeitherProfileGetsNothingAndSaysSo)
-{
-    StudioCapabilitySnapshot snapshot = classicOnlyDevice();
-    snapshot.setFeature("ThreeDimensionalPipeline", StudioCapabilityAnswer::Unsupported);
-
-    const StudioUiBackendDecision decision = resolveStudioUiBackend(
-        evaluateStudioHost(snapshot, StudioHostProfile::Modern),
-        evaluateStudioHost(snapshot, StudioHostProfile::Compatibility));
-
-    CNA_STUDIO_EXPECT(decision.choice == StudioUiBackendChoice::None);
-    CNA_STUDIO_EXPECT(decision.reason.find("neither") != std::string::npos);
-}
-
-CNA_STUDIO_TEST(TheCompatibilityProfileKeepsTheShaderCapabilitiesAsRecommendations)
-{
-    // Present in both profiles at different severities, rather than absent from one. A capability
-    // that disappears from the report when the profile changes reads as a contract that stopped
-    // caring about it -- and the compatibility profile cares very much, because it is the reason
-    // material previews are unavailable on such a host.
-    const StudioHostEvaluation evaluation =
-        evaluateStudioHost(classicOnlyDevice(), StudioHostProfile::Compatibility);
-
-    CNA_STUDIO_EXPECT(evaluation.canHostStudio);
-    CNA_STUDIO_EXPECT(outcomeFor(evaluation, "ShaderEffects") != nullptr);
-    CNA_STUDIO_EXPECT(outcomeFor(evaluation, "ShaderEffects")->severity
-                      == StudioRequirementSeverity::Recommended);
-    CNA_STUDIO_EXPECT(outcomeFor(evaluation, kStudioModernApiSubject) == nullptr);
-
-    bool shadersWarned = false;
-    for (const StudioRequirementOutcome& outcome : evaluation.unmetRecommended())
-    {
-        if (outcome.subject == "ShaderEffects") { shadersWarned = true; }
-    }
-    CNA_STUDIO_EXPECT(shadersWarned);
-}
-
 CNA_STUDIO_TEST(EveryProfileAndBackendChoiceHasAName)
 {
-    for (const StudioHostProfile profile : {StudioHostProfile::Modern,
-                                            StudioHostProfile::Compatibility})
-    {
-        CNA_STUDIO_EXPECT(!studioHostProfileName(profile).empty());
-        CNA_STUDIO_EXPECT(!studioHostFeatureRequirements(profile).empty());
-        CNA_STUDIO_EXPECT(!studioHostLimitRequirements(profile).empty());
-    }
+    CNA_STUDIO_EXPECT(!studioHostProfileName(StudioHostProfile::Modern).empty());
+    CNA_STUDIO_EXPECT(!studioHostFeatureRequirements().empty());
+    CNA_STUDIO_EXPECT(!studioHostLimitRequirements().empty());
+
     for (const StudioUiBackendChoice choice : {StudioUiBackendChoice::None,
-                                               StudioUiBackendChoice::Modern,
-                                               StudioUiBackendChoice::Compatibility})
+                                               StudioUiBackendChoice::Modern})
     {
         CNA_STUDIO_EXPECT(!studioUiBackendChoiceName(choice).empty());
     }

@@ -489,9 +489,8 @@ if(CNA_STUDIO_WITH_CNA)
     set(CNA_STUDIO_EXPORT_TEST_JOBS "8" CACHE STRING
         "Parallel jobs for the standalone export test's build of the exported project")
 
-    # Where the two ctests that need a real graphics context find one. Declared here rather than
-    # inside one of the blocks below because both need it and either can be the one that runs:
-    # the native shell needs CNA alone, the ImGui editor needs CNA and Dear ImGui.
+    # Where the ctests that need a real graphics context find one. Declared here rather than
+    # inside one of the blocks below because more than one of them needs it.
     set(CNA_STUDIO_TEST_DISPLAY ":0" CACHE STRING
         "DISPLAY used by cna-studio ctests that need a real graphics context")
 
@@ -513,12 +512,63 @@ if(CNA_STUDIO_WITH_CNA)
         set(CNA_STUDIO_TEST_SURFACE "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
     endif()
 
+    # Whether this renderer meets the modern UI host profile at all (STUDIO-02070), and can
+    # therefore open a real Studio session -- window, screenshot, a project actually loaded. The
+    # same three renderers `CNA_STUDIO_TEST_SURFACE` names, and for the same underlying reason --
+    # they rasterise on the CPU and have no shader path -- but a different question:
+    # `CNA_STUDIO_TEST_SURFACE` is about how a window gets a surface once one opens, this is about
+    # whether `cna-studio --ui=studio` opens one at all. `STUDIO-02074` retired the classic UI
+    # renderer these three used to fall back to, so on any of them Studio now refuses to start
+    # rather than degrading to it -- which is what the `else()` branch below proves instead.
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS"
+       OR CNA_GRAPHICS_RENDERER STREQUAL "STUB")
+        set(CNA_STUDIO_HOST_MEETS_MODERN_PROFILE OFF)
+    else()
+        set(CNA_STUDIO_HOST_MEETS_MODERN_PROFILE ON)
+    endif()
+
+    # The invariant the whole product rests on, checked by doing it: export the example project
+    # into an empty directory, configure it with nothing but CMake and a CNA checkout, compile it,
+    # and run it. Studio is not consulted after the export, so this needs no host session and runs
+    # on every renderer, modern-capable or not.
+    #
+    # An expensive test -- it builds CNA -- and it earns its cost. Every failure of this invariant
+    # found so far has been one that reading the exported tree could not have caught: CNA's video
+    # option is tri-state, so the boolean ON Studio passed made an exported game require FFmpeg;
+    # and CNA builds its own tests and examples by default from a subdirectory, so the configure
+    # failed before a line of the game compiled. Both looked correct on paper.
+    #
+    # Labelled, so a developer iterating on the UI can exclude it with -LE slow and CI cannot.
+    add_test(NAME CnaStudioStandaloneExport
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTUDIO=$<TARGET_FILE:cna-studio>"
+            "-DPROJECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject"
+            "-DCNA_ROOT=${CNA_STUDIO_CNA_ROOT}"
+            "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/standalone-export"
+            "-DRENDERER=${CNA_GRAPHICS_RENDERER}"
+            "-DJOBS=${CNA_STUDIO_EXPORT_TEST_JOBS}"
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StandaloneExportTest.cmake")
+    set_tests_properties(CnaStudioStandaloneExport PROPERTIES
+        LABELS "slow"
+        TIMEOUT 5400)
+
+    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+        set_tests_properties(CnaStudioStandaloneExport PROPERTIES
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+    else()
+        set_property(TEST CnaStudioStandaloneExport APPEND PROPERTY LABELS "needs-display")
+        set_tests_properties(CnaStudioStandaloneExport PROPERTIES
+            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
+    endif()
+
+    if(CNA_STUDIO_HOST_MEETS_MODERN_PROFILE)
     # The native Studio shell in a real window, through a real CNA renderer -- the whole strangler
     # seam end to end: StudioShell describes, CnaUiPlatform fills UiInputState from CNA's input,
-    # CnaUiRenderer draws UiDrawData through CNA's graphics API, and the back buffer comes back as
-    # a PNG. Nothing below CTest can assert this; the headless preview renders the same draw list
-    # through Studio's own software rasterizer, which would pass just as happily if CNA's side of
-    # the seam were broken.
+    # StudioModernUiRenderer draws UiDrawData through CNA's graphics API, and the back buffer comes
+    # back as a PNG. Nothing below CTest can assert this; the headless preview renders the same
+    # draw list through Studio's own software rasterizer, which would pass just as happily if
+    # CNA's side of the seam were broken.
     #
     # Two assertions, not one, because each misses what the other catches. The draw-call count
     # separates a shell that submitted geometry from one that built its widget tree and submitted
@@ -580,25 +630,15 @@ if(CNA_STUDIO_WITH_CNA)
     set_tests_properties(CnaStudioNativeShellSaysWhenTheViewportIsNotShowing PROPERTIES
         PASS_REGULAR_EXPRESSION "viewport (compositing the scene|showing the placeholder)")
 
-    # Same reasoning as the ImGui smoke tests: SOFTWARE and HEADLESS need no window system, every
-    # other renderer needs a real context, and forcing the dummy driver there fails for reasons
-    # that have nothing to do with the shell.
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioNativeShellWindowSmoke
-                             CnaStudioNativeShellWindowSmokeLightTheme
-                             CnaStudioNativeShellWindowSmokeHiDpi
-                             CnaStudioNativeShellCompositesTheScene
-                             CnaStudioNativeShellSaysWhenTheViewportIsNotShowing
-            PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioNativeShellWindowSmoke
-                             CnaStudioNativeShellWindowSmokeLightTheme
-                             CnaStudioNativeShellWindowSmokeHiDpi
-                             CnaStudioNativeShellCompositesTheScene
-                             CnaStudioNativeShellSaysWhenTheViewportIsNotShowing
-            PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
-                       LABELS "needs-display" TIMEOUT 180)
-    endif()
+    # Every renderer that reaches this point needs a real display: `CNA_STUDIO_HOST_MEETS_MODERN_PROFILE`
+    # already excludes SOFTWARE, HEADLESS and STUB, the only renderers SDL's dummy driver serves.
+    set_tests_properties(CnaStudioNativeShellWindowSmoke
+                         CnaStudioNativeShellWindowSmokeLightTheme
+                         CnaStudioNativeShellWindowSmokeHiDpi
+                         CnaStudioNativeShellCompositesTheScene
+                         CnaStudioNativeShellSaysWhenTheViewportIsNotShowing
+        PROPERTIES ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
+                   LABELS "needs-display" TIMEOUT 180)
 
     # The first ported panel, drawn on a real device (STUDIO-07005). Raised to the front, because
     # a panel sharing a tab strip with three others cannot be photographed otherwise -- and the
@@ -611,15 +651,8 @@ if(CNA_STUDIO_WITH_CNA)
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-output-log.png
             --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
-        PASS_REGULAR_EXPRESSION "output log showing [1-9][0-9]* of [1-9][0-9]* messages")
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioNativeShellOutputLog PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
-    endif()
+        PASS_REGULAR_EXPRESSION "output log showing [1-9][0-9]* of [1-9][0-9]* messages"
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
 
     # The native shell with a real editor behind it. The assertion is the status bar: a row count
     # says the Output Log drew something, and only this says the StudioContext opened the project
@@ -635,7 +668,8 @@ if(CNA_STUDIO_WITH_CNA)
     # entities, which is what Level01 holds), and the Output Log is reading the editor's own
     # messages rather than a demonstration of them.
     set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
-        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level01'.*outliner showing [1-9][0-9]* of 5 entities.*output log showing [1-9][0-9]* of [1-9][0-9]* messages")
+        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level01'.*outliner showing [1-9][0-9]* of 5 entities.*output log showing [1-9][0-9]* of [1-9][0-9]* messages"
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
 
     # The same run with something selected, so the Details panel has an entity to inspect. Four
     # ported panels' worth of state in one line, none of which any one of them could produce alone:
@@ -648,23 +682,8 @@ if(CNA_STUDIO_WITH_CNA)
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-details.png
             --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
-        PASS_REGULAR_EXPRESSION "outliner showing [1-9][0-9]* of 5 entities.*details showing [1-9][0-9]* rows")
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioNativeShellDetails PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
-    endif()
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioNativeShellWithAProject PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
-    endif()
+        PASS_REGULAR_EXPRESSION "outliner showing [1-9][0-9]* of 5 entities.*details showing [1-9][0-9]* rows"
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
 
     # The project's plugins, on the UI that is the default (STUDIO-07052). `PluginHost::discover`
     # and `loadAll` were called by the prototype and by nothing else, so this shell loaded none --
@@ -681,15 +700,8 @@ if(CNA_STUDIO_WITH_CNA)
             --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
             --frames=20)
     set_tests_properties(CnaStudioNativeShellLoadsPlugins PROPERTIES
-        PASS_REGULAR_EXPRESSION "plugins [1-9][0-9]* of [1-9][0-9]* active giving [1-9][0-9]* menu rows")
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioNativeShellLoadsPlugins PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioNativeShellLoadsPlugins PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
-    endif()
+        PASS_REGULAR_EXPRESSION "plugins [1-9][0-9]* of [1-9][0-9]* active giving [1-9][0-9]* menu rows"
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
 
     # `--scene` overriding the project's startup scene, on the UI that is the default
     # (STUDIO-07053). The flag was parsed and documented from the beginning and reached the Dear
@@ -708,15 +720,8 @@ if(CNA_STUDIO_WITH_CNA)
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-scene.png
             --screenshot-min-colors=16)
     set_tests_properties(CnaStudioNativeShellSceneOverride PROPERTIES
-        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level02'.*outliner showing 2 of 2 entities")
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioNativeShellSceneOverride PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy" TIMEOUT 180)
-    else()
-        set_tests_properties(CnaStudioNativeShellSceneOverride PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
-    endif()
+        PASS_REGULAR_EXPRESSION "status 'HelloSprites.*Level02'.*outliner showing 2 of 2 entities"
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 180)
 
     # Opening a project through the native shell must not rewrite it, for the same reason the
     # headless path must not: a sidecar rewritten on every open fills a repository with diffs
@@ -739,49 +744,8 @@ if(CNA_STUDIO_WITH_CNA)
             "-DSTUDIO=$<TARGET_FILE:cna-studio>"
             "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/workspace-persistence"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/WorkspacePersistenceTest.cmake")
-    set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES TIMEOUT 300)
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
-    else()
-        set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display")
-    endif()
-
-    # The invariant the whole product rests on, checked by doing it: export the example project
-    # into an empty directory, configure it with nothing but CMake and a CNA checkout, compile it,
-    # and run it. Studio is not consulted after the export.
-    #
-    # An expensive test -- it builds CNA -- and it earns its cost. Every failure of this invariant
-    # found so far has been one that reading the exported tree could not have caught: CNA's video
-    # option is tri-state, so the boolean ON Studio passed made an exported game require FFmpeg;
-    # and CNA builds its own tests and examples by default from a subdirectory, so the configure
-    # failed before a line of the game compiled. Both looked correct on paper.
-    #
-    # Labelled, so a developer iterating on the UI can exclude it with -LE slow and CI cannot.
-    add_test(NAME CnaStudioStandaloneExport
-        COMMAND "${CMAKE_COMMAND}"
-            "-DSTUDIO=$<TARGET_FILE:cna-studio>"
-            "-DPROJECT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject"
-            "-DCNA_ROOT=${CNA_STUDIO_CNA_ROOT}"
-            "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/standalone-export"
-            "-DRENDERER=${CNA_GRAPHICS_RENDERER}"
-            "-DJOBS=${CNA_STUDIO_EXPORT_TEST_JOBS}"
-            "-DGENERATOR=${CMAKE_GENERATOR}"
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StandaloneExportTest.cmake")
-    set_tests_properties(CnaStudioStandaloneExport PROPERTIES
-        LABELS "slow"
-        TIMEOUT 5400)
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioStandaloneExport PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
-    else()
-        set_property(TEST CnaStudioStandaloneExport APPEND PROPERTY LABELS "needs-display")
-        set_tests_properties(CnaStudioStandaloneExport PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
-    endif()
+    set_tests_properties(CnaStudioWorkspacePersistence PROPERTIES
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 300)
 
     # The default, with no --ui at all: `STUDIO-06015` made that the native shell, and a switch
     # nothing asserts is a switch a later change can undo without anybody noticing. The status line
@@ -793,24 +757,10 @@ if(CNA_STUDIO_WITH_CNA)
             --frames=20
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/default-shell.png
             --screenshot-min-colors=16)
+    set_property(TEST CnaStudioDefaultsToTheNativeShell APPEND PROPERTY LABELS "needs-display")
     set_tests_properties(CnaStudioDefaultsToTheNativeShell PROPERTIES
         PASS_REGULAR_EXPRESSION "native shell on .+, [0-9]+ frames"
-        TIMEOUT 180)
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioDefaultsToTheNativeShell PROPERTIES
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
-    else()
-        set_property(TEST CnaStudioDefaultsToTheNativeShell APPEND PROPERTY LABELS "needs-display")
-        set_tests_properties(CnaStudioDefaultsToTheNativeShell PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
-    endif()
-
-    # And the fallback still reachable by name, which is the other half of "default" meaning
-    # anything: a flag that no longer worked would make this a removal rather than a switch.
-    add_test(NAME CnaStudioFallsBackToImGuiWhenAsked
-        COMMAND cna-studio --ui=imgui --headless
-            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
-    set_tests_properties(CnaStudioFallsBackToImGuiWhenAsked PROPERTIES TIMEOUT 60)
+        ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" TIMEOUT 180)
 
     # The native shell has no headless mode: without a frame limit it runs until the window is
     # closed. A screenshot asked for on those terms can never be taken, so the run has to be
@@ -819,7 +769,34 @@ if(CNA_STUDIO_WITH_CNA)
         COMMAND cna-studio --ui=studio --workspace=none
             --screenshot=${CMAKE_CURRENT_BINARY_DIR}/native-shell-never-written.png)
     set_tests_properties(CnaStudioNativeShellScreenshotNeedsFrameLimit PROPERTIES
-        WILL_FAIL TRUE TIMEOUT 60)
+        WILL_FAIL TRUE ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}" LABELS "needs-display" TIMEOUT 60)
+    else()
+    # STUDIO-02074: this renderer cannot meet the modern UI host profile, and the classic one it
+    # used to fall back to is retired, so `--ui=studio` must refuse rather than open anything.
+    # `--host-capabilities` alone proves it without spending a build's worth of frames on it: the
+    # live evaluation runs and prints the same diagnostic a real session would refuse on.
+    add_test(NAME CnaStudioNativeShellRefusesAHostThatCannotMeetTheModernProfile
+        COMMAND cna-studio --host-capabilities)
+    set_tests_properties(CnaStudioNativeShellRefusesAHostThatCannotMeetTheModernProfile PROPERTIES
+        PASS_REGULAR_EXPRESSION "does not meet the modern UI renderer.s profile.*ShaderEffects"
+        ENVIRONMENT "${CNA_STUDIO_TEST_SURFACE}" TIMEOUT 60)
+
+    # And the same thing asked for as a session rather than as a query, so the refusal is proven on
+    # the path a user actually takes -- `--ui=studio` alone, with nothing telling it to stop short.
+    add_test(NAME CnaStudioNativeShellRefusesToOpenAWindowHere
+        COMMAND cna-studio --ui=studio --workspace=none)
+    set_tests_properties(CnaStudioNativeShellRefusesToOpenAWindowHere PROPERTIES
+        WILL_FAIL TRUE ENVIRONMENT "${CNA_STUDIO_TEST_SURFACE}" TIMEOUT 60)
+    endif()
+
+    # And the fallback still reachable by name, which is the other half of "default" meaning
+    # anything: a flag that no longer worked would make this a removal rather than a switch. Never
+    # opens a window -- --headless routes it to the same headless rendering --headless itself
+    # uses -- so it runs regardless of whether this renderer meets the modern profile.
+    add_test(NAME CnaStudioFallsBackToImGuiWhenAsked
+        COMMAND cna-studio --ui=imgui --headless
+            --project=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject)
+    set_tests_properties(CnaStudioFallsBackToImGuiWhenAsked PROPERTIES TIMEOUT 60)
 endif()
 
 if(NOT CNA_STUDIO_WITH_CNA)
@@ -875,51 +852,31 @@ if(CNA_STUDIO_WITH_CNA)
             TIMEOUT 180)
     endif()
 
-    # STUDIO-04025 -- the two UI render backends drawing the same frame.
+    # STUDIO-04025 used to run `CnaStudioUiRenderBackendsAgree` here: the same frame drawn through
+    # both UI render backends, compared byte for byte. STUDIO-02074 retired the second backend
+    # (`--ui-renderer=compat` is a no-op now, and a host that cannot run the modern one refuses to
+    # start rather than falling back to it), so there is no longer a second route for this host to
+    # agree with itself on -- the comparison this test existed to make is no longer one that can be
+    # asked. `cmake/UiRendererAbTest.cmake` is deleted with it.
+
+    # The grid plane actually reaches the 3D view (STUDIO-07056). Proof that a stored preference is
+    # read, not just written: a preference that is stored, loaded, given a menu row and read by
+    # nothing produces two identical captures while every unit test around it passes -- which is
+    # `STUDIO-11015` exactly, three viewport preferences written to disk and read by nobody.
     #
-    # Only on a host that can run both, which today means a renderer that executes a shader. On
-    # SOFTWARE the modern backend cannot run at all, so the comparison would either be skipped or
-    # be the classic backend against itself; the script refuses rather than passing, and the test
-    # is declared only where it can mean something.
-    if(NOT CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE"
-       AND NOT CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS"
-       AND NOT CNA_GRAPHICS_RENDERER STREQUAL "STUB")
-        add_test(NAME CnaStudioUiRenderBackendsAgree
+    # Needs the same gate the deleted A/B test above it used (STUDIO-02074): a renderer that cannot
+    # meet the modern UI profile no longer opens the 3D view at all, so there is no "does the
+    # setting reach the view" left to check here -- `--ui=studio` refuses before a single frame is
+    # drawn.
+    if(CNA_STUDIO_HOST_MEETS_MODERN_PROFILE)
+        add_test(NAME CnaStudioGridPlaneChangesTheView
             COMMAND ${CMAKE_COMMAND}
                 -DCNA_STUDIO_EXE=$<TARGET_FILE:cna-studio>
                 -DCNA_STUDIO_PROJECT=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
                 -DCNA_STUDIO_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
                 -DCNA_STUDIO_SIZE=1280x720
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/UiRendererAbTest.cmake)
-        set_tests_properties(CnaStudioUiRenderBackendsAgree PROPERTIES
-            ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
-            LABELS "needs-display" TIMEOUT 300)
-    endif()
-
-    # The grid plane actually reaches the 3D view (STUDIO-07056). The inverse of the A/B above:
-    # there the two routes must agree because only the plumbing differs, here the two runs must
-    # disagree because the only thing that differs is the setting being tested. A preference that
-    # is stored, loaded, given a menu row and read by nothing produces two identical captures while
-    # every unit test around it passes -- which is `STUDIO-11015` exactly, three viewport
-    # preferences written to disk and read by nobody.
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set(_gridNeedsDisplay OFF)
-    else()
-        set(_gridNeedsDisplay ON)
-    endif()
-
-    add_test(NAME CnaStudioGridPlaneChangesTheView
-        COMMAND ${CMAKE_COMMAND}
-            -DCNA_STUDIO_EXE=$<TARGET_FILE:cna-studio>
-            -DCNA_STUDIO_PROJECT=${CMAKE_CURRENT_SOURCE_DIR}/../examples/HelloSprites/HelloSprites.cnaproject
-            -DCNA_STUDIO_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
-            -DCNA_STUDIO_SIZE=1280x720
-            -DCNA_STUDIO_NEEDS_DISPLAY=${_gridNeedsDisplay}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GridPlaneTest.cmake)
-
-    if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
-        set_tests_properties(CnaStudioGridPlaneChangesTheView PROPERTIES TIMEOUT 300)
-    else()
+                -DCNA_STUDIO_NEEDS_DISPLAY=ON
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GridPlaneTest.cmake)
         set_tests_properties(CnaStudioGridPlaneChangesTheView PROPERTIES
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}"
             LABELS "needs-display" TIMEOUT 300)

@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 33 of 39 complete `████████░░░░`
+**Progress:** 34 of 39 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -48,7 +48,7 @@
 | `STUDIO-02071` | Read modern-API availability from the build instead of asserting it | ✅ | `STUDIO-02070` |
 | `STUDIO-02072` | Choose a UI render backend from the two profile verdicts, and announce it | ✅ | `STUDIO-02070` |
 | `STUDIO-02073` | Guard test: failing the Studio host contract never disqualifies a game target | ✅ | `STUDIO-02070` |
-| `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | ⬜ | `STUDIO-04026` |
+| `STUDIO-02074` | Retire the compatibility host profile once the modern renderer is the default | ✅ | `STUDIO-04026` |
 
 ## Acceptance and verification
 
@@ -380,12 +380,22 @@ bug report, and an empty string answers neither.
 **`--ui-renderer=modern`** makes the modern profile a hard requirement. That is what turns "Studio
 requires the modern API" from a sentence in a document into something a script can check.
 
-**Verification.** `AHostMeetingTheModernProfileGetsTheModernRenderer`,
-`AClassicOnlyHostFallsBackAndTheReasonNamesWhatIsMissing` — which asserts the reason names both
+**Verification, as it stood at the time.** `AHostMeetingTheModernProfileGetsTheModernRenderer`,
+`AClassicOnlyHostFallsBackAndTheReasonNamesWhatIsMissing` — which asserted the reason names both
 missing capabilities, because "the modern renderer is unavailable" without them sends a reader to
 the renderer's documentation rather than to the one line that answers them —
 `TheFallbackCanBeRefusedAndThenAClassicOnlyHostGetsNothing`,
-`AHostMeetingNeitherProfileGetsNothingAndSaysSo`, and `CnaStudioRejectsUnknownUiRenderer`
+`AHostMeetingNeitherProfileGetsNothingAndSaysSo`, and `CnaStudioRejectsUnknownUiRenderer`.
+
+**Superseded by `STUDIO-02074`.** There is no fallback left to verify: the three tests naming one
+(`TheFallbackCanBeRefusedAndThenAClassicOnlyHostGetsNothing`,
+`AHostMeetingNeitherProfileGetsNothingAndSaysSo`, and the two-profile half of
+`AnEvaluationIsDeterministicAndOrderedAsDeclared`) are deleted, and
+`AClassicOnlyHostFallsBackAndTheReasonNamesWhatIsMissing` is renamed to
+`AClassicOnlyHostGetsNothingAndTheReasonNamesWhatIsMissing` — same assertion about the reason
+naming both missing capabilities, but asserting refusal rather than a fallback choice.
+`AHostMeetingTheModernProfileGetsTheModernRenderer` and `CnaStudioRejectsUnknownUiRenderer` still
+hold unchanged.
 
 ### `STUDIO-02074` — Retire the compatibility host profile once the modern renderer is the default
 
@@ -402,17 +412,43 @@ renderer that meets the modern profile — into `.github/workflows/build.yml`'s 
 running CI leg, verified there rather than only reproduced locally. Neither reason this task gave
 for waiting still holds.
 
-What is not free is the other half of that same CI job: the `SOFTWARE` leg, same workflow, same
-matrix, asserts `expect_backend: compatibility` and passes today. That leg exists because `SOFTWARE`
+What was not free was the other half of that same CI job: the `SOFTWARE` leg, same workflow, same
+matrix, asserted `expect_backend: compatibility` and passed. That leg exists because `SOFTWARE`
 needs no display and no GPU, which is what let this project have automated host coverage before
 `OPENGL4`-under-Xvfb existed at all (gap G-10, as it stood). Making a host that cannot run the
 modern renderer refuse to start, as this task's acceptance asks, turns that leg's assertion from
-"runs Studio on the compatibility renderer" to "refuses to start" — which is either the leg's new,
-correct assertion, or a reason to repoint the leg at something other than hosting Studio, or a
-reason `SOFTWARE` stops being a `cna` job renderer at all. Whichever it is, it is a decision about
-what CI still covers and how, not a consequence that falls out of deleting `CnaUiRenderer`. This
-task, and the `STUDIO-04027` deletion waiting on it, are recorded as blocked on that decision rather
-than attempted without one.
+"runs Studio on the compatibility renderer" to "refuses to start" — a decision about what CI still
+covers and how, not a consequence that falls out of deleting `CnaUiRenderer`, so it was put to the
+project rather than assumed: **repurpose the leg as build-only**, keeping `cna-studio` and
+`cna-player-software` compiled and tested on `SOFTWARE` (it remains a valid *game*-target renderer,
+capability contract Case D), with the leg's assertion changed from hosting Studio to Studio's
+refusal diagnostic.
+
+**Done.** `StudioHostProfile` has one member (`Modern`); `StudioUiBackendChoice` has two
+(`None`, `Modern`); `resolveStudioUiBackend` takes one evaluation and returns `Modern` or refuses,
+with no fallback argument left to take. `CnaStudioShellHost::LoadContent` no longer has a
+`--ui-renderer=compat` override block or a runtime fallback that constructs `CnaUiRenderer` — a host
+that cannot run the modern renderer sets `StudioUiBackendChoice::None` and the existing
+`canHostStudio()` refusal path takes it from there. `--ui-renderer` is still parsed and validated
+(`auto`/`modern`/`compat` all still accepted) but read by nothing, kept only so a script that already
+passes it does not get an unknown-flag error.
+
+`.github/workflows/build.yml`'s `SOFTWARE` leg now sets `expect_backend: none` and asserts
+`cna-studio --host-capabilities` reports it, instead of `compatibility`. Two new CTest cases —
+`CnaStudioNativeShellRefusesAHostThatCannotMeetTheModernProfile` (the same `--host-capabilities`
+check, at the CTest level) and `CnaStudioNativeShellRefusesToOpenAWindowHere` (`--ui=studio` itself,
+`WILL_FAIL`) — cover the same refusal on every renderer that does not meet the modern profile.
+Every real-window CTest that used to run on `SOFTWARE` through the classic backend
+(`CnaStudioNativeShellWindowSmoke` and its siblings, `CnaStudioGridPlaneChangesTheView`, …) is now
+declared only behind `CNA_STUDIO_HOST_MEETS_MODERN_PROFILE`, computed the same way
+`CNA_STUDIO_TEST_SURFACE` already was. `CnaStudioUiRenderBackendsAgree` and
+`cmake/UiRendererAbTest.cmake` are deleted with it: the byte-equality A/B they ran needed two
+backends to compare, and after this task there is only one.
+
+**This unblocks `STUDIO-04027`.** `CnaUiRenderer` is constructed nowhere in `src/` or `include/` any
+more — `makeUiRenderBackend()`'s `Compatibility` case and the runtime shader-rejection fallback were
+its only two call sites, and both are gone. The classic backend has a live, tested caller no longer;
+it has no caller at all.
 
 ### `STUDIO-02050` — Define the service decomposition of the application shell
 

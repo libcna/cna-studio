@@ -87,21 +87,16 @@ namespace CNA::Studio
 
     StudioHostAssessment assessStudioHost(
         const Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
-        std::string platformName, bool allowCompatibilityFallback)
+        std::string platformName)
     {
         StudioHostAssessment assessment;
         assessment.modernApi = captureStudioModernApiState();
 
-        // One snapshot, two evaluations. Asking the device twice would be two chances for it to
-        // answer differently, and a report whose two halves disagreed about the same renderer is
-        // worse than either half alone.
         const StudioCapabilitySnapshot snapshot = captureStudioCapabilitySnapshot(
             device, std::move(platformName), assessment.modernApi.available);
 
         assessment.modern = evaluateStudioHost(snapshot, StudioHostProfile::Modern);
-        assessment.compatibility = evaluateStudioHost(snapshot, StudioHostProfile::Compatibility);
-        assessment.decision = resolveStudioUiBackend(assessment.modern, assessment.compatibility,
-                                                     allowCompatibilityFallback);
+        assessment.decision = resolveStudioUiBackend(assessment.modern);
         return assessment;
     }
 

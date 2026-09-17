@@ -26,8 +26,7 @@ namespace CNA::Studio
     {
         switch (profile)
         {
-            case StudioHostProfile::Modern:        return "modern";
-            case StudioHostProfile::Compatibility: return "compatibility";
+            case StudioHostProfile::Modern: return "modern";
         }
         return "";
     }
@@ -36,16 +35,10 @@ namespace CNA::Studio
     {
         switch (choice)
         {
-            case StudioUiBackendChoice::None:          return "none";
-            case StudioUiBackendChoice::Modern:        return "modern";
-            case StudioUiBackendChoice::Compatibility: return "compatibility";
+            case StudioUiBackendChoice::None:   return "none";
+            case StudioUiBackendChoice::Modern: return "modern";
         }
         return "";
-    }
-
-    bool studioHostProfileRequiresModernApi(StudioHostProfile profile)
-    {
-        return profile == StudioHostProfile::Modern;
     }
 
     std::string_view studioHostModernApiReason()
@@ -120,8 +113,10 @@ namespace CNA::Studio
 
     namespace
     {
-        /** @brief The capabilities every profile needs: what drawing a UI at all costs. */
-        std::vector<StudioHostFeatureRequirement> sharedFeatureRequirements()
+        /** @brief Builds the feature list. Free-standing rather than a literal in the accessor
+         *  below purely so the static it initialises is built once, not re-evaluated at every
+         *  call the way a function-local literal would read as inviting. */
+        std::vector<StudioHostFeatureRequirement> buildFeatureRequirements()
         {
             // Introduced as the UI needs them, never speculatively. A contract padded with
             // everything Studio might one day want would refuse to start on renderers it works
@@ -137,78 +132,45 @@ namespace CNA::Studio
                  "The scene viewport draws depth-sorted geometry; without a depth attachment it "
                  "shows the last triangle submitted rather than the nearest one.",
                  StudioRequirementSeverity::Required, /*restrictedIsEnough=*/true},
-            };
-        }
 
-        /** @brief The two shader capabilities, at whichever severity the profile gives them. */
-        void appendShaderRequirements(std::vector<StudioHostFeatureRequirement>& into,
-                                      StudioRequirementSeverity severity)
-        {
-            // The same two entries in both profiles, at different severities, rather than present
-            // in one and absent from the other. A capability that vanishes from the report when a
-            // profile changes reads as a contract that stopped caring about it, and the
-            // compatibility profile cares very much -- it is the reason it exists.
-            into.push_back(
                 {"ShaderEffects",
                  "The modern UI renderer draws through a ShaderEffect, and material and "
                  "shader-graph authoring compile the effects they preview.",
-                 severity, /*restrictedIsEnough=*/true});
+                 StudioRequirementSeverity::Required, /*restrictedIsEnough=*/true},
 
-            into.push_back(
                 {"ShaderEffectSourceExecution",
                  "A shader must actually determine the pixels; a host that accepts the source and "
                  "ignores it would draw the UI with whatever fixed path it fell back to, and would "
                  "show every material identically.",
-                 severity, /*restrictedIsEnough=*/true});
-        }
+                 StudioRequirementSeverity::Required, /*restrictedIsEnough=*/true},
 
-        /** @brief The capabilities that improve Studio without gating it, in either profile. */
-        void appendRecommendedRequirements(std::vector<StudioHostFeatureRequirement>& into)
-        {
-            into.push_back(
                 {"MultiSampleAntiAliasing",
                  "Viewport edge quality. Studio is usable without it; gizmo and wireframe edges "
                  "alias.",
-                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
 
-            into.push_back(
                 {"AnisotropicFiltering",
                  "Texture quality on surfaces seen at a grazing angle, which is most of a level.",
-                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
 
-            into.push_back(
                 {"WireFrameRasterization",
                  "The viewport's wireframe visualisation mode.",
-                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
 
-            into.push_back(
                 {"GpuTimers",
                  "The profiler's GPU timings. Without them it reports CPU time only.",
-                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true});
-        }
-
-        /** @brief Builds one profile's feature list. */
-        std::vector<StudioHostFeatureRequirement> buildFeatureRequirements(
-            StudioHostProfile profile)
-        {
-            std::vector<StudioHostFeatureRequirement> requirements = sharedFeatureRequirements();
-            appendShaderRequirements(requirements,
-                                     profile == StudioHostProfile::Modern
-                                         ? StudioRequirementSeverity::Required
-                                         : StudioRequirementSeverity::Recommended);
-            appendRecommendedRequirements(requirements);
-            return requirements;
+                 StudioRequirementSeverity::Recommended, /*restrictedIsEnough=*/true},
+            };
         }
     } // namespace
 
     const std::vector<StudioHostFeatureRequirement>& studioHostFeatureRequirements(
         StudioHostProfile profile)
     {
-        static const std::vector<StudioHostFeatureRequirement> modern =
-            buildFeatureRequirements(StudioHostProfile::Modern);
-        static const std::vector<StudioHostFeatureRequirement> compatibility =
-            buildFeatureRequirements(StudioHostProfile::Compatibility);
-        return profile == StudioHostProfile::Modern ? modern : compatibility;
+        static_cast<void>(profile);
+        static const std::vector<StudioHostFeatureRequirement> requirements =
+            buildFeatureRequirements();
+        return requirements;
     }
 
     const std::vector<StudioHostLimitRequirement>& studioHostLimitRequirements(
@@ -346,11 +308,9 @@ namespace CNA::Studio
         evaluation.modernApiAvailable = snapshot.isModernApiAvailable();
         evaluation.profile = profile;
 
-        // First, and required, in the modern profile. It is the headline of the whole contract and
-        // reporting it after eight renderer capabilities would bury the one answer that decides
-        // whether the rest can even be attempted -- a device cannot execute a ShaderEffect that
-        // this build has no type for.
-        if (studioHostProfileRequiresModernApi(profile))
+        // First. It is the headline of the whole contract and reporting it after eight renderer
+        // capabilities would bury the one answer that decides whether the rest can even be
+        // attempted -- a device cannot execute a ShaderEffect that this build has no type for.
         {
             StudioRequirementOutcome outcome;
             outcome.subject = std::string{kStudioModernApiSubject};
@@ -413,9 +373,7 @@ namespace CNA::Studio
         return evaluation;
     }
 
-    StudioUiBackendDecision resolveStudioUiBackend(const StudioHostEvaluation& modern,
-                                                   const StudioHostEvaluation& compatibility,
-                                                   bool allowCompatibilityFallback)
+    StudioUiBackendDecision resolveStudioUiBackend(const StudioHostEvaluation& modern)
     {
         StudioUiBackendDecision decision;
 
@@ -426,9 +384,9 @@ namespace CNA::Studio
             return decision;
         }
 
-        // Always named, both times it is reached. "The modern renderer is unavailable" without the
-        // capability that made it so sends a reader to the renderer's documentation rather than to
-        // the one line of it that answers them.
+        // Always named. "The modern renderer is unavailable" without the capability that made it
+        // so sends a reader to the renderer's documentation rather than to the one line of it that
+        // answers them.
         std::string missing;
         for (const StudioRequirementOutcome& outcome : modern.unmetRequired())
         {
@@ -437,25 +395,11 @@ namespace CNA::Studio
         }
         if (missing.empty()) { missing = "an unrecorded requirement"; }
 
-        if (!allowCompatibilityFallback)
-        {
-            decision.choice = StudioUiBackendChoice::None;
-            decision.reason = "The modern UI renderer was required and this host does not meet its "
-                              "profile: " + missing + ".";
-            return decision;
-        }
-
-        if (!compatibility.canHostStudio)
-        {
-            decision.choice = StudioUiBackendChoice::None;
-            decision.reason = "This host meets neither profile. Modern: " + missing + ".";
-            return decision;
-        }
-
-        decision.choice = StudioUiBackendChoice::Compatibility;
-        decision.reason = "Falling back to the compatibility UI renderer: this host does not meet "
-                          "the modern profile (" + missing + "). Material, shader and post-process "
-                          "previews are unavailable on it.";
+        decision.choice = StudioUiBackendChoice::None;
+        decision.reason = "This host does not meet the modern UI renderer's profile: " + missing
+                        + ". STUDIO-02074 retired the classic UI renderer this used to fall back "
+                          "to, so a host that cannot run the modern one no longer starts Studio at "
+                          "all.";
         return decision;
     }
 } // namespace CNA::Studio

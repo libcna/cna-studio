@@ -1175,8 +1175,6 @@ int main(int argc, char** argv)
         CNA::Studio::CnaStudioShellHostOptions hostOptions;
         hostOptions.reportCapabilities = options.hostCapabilities;
         hostOptions.checkCapabilitiesOnly = options.hostCapabilities;
-        hostOptions.allowCompatibilityUiRenderer = options.uiRenderer != "modern";
-        hostOptions.forceCompatibilityUiRenderer = options.uiRenderer == "compat";
         hostOptions.frameLimit = options.frameLimit;
         hostOptions.screenshotPath = options.screenshotPath;
         hostOptions.screenshotMinColors = options.screenshotMinColors;

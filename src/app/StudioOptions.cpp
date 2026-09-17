@@ -107,6 +107,8 @@ namespace CNA::Studio
                 if (name == "--ui") { options.uiBackend = value; continue; }
                 if (name == "--ui-renderer")
                 {
+                    // Retired by STUDIO-02074: validated and stored so a script that already
+                    // passes it does not get an unknown-flag error, but nothing reads the value.
                     if (value != "auto" && value != "modern" && value != "compat")
                     {
                         options.hasError = true;
@@ -385,14 +387,15 @@ namespace CNA::Studio
             "  --shell-drag=PANEL   Drag PANEL's tab to --shell-pointer, showing the drop\n"
             "                       preview. Needs --shell-pointer.\n"
             "  --shell-tooltip      Rest the pointer until a tooltip appears.\n"
-            "  --ui=imgui         Run the legacy Dear ImGui editor instead of the native shell.\n"
+            "  --ui=imgui         Retired name (STUDIO-07030); with --headless, same as not\n"
+            "                     naming a UI at all, since there is no window to open under it.\n"
             "  --select-asset=P   Select the asset at project-relative path P.\n"
             "  --ui-benchmark[=S] Measure UI frame cost for scenarios matching S (default all)\n"
             "                     and exit. What each render backend is asked to submit.\n"
             "  --ui-benchmark-frames=N  Frames per scenario (default 120).\n"
-            "  --ui-renderer=R    auto (default), modern or compat. modern refuses a host that\n"
-            "                     cannot run the CNAEXT UI renderer instead of falling back;\n"
-            "                     compat forces the classic one, for A/B comparison.\n"
+            "  --ui-renderer=R    Retired (STUDIO-02074); accepted for scripts, changes\n"
+            "                     nothing. A host that cannot run the modern UI renderer\n"
+            "                     refuses to start regardless.\n"
             "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"
             "  --select=NAME      Select this entity at start-up, for --ui=studio.\n"
             "  --export=DIR       Export the project as a standalone CNA game and exit.\n"

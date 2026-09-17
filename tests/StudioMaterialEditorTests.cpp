@@ -236,7 +236,6 @@ namespace
     // name, path, type, id, a gap, the Material heading, then the fields.
     constexpr std::size_t kNameRow = 6;
     constexpr std::size_t kBaseColourRow = 7;
-    constexpr std::size_t kMetallicRow = 9;
     constexpr std::size_t kRoughnessRow = 10;
 }
 
