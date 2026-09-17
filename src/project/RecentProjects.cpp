@@ -83,7 +83,7 @@ namespace CNA::Studio
             if (recent.path.empty()) { continue; }
 
             recent.name = entry["name"].asString();
-            recent.openedAt = static_cast<std::int64_t>(entry["openedAt"].asInt(0));
+            recent.openedAt = static_cast<std::int64_t>(entry["openedAt"].asNumber(0.0));
 
             // Answered now, not stored. The filesystem changes while Studio is not running, which
             // is precisely the case this list exists to handle gracefully.
@@ -133,7 +133,7 @@ namespace CNA::Studio
             JsonValue value = JsonValue::makeObject();
             value.set("path", JsonValue{entry.path});
             value.set("name", JsonValue{entry.name});
-            value.set("openedAt", JsonValue{static_cast<int>(entry.openedAt)});
+            value.set("openedAt", JsonValue{entry.openedAt});
             projects.append(std::move(value));
         }
         document.set("projects", std::move(projects));

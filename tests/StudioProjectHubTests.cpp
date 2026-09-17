@@ -809,3 +809,49 @@ CNA_STUDIO_TEST(TheHubsFormBecomesTheRequestTheCommandLineWouldMake)
     // what it is.
     CNA_STUDIO_EXPECT_EQ(request.languageId, languages.defaultLanguageId());
 }
+
+CNA_STUDIO_TEST(ValidatingAPathWhoseParentsDoNotExistLeavesNoneOfThemBehind)
+{
+    // The probe creates the directory to find out whether it can write there, and
+    // `create_directories` makes parents as well as the leaf -- so removing only the leaf would
+    // leave half a path behind, once per keystroke in the Hub's location field.
+    const StudioTemplateCatalogue templates = shippedTemplates();
+    const StudioLanguageRegistry languages = studioBuiltInLanguages();
+    const std::filesystem::path root = scratch("deep");
+
+    StudioNewProjectRequest request;
+    request.name = "Deep";
+    request.directory = (root / "a" / "b" / "c" / "Deep").generic_string();
+    request.templateId = "empty-2d";
+
+    CNA_STUDIO_EXPECT(validateStudioNewProject(request, templates, languages).empty());
+
+    // Not the leaf, and not one of the three directories above it either.
+    CNA_STUDIO_EXPECT(!std::filesystem::exists(root / "a"));
+
+    // And the directory that was already there is still there: the unwind stops at the nearest
+    // existing ancestor rather than deleting up to the root.
+    CNA_STUDIO_EXPECT(std::filesystem::exists(root));
+
+    std::filesystem::remove_all(root);
+}
+
+CNA_STUDIO_TEST(ARecentEntrysTimestampSurvivesBeingWrittenAndReadBack)
+{
+    // Through a value that does not fit in an int, because the list is ordered by it and the
+    // obvious `asInt` round trip truncates in 2038 -- which is free to fix now and a format
+    // migration later.
+    const std::filesystem::path root = scratch("recent-time");
+    const StudioRecentProjectsStore store{(root / "recent.json").generic_string()};
+
+    const std::int64_t farFuture = 4102444800;  // 2100-01-01
+    CNA_STUDIO_EXPECT(store.remember("/somewhere/Later.cnaproject", "Later", farFuture));
+    CNA_STUDIO_EXPECT(store.remember("/somewhere/Sooner.cnaproject", "Sooner", 1));
+
+    const std::vector<StudioRecentProject> entries = store.load();
+    CNA_STUDIO_EXPECT_EQ(entries.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(entries[0].name, std::string{"Later"});
+    CNA_STUDIO_EXPECT_EQ(entries[0].openedAt, farFuture);
+
+    std::filesystem::remove_all(root);
+}

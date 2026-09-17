@@ -11,6 +11,8 @@
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Project/ProjectTemplate.hpp"
+
+#include <ctime>
 #include "CNA/Studio/Project/ProjectValidation.hpp"
 #include "CNA/Studio/Project/RecentProjects.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
@@ -775,7 +777,10 @@ namespace CNA::Studio
             log_.append(severity, diagnostic.toLine());
         }
 
-        rememberProject(projectFilePath, 0);
+        // Wall-clock, because the list is ordered by when a project was last opened and that
+        // outlives the process. `poll`'s clock is monotonic and says nothing about when; passing
+        // it here would give every row the same zero and leave the ordering to file order.
+        rememberProject(projectFilePath, static_cast<std::int64_t>(std::time(nullptr)));
 
         applyProjectDefaultView(shell);
 

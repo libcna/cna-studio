@@ -67,9 +67,6 @@ namespace CNA::Studio
         /** @brief Id of the selected language, or empty for this build's default. */
         std::string languageId;
 
-        /** @brief Index of the selected recent project, or -1. */
-        int selectedRecent = -1;
-
         /**
          * @brief A `.cnaproject` path typed on the Recent page, for one that is not on the list.
          *

@@ -40,6 +40,19 @@ namespace CNA::Studio
         bool canWriteInto(const std::filesystem::path& directory, std::string& reason)
         {
             std::error_code code;
+
+            // Everything this has to undo, recorded before it is done. `create_directories` makes
+            // parents as well as the leaf, so removing only the leaf would leave half a path
+            // behind -- and the Hub calls this on every keystroke, so half a path per keystroke.
+            std::vector<std::filesystem::path> created;
+            for (std::filesystem::path walk = directory;
+                 !walk.empty() && !std::filesystem::exists(walk, code);
+                 walk = walk.parent_path())
+            {
+                created.push_back(walk);
+                if (walk.parent_path() == walk) { break; }
+            }
+
             std::filesystem::create_directories(directory, code);
             if (code)
             {
@@ -48,16 +61,22 @@ namespace CNA::Studio
             }
 
             const std::filesystem::path probe = directory / ".cna-studio-write-probe";
+            bool wrote = false;
             {
                 std::ofstream stream{probe, std::ios::binary | std::ios::trunc};
-                if (!stream)
-                {
-                    reason = "'" + directory.generic_string() + "' cannot be written to";
-                    return false;
-                }
+                wrote = static_cast<bool>(stream);
             }
             std::filesystem::remove(probe, code);
-            return true;
+
+            // Innermost first, which is the only order `remove` can succeed in.
+            for (const std::filesystem::path& path : created)
+            {
+                std::filesystem::remove(path, code);
+                code.clear();
+            }
+
+            if (!wrote) { reason = "'" + directory.generic_string() + "' cannot be written to"; }
+            return wrote;
         }
 
         /** @brief Writes @p contents to @p path, creating parents. */
@@ -281,17 +300,14 @@ namespace CNA::Studio
             }
             else
             {
-                // Checked by writing, and the probe directory is removed again when it was this
-                // check that created it -- validation that leaves directories behind would make
-                // typing in the Hub's path field create one per keystroke.
-                std::error_code code;
-                const bool existed = std::filesystem::exists(directory, code);
+                // Checked by writing, and everything the check created is removed again --
+                // validation that left directories behind would make typing in the Hub's path
+                // field create one per keystroke.
                 std::string reason;
                 if (!canWriteInto(directory, reason))
                 {
                     problems.push_back({"directory", reason});
                 }
-                if (!existed) { std::filesystem::remove(directory, code); }
             }
         }
 
@@ -317,6 +333,15 @@ namespace CNA::Studio
         if (language == nullptr || templateValue == nullptr) { return result; }
 
         const std::filesystem::path root{request.directory};
+
+        std::error_code code;
+        std::filesystem::create_directories(root, code);
+        if (code)
+        {
+            result.problems.push_back(
+                {"directory", "cannot create '" + root.generic_string() + "': " + code.message()});
+            return result;
+        }
 
         // --- The project file -------------------------------------------------------------------
         // Created under the sanitised name so the `.cnaproject` file is one every filesystem
