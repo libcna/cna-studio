@@ -11,6 +11,8 @@
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <string_view>
 #include <cmath>
 #include <tuple>
 #include <map>
@@ -146,6 +148,40 @@ namespace CNA::Studio
         {
             const std::size_t slash = folder.find_last_of('/');
             return slash == std::string::npos ? folder : folder.substr(slash + 1);
+        }
+
+        /** @brief @p text lower-cased, ASCII only, which is what a name search needs. */
+        std::string lowered(std::string_view text)
+        {
+            std::string out;
+            out.reserve(text.size());
+            for (const char character : text)
+            {
+                out.push_back(static_cast<char>(
+                    std::tolower(static_cast<unsigned char>(character))));
+            }
+            return out;
+        }
+
+        /**
+         * @brief How well @p record answers @p search: lower is better, -1 is no match.
+         *
+         * Ranked rather than merely filtered, because a search over name, type *and* path matches
+         * a great deal and the ordering is what makes the result usable. A name that starts with
+         * what was typed is what the user meant; a path that happens to contain it is a guess.
+         */
+        int searchRank(const AssetRecord& record, const std::string& needle)
+        {
+            const std::string path = lowered(record.sourcePath);
+            const std::string name = lowered(splitPath(record.sourcePath).second);
+            const std::string type = lowered(toString(record.type));
+
+            if (name.rfind(needle, 0) == 0) { return 0; }
+            if (name.find(needle) != std::string::npos) { return 1; }
+            if (type.rfind(needle, 0) == 0) { return 2; }
+            if (path.find(needle) != std::string::npos) { return 3; }
+            if (type.find(needle) != std::string::npos) { return 4; }
+            return -1;
         }
 
         /** @brief Whether @p folder is inside a folder the user has collapsed. */
@@ -309,10 +345,124 @@ namespace CNA::Studio
         return rows;
     }
 
+    /**
+     * @brief The asset kinds this project actually holds, in a stable order.
+     *
+     * From the database rather than from the enum: a filter offering ten kinds a project has none
+     * of is a filter nobody reads, and one that changes length as a project grows is one that
+     * teaches its own positions.
+     */
+    std::vector<AssetType> studioContentTypesPresent(const AssetDatabase& assets)
+    {
+        std::set<std::string> names;
+        std::map<std::string, AssetType> byName;
+        for (const AssetRecord* record : assets.getAll())
+        {
+            if (record == nullptr) { continue; }
+            names.insert(toString(record->type));
+            byName[toString(record->type)] = record->type;
+        }
+
+        std::vector<AssetType> types;
+        types.reserve(names.size());
+        for (const std::string& name : names) { types.push_back(byName[name]); }
+        return types;
+    }
+
+    std::string_view studioContentSortName(StudioContentSort sort)
+    {
+        switch (sort)
+        {
+            case StudioContentSort::Name: return "name";
+            case StudioContentSort::Type: return "type";
+        }
+        return "";
+    }
+
+    bool studioContentMatches(const AssetRecord& record, std::string_view search)
+    {
+        if (search.empty()) { return true; }
+        return searchRank(record, lowered(search)) >= 0;
+    }
+
+    /**
+     * @brief Everything in the project that answers @p query, as cards.
+     *
+     * The folder is left behind on purpose (`STUDIO-09005`). Searching within one folder is the
+     * behaviour that makes people type a name, see nothing, and conclude an asset is gone when it
+     * is one folder over — and the location line on each card is what stops a flat result list
+     * being ambiguous about which `player.png` was found.
+     */
+    std::vector<StudioContentCard> studioContentSearchCards(const AssetDatabase& assets,
+                                                            const StudioContentQuery& query,
+                                                            const Uuid& selected)
+    {
+        const std::string needle = lowered(query.search);
+
+        std::vector<std::pair<int, const AssetRecord*>> ranked;
+        for (const AssetRecord* record : assets.getAll())
+        {
+            if (record == nullptr) { continue; }
+            if (query.type.has_value() && record->type != *query.type) { continue; }
+
+            const int rank = searchRank(*record, needle);
+            if (rank >= 0) { ranked.emplace_back(rank, record); }
+        }
+
+        // Rank first, then the requested order within a rank. A result list that sorted purely by
+        // name would bury an exact match under everything whose path happens to contain the word.
+        std::sort(ranked.begin(), ranked.end(), [&](const auto& lhs, const auto& rhs) {
+            if (lhs.first != rhs.first) { return lhs.first < rhs.first; }
+            if (query.sort == StudioContentSort::Type && lhs.second->type != rhs.second->type)
+            {
+                // string_view, for the reason the browsing path gives: `<` on two `const char*`
+                // compares pointers.
+                return std::string_view{toString(lhs.second->type)}
+                     < std::string_view{toString(rhs.second->type)};
+            }
+            return lhs.second->sourcePath < rhs.second->sourcePath;
+        });
+
+        if (query.descending) { std::reverse(ranked.begin(), ranked.end()); }
+
+        std::vector<StudioContentCard> cards;
+        cards.reserve(ranked.size());
+        for (const auto& [rank, record] : ranked)
+        {
+            (void)rank;
+
+            StudioContentCard card;
+            card.assetId = record->id;
+            card.label = splitPath(record->sourcePath).second;
+            card.detail = toString(record->type);
+            card.icon = studioAssetIcon(record->type);
+            card.selected = record->id == selected;
+
+            // Where it is, which is the whole reason a result is readable. `Project` rather than
+            // an empty string for an asset at the root: "/ player.png" is a path fragment somebody
+            // has to reconstruct.
+            const std::string directory = splitPath(record->sourcePath).first;
+            card.location = directory.empty() ? "Project" : directory;
+
+            if (assets.isMissing(record->id))
+            {
+                card.missing = true;
+                card.detail = "missing";
+                card.icon = StudioIcon::Warning;
+                card.iconRole = StudioColorRole::Warning;
+            }
+            cards.push_back(std::move(card));
+        }
+        return cards;
+    }
+
     std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
                                                        const std::string& folder,
-                                                       const Uuid& selected)
+                                                       const Uuid& selected,
+                                                       const StudioContentQuery& query)
     {
+        if (!query.search.empty()) { return studioContentSearchCards(assets, query, selected); }
+
         std::vector<StudioContentCard> cards;
 
         // Immediate children only, in both halves. A grid of every asset under a folder is a wall,
@@ -361,9 +511,32 @@ namespace CNA::Studio
             cards.push_back(std::move(card));
         }
 
-        std::sort(files.begin(), files.end(), [](const AssetRecord* a, const AssetRecord* b) {
+        // Filtering applies to files and never to folders (`STUDIO-09006`): a filter that hid the
+        // folders as well would leave a user filtered to textures unable to reach the folder the
+        // textures are in, which is filtering them out of their own project.
+        if (query.type.has_value())
+        {
+            files.erase(std::remove_if(files.begin(), files.end(),
+                                       [&](const AssetRecord* record) {
+                                           return record->type != *query.type;
+                                       }),
+                        files.end());
+        }
+
+        std::sort(files.begin(), files.end(), [&](const AssetRecord* a, const AssetRecord* b) {
+            if (query.sort == StudioContentSort::Type && a->type != b->type)
+            {
+                // Through string_view: `toString` returns a `const char*`, and `<` on two of those
+                // compares *pointers* -- an order that is not alphabetical, not stable across
+                // builds, and not even the same twice within one.
+                return std::string_view{toString(a->type)} < std::string_view{toString(b->type)};
+            }
             return a->sourcePath < b->sourcePath;
         });
+
+        // Only the files. Folders stay alphabetical and stay first whatever the order: they are
+        // navigation, and navigation that reorders itself is navigation people stop trusting.
+        if (query.descending) { std::reverse(files.begin(), files.end()); }
 
         for (const AssetRecord* record : files)
         {
@@ -439,6 +612,43 @@ namespace CNA::Studio
                 }
             }
 
+            // The search field, next to the view switch. Wide enough to read a file name in, and
+            // taken out of the bar before the breadcrumb so that a deep folder shortens the crumb
+            // rather than squeezing the field to nothing (STUDIO-09005).
+            {
+                bar.splitRight(std::min(bar.width, spacing));
+
+                const UiRect filterButton =
+                    bar.splitRight(std::min(bar.width, rowHeight));
+                StudioButtonOptions filterOptions;
+                filterOptions.icon = StudioIcon::ChevronDown;
+                filterOptions.iconOnly = true;
+                filterOptions.selected = state.filtersOpen || state.query.type.has_value()
+                                      || state.query.sort != StudioContentSort::Name
+                                      || state.query.descending;
+                filterOptions.tooltip = "Filter by kind and choose an order";
+                if (studioButton(frame, frame.ids().make("filters"), filterButton, "Filter",
+                                 filterOptions).activated)
+                {
+                    state.filtersOpen = !state.filtersOpen;
+                }
+
+                bar.splitRight(std::min(bar.width, spacing));
+
+                const UiRect field =
+                    bar.splitRight(std::min(bar.width * 0.5f, rowHeight * 8.0f));
+
+                StudioTextFieldOptions options;
+                options.placeholder = "Search";
+                options.font = StudioFontRole::BodySmall;
+
+                // No glyph prefix: the shipped atlas has no magnifier, and a tofu box in front of
+                // a field is worse than a field with only its placeholder to explain it
+                // (STUDIO-04019 is the font-fallback task that would change that).
+                (void)studioTextField(frame, frame.ids().make("search"), field, state.query.search,
+                                      options);
+            }
+
             // The breadcrumb, every segment clickable. A path drawn as text would say where the
             // user is and leave going up a level to a control that does not exist.
             if (frame.isDrawPass() || frame.isInputPass())
@@ -480,6 +690,77 @@ namespace CNA::Studio
             result.folder = state.folder;
         }
 
+        // --- Filters and order, when asked for ----------------------------------------------
+        //
+        // Behind a button rather than always on the bar. Four controls above a browser that most
+        // often needs none of them is four controls' worth of a panel that is already the smallest
+        // one in the default layout.
+        if (state.filtersOpen)
+        {
+            UiRect row = area.splitTop(std::min(rowHeight + spacing, area.height));
+            row = row.inset(UiEdges{spacing, 0.0f, spacing, spacing * 0.5f});
+            frame.ids().push("contentfilters");
+
+            const std::vector<AssetType> types = studioContentTypesPresent(context.getAssets());
+
+            std::vector<std::string> options;
+            options.reserve(types.size() + 1);
+            options.emplace_back("All kinds");
+            for (const AssetType type : types) { options.emplace_back(toString(type)); }
+
+            int selected = 0;
+            if (state.query.type.has_value())
+            {
+                const auto found = std::find(types.begin(), types.end(), *state.query.type);
+                selected = found == types.end()
+                    ? 0
+                    : static_cast<int>(std::distance(types.begin(), found)) + 1;
+            }
+
+            const UiRect kind = row.splitLeft(std::min(row.width, rowHeight * 6.0f));
+            if (studioDropdown(frame, frame.ids().make("kind"), kind, options, selected).changed)
+            {
+                // Index zero is "All kinds", so the filter clears rather than needing its own
+                // button beside the control that set it.
+                if (selected <= 0) { state.query.type.reset(); }
+                else if (static_cast<std::size_t>(selected) <= types.size())
+                {
+                    state.query.type = types[static_cast<std::size_t>(selected) - 1];
+                }
+            }
+            row.splitLeft(std::min(row.width, spacing));
+
+            for (const auto& [sort, label] :
+                 {std::pair{StudioContentSort::Name, "Name"},
+                  std::pair{StudioContentSort::Type, "Kind"}})
+            {
+                const UiRect button = row.splitLeft(std::min(row.width, rowHeight * 3.0f));
+                StudioButtonOptions options2;
+                options2.selected = state.query.sort == sort;
+                options2.font = StudioFontRole::BodySmall;
+                if (studioButton(frame, frame.ids().make(label), button, label, options2).activated)
+                {
+                    state.query.sort = sort;
+                }
+            }
+            row.splitLeft(std::min(row.width, spacing));
+
+            {
+                const UiRect button = row.splitLeft(std::min(row.width, rowHeight * 3.0f));
+                StudioButtonOptions options2;
+                options2.selected = state.query.descending;
+                options2.font = StudioFontRole::BodySmall;
+                options2.tooltip = "Reverse the order";
+                if (studioButton(frame, frame.ids().make("reverse"), button,
+                                 state.query.descending ? "Z to A" : "A to Z", options2).activated)
+                {
+                    state.query.descending = !state.query.descending;
+                }
+            }
+
+            frame.ids().pop();
+        }
+
         // --- The folder pane ---------------------------------------------------------------
         //
         // Beside both presentations rather than inside either (STUDIO-09001). Where a user is and
@@ -509,7 +790,7 @@ namespace CNA::Studio
         // tree and the grid showed one folder, so switching views also moved the user -- and the
         // folder pane STUDIO-09001 put beside them navigated only one of the two.
         const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, context.getSelectedAsset());
+            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query);
 
         result.rowsTotal = cards.size();
         result.missingCount = assets.getMissingAssets().size();
@@ -521,7 +802,12 @@ namespace CNA::Studio
             StudioTreeRow row;
             row.id = card.isFolder() ? card.folder : card.assetId.toString();
             row.label = card.label;
-            row.detail = card.detail;
+
+            // In a search, where it is rather than what it is: `player.png` three folders deep,
+            // twice over, is what a flat result list is ambiguous about. The kind is already the
+            // icon.
+            row.detail = card.location.empty() ? card.detail
+                                               : card.location + "  ·  " + card.detail;
             row.icon = card.icon;
             row.iconRole = card.iconRole;
             row.selected = card.selected;
@@ -551,9 +837,10 @@ namespace CNA::Studio
         // Three states, not two. "No assets" in a project with two hundred of them is the sort of
         // message that makes a user think the database is broken.
         const std::string_view empty =
-            !context.hasProject()  ? std::string_view{"No project is open."}
-            : state.folder.empty() ? std::string_view{"This project has no assets yet."}
-                                   : std::string_view{"This folder is empty."};
+            !context.hasProject()      ? std::string_view{"No project is open."}
+            : state.query.isNarrowed() ? std::string_view{"Nothing matches."}
+            : state.folder.empty()     ? std::string_view{"This project has no assets yet."}
+                                       : std::string_view{"This folder is empty."};
 
         const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state.tree, empty);
         result.rowsDrawn = tree.rowsDrawn;
@@ -590,7 +877,7 @@ namespace CNA::Studio
         const AssetDatabase& assets = context.getAssets();
 
         const std::vector<StudioContentCard> cards =
-            studioContentCards(assets, state.folder, context.getSelectedAsset());
+            studioContentCards(assets, state.folder, context.getSelectedAsset(), state.query);
         result.rowsTotal = cards.size();
         result.missingCount = assets.getMissingAssets().size();
 
@@ -601,11 +888,14 @@ namespace CNA::Studio
             // makes a user think the database is broken.
             if (frame.isDrawPass())
             {
+                // Four states, not two. "No assets" in a project with two hundred of them is the
+                // sort of message that makes a user think the database is broken, and "this
+                // folder is empty" while a filter is on sends them looking in the wrong place.
                 studioDrawText(frame, bounds,
-                               context.hasProject()
-                                   ? (state.folder.empty() ? "This project has no assets yet."
-                                                           : "This folder is empty.")
-                                   : "No project is open.",
+                               !context.hasProject()      ? "No project is open."
+                               : state.query.isNarrowed() ? "Nothing matches."
+                               : state.folder.empty()     ? "This project has no assets yet."
+                                                          : "This folder is empty.",
                                StudioFontRole::Body, theme.color(StudioColorRole::TextSecondary));
             }
             return result;

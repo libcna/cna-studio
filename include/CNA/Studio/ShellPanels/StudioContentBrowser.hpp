@@ -3,7 +3,7 @@
  * @file CNA/Studio/ShellPanels/StudioContentBrowser.hpp
  * @brief The Content Browser — the project's assets, as folders and files.
  *
- * `plan.md` STUDIO-07008, STUDIO-09001.
+ * `plan.md` STUDIO-07008, STUDIO-09001, STUDIO-09002, STUDIO-09005, STUDIO-09006.
  *
  * The fourth panel ported, and the last of the four a person looks at first. It reads the
  * `AssetDatabase` rather than the filesystem: the database is what knows an asset's stable id, its
@@ -37,6 +37,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <string>
 #include <vector>
@@ -111,6 +112,72 @@ namespace CNA::Studio
                                                                      const std::string& folder,
                                                                      const StudioTreeState& state);
 
+    /** @brief What a content listing is ordered by. */
+    enum class StudioContentSort : std::uint8_t
+    {
+        /** @brief Alphabetical, which is the order a user can predict. */
+        Name,
+        /** @brief Grouped by kind, then by name within a kind. */
+        Type
+    };
+
+    /**
+     * @brief The asset kinds this project actually holds, in a stable order.
+     *
+     * The type filter's options. From the database rather than from the enum: a filter offering
+     * ten kinds a project has none of is a filter nobody reads.
+     *
+     * @param assets The database.
+     * @return Each kind present, ordered by its stable name.
+     */
+    [[nodiscard]] std::vector<AssetType> studioContentTypesPresent(const AssetDatabase& assets);
+
+    /** @brief Returns a stable English name for a sort order, for preferences and tests. */
+    [[nodiscard]] std::string_view studioContentSortName(StudioContentSort sort);
+
+    /**
+     * @brief What to show: a search, a type filter and an order.
+     *
+     * One struct rather than three parameters because the three interact — a search filtered to
+     * textures and sorted by name is one question, and a listing function taking them separately
+     * invites a caller that applies two of the three.
+     */
+    struct StudioContentQuery
+    {
+        /**
+         * @brief What the user typed. Empty browses the folder instead.
+         *
+         * A non-empty search leaves the current folder behind and looks at the **whole project**
+         * (`STUDIO-09005`). Searching within one folder is the behaviour that makes people type a
+         * name, see nothing, and conclude the asset is gone — when it is one folder over.
+         */
+        std::string search;
+
+        /** @brief Show only this kind. Unset shows every kind. */
+        std::optional<AssetType> type;
+
+        /** @brief What the listing is ordered by. */
+        StudioContentSort sort = StudioContentSort::Name;
+
+        /** @brief Reverse the order. */
+        bool descending = false;
+
+        /** @brief Whether anything is being filtered or searched, for an empty-state message. */
+        [[nodiscard]] bool isNarrowed() const { return !search.empty() || type.has_value(); }
+    };
+
+    /**
+     * @brief Whether @p record matches @p search, over its name, its type and its path.
+     *
+     * Exposed because ranking and matching are the part of a search that can be wrong without
+     * looking wrong, and a test that had to build a frame to check them would not be written.
+     *
+     * @param record The asset.
+     * @param search What the user typed. Case-insensitive; empty matches everything.
+     * @return True when the asset should appear in the results.
+     */
+    [[nodiscard]] bool studioContentMatches(const AssetRecord& record, std::string_view search);
+
     /** @brief What the Content Browser remembers between frames. */
     struct StudioContentBrowserState
     {
@@ -151,6 +218,12 @@ namespace CNA::Studio
 
         /** @brief How wide a card is, in unscaled pixels. */
         float cardSize = 96.0f;
+
+        /** @brief The search, the type filter and the order. See @ref StudioContentQuery. */
+        StudioContentQuery query;
+
+        /** @brief Whether the filter and sort controls are showing. */
+        bool filtersOpen = false;
     };
 
     struct StudioContentBrowserResult
@@ -224,6 +297,16 @@ namespace CNA::Studio
         /** @brief Whether the asset's source file is missing. */
         bool missing = false;
 
+        /**
+         * @brief The folder this asset is in, shown only in search results.
+         *
+         * Empty while browsing, because the breadcrumb already says where everything on screen is.
+         * A search result's whole problem is the opposite: `player.png` is three folders deep and
+         * there are two of them, and a result list that showed only names would make the user open
+         * each to find out which is which.
+         */
+        std::string location;
+
         /** @brief Whether clicking this card enters a folder rather than selecting an asset. */
         [[nodiscard]] bool isFolder() const { return !folder.empty(); }
     };
@@ -242,7 +325,8 @@ namespace CNA::Studio
      */
     [[nodiscard]] std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
                                                                      const std::string& folder,
-                                                                     const Uuid& selected);
+                                                                     const Uuid& selected,
+                                                                     const StudioContentQuery& query = {});
 
     /**
      * @brief The path segments of @p folder, outermost first, for a breadcrumb.

@@ -569,3 +569,206 @@ CNA_STUDIO_TEST(TheFolderPaneIsBesideBothViewsAndClickingAFolderNavigatesThere)
         }
     }
 }
+
+// ------------------------------------------------------------------------------------------------
+// Search, filter and order (STUDIO-09005, STUDIO-09006)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(ASearchLooksAtTheWholeProjectRatherThanTheFolderYouAreIn)
+{
+    // The behaviour that makes people type a name, see nothing, and conclude an asset is gone when
+    // it is one folder over. A search scoped to the current folder is a search that answers a
+    // question nobody asked.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+    track(assets, "Assets/Models/player.gltf", AssetType::Model);
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+
+    StudioContentQuery query;
+    query.search = "player";
+
+    // Standing in Textures, which holds one of the two.
+    const std::vector<StudioContentCard> found =
+        studioContentCards(assets, "Assets/Textures", Uuid{}, query);
+
+    CNA_STUDIO_EXPECT_EQ(found.size(), std::size_t{2});
+    for (const StudioContentCard& card : found)
+    {
+        CNA_STUDIO_EXPECT(!card.isFolder());
+        // Where it is, which is the whole reason a flat result list is readable: two files called
+        // `player.*` in different folders are otherwise two identical rows.
+        CNA_STUDIO_EXPECT(!card.location.empty());
+    }
+
+    // And no folders in the results. "Assets" does not match "player", and a folder that did match
+    // would be a row whose click means something different from every other row's.
+    CNA_STUDIO_EXPECT(std::none_of(found.begin(), found.end(),
+                                   [](const StudioContentCard& c) { return c.isFolder(); }));
+}
+
+CNA_STUDIO_TEST(ASearchIsCaseInsensitiveAndReadsNameTypeAndPath)
+{
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    const Uuid texture = track(assets, "Assets/Textures/Player.png", AssetType::Texture2D);
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+
+    AssetRecord* record = nullptr;
+    for (const AssetRecord* each : assets.getAll())
+    {
+        if (each->id == texture) { record = const_cast<AssetRecord*>(each); }
+    }
+    CNA_STUDIO_EXPECT(record != nullptr);
+
+    // The name, whatever case it was typed in.
+    CNA_STUDIO_EXPECT(studioContentMatches(*record, "player"));
+    CNA_STUDIO_EXPECT(studioContentMatches(*record, "PLAYER"));
+
+    // The type, which is how a user finds "every texture" without knowing any of their names.
+    CNA_STUDIO_EXPECT(studioContentMatches(*record, "texture"));
+
+    // And the path, which is how they find "everything under Textures".
+    CNA_STUDIO_EXPECT(studioContentMatches(*record, "Assets/Tex"));
+
+    CNA_STUDIO_EXPECT(!studioContentMatches(*record, "crate"));
+
+    // An empty search matches everything rather than nothing: it means "not searching".
+    CNA_STUDIO_EXPECT(studioContentMatches(*record, ""));
+}
+
+CNA_STUDIO_TEST(SearchResultsPutTheNameMatchAboveThePathMatch)
+{
+    // A search over name, type *and* path matches a great deal, and the ordering is what makes the
+    // result usable. A list sorted purely by name would bury an exact hit under everything whose
+    // path happens to contain the word.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    track(assets, "Assets/crate/readme.txt", AssetType::RawData);   // path match only
+    track(assets, "Assets/Models/zzz-crate.gltf", AssetType::Model); // name contains
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);     // name starts with
+
+    StudioContentQuery query;
+    query.search = "crate";
+
+    const std::vector<StudioContentCard> found = studioContentCards(assets, {}, Uuid{}, query);
+    CNA_STUDIO_EXPECT_EQ(found.size(), std::size_t{3});
+
+    CNA_STUDIO_EXPECT_EQ(found[0].label, std::string{"crate.gltf"});
+    CNA_STUDIO_EXPECT_EQ(found[1].label, std::string{"zzz-crate.gltf"});
+    CNA_STUDIO_EXPECT_EQ(found[2].label, std::string{"readme.txt"});
+}
+
+CNA_STUDIO_TEST(AKindFilterHidesFilesAndNeverHidesFolders)
+{
+    // A filter that hid the folders too would leave a user filtered to textures unable to reach
+    // the folder the textures are in, which is filtering them out of their own project.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    track(assets, "Assets/notes.txt", AssetType::RawData);
+    track(assets, "Assets/logo.png", AssetType::Texture2D);
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+
+    StudioContentQuery query;
+    query.type = AssetType::Texture2D;
+
+    const std::vector<StudioContentCard> cards =
+        studioContentCards(assets, "Assets", Uuid{}, query);
+
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(cards[0].isFolder());
+    CNA_STUDIO_EXPECT_EQ(cards[0].label, std::string{"Models"});
+    CNA_STUDIO_EXPECT_EQ(cards[1].label, std::string{"logo.png"});
+
+    // And it narrows a search too, so "every texture called player" is one question.
+    query.search = "crate";
+    CNA_STUDIO_EXPECT(studioContentCards(assets, {}, Uuid{}, query).empty());
+}
+
+CNA_STUDIO_TEST(TheFilterOffersOnlyTheKindsTheProjectActuallyHolds)
+{
+    // A filter offering ten kinds a project has none of is a filter nobody reads, and one that
+    // changes length as a project grows is one that teaches its own positions.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    CNA_STUDIO_EXPECT(studioContentTypesPresent(assets).empty());
+
+    track(assets, "Assets/logo.png", AssetType::Texture2D);
+    track(assets, "Assets/other.png", AssetType::Texture2D);
+    track(assets, "Assets/crate.gltf", AssetType::Model);
+
+    const std::vector<AssetType> types = studioContentTypesPresent(assets);
+    CNA_STUDIO_EXPECT_EQ(types.size(), std::size_t{2});
+
+    // Ordered by their stable names, so the dropdown's positions do not depend on which asset the
+    // database happened to see first.
+    CNA_STUDIO_EXPECT(std::string{toString(types[0])} < std::string{toString(types[1])});
+}
+
+CNA_STUDIO_TEST(SortingByKindGroupsFilesAndReversingLeavesTheFoldersWhereTheyAre)
+{
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    track(assets, "Assets/b.png", AssetType::Texture2D);
+    track(assets, "Assets/a.gltf", AssetType::Model);
+    track(assets, "Assets/c.png", AssetType::Texture2D);
+    track(assets, "Assets/Sub/x.txt", AssetType::RawData);
+
+    StudioContentQuery query;
+    query.sort = StudioContentSort::Type;
+
+    const std::vector<StudioContentCard> byKind =
+        studioContentCards(assets, "Assets", Uuid{}, query);
+
+    // Folder first, then Model before Texture2D by stable name, then names within a kind.
+    CNA_STUDIO_EXPECT_EQ(byKind.size(), std::size_t{4});
+    CNA_STUDIO_EXPECT(byKind[0].isFolder());
+    CNA_STUDIO_EXPECT_EQ(byKind[1].label, std::string{"a.gltf"});
+    CNA_STUDIO_EXPECT_EQ(byKind[2].label, std::string{"b.png"});
+    CNA_STUDIO_EXPECT_EQ(byKind[3].label, std::string{"c.png"});
+
+    query.sort = StudioContentSort::Name;
+    query.descending = true;
+    const std::vector<StudioContentCard> reversed =
+        studioContentCards(assets, "Assets", Uuid{}, query);
+
+    // The files reverse; the folder does not move. Folders are navigation, and navigation that
+    // reorders itself is navigation people stop trusting.
+    CNA_STUDIO_EXPECT(reversed[0].isFolder());
+    CNA_STUDIO_EXPECT_EQ(reversed[1].label, std::string{"c.png"});
+    CNA_STUDIO_EXPECT_EQ(reversed[3].label, std::string{"a.gltf"});
+}
+
+CNA_STUDIO_TEST(ANarrowedBrowserSaysNothingMatchesRatherThanThatTheFolderIsEmpty)
+{
+    // Different problems with different fixes: an empty folder is a place, and a filter that hides
+    // everything is a control the user can turn off. Saying the first when the second is true
+    // sends them looking in the wrong place.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/logo.png", AssetType::Texture2D);
+
+    StudioContentQuery query;
+    CNA_STUDIO_EXPECT(!query.isNarrowed());
+
+    query.search = "nothing-like-this";
+    CNA_STUDIO_EXPECT(query.isNarrowed());
+    CNA_STUDIO_EXPECT(studioContentCards(assets, {}, Uuid{}, query).empty());
+
+    query.search.clear();
+    query.type = AssetType::Model;
+    CNA_STUDIO_EXPECT(query.isNarrowed());
+}
+
+CNA_STUDIO_TEST(BothSortOrdersHaveAName)
+{
+    // Stored in preferences and printed in tests, so a rename would be a silent format change.
+    CNA_STUDIO_EXPECT_EQ(studioContentSortName(StudioContentSort::Name), std::string_view{"name"});
+    CNA_STUDIO_EXPECT_EQ(studioContentSortName(StudioContentSort::Type), std::string_view{"type"});
+}

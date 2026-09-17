@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 2 of 16 complete `█░░░░░░░░░░░`
+**Progress:** 4 of 16 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -14,8 +14,8 @@
 | `STUDIO-09002` | Grid and list views | ✅ | `STUDIO-09001` |
 | `STUDIO-09003` | Thumbnail generation as cancellable background jobs | ⬜ | `STUDIO-30001` |
 | `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ⬜ | `STUDIO-09003` |
-| `STUDIO-09005` | Search across name, type and path | ⬜ | `STUDIO-09001` |
-| `STUDIO-09006` | Filter by asset type, and sorting | ⬜ | `STUDIO-09005` |
+| `STUDIO-09005` | Search across name, type and path | ✅ | `STUDIO-09001` |
+| `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
 | `STUDIO-09007` | Favourites and recent assets | ⬜ | `STUDIO-09001` |
 | `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ⬜ | `STUDIO-03023` |
 | `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ⬜ | `STUDIO-09001` |
@@ -109,6 +109,52 @@ now:
 
 The last of those is the one that mattered: it clicks through the shell rather than calling the
 model, so it exercised the new list path without being rewritten.
+
+### `STUDIO-09005` — Search across name, type and path
+
+**Done.** A field in the bar; a non-empty query leaves the folder behind and looks at the whole
+project.
+
+**Scoping a search to the current folder is the wrong answer**, and it is the tempting one because
+it is one line. It is the behaviour that makes somebody type a name, see nothing, and conclude the
+asset is gone when it is one folder over.
+
+**Matching is ranked, not merely filtered.** A search over name *and* type *and* path matches a
+great deal, and the order is what makes the result usable: a name that starts with what was typed
+(0), a name that contains it (1), a type that starts with it (2), a path that contains it (3), a
+type that contains it (4). A list sorted purely by name would bury an exact hit under everything
+whose path happens to contain the word. `studioContentMatches` and the ranking are separate from
+the drawing, so they are tested with no frame at all.
+
+**Each result says where it is**, in place of the kind — which the icon already shows. Two files
+called `player.*` three folders apart are otherwise two identical rows, which is the one thing a
+flat result list must not be.
+
+**No folders in results.** A folder row's click means "go here" and an asset row's means "select
+this", and a result list mixing the two is a list where the same gesture does different things.
+
+### `STUDIO-09006` — Filter by asset type, and sorting
+
+**Done.** A kind dropdown and Name/Kind/reverse buttons, behind a disclosure button rather than
+always on the bar — four controls above the smallest panel in the default layout, for a browser
+that most often needs none of them.
+
+**The filter offers only the kinds the project actually holds.** One offering ten kinds a project
+has none of is one nobody reads, and one whose length changes as a project grows is one that
+teaches its own positions and then moves them.
+
+**A filter never hides folders.** Filtering to textures and thereby hiding the folder the textures
+are in is filtering a user out of their own project. Reversing leaves folders where they are for
+the same reason: they are navigation, and navigation that reorders itself is navigation people stop
+trusting.
+
+**Writing the test found a real defect.** Sorting by kind compared `toString(type) < toString(type)`
+— two `const char*`, so the comparison was on **pointers**: an order that is not alphabetical, not
+stable across builds, and not necessarily the same twice within one. It is `std::string_view` now,
+and the case that caught it asserts the actual sequence rather than "it is sorted".
+
+**Narrowed and empty are different messages.** "This folder is empty" while a filter is on sends
+somebody looking in the wrong place; "Nothing matches" names a control they can turn off.
 
 ### `STUDIO-09009` — Rename, move, duplicate and delete, all undoable
 
