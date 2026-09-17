@@ -269,7 +269,7 @@ phases, and holds the migration's stages.
 | `cna-studio-ui-layout` | Row/column, flex, grids, splitters, dock layout, scrolling, virtualised lists, sizing constraints |
 | `cna-studio-ui-widgets` | The widget library |
 | `cna-studio-ui-docking` | Panel docking, tab stacks, floating panels, saved workspaces |
-| `cna-studio-ui-renderer` | Layer 2: the UI GPU renderer. Holds both backends behind `StudioUiRenderBackend` — the classic `CnaUiRenderer` and the modern `StudioModernUiRenderer` — plus texture ownership, batching, clipping and DPI |
+| `cna-studio-ui-renderer` | Layer 2: the UI GPU renderer. Holds `StudioModernUiRenderer` behind `StudioUiRenderBackend`, plus texture ownership, batching, clipping and DPI. Held the classic `CnaUiRenderer` alongside it until `STUDIO-04027` deleted it |
 
 `cna-studio-ui-core` and `cna-studio-ui-layout` are **CNA-free and headless-testable**. That is the
 property that keeps the UI workstream honest: layout, focus, hit-testing and command routing are

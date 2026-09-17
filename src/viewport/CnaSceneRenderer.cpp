@@ -31,7 +31,7 @@
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/Viewport/CnaModelPass.hpp"
-#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/StudioUiRenderBackend.hpp"
 
 namespace Xna = Microsoft::Xna::Framework;
 namespace XnaGraphics = Microsoft::Xna::Framework::Graphics;

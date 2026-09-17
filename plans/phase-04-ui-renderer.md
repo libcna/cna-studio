@@ -10,7 +10,7 @@
 > that section before reading the table: several tasks were ✅ against a classic XNA implementation
 > in a phase named for the modern one, and the corrections are recorded rather than quietly applied.
 
-**Progress:** 24 of 29 complete `████████░░░░`
+**Progress:** 25 of 29 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -41,7 +41,7 @@
 | `STUDIO-04024` | `StudioModernUiRenderer`: draw `UiDrawData` through `ShaderEffect` | ✅ | `STUDIO-04023` |
 | `STUDIO-04025` | A/B verification: both backends draw the same frame | ✅ | `STUDIO-04024` |
 | `STUDIO-04026` | Default the native host to the modern backend | ✅ | `STUDIO-04025` |
-| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ⬜ | `STUDIO-04029` ✅, `STUDIO-07030` ✅, `STUDIO-02074` |
+| `STUDIO-04027` | Remove the classic UI GPU path, or justify retaining it | ✅ | `STUDIO-04029` ✅, `STUDIO-07030` ✅, `STUDIO-02074` ✅ |
 | `STUDIO-04028` | UI render benchmarks: CPU time, upload bytes, counts, state changes | ✅ | `STUDIO-04001` |
 
 ## Acceptance and verification
@@ -217,6 +217,43 @@ renderer this build was compiled against*, layer 3 rather than layer 2 — is
 `studioHostCnaRendererName()` in its own header. `src/player` linked the editor's UI renderer for
 that one string and now links no UI render backend at all, which
 `ThePlayerDependsOnNoUiRenderBackend` keeps true.
+
+**Done.** `STUDIO-02074` landed and gave this task exactly the caller-free state its own
+"deliberately not now" note was waiting on: `CnaUiRenderer` was constructed nowhere in `src/` or
+`include/`, its only two call sites (`makeUiRenderBackend()`'s `Compatibility` case and the
+runtime shader-rejection fallback) both deleted with that task. `include/CNA/Studio/UiRenderer/
+CnaUiRenderer.hpp` and `src/ui-renderer/CnaUiRenderer.cpp` are deleted. `cna-studio-ui-renderer`
+keeps its module boundary — it is still layer 2, separate from `cna-studio-viewport`'s scene
+renderer, for the reason it always was — with one backend in it (`StudioModernUiRenderer`) instead
+of two; `CMakeLists.txt`'s `add_library(cna-studio-ui-renderer …)` lost one source file and nothing
+else.
+
+**Two things outside `CnaUiRenderer` itself needed a home, not a deletion.** `src/viewport/
+CnaStudioViewport.cpp` and `src/viewport/CnaSceneRenderer.cpp` each included `CnaUiRenderer.hpp`
+for one reason — `StudioUiRenderBackend&`, a type that header pulled in transitively — and now
+include `StudioUiRenderBackend.hpp` directly. `studioUiGpuVertexStrideMatches()` and its paired
+`static_assert` (`STUDIO-04028`'s GPU-vertex-stride sanity check) were declared in
+`CnaUiRenderer.hpp` and defined in `CnaUiRenderer.cpp`, but answer a question that was never about
+which backend draws — only about what CNA uploads — and their one caller,
+`CnaStudioShellHost::checkCostModelAgrees`, is in a different file entirely. Both moved into
+`CnaStudioShellHost.cpp` as a file-local (anonymous-namespace) helper, single-TU, no header
+declaration needed. `checkCostModelAgrees` itself lost a now-dead branch: it used to pick between
+`predicted.modernSubmittedBytes` and `predicted.classicSubmittedBytes` by checking
+`renderer_->name()`, and `renderer_` can only ever be `StudioModernUiRenderer` now, so the check
+and the branch it guarded are gone — the cost model always compares against the modern figure.
+
+**What the classic path cost stays measured, not deleted.** `StudioUiBenchmark`'s cost model
+(`STUDIO-04028`) still computes `classicSubmittedBytes`/`classicGpuBytes` for every scenario
+`--ui-benchmark` runs: it is a pure function of `UiDrawData` with no CNA dependency and no
+`CnaUiRenderer` reference, kept deliberately as the permanent record of what the deleted path used
+to cost — the 17–18× figure this task's own case for deleting rested on. Measuring a retired path's
+hypothetical cost is not "two full UI GPU stacks kept by default"; running one is, and after this
+task there is exactly one.
+
+Full five-configuration matrix green: Debug, Release with -Werror, ASan+UBSan (1295/1295, 61/61
+CTest suites on each), CNA on SOFTWARE (67/67 CTest suites), CNA on OPENGL4 under Xvfb (1304/1304,
+80/80 CTest suites) — including a manual, frame-limited run on each CNA configuration confirming
+`checkCostModelAgrees` still agrees with the relocated `studioUiGpuVertexStrideMatches()`.
 
 ### `STUDIO-04028` — UI render benchmarks: CPU time, upload bytes, counts, state changes
 

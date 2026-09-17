@@ -56,14 +56,16 @@ namespace CNA::Studio
      * carries a vtable of its own) and a `Vector2` (8), plus eight for this type's own vtable
      * pointer — it derives from `IVertexType`, which has a virtual destructor.
      *
-     * This is the array both backends build and both hand to the graphics API, so it is the cost
+     * This is the array the modern backend builds and hands to the graphics API — and, while the
+     * classic backend existed, the array it built too, both to the same layout — so it is the cost
      * of the scratch conversion and of the copy into CNA. It is **not** what reaches the GPU; see
      * @ref kStudioUiGpuVertexBytes.
      *
      * Stated here rather than taken from `sizeof` because this header is CNA-free by design, and
-     * pinned to the real type by a `static_assert` in `CnaUiRenderer.cpp` — so a change to CNA's
-     * vertex layout is a compile error naming this constant rather than a silent change to every
-     * number `--ui-benchmark` prints.
+     * pinned to the real type by a `static_assert` in `CnaStudioShellHost.cpp` (moved there from
+     * the classic backend's own `CnaUiRenderer.cpp` when `STUDIO-04027` deleted it — the check was
+     * never about which backend draws) — so a change to CNA's vertex layout is a compile error
+     * naming this constant rather than a silent change to every number `--ui-benchmark` prints.
      */
     inline constexpr std::size_t kStudioUiSubmittedVertexBytes = 56;
 
@@ -75,9 +77,9 @@ namespace CNA::Studio
      * and the vertex declaration's stride is this one — so the bus sees 24 where Studio wrote 56.
      *
      * Reported separately because they answer different questions. The submitted figure is what
-     * Studio spends building and copying; the GPU figure is what the upload costs. Both differ
-     * between the two backends by the same factor, because both backends build the same array and
-     * differ only in how often they hand it over.
+     * Studio spends building and copying; the GPU figure is what the upload costs. Both differed
+     * between the two backends by the same factor while both existed, because both built the same
+     * array and differed only in how often they handed it over.
      *
      * Pinned the same way, in the same `static_assert`.
      */

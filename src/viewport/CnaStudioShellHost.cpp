@@ -24,6 +24,7 @@
 #include "Microsoft/Xna/Framework/Graphics/GraphicsProfile.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Viewport.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexPositionColorTexture.hpp"
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
 #include "CNA/Studio/Scene/SceneModels.hpp"
@@ -53,10 +54,6 @@
 #include "CNA/Studio/Viewport/CnaCapabilityBridge.hpp"
 #include "CNA/Studio/Viewport/CnaUiPlatform.hpp"
 #include "CNA/Studio/Viewport/StudioAudio.hpp"
-// Not for CnaUiRenderer itself, which nothing here constructs any more (STUDIO-02074): for
-// studioUiGpuVertexStrideMatches(), the cost-model sanity check declared alongside it that
-// checkCostModelAgrees() below still needs regardless of which backend is drawing.
-#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
 #include "CNA/Studio/UiRenderer/StudioHostRenderer.hpp"
 #include "CNA/Studio/UiRenderer/StudioModernUiRenderer.hpp"
 
@@ -103,6 +100,53 @@ namespace CNA::Studio
 {
     namespace
     {
+        // STUDIO-04028. Every byte figure `--ui-benchmark` prints is one of these constants times
+        // a vertex count, and both are stated as literals because `StudioUiBenchmark.hpp` is
+        // CNA-free by design. A change to either layout would make all of them wrong at once,
+        // silently and in the direction nobody checks. Here it is a compile error naming the
+        // constant.
+        //
+        // The two differ by more than padding. Studio hands CNA a 56-byte
+        // VertexPositionColorTexture whose data is twenty bytes: a Vector3 (12), a Color (24,
+        // because CNA's Color carries a vtable of its own) and a Vector2 (8), plus eight for this
+        // type's own vtable pointer. CNA repacks it to a 24-byte PositionColorTextureStream before
+        // upload, which is also the stride the vertex declaration names -- so the bus sees 24
+        // where Studio wrote 56.
+        //
+        // Recorded rather than worked around: the types are CNA's and the fix belongs there
+        // (docs/CNA-GAPS.md G-11). A Studio-local vertex would be a second layout to keep in step
+        // with CNA's declaration, which is worse than the waste.
+        static_assert(sizeof(XnaGraphics::VertexPositionColorTexture)
+                          == kStudioUiSubmittedVertexBytes,
+                      "kStudioUiSubmittedVertexBytes no longer matches the vertex Studio hands "
+                      "CNA, so every byte count --ui-benchmark reports is wrong (plan.md "
+                      "STUDIO-04028).");
+
+        /**
+         * @brief Whether CNA still uploads the vertex stride `kStudioUiGpuVertexBytes` assumes.
+         *
+         * `STUDIO-04028`. Every GPU byte figure `--ui-benchmark` prints is that constant times a
+         * vertex count, and the constant is a literal because `StudioUiBenchmark.hpp` is CNA-free.
+         * The submitted-bytes half is pinned by the `static_assert` above; this half cannot be,
+         * because the stride lives on a `VertexDeclaration` rather than in a type's size -- so it
+         * is asked at run time, through the public declaration, by the host that is already
+         * checking the model per frame (`checkCostModelAgrees` below). Moved here from the
+         * now-deleted `CnaUiRenderer.cpp` (STUDIO-04027): the check was never about which backend
+         * draws, only about what CNA uploads, and this is its only caller.
+         *
+         * @return True when the declaration's stride is what the benchmark assumes.
+         */
+        [[nodiscard]] bool studioUiGpuVertexStrideMatches()
+        {
+            // The GPU-side half of the same check, and a *runtime* one because the stride lives on
+            // a VertexDeclaration rather than in a type's size. That is the public way to ask: the
+            // packed stream behind it is CNA::Internal, which Studio does not reach into
+            // (STUDIO-02032) -- and the declaration's stride is the authority anyway, because it
+            // is what the device is told.
+            return XnaGraphics::VertexPositionColorTexture::getVertexDeclarationStatic()
+                       .getVertexStrideProperty() == static_cast<int>(kStudioUiGpuVertexBytes);
+        }
+
         /**
          * @brief A CNA `Game` that draws the native Studio shell and nothing else.
          *
@@ -719,12 +763,13 @@ namespace CNA::Studio
             /**
              * @brief Requires `studioUiFrameCost` to predict what the backend just reported.
              *
-             * `STUDIO-04028`. The benchmark's cost model is a second implementation of both
-             * backends' inner loops, written against the draw data so that it runs with no CNA and
-             * no GPU — which is what makes it useful and what makes it capable of being quietly
-             * wrong. Checked here, against the real renderer, on a real device, on every frame of
-             * every automated run: a model nobody compared with reality is a second implementation
-             * with no tests, and the number it produces is what `STUDIO-04027` decides on.
+             * `STUDIO-04028`. The benchmark's cost model is a second implementation of the
+             * modern backend's inner loop, written against the draw data so that it runs with no
+             * CNA and no GPU — which is what makes it useful and what makes it capable of being
+             * quietly wrong. Checked here, against the real renderer, on a real device, on every
+             * frame of every automated run: a model nobody compared with reality is a second
+             * implementation with no tests. The measurement this model produced is what
+             * `STUDIO-04027` decided on: the classic backend it also used to model is deleted.
              *
              * Only while a frame limit is set, which is what a capture or a smoke test has and an
              * interactive session does not. The pass is cheap — one walk of the commands — but an
@@ -749,9 +794,7 @@ namespace CNA::Studio
                 }
 
                 const StudioUiFrameCost predicted = studioUiFrameCost(shell_->drawData());
-                const bool modern = renderer_->name() == "modern";
-                const std::size_t predictedBytes =
-                    modern ? predicted.modernSubmittedBytes : predicted.classicSubmittedBytes;
+                const std::size_t predictedBytes = predicted.modernSubmittedBytes;
 
                 const auto disagree = [this](std::string_view what, std::size_t model,
                                              std::size_t reported) {

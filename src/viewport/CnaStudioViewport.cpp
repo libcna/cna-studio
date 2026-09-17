@@ -15,7 +15,7 @@
 
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Viewport/CnaSceneRenderer.hpp"
-#include "CNA/Studio/UiRenderer/CnaUiRenderer.hpp"
+#include "CNA/Studio/UiRenderer/StudioUiRenderBackend.hpp"
 #include <iterator>
 #include <utility>
 #include <vector>

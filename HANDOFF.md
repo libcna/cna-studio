@@ -294,7 +294,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **244 of 564 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **245 of 564 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -359,7 +359,7 @@ and **a drop-down over a deferred popup** — the facility that lets a popup esc
 opened in, **typed drag and drop**, and **a modal dialog** — a window that owns the frame until it
 is answered, which is what About, Save Layout As and every confirmation are built on.
 
-**Phase 4 — CNAEXT UI renderer** (24 of 29). Vertex management, batching, nested scissor clipping,
+**Phase 4 — CNAEXT UI renderer** (25 of 29). Vertex management, batching, nested scissor clipping,
 rounded rectangles, clip culling, real text with kerning and correct baselines, **forty-three
 icons drawn as vector paths** with no vendored asset, **a glyph atlas that doubles rather than
 losing text** and says so in Diagnostics, **uploads of the changed rectangle rather than four
@@ -374,23 +374,36 @@ came to contain no CNAEXT for six phases; `STUDIO-04022` corrected the ledger ra
 wording. The renderer that closes it is real work, not a rename: `StudioModernUiRenderer` builds a
 `ShaderEffect` from a `ShaderPackageEXT` carrying four GLSL variants (desktop and ES, vertex and
 fragment), uploads through `DynamicVertexBuffer`/`DynamicIndexBuffer` that grow to powers of two and
-never shrink, and draws the same `UiDrawData` the classic backend does. Both are
-`StudioUiRenderBackend` implementations picked at run time, and `CnaStudioUiRenderBackendsAgree`
-draws the same shell through each on `OPENGL4` and compares the PNGs **byte for byte** — after first
-asserting that each run used the backend it was asked for, so the test cannot quietly become a
-comparison of one renderer with itself. The classic backend still exists and still builds: deleting
-a working renderer before its replacement is proven is how a project ends up with neither.
+never shrink. While the classic backend still existed, both were `StudioUiRenderBackend`
+implementations picked at run time, and `CnaStudioUiRenderBackendsAgree` drew the same shell through
+each on `OPENGL4` and compared the PNGs **byte for byte** — after first asserting that each run used
+the backend it was asked for, so the test could not quietly become a comparison of one renderer with
+itself.
 
-**And the phase has a measurement now instead of an assumption.** `STUDIO-04028` is
-`cna-studio --ui-benchmark`: eight representative frame shapes, reporting what each backend asks the
-device to do and what the frame costs to describe. **The classic backend puts 17–18× as much
-geometry on the bus, on every shape measured**, because `DrawUserIndexedPrimitives` takes user
-arrays the driver copies per call and the array runs from the command's base vertex to the end of
-its list — which, in any list under 65 535 vertices, is the whole array. The ratio is roughly the
-draw-call count and grows as the UI is batched more finely. It needs no CNA, no GPU and no window,
-and the model is checked against the real backends frame by frame on any run with a frame limit.
-`STUDIO-04029` put `OPENGL4` under Xvfb into CI as a second matrix leg, with an assertion that each
-leg gets the backend it exists to cover — a silent fallback would be a green tick over nothing.
+**And the phase had a measurement instead of an assumption, which is what decided the rest.**
+`STUDIO-04028` is `cna-studio --ui-benchmark`: eight representative frame shapes, reporting what
+each backend asks the device to do and what the frame costs to describe. **The classic backend put
+17–18× as much geometry on the bus, on every shape measured**, because `DrawUserIndexedPrimitives`
+takes user arrays the driver copies per call and the array runs from the command's base vertex to
+the end of its list — which, in any list under 65 535 vertices, is the whole array. The ratio is
+roughly the draw-call count and grows as the UI is batched more finely. It needs no CNA, no GPU and
+no window, and the model is checked against the real backend frame by frame on any run with a frame
+limit. `STUDIO-04029` put `OPENGL4` under Xvfb into CI as a second matrix leg, with an assertion
+that each leg gets the backend it exists to cover — a silent fallback would be a green tick over
+nothing.
+
+**`STUDIO-04027` then deleted the classic backend.** `STUDIO-02074` retired the compatibility host
+profile that was `CnaUiRenderer`'s only remaining caller (SOFTWARE, `--ui-renderer=compat`) once
+`OPENGL4` under Xvfb gave this project a modern-profile CI leg for real, which left `CnaUiRenderer`
+constructed nowhere in `src/` or `include/`. `include/CNA/Studio/UiRenderer/CnaUiRenderer.hpp` and
+`src/ui-renderer/CnaUiRenderer.cpp` are gone; `cna-studio-ui-renderer` keeps its module boundary
+with one backend in it instead of two; `CnaStudioUiRenderBackendsAgree` and
+`cmake/UiRendererAbTest.cmake` are gone with the second backend they compared against.
+`studioUiGpuVertexStrideMatches()` — the one piece of `CnaUiRenderer.cpp` that was never about which
+backend draws, a `STUDIO-04028` cost-model sanity check — moved to `CnaStudioShellHost.cpp`, its
+only caller. The 17–18× figure stays measured, not deleted: `StudioUiBenchmark`'s cost model still
+computes what the classic path would have cost, as a pure function of `UiDrawData` with no CNA
+dependency, which is the permanent record the deletion decision rested on.
 
 **Phase 5 — Docking** (14 of 15). The dock node tree, splits, draggable splitters with
 minimum sizes and cursor shapes, tab strips, opening and closing panels, serialization, restoring

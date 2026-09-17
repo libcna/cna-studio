@@ -358,13 +358,14 @@ if(CNA_STUDIO_WITH_CNA)
     # thing the host capability contract is about. Separating them is also what lets the A/B
     # comparison of STUDIO-04025 link one and not the other.
     #
-    # Both backends live here: the classic CnaUiRenderer and the modern StudioModernUiRenderer,
-    # behind StudioUiRenderBackend. A module created by adding only the new one would have one
-    # backend in it and one somewhere else, which is the arrangement that makes an A/B comparison
-    # impossible to write.
+    # One backend lives here now: StudioModernUiRenderer, behind StudioUiRenderBackend.
+    # STUDIO-04027 deleted the classic CnaUiRenderer this module used to hold alongside it, once
+    # STUDIO-02074 retired the compatibility host profile that was CnaUiRenderer's only remaining
+    # caller. The module survives its own rationale going from two backends to one: it is still
+    # the UI GPU renderer, separate from cna-studio-viewport's scene renderer, for the same reason
+    # it always was -- the two answer different questions.
     add_library(cna-studio-ui-renderer STATIC
-        src/ui-renderer/CnaUiRenderer.cpp
-    src/ui-renderer/StudioHostRenderer.cpp
+        src/ui-renderer/StudioHostRenderer.cpp
         src/ui-renderer/StudioModernUiRenderer.cpp
         src/ui-renderer/StudioUiShaderSource.cpp)
     target_include_directories(cna-studio-ui-renderer PUBLIC include)

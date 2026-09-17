@@ -145,31 +145,35 @@ Deleting a working renderer to install an unproven one is how a tool loses a wee
 | 3 | `StudioModernUiRenderer` implements the same interface over `ShaderEffect` and GPU buffers. | `STUDIO-04023`, `STUDIO-04024` | ✅ |
 | 4 | A/B verification: both backends draw the same frame and the captures are compared. | `STUDIO-04025` | ✅ |
 | 5 | The native host defaults to the modern backend. | `STUDIO-04026` | ✅ |
-| 6 | The classic backend is removed, or retained only where a justification is written down. | `STUDIO-04027` | |
+| 6 | The classic backend is removed, or retained only where a justification is written down. | `STUDIO-04027` | ✅ |
 
 No stage removed a working path before the one after it had passed.
 
 ### Where it stands
 
-**Stages 1 to 5 are done.** On a host that meets the modern profile, `cna-studio` with no flags
+**All six stages are done.** On a host that meets the modern profile, `cna-studio` with no flags
 draws its entire UI through a `ShaderEffect` Studio compiled from a `ShaderPackageEXT`, over a
 `DynamicVertexBuffer` and a `DynamicIndexBuffer` written once per draw list with
 `SetDataOptions::Discard`. Verified on `OPENGL4` under Xvfb on Mesa's llvmpipe: `Modern graphics
 API: CNA engine layer 18`, `UI renderer: modern`, 1920x1080, 90 draw calls, 16140 triangles, with
 text, icons, the composited scene and tinted log rows all drawn by it.
 
-**Stage 6 is next, and what used to hold it back is now resolved.** For a while the classic backend
-was retained *with the justification written down*: CNA's `SOFTWARE` renderer cannot execute a
-shader, and until `STUDIO-04029` it was the only renderer this project's CI could build at all —
-deleting the compatibility backend then would have left Studio's only dependency-free automated
+**Stage 6 waited on two things and both resolved in order.** For a while the classic backend was
+retained *with the justification written down*: CNA's `SOFTWARE` renderer cannot execute a shader,
+and until `STUDIO-04029` it was the only renderer this project's CI could build at all — deleting
+the compatibility backend then would have left Studio's only dependency-free automated
 configuration unable to start it at all. `STUDIO-04029` put `OPENGL4` under Xvfb into CI as a real,
 running leg, which is the condition stage 6 was waiting on. `STUDIO-02074` then retired the
 compatibility *profile* one layer up: `StudioHostProfile` has one member, `resolveStudioUiBackend`
 no longer has a second backend to fall back to, and a host that cannot meet the modern profile
 refuses to start rather than falling back — the SOFTWARE CI leg now builds `cna-studio` and
-`cna-player-software` and asserts that exact refusal instead of hosting Studio. `STUDIO-04027` is
-what stage 6 still needs: `CnaUiRenderer` itself, `cna-studio-ui-renderer`'s split, and the classic
-GPU calls this document traced are code with no caller left, not yet deleted.
+`cna-player-software` and asserts that exact refusal instead of hosting Studio. `STUDIO-04027`
+then deleted `CnaUiRenderer` itself: `include/CNA/Studio/UiRenderer/CnaUiRenderer.hpp` and
+`src/ui-renderer/CnaUiRenderer.cpp` are gone, `cna-studio-ui-renderer` keeps its module boundary
+with one backend in it instead of two, and every classic GPU call this document traced is deleted
+with the file that made it. `studioUiGpuVertexStrideMatches()` — the one piece of that file
+genuinely unrelated to which backend draws, a cost-model sanity check `STUDIO-04028`'s benchmark
+still needs — moved to `CnaStudioShellHost.cpp`, its only caller.
 
 ### The A/B result, which was not the expected one
 
