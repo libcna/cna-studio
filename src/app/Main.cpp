@@ -1133,9 +1133,17 @@ int main(int argc, char** argv)
             std::filesystem::path{options.newProjectPath}).lexically_normal().generic_string();
         request.templateId = options.newProjectTemplate;
         request.languageId = options.newProjectLanguage;
-        request.name = options.newProjectName.empty()
-            ? std::filesystem::path{request.directory}.filename().generic_string()
-            : options.newProjectName;
+        // The directory's own name when none was given. `filename()` on a path with a trailing
+        // separator is empty, and `--new-project=/tmp/Thing/` is a perfectly ordinary thing to
+        // type -- it would otherwise be refused with "a project needs a name", which is true and
+        // says nothing about the slash that caused it.
+        std::string derived = std::filesystem::path{request.directory}.filename().generic_string();
+        if (derived.empty())
+        {
+            derived = std::filesystem::path{request.directory}.parent_path()
+                          .filename().generic_string();
+        }
+        request.name = options.newProjectName.empty() ? derived : options.newProjectName;
 
         const CNA::Studio::StudioNewProjectResult created =
             CNA::Studio::createStudioProject(request, templates, languages);

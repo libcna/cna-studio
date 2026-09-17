@@ -132,3 +132,46 @@ CNA_STUDIO_TEST(OptionsParseTheAutosaveAndRecoveryFlags)
     CNA_STUDIO_EXPECT(!clamped.hasError);
     CNA_STUDIO_EXPECT_EQ(clamped.autosaveSeconds, 0.0);
 }
+
+CNA_STUDIO_TEST(EveryProjectHubFlagIsInTheUsageTextAndParses)
+{
+    // The same rule as the shell-preview flags, applied to the ones Phase 8 added. These are how
+    // `STUDIO-08011` creates the project it builds, so a flag that stopped parsing would take the
+    // proof of the central invariant with it -- and a flag nobody can discover is one only its
+    // author can use.
+    const std::string usage = StudioOptions::getUsage();
+
+    const std::vector<std::pair<std::string, bool>> flags = {
+        {"--new-project", true}, {"--template", true},  {"--project-name", true},
+        {"--language", true},    {"--list-templates", false}};
+
+    for (const auto& [flag, takesValue] : flags)
+    {
+        if (usage.find(flag) == std::string::npos)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                flag + " is accepted but is not in --help, so nobody will find it.");
+        }
+
+        const std::string argument = takesValue ? flag + "=probe" : flag;
+        const char* argv[] = {"cna-studio", argument.c_str()};
+        const StudioOptions parsed = StudioOptions::parse(2, argv);
+
+        if (parsed.hasError)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                flag + " was rejected by the parser: " + parsed.errorMessage);
+        }
+    }
+
+    // And each one lands where it is read from, rather than merely being accepted.
+    const char* argv[] = {"cna-studio", "--new-project=/tmp/Thing", "--template=empty-3d",
+                          "--project-name=A Name", "--language=cpp"};
+    const StudioOptions parsed = StudioOptions::parse(5, argv);
+
+    CNA_STUDIO_EXPECT_EQ(parsed.newProjectPath, std::string{"/tmp/Thing"});
+    CNA_STUDIO_EXPECT_EQ(parsed.newProjectTemplate, std::string{"empty-3d"});
+    CNA_STUDIO_EXPECT_EQ(parsed.newProjectName, std::string{"A Name"});
+    CNA_STUDIO_EXPECT_EQ(parsed.newProjectLanguage, std::string{"cpp"});
+    CNA_STUDIO_EXPECT(!parsed.listTemplates);
+}
