@@ -104,4 +104,20 @@ namespace CNA::Studio
      * @return The number of records whose settings changed.
      */
     std::size_t applyImporterFacts(AssetDatabase& assets);
+
+    /**
+     * @brief Fills in the facts for one asset, leaving every *setting* alone.
+     *
+     * `plan.md` STUDIO-10001. The per-asset half of applyImporterFacts(), which a reimport needs:
+     * re-reading the whole project because one file changed is the reason a reimport feels like a
+     * pause rather than an action.
+     *
+     * Only writes where the value would actually change, like the wholesale pass, so an asset
+     * reimported twice produces one sidecar diff rather than two.
+     *
+     * @param assets The database.
+     * @param id The asset.
+     * @return True when a fact changed.
+     */
+    bool applyImporterFacts(AssetDatabase& assets, const Uuid& id);
 }

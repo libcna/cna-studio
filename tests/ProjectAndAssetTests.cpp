@@ -21,6 +21,7 @@
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/MaterialDocument.hpp"
 #include "CNA/Studio/Assets/AssetImporters.hpp"
+#include "CNA/Studio/Assets/AssetReimport.hpp"
 #include "CNA/Studio/Assets/AssetTree.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
@@ -2348,6 +2349,156 @@ CNA_STUDIO_TEST(ResettingASettingNobodySetIsRefusedRatherThanAnEmptyUndoEntry)
 
     const ClearImporterSettingCommand unknown{assets, Uuid::generate(), "generateMipmaps"};
     CNA_STUDIO_EXPECT(!unknown.isValid());
+
+    std::filesystem::remove_all(directory);
+}
+
+// --- Reimport, preserving what the user chose (STUDIO-10001, STUDIO-09010) ----------------------
+
+/**
+ * @brief The acceptance condition: a reimport keeps every import setting.
+ *
+ * The classic asset-pipeline failure is the opposite — somebody re-exports a mesh from their
+ * modelling tool and every import setting in the project silently reverts. The sidecar holds two
+ * kinds of entry and only one of them is a reimport's to touch.
+ */
+CNA_STUDIO_TEST(AReimportRefreshesTheFactsAndKeepsEverySetting)
+{
+    const std::filesystem::path directory = makeScratchDirectory("reimportsettings");
+
+    // A 2x2 PNG, then a 4x4 one: the pixel size is a *fact* the importer reads from the header.
+    const auto writePng = [&](int width, int height) {
+        std::string png;
+        png += "\x89PNG\r\n\x1a\n";
+        png += std::string(4, '\0');
+        png += "IHDR";
+        const auto beInt = [&png](int value) {
+            png += static_cast<char>((value >> 24) & 0xFF);
+            png += static_cast<char>((value >> 16) & 0xFF);
+            png += static_cast<char>((value >> 8) & 0xFF);
+            png += static_cast<char>(value & 0xFF);
+        };
+        beInt(width);
+        beInt(height);
+
+        // Padded so the two files differ in *length*. The stamp is seconds-resolution and both
+        // writes happen inside one, which is a real property of the design -- the header says the
+        // stamp is deliberately not a content hash -- rather than something to work around by
+        // sleeping for a second in a test.
+        png += std::string(static_cast<std::size_t>(width) * 16u, 'x');
+        writeFile(directory / "Textures" / "Hero.png", png);
+    };
+
+    writePng(2, 2);
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Textures").succeeded);
+
+    const Uuid id = assets.findByPath("Textures/Hero.png")->id;
+
+    // What the user chose, through the same command the inspector uses.
+    CommandHistory history;
+    history.execute(std::make_unique<SetImporterSettingCommand>(assets, id, "generateMipmaps",
+                                                                PropertyValue{false}));
+
+    // Never imported, so a reimport would do something -- but nothing has *changed*, so the
+    // browser does not mark it. Those are different questions with different right answers.
+    CNA_STUDIO_EXPECT(studioNeedsReimport(*assets.find(id)));
+    CNA_STUDIO_EXPECT(!studioSourceChangedSinceImport(*assets.find(id)));
+
+    const StudioReimportResult first = studioReimportAssets(assets, {id});
+    CNA_STUDIO_EXPECT_EQ(first.reimported, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(first.factsChanged, std::size_t{1});
+
+    // The fact is there and the setting survived.
+    CNA_STUDIO_EXPECT(!assets.find(id)->importerSettings["pixelSize"].isNull());
+    CNA_STUDIO_EXPECT(!assets.find(id)->importerSettings["generateMipmaps"].isNull());
+    CNA_STUDIO_EXPECT(assets.find(id)->importerSettings["generateMipmaps"].asBoolean() == false);
+
+    // Imported, and nothing has changed since: neither question says yes now.
+    CNA_STUDIO_EXPECT(!studioNeedsReimport(*assets.find(id)));
+    CNA_STUDIO_EXPECT(!studioSourceChangedSinceImport(*assets.find(id)));
+
+    // The file is re-exported at a different size. The record's stamp is what a scan or a watcher
+    // poll updates, spelled here rather than waiting for one.
+    writePng(4, 4);
+    CNA_STUDIO_EXPECT(assets.scan("Textures").succeeded);
+    CNA_STUDIO_EXPECT(studioSourceChangedSinceImport(*assets.find(id)));
+
+    const StudioReimportResult second = studioReimportAssets(assets, {id});
+    CNA_STUDIO_EXPECT_EQ(second.reimported, std::size_t{1});
+
+    // The fact moved on and the setting did not -- which is the whole acceptance condition.
+    const StudioVector2 size =
+        PropertyValue::fromJson(assets.find(id)->importerSettings["pixelSize"],
+                                PropertyType::Vector2)
+            .get<StudioVector2>();
+    CNA_STUDIO_EXPECT_EQ(size.x, 4.0f);
+    CNA_STUDIO_EXPECT_EQ(size.y, 4.0f);
+    CNA_STUDIO_EXPECT(assets.find(id)->importerSettings["generateMipmaps"].asBoolean() == false);
+    CNA_STUDIO_EXPECT(!studioSourceChangedSinceImport(*assets.find(id)));
+
+    // And it survives a restart: the stamp is in the sidecar, so a reopened project does not think
+    // every asset needs importing again.
+    AssetDatabase reopened;
+    reopened.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(reopened.scan("Textures").succeeded);
+    CNA_STUDIO_EXPECT(!studioNeedsReimport(*reopened.find(id)));
+    CNA_STUDIO_EXPECT(
+        reopened.find(id)->importerSettings["generateMipmaps"].asBoolean() == false);
+
+    std::filesystem::remove_all(directory);
+}
+
+CNA_STUDIO_TEST(AskingWhetherAReimportIsDueTouchesNoFilesystem)
+{
+    // Which is what lets the Content Browser mark every row. Both stamps are in the record: one
+    // kept by the watcher, one by the last import.
+    const std::filesystem::path directory = makeScratchDirectory("reimportfree");
+    writeFile(directory / "Textures" / "Hero.png", "not really a png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Textures").succeeded);
+
+    const Uuid id = assets.findByPath("Textures/Hero.png")->id;
+    (void)studioReimportAssets(assets, {id});
+
+    const std::uint64_t before = assets.getPresenceProbeCount();
+    for (int i = 0; i < 100; ++i)
+    {
+        (void)studioNeedsReimport(*assets.find(id));
+        (void)studioSourceChangedSinceImport(*assets.find(id));
+        (void)studioAssetsNeedingReimport(assets);
+    }
+    CNA_STUDIO_EXPECT_EQ(assets.getPresenceProbeCount(), before);
+
+    std::filesystem::remove_all(directory);
+}
+
+CNA_STUDIO_TEST(AReimportOfAMissingFileIsRefusedRatherThanWritingNothingQuietly)
+{
+    const std::filesystem::path directory = makeScratchDirectory("reimportmissing");
+    writeFile(directory / "Textures" / "Gone.png", "not really a png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Textures").succeeded);
+
+    const Uuid id = assets.findByPath("Textures/Gone.png")->id;
+    std::filesystem::remove(directory / "Textures" / "Gone.png");
+    CNA_STUDIO_EXPECT_EQ(assets.refreshPresence(), std::size_t{1});
+
+    // Neither question says a missing file needs reimporting: there is nothing to read, and
+    // offering the action would be offering one that cannot work.
+    CNA_STUDIO_EXPECT(!studioNeedsReimport(*assets.find(id)));
+    CNA_STUDIO_EXPECT(!studioSourceChangedSinceImport(*assets.find(id)));
+
+    const StudioReimportResult result = studioReimportAssets(assets, {id});
+    CNA_STUDIO_EXPECT_EQ(result.reimported, std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(result.missing, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(result.warnings.size(), std::size_t{1});
 
     std::filesystem::remove_all(directory);
 }

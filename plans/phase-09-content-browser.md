@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 8 of 17 complete `█████░░░░░░░`
+**Progress:** 9 of 17 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,7 +19,7 @@
 | `STUDIO-09007` | Favourites and recent assets | ⬜ | `STUDIO-09001` |
 | `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ⬜ | `STUDIO-03023` |
 | `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ✅ | `STUDIO-09001` |
-| `STUDIO-09010` | Reimport, preserving Studio-side import settings | ⬜ | `STUDIO-10001` |
+| `STUDIO-09010` | Reimport, preserving Studio-side import settings | ✅ | `STUDIO-10001` |
 | `STUDIO-09011` | Reveal in the system file manager | ⬜ | `STUDIO-09001` |
 | `STUDIO-09012` | Dependency view: references-to and referenced-by | ✅ | `STUDIO-09001` |
 | `STUDIO-09013` | Missing asset handling with a clear path to relink | ✅ | `STUDIO-09012` |

@@ -80,15 +80,33 @@ namespace CNA::Studio
         std::vector<Uuid> dependencies;
 
         /**
-         * @brief Source file size and modification time at the last successful import.
+         * @brief Source file size and modification time **as last seen**.
          *
-         * Compared against the file on disk to decide whether a reimport is needed. Deliberately
-         * *not* a content hash: hashing every asset on every project open is the kind of thing
-         * that makes an editor take thirty seconds to start on a real project. A hash can be added
-         * later as an opt-in for correctness-critical pipelines.
+         * Written by a scan and kept up to date by `AssetWatcher`, so it describes the file on disk
+         * rather than the state anything was imported from. The doc comment used to say "at the
+         * last successful import" and the watcher had been overwriting it since `STUDIO-07051`,
+         * which left nothing recording when an asset was actually imported -- see @ref importedSize.
+         *
+         * Deliberately *not* a content hash: hashing every asset on every project open is the kind
+         * of thing that makes an editor take thirty seconds to start on a real project. A hash can
+         * be added later as an opt-in for correctness-critical pipelines.
          */
         std::uint64_t sourceSize = 0;
         std::int64_t sourceModifiedTime = 0;
+
+        /**
+         * @brief Size and modification time at the last successful import (`plan.md` STUDIO-10001).
+         *
+         * The pair @ref sourceSize is compared *against* to decide whether a reimport is due. Both
+         * are maintained without touching the filesystem -- the watcher updates one and a reimport
+         * updates the other -- so "does this need reimporting" is answerable once per row of the
+         * Content Browser without a syscall, which is what `STUDIO-30015` spent its effort on.
+         *
+         * Zero means never imported, which is what a freshly scanned asset is until something
+         * imports it.
+         */
+        std::uint64_t importedSize = 0;
+        std::int64_t importedModifiedTime = 0;
 
         /**
          * @brief Whether the source file was on disk the last time anybody looked.

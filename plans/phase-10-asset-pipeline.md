@@ -6,11 +6,11 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 0 of 13 complete `░░░░░░░░░░░░`
+**Progress:** 1 of 13 complete `░░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-10001` | Import settings model, persisted per asset and preserved across reimport | ⬜ | `STUDIO-09014` |
+| `STUDIO-10001` | Import settings model, persisted per asset and preserved across reimport | ✅ | `STUDIO-09014` |
 | `STUDIO-10002` | Importer plugin interface | ⬜ | `STUDIO-10001` |
 | `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ⬜ | `STUDIO-10001` |
 | `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ⬜ | `STUDIO-10002` |
@@ -27,6 +27,51 @@
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-10001` — Import settings model, persisted per asset and preserved across reimport
+
+**Most of the model already existed**, and saying so is the honest part: importer descriptors are
+`ComponentDescriptor`s (`AssetImporters.hpp`), settings live in the `.cnaasset` sidecar, the
+inspector edits them, and `SetImporterSettingCommand` / `ClearImporterSettingCommand` make every
+edit undoable. What was missing was the second half of the title — **preserved across reimport** —
+because there was no reimport.
+
+**Settings and facts are different things, and only one of them a reimport may touch.** Both are
+shaped as importer settings, which is what lets the inspector edit them with no new code, and the
+importer marks the facts read-only. A *setting* is what the user chose — a model's `scaleFactor`, a
+texture's `generateMipmaps`. A *fact* is what the file says — its pixel size, its triangle count. A
+reimport rewrites the facts and leaves everything else alone. The failure this exists to prevent is
+the classic one: somebody re-exports a mesh and every import setting in the project silently
+reverts.
+
+**The record gained a second stamp, and the first one's documentation was wrong.** `sourceSize` and
+`sourceModifiedTime` said "at the last successful import" and had been overwritten by `AssetWatcher`
+since `STUDIO-07051`, so they meant "as last seen" and nothing recorded when an asset was actually
+imported. They now say what they mean, and `importedSize` / `importedModifiedTime` say the other
+thing. Both are maintained without touching the filesystem — the watcher keeps one, a reimport keeps
+the other — so *"does this need reimporting"* is arithmetic. That is what lets the Content Browser
+mark every row without undoing what `STUDIO-30015` bought.
+
+**Two predicates, because there are two questions.** `studioSourceChangedSinceImport` is the *news*
+— the file moved on since Studio read it — and is what a row is marked with. `studioNeedsReimport`
+also takes in the asset nobody has ever imported, and is the set "import everything that needs it"
+acts on. Collapsing them would put an alarming badge on every asset of a freshly scanned project.
+
+**A reimport is not undoable, deliberately.** Every *document* change is a command (D-06); a
+reimport re-reads what is already on disk. Undoing one would restore facts describing a version of
+the file that no longer exists — a sidecar claiming a texture is 512×512 when the file is 1024×1024
+— and the thing a user might actually want back, their settings, was never touched.
+
+**`applyImporterFacts` gained a per-asset overload**, because re-reading the whole project because
+one file changed is the reason a reimport feels like a pause rather than an action. The wholesale
+pass now runs over a snapshot of ids rather than over live record pointers, since writing a sidecar
+can reallocate the record store underneath a walk holding pointers into it.
+
+**Verification.** `tests/ProjectAndAssetTests.cpp`: a setting surviving two reimports while the fact
+it sits beside changes, the stamp surviving a restart so a reopened project does not think every
+asset needs importing, asking whether a reimport is due making no filesystem access across a hundred
+calls, and a missing file refused with a reason. `tests/StudioContentBrowserTests.cpp` covers the
+row marker and the menu.
 
 ### `STUDIO-10002` — Importer plugin interface
 

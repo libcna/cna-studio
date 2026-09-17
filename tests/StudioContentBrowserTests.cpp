@@ -15,6 +15,7 @@
 #include "TestHarness.hpp"
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetReimport.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -1264,4 +1265,85 @@ CNA_STUDIO_TEST(ThePanelsPollTheWatcherInEveryBuildRatherThanOnlyTheCnaBackedOne
 
     CNA_STUDIO_EXPECT(context.getAssets().isMissing(id));
     CNA_STUDIO_EXPECT_EQ(context.getAssets().getMissingCount(), std::size_t{1});
+}
+
+// ------------------------------------------------------------------------------------------------
+// Reimport (STUDIO-09010)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheBrowserMarksAnOutOfDateAssetAndOffersToReimportIt)
+{
+    ScopedProject project{"reimportrow"};
+    project.write("Assets/Hero.png");
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Hero.png")->id;
+    (void)studioReimportAssets(assets, {id});
+
+    // Up to date: the row says what the asset *is* and nothing else.
+    {
+        const std::vector<StudioContentCard> cards = studioContentCards(assets, "Assets", Uuid{});
+        CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{1});
+        CNA_STUDIO_EXPECT(!cards.front().needsReimport);
+        CNA_STUDIO_EXPECT(cards.front().detail.find("out of date") == std::string::npos);
+    }
+
+    // Re-exported. The record's stamp is what a scan or a watcher poll updates.
+    {
+        const std::filesystem::path file = std::filesystem::path{project.root()} / "Assets"
+                                         / "Hero.png";
+        std::ofstream stream{file, std::ios::binary};
+        stream << "a longer set of pixels than before";
+    }
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const std::vector<StudioContentCard> cards = studioContentCards(assets, "Assets", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(cards.front().needsReimport);
+
+    // Beside the kind rather than instead of it: what the asset is does not stop being true
+    // because its file moved on.
+    CNA_STUDIO_EXPECT(cards.front().detail.find(toString(AssetType::Texture2D))
+                      != std::string::npos);
+    CNA_STUDIO_EXPECT(cards.front().detail.find("out of date") != std::string::npos);
+
+    // The menu offers it, and taking it clears the marker without disturbing the undo stack: a
+    // reimport re-reads what is on disk rather than changing the document.
+    bool offered = false;
+    for (const StudioContextMenuItem& item : studioContentMenuItems(assets, id, {}))
+    {
+        if (item.label == "Reimport") { offered = item.enabled; }
+    }
+    CNA_STUDIO_EXPECT(offered);
+
+    const StudioContentOperation done = studioContentReimport(context, id);
+    CNA_STUDIO_EXPECT(done.applied);
+    CNA_STUDIO_EXPECT(!done.message.empty());
+    CNA_STUDIO_EXPECT_EQ(context.getHistory().getCount(), std::size_t{0});
+    CNA_STUDIO_EXPECT(!studioContentCards(assets, "Assets", Uuid{}).front().needsReimport);
+}
+
+CNA_STUDIO_TEST(AMissingAssetIsNotOfferedAReimportItCannotDo)
+{
+    ScopedProject project{"reimportmissingrow"};
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+    const Uuid gone = track(assets, "Assets/Hero.png", AssetType::Texture2D);
+    CNA_STUDIO_EXPECT(assets.isMissing(gone));
+
+    for (const StudioContextMenuItem& item : studioContentMenuItems(assets, gone, {}))
+    {
+        if (item.label == "Reimport") { CNA_STUDIO_EXPECT(!item.enabled); }
+    }
+
+    // And asking anyway is refused with a reason rather than silently doing nothing.
+    const StudioContentOperation refused = studioContentReimport(context, gone);
+    CNA_STUDIO_EXPECT(!refused.applied);
+    CNA_STUDIO_EXPECT(!refused.message.empty());
 }

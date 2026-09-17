@@ -241,6 +241,19 @@ namespace CNA::Studio
     StudioContentOperation studioContentDelete(StudioContext& context, const Uuid& asset);
 
     /**
+     * @brief Re-reads @p asset from disk, keeping every import setting.
+     *
+     * `plan.md` STUDIO-09010, over `STUDIO-10001`. Not through the undo stack, and deliberately: a
+     * reimport re-reads what is already on disk rather than changing the document, and undoing one
+     * would put back facts describing a version of the file that no longer exists.
+     *
+     * @param context The editor.
+     * @param asset The asset to reimport.
+     * @return What happened. `applied` is true when the file was read.
+     */
+    StudioContentOperation studioContentReimport(StudioContext& context, const Uuid& asset);
+
+    /**
      * @brief The rows the right-click menu offers for whatever is under the pointer.
      *
      * `plan.md` STUDIO-09009. Separate from the drawing so that *what a menu offers* — which
@@ -408,6 +421,14 @@ namespace CNA::Studio
         bool selected = false;
         /** @brief Whether the asset's source file is missing. */
         bool missing = false;
+
+        /**
+         * @brief Whether the file has changed since it was last imported (`plan.md` STUDIO-09010).
+         *
+         * Free to ask: `AssetRecord` carries both stamps, one kept by the watcher and one by the
+         * last import, so marking every row is arithmetic rather than a `stat` per row.
+         */
+        bool needsReimport = false;
 
         /**
          * @brief The folder this asset is in, shown only in search results.

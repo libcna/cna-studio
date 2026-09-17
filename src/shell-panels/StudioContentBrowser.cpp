@@ -8,6 +8,7 @@
 
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetReimport.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioWidgets.hpp"
 
@@ -455,6 +456,14 @@ namespace CNA::Studio
                 card.icon = StudioIcon::Warning;
                 card.iconRole = StudioColorRole::Warning;
             }
+            else if (studioSourceChangedSinceImport(*record))
+            {
+                // Said beside the kind rather than instead of it: what the asset *is* does not stop
+                // being true because its file has moved on. Arithmetic on two stamps the record
+                // already carries, so marking every row costs no syscall (STUDIO-30015).
+                card.needsReimport = true;
+                card.detail += "  ·  out of date";
+            }
             cards.push_back(std::move(card));
         }
         return cards;
@@ -560,6 +569,14 @@ namespace CNA::Studio
                 card.detail = "missing";
                 card.icon = StudioIcon::Warning;
                 card.iconRole = StudioColorRole::Warning;
+            }
+            else if (studioSourceChangedSinceImport(*record))
+            {
+                // Said beside the kind rather than instead of it: what the asset *is* does not stop
+                // being true because its file has moved on. Arithmetic on two stamps the record
+                // already carries, so marking every row costs no syscall (STUDIO-30015).
+                card.needsReimport = true;
+                card.detail += "  ·  out of date";
             }
             cards.push_back(std::move(card));
         }
@@ -702,6 +719,31 @@ namespace CNA::Studio
         return {true, description};
     }
 
+    StudioContentOperation studioContentReimport(StudioContext& context, const Uuid& asset)
+    {
+        const AssetRecord* record = context.getAssets().find(asset);
+        if (record == nullptr) { return reported(context, {false, "no asset with that id"}); }
+        if (!record->sourcePresent)
+        {
+            return reported(context, {false, "'" + record->sourcePath + "' is not on disk"});
+        }
+
+        const std::string path = record->sourcePath;
+        const StudioReimportResult reimport = studioReimportAssets(context.getAssets(), {asset});
+        if (reimport.reimported == 0)
+        {
+            return reported(context,
+                            {false, reimport.warnings.empty() ? "nothing to reimport"
+                                                              : reimport.warnings.front()});
+        }
+
+        // Said even when nothing changed, because "I pressed Reimport and the editor did nothing"
+        // is indistinguishable from a broken button -- and "nothing changed" is the answer most of
+        // the time, which is exactly why it has to be said out loud.
+        return {true, reimport.factsChanged != 0 ? "Reimported '" + path + "'"
+                                                 : "Reimported '" + path + "'; nothing changed"};
+    }
+
     std::vector<StudioContextMenuItem> studioContentMenuItems(const AssetDatabase& assets,
                                                               const Uuid& asset,
                                                               const std::string& folder)
@@ -719,8 +761,13 @@ namespace CNA::Studio
         // clicks Delete and gets Duplicate.
         const bool present = !assets.isMissing(asset);
 
+        // Offered whenever the file is there, not only when it is out of date: "reimport this
+        // anyway" is a thing people do when they suspect the editor is wrong about a file, and a
+        // row that greyed out unless Studio already agreed something had changed would refuse them
+        // exactly then. Whether it is *due* is the row's marker, which is a different question.
         return {StudioContextMenuItem{"Rename", true, "F2"},
                 StudioContextMenuItem{"Duplicate", present, "Ctrl+D"},
+                StudioContextMenuItem{"Reimport", present},
                 StudioContextMenuItem{},
                 StudioContextMenuItem{"Delete", present, "Delete"}};
     }
@@ -973,6 +1020,10 @@ namespace CNA::Studio
         else if (action == "Duplicate")
         {
             result.lastOperation = studioContentDuplicate(context, state.menuAsset);
+        }
+        else if (action == "Reimport")
+        {
+            result.lastOperation = studioContentReimport(context, state.menuAsset);
         }
         else if (action == "Delete")
         {

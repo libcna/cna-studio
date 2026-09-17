@@ -456,6 +456,17 @@ namespace CNA::Studio
             stamp.set("modifiedTime", JsonValue{record.sourceModifiedTime});
             json.set("sourceStamp", std::move(stamp));
         }
+
+        if (record.importedSize != 0 || record.importedModifiedTime != 0)
+        {
+            // Separate from `sourceStamp`, which the watcher keeps pointed at the file. This one is
+            // what an import wrote, and the difference between them is what "needs reimporting"
+            // means (STUDIO-10001).
+            JsonValue stamp = JsonValue::makeObject();
+            stamp.set("size", JsonValue{static_cast<std::int64_t>(record.importedSize)});
+            stamp.set("modifiedTime", JsonValue{record.importedModifiedTime});
+            json.set("importedStamp", std::move(stamp));
+        }
         return json;
     }
 
@@ -477,6 +488,10 @@ namespace CNA::Studio
         const JsonValue& stamp = json["sourceStamp"];
         record.sourceSize = static_cast<std::uint64_t>(stamp["size"].asNumber());
         record.sourceModifiedTime = static_cast<std::int64_t>(stamp["modifiedTime"].asNumber());
+
+        const JsonValue& imported = json["importedStamp"];
+        record.importedSize = static_cast<std::uint64_t>(imported["size"].asNumber());
+        record.importedModifiedTime = static_cast<std::int64_t>(imported["modifiedTime"].asNumber());
         return record;
     }
 

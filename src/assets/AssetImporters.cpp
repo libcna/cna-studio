@@ -84,6 +84,13 @@ namespace CNA::Studio
         bool applySpriteFontFacts(AssetDatabase& assets, const AssetRecord& record);
 
         /**
+         * @brief Writes an image's dimensions into its sidecar.
+         *
+         * @return True when something changed, so that opening a project twice produces no diff.
+         */
+        bool applyTextureFacts(AssetDatabase& assets, const AssetRecord& record);
+
+        /**
          * @brief Writes what a model file says about itself into its sidecar.
          *
          * The most expensive facts pass the editor has, because glTF states none of these in a
@@ -526,50 +533,63 @@ namespace CNA::Studio
         return description;
     }
 
+    bool applyImporterFacts(AssetDatabase& assets, const Uuid& id)
+    {
+        const AssetRecord* record = assets.find(id);
+        if (record == nullptr) { return false; }
+
+        if (record->type == AssetType::SpriteFont)
+        {
+            return Detail::applySpriteFontFacts(assets, *record);
+        }
+        if (record->type == AssetType::Model) { return Detail::applyModelFacts(assets, *record); }
+        if (record->type != AssetType::Texture2D) { return false; }
+
+        return Detail::applyTextureFacts(assets, *record);
+    }
+
     std::size_t applyImporterFacts(AssetDatabase& assets)
     {
         std::size_t changed = 0;
 
-        for (const AssetRecord* record : assets.getAll())
+        // Ids first, because applying a fact writes a sidecar and may reallocate the record store
+        // underneath a walk that is holding pointers into it.
+        std::vector<Uuid> ids;
+        ids.reserve(assets.getCount());
+        for (const AssetRecord* record : assets.getAll()) { ids.push_back(record->id); }
+
+        for (const Uuid& assetId : ids)
         {
-            if (record->type == AssetType::SpriteFont)
-            {
-                changed += Detail::applySpriteFontFacts(assets, *record) ? 1 : 0;
-                continue;
-            }
-            if (record->type == AssetType::Model)
-            {
-                changed += Detail::applyModelFacts(assets, *record) ? 1 : 0;
-                continue;
-            }
-            if (record->type != AssetType::Texture2D) { continue; }
+            changed += applyImporterFacts(assets, assetId) ? 1u : 0u;
+        }
+        return changed;
+    }
 
-            const std::optional<ImageSize> size = readImageSize(assets.resolvePath(record->sourcePath));
-            if (!size) { continue; }
+    bool Detail::applyTextureFacts(AssetDatabase& assets, const AssetRecord& record)
+    {
+        const std::optional<ImageSize> size = readImageSize(assets.resolvePath(record.sourcePath));
+        if (!size) { return false; }
 
-            const StudioVector2 measured{static_cast<float>(size->width),
-                                         static_cast<float>(size->height)};
+        const StudioVector2 measured{static_cast<float>(size->width),
+                                     static_cast<float>(size->height)};
 
-            const JsonValue& stored = record->importerSettings["pixelSize"];
-            if (!stored.isNull()
-                && PropertyValue::fromJson(stored, PropertyType::Vector2).get<StudioVector2>() == measured)
-            {
-                continue;
-            }
-
-            AssetRecord* mutableRecord = assets.findMutable(record->id);
-            if (mutableRecord == nullptr) { continue; }
-
-            if (mutableRecord->importerSettings.isNull())
-            {
-                mutableRecord->importerSettings = JsonValue::makeObject();
-            }
-            mutableRecord->importerSettings.set("pixelSize", PropertyValue{measured}.toJson());
-            assets.writeSidecar(record->id);
-            ++changed;
+        const JsonValue& stored = record.importerSettings["pixelSize"];
+        if (!stored.isNull()
+            && PropertyValue::fromJson(stored, PropertyType::Vector2).get<StudioVector2>() == measured)
+        {
+            return false;
         }
 
-        return changed;
+        AssetRecord* mutableRecord = assets.findMutable(record.id);
+        if (mutableRecord == nullptr) { return false; }
+
+        if (mutableRecord->importerSettings.isNull())
+        {
+            mutableRecord->importerSettings = JsonValue::makeObject();
+        }
+        mutableRecord->importerSettings.set("pixelSize", PropertyValue{measured}.toJson());
+        assets.writeSidecar(record.id);
+        return true;
     }
 
     void registerBuiltinImporters(ComponentRegistry& registry)
