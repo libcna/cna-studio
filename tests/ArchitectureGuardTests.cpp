@@ -667,6 +667,10 @@ CNA_STUDIO_TEST(ThePlansStatusBreakdownAddsUpAndMatchesThePhaseFiles)
         {"⬜", "| ⬜ Not started | "},
         {"⛔", "| ⛔ Deferred | "},
         {"🔬", "| 🔬 Blocked | "},
+        // Added with STUDIO-07001's retirement. A temporary requirement that later work made moot
+        // is neither complete nor cancelled, and rounding it to either would be the plan telling a
+        // story about itself.
+        {"⊘", "| ⊘ Superseded | "},
     };
 
     std::map<std::string, std::size_t> actual;

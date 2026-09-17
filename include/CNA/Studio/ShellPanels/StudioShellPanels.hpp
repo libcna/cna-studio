@@ -3,7 +3,7 @@
  * @file CNA/Studio/ShellPanels/StudioShellPanels.hpp
  * @brief Binds every ported panel to a shell, in one place.
  *
- * `plan.md` STUDIO-07001, STUDIO-07017.
+ * `plan.md` STUDIO-07017, over the panel content seam of STUDIO-07016.
  *
  * ### Why this exists rather than being written where the shell is created
  *

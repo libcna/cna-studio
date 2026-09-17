@@ -6,13 +6,19 @@
 
 **Exit criteria.** Feature, input, docking and visual parity, proven panel by panel against the Phase 0 inventory — then ImGui is removed deliberately.
 
-**Progress:** 44 of 46 complete `███████████░`
+**Progress:** 45 of 46 complete `███████████░`
+
+> **The forty-sixth row is ⊘, not open.** `STUDIO-07001` was the *temporary* compatibility adapter
+> that let the Dear ImGui panels and the native ones coexist while the migration ran. The migration
+> finished and `STUDIO-07030`/`07031`/`07099` deleted Dear ImGui, so the condition it was waiting
+> on — both UIs in one running Studio — can no longer be made true and no longer needs to be. Its
+> permanent successor is `STUDIO-07016`, and its row below says so. This phase has no open work.
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-07001` | Compatibility adapter so unported panels keep working during the migration | 🔄 | `STUDIO-06015` |
+| `STUDIO-07001` | Compatibility adapter so unported panels keep working during the migration | ⊘ | `STUDIO-06015` |
 | `STUDIO-07002` | Port the main menu bar | ✅ | `STUDIO-06003` |
-| `STUDIO-07003` | Port the toolbar | 🔄 | `STUDIO-06006` |
+| `STUDIO-07003` | Port the toolbar | ✅ | `STUDIO-06006` |
 | `STUDIO-07004` | Port the status bar | ✅ | `STUDIO-06007` |
 | `STUDIO-07005` | Port the Console / Output Log | ✅ | `STUDIO-07001` |
 | `STUDIO-07006` | Port the Hierarchy panel (World Outliner) | ✅ | `STUDIO-07001` |
@@ -580,22 +586,44 @@ build with a real window to ask.
 
 ### `STUDIO-07001` — Compatibility adapter so unported panels keep working during the migration
 
-**Acceptance.** Both UIs coexist in one running Studio; the strangler migration proceeds panel by panel with tests green throughout
+**Acceptance, as written.** Both UIs coexist in one running Studio; the strangler migration proceeds
+panel by panel with tests green throughout
 
-**What holds today.** The seam exists and five panels have gone through it:
-`StudioShell::setPanelContent` hosts a ported panel's content, an unported panel is the empty
-surface it always was, and both consoles read one `StudioLog`.
+**⊘ Superseded by `STUDIO-07016`, after the migration this existed to support finished.**
 
-**The binding moved out of the CNA-linked module** (`StudioShellPanels`), and that was not
-housekeeping. There is exactly one place a running Studio is created — behind a CNA checkout — so
-the ported panels could only be *seen* in a build with CNA, and the headless shell preview, which
-is the only visual test this project has on a machine with no GPU or display, photographed five
-empty rectangles where the panels are. Nothing about binding a panel needs CNA. The same binding
-now serves the editor and the preview, so what CI photographs is what a user sees.
+This was scaffolding with a deliberate end date, and it reached it. The half that was built did its
+job: `StudioShell::setPanelContent` hosted a ported panel's content, a panel with nothing bound was
+the empty surface every panel starts as, and both consoles read one `StudioLog`, so panels were
+ported one at a time with the suite green throughout. Every ✅ row in this phase went through it.
 
-What does not hold yet is the words *one running Studio*: the two presentations are still two entry
-points, `--ui=imgui` and `--ui=studio`, rather than one process showing ported and unported panels
-side by side. That is the remaining half, and it is what `STUDIO-06015` is waiting on
+The half that was never built is the words *one running Studio*. The two presentations stayed two
+entry points — `--ui=imgui` and `--ui=studio` — rather than one process drawing ported and unported
+panels side by side. `STUDIO-07030`, `STUDIO-07031` and `STUDIO-07099` have since deleted Dear ImGui:
+the panel implementations, the `CNA_STUDIO_WITH_IMGUI` option, the vendored source, and the guard
+that fails the build if any of it returns. There is no second UI left to coexist with, so that half
+is not open work — it is a requirement with nothing on the other side of it.
+
+**It is not ✅, and resurrecting Dear ImGui to make it ✅ would be the wrong answer to a bookkeeping
+problem.** A temporary requirement that later work made moot did not come true. ⊘ says what
+happened; a ✅ would say something that is not so, and a 🔄 left in place would be a row implying
+work somebody is expected to finish. Both are how a plan stops being worth reading.
+
+**The permanent seam that replaced it is `STUDIO-07016`.** `StudioShell::setPanelContent`,
+`hasPanelContent` and the `StudioPanelContent` callback outlive the migration because hosting a
+panel's content is not a migration concern: it is how *every* panel is drawn, including ones that do
+not exist yet. A panel registered with nothing bound draws as an empty surface — which was the
+unported case then, and is the not-yet-populated case now, which is exactly what a plugin
+contributing a panel needs (`STUDIO-28005`, whose dependency was moved from this row to
+`STUDIO-07016` for that reason). Nothing else depended on this row that is not already ✅.
+
+**What was actually deleted.** No compatibility-only code remained to remove — `STUDIO-07030` and
+`STUDIO-07031` took all of it, and `STUDIO-07099` guards its return through code, through CMake and
+through the vendored directory. What did remain was compatibility-only *prose*, which is worse than
+dead code because nothing compiles it and readers believe it: `--ui=imgui` was documented in
+`StudioOptions::getUsage` twice, once as "the legacy editor, kept as a migration fallback" and once,
+forty lines below, as retired. The seam's own documentation in `StudioShell.hpp` and
+`StudioShellPanels.hpp` still described itself as temporary and named a deletion that has happened.
+Both are corrected to describe the seam that exists.
 
 ### `STUDIO-07002` — Port the main menu bar
 
@@ -632,13 +660,37 @@ action, which is the shape of bug that looks like the menus being wrong rather t
 
 **Acceptance.** Every control the prototype's toolbars offer is reachable from the native one.
 
-**In progress, and the remainder is one row.** The prototype has no application toolbar at all;
-its controls live inside the Viewport panel, which means they move and resize with it and vanish if
-it is closed. The native toolbar is icons at the top of the window, driven by the registry.
+**Done.** The prototype has no application toolbar at all; its controls live inside the Viewport
+panel, which means they move and resize with it and vanish if it is closed. The native toolbar is
+icons at the top of the window, driven by the registry.
 
-`docs/MIGRATION-INVENTORY.md`'s toolbar table accounts for all eleven controls. Play, Stop, Pause,
-Step, the manipulator, the backend chooser and now **the tilemap tool and the tile index** are
-answered; **2D/3D** is not, and waits on the phase that owns it (11).
+`docs/MIGRATION-INVENTORY.md`'s toolbar table accounts for all eleven controls across twelve rows —
+Pause and Resume are two buttons in the prototype and one checkable command here — and every one of
+them resolves. The last open row was **2D/3D**, which waited on the phase that owns it;
+`STUDIO-11001`/`STUDIO-11002` shipped the native 2D and 3D views and bound `studio.view.2d` and
+`studio.view.3d` to `2` and `3`, and `STUDIO-35050`'s viewport toolbar puts both on a strip in the
+viewport's own corner.
+
+**Closed on a check rather than on the existence of related work.** The row had already been true
+for some time and this file went on saying it was open, which is the failure mode prose has: it can
+stop being true without anybody editing it. So the claim is now made by
+`EveryToolbarControlThePrototypeOffersIsReachableFromTheNativeUi`, and it is made at the level the
+acceptance is written at — **reachable**, not merely registered. For each of the twelve rows: the
+status must be ✅, the named command must exist *and have a handler*, and its id must appear on the
+menu bar, the window toolbar or the viewport toolbar. A command that exists and is on none of the
+three is one a user cannot press, and the pre-existing
+`EveryCommandTheInventoryCallsAnsweredExistsAndCanRun` would have passed it without complaint.
+
+The one deliberate indirection is the backend chooser, answered by
+`studio.window.showPanel.comparison`. `StudioShell::registerPanelAction` puts a panel's *toggle* on
+Window ▸ Panels and deliberately puts its `showPanel.` command on no menu, because two rows meaning
+nearly the same thing is a menu that has to be read twice. The check therefore treats
+`showPanel.X` as reachable when `panel.X` is, and says so where it does it.
+
+**Verification.** `tests/StudioMigrationInventoryTests.cpp`
+`EveryToolbarControlThePrototypeOffersIsReachableFromTheNativeUi`, proved against both of the
+failures it exists to catch: a row returned to 🔄 fails it, and deleting `studio.view.2d` from
+`studioViewportToolbarItems` fails it while leaving the command registered and working.
 
 **The tilemap tool is a menu and an overlay, not a toolbar button.** Five exclusive checkable
 commands on the View menu arm it, and the tile index sits in an overlay in the viewport's own corner

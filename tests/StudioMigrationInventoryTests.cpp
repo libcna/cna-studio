@@ -18,6 +18,7 @@
 
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
+#include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/Scene/StudioCamera3D.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
@@ -95,6 +96,51 @@ namespace
         return rows;
     }
 
+
+    /**
+     * @brief The rows of one `##` section of the inventory.
+     *
+     * The toolbar table and the menu table have the same *shape* — five cells, the native id
+     * fourth and the status fifth — so a check that wants one of them cannot find it by counting
+     * columns. It finds it by the heading it lives under, which is what a reader would do.
+     *
+     * @param heading The section heading, e.g. `"## Toolbar controls"`.
+     * @return Every table row between that heading and the next `## `, in file order.
+     */
+    std::vector<InventoryRow> inventorySectionRows(const std::string& heading)
+    {
+        std::ifstream stream{sourceRoot() / "docs" / "MIGRATION-INVENTORY.md", std::ios::binary};
+        std::string line;
+        std::size_t number = 0;
+        bool inside = false;
+        std::vector<InventoryRow> rows;
+
+        while (std::getline(stream, line))
+        {
+            ++number;
+            if (line.rfind("## ", 0) == 0)
+            {
+                inside = trimmed(line) == heading;
+                continue;
+            }
+            if (!inside) { continue; }
+            if (line.empty() || line.front() != '|') { continue; }
+            if (line.find("---") != std::string::npos) { continue; }
+
+            InventoryRow row;
+            row.line = number;
+
+            std::stringstream cells{line};
+            std::string cell;
+            while (std::getline(cells, cell, '|')) { row.cells.push_back(unquoted(cell)); }
+
+            if (!row.cells.empty() && row.cells.front().empty()) { row.cells.erase(row.cells.begin()); }
+            while (!row.cells.empty() && row.cells.back().empty()) { row.cells.pop_back(); }
+
+            if (!row.cells.empty()) { rows.push_back(std::move(row)); }
+        }
+        return rows;
+    }
 
     /** @brief The whole of a source file, or empty when it is not there. */
     std::string readSource(const std::string& relative)
@@ -244,6 +290,131 @@ CNA_STUDIO_TEST(EveryCommandTheInventoryCallsAnsweredExistsAndCanRun)
                   "and is drawn greyed out for ever.");
         }
     }
+}
+
+// ------------------------------------------------------------------------------------------------
+// The toolbar, in full (STUDIO-07003)
+//
+// `STUDIO-07003`'s acceptance is "every control the prototype's toolbars offer is reachable from
+// the native one", and for most of the migration it was answered row by row in prose. Prose is the
+// wrong instrument for a claim of the form *every*: it can be true when it is written and stop
+// being true without anybody editing it, which is exactly what happened to the last row — 2D/3D
+// was recorded as waiting on Phase 11, Phase 11 shipped `STUDIO-11001`/`11002`, and the phase file
+// went on saying it was open.
+//
+// So the claim is checked instead, and checked at the level it is actually made: *reachable*, not
+// *registered*. A command that exists and is on no menu, no toolbar and no viewport strip is a
+// command a user cannot press, and it would pass `EveryCommandTheInventoryCallsAnsweredExistsAndCanRun`
+// without complaint.
+// ------------------------------------------------------------------------------------------------
+
+namespace
+{
+    /** @brief Adds every action id on @p entries, and on anything they open, to @p into. */
+    void collectMenuActionIds(const std::vector<StudioMenuEntry>& entries, std::set<std::string>& into)
+    {
+        for (const StudioMenuEntry& entry : entries)
+        {
+            if (entry.isSubmenu()) { collectMenuActionIds(entry.rows, into); continue; }
+            if (entry.isSeparator() || entry.id.empty()) { continue; }
+            into.insert(entry.id);
+        }
+    }
+
+    /**
+     * @brief Every action id a user can reach by looking at the assembled shell.
+     *
+     * The three surfaces that put a command in front of somebody: the menu bar and everything it
+     * opens, the window toolbar, and the viewport's own strip. Deliberately not the registry —
+     * that is the set of commands that *exist*, which is the question this check is not asking.
+     */
+    std::set<std::string> reachableActionIds(const Fixture& fixture)
+    {
+        std::set<std::string> ids;
+        for (const StudioMenuDefinition& menu : fixture.shell.menus())
+        {
+            collectMenuActionIds(menu.entries, ids);
+        }
+        for (const std::string& id : fixture.shell.toolbar())
+        {
+            if (!id.empty() && id != kStudioMenuSeparatorId) { ids.insert(id); }
+        }
+        for (const StudioViewportToolbarItem& item : studioViewportToolbarItems())
+        {
+            if (!item.actionId.empty()) { ids.emplace(item.actionId); }
+        }
+        return ids;
+    }
+}
+
+CNA_STUDIO_TEST(EveryToolbarControlThePrototypeOffersIsReachableFromTheNativeUi)
+{
+    Fixture fixture;
+    const std::set<std::string> reachable = reachableActionIds(fixture);
+
+    const std::vector<InventoryRow> rows = inventorySectionRows("## Toolbar controls");
+
+    // The prototype has eleven controls across its two toolbars and the table carries twelve rows,
+    // because Pause and Resume are two of its buttons and one of ours. A table that had been
+    // emptied, renamed or moved under another heading would otherwise pass by checking nothing.
+    CNA_STUDIO_EXPECT(rows.size() >= 12);
+
+    std::size_t checked = 0;
+    for (const InventoryRow& row : rows)
+    {
+        // | Toolbar | Control | Widget | Native | Status |
+        if (row.cells.size() != 5) { continue; }
+        if (row.cells[0] == "Toolbar") { continue; }
+
+        const std::string& control = row.cells[1];
+        const std::string& id = row.cells[3];
+        const std::string& status = row.cells[4];
+
+        // The whole point of this task's remaining row: an open control is a failure now, not a
+        // note. `STUDIO-07003` cannot be complete while the table it rests on has one.
+        if (status != "✅")
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "MIGRATION-INVENTORY.md line " + std::to_string(row.line) + " leaves the toolbar "
+                  "control '" + control + "' at '" + status + "'. STUDIO-07003's acceptance is that "
+                  "every one of them is reachable from the native UI.");
+            continue;
+        }
+
+        const StudioAction* action = fixture.shell.actions().find(id);
+        if (action == nullptr || !action->run)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "MIGRATION-INVENTORY.md line " + std::to_string(row.line) + " says the toolbar "
+                  "control '" + control + "' is answered by '" + id + "', which is not a command "
+                  "that can run.");
+            continue;
+        }
+
+        ++checked;
+
+        // A panel's `showPanel.` command is deliberately on no menu (StudioShell::registerPanelAction
+        // says why): the Window > Panels row is the one a user reads, and a second row meaning
+        // nearly the same thing would be a menu that has to be read twice. So a control answered
+        // by `showPanel.X` is reachable when the toggle for the same panel X is.
+        std::string surface = id;
+        if (id.rfind(std::string{kStudioShowPanelActionPrefix}, 0) == 0)
+        {
+            surface = std::string{kStudioPanelActionPrefix}
+                    + id.substr(std::string{kStudioShowPanelActionPrefix}.size());
+        }
+
+        if (reachable.count(surface) == 0)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                "MIGRATION-INVENTORY.md line " + std::to_string(row.line) + " says the toolbar "
+                  "control '" + control + "' is answered by '" + id + "', but '" + surface
+                + "' is on no menu, no window toolbar and no viewport toolbar, so nothing puts it "
+                  "in front of a user.");
+        }
+    }
+
+    CNA_STUDIO_EXPECT(checked >= 12);
 }
 
 // ------------------------------------------------------------------------------------------------

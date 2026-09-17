@@ -14,7 +14,7 @@
 | `STUDIO-28002` | A bad plugin fails to load with a useful message and never crashes discovery | ⬜ | `STUDIO-28001` |
 | `STUDIO-28003` | Plugins contribute asset importers | ⬜ | `STUDIO-10002` |
 | `STUDIO-28004` | Plugins contribute component descriptors | ⬜ | `STUDIO-15002` |
-| `STUDIO-28005` | Plugins contribute panels | ⬜ | `STUDIO-07001` |
+| `STUDIO-28005` | Plugins contribute panels | ⬜ | `STUDIO-07016` |
 | `STUDIO-28006` | Plugins contribute commands and menu items | ⬜ | `STUDIO-06001` |
 | `STUDIO-28007` | Plugins contribute inspectors | ⬜ | `STUDIO-14001` |
 | `STUDIO-28008` | Plugins contribute gizmos | ⬜ | `STUDIO-12001` |
@@ -30,6 +30,17 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-28001` — Plugin API versioning and explicit ABI checks
 
 **Acceptance.** Carried forward; the `editorApiVersion` manifest key stays pinned for compatibility
+
+### `STUDIO-28005` — Plugins contribute panels
+
+**Dependency moved from `STUDIO-07001` to `STUDIO-07016`.** `STUDIO-07001` was the *temporary*
+compatibility adapter for the Dear ImGui migration and is ⊘ superseded now that the migration is
+finished; waiting on it would be waiting on a row that will never be ticked. What this task actually
+needs is the seam that outlived it: `StudioShell::registerPanel` plus
+`StudioShell::setPanelContent`, which is `STUDIO-07016`, and which is ✅. A plugin contributing a
+panel registers a descriptor and binds content through exactly the same two calls a built-in panel
+uses — and a panel registered with nothing bound draws as an empty surface rather than as a hole,
+which is the behaviour a plugin that fails to initialise needs.
 
 
 ## `STUDIO-28015` — A plugin is announced as about to unload

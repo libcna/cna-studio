@@ -298,17 +298,38 @@ itself for convenience when the process boundary is available and safer.
 The imported Dear ImGui UI proved CNA could host an editor. It is **not** the production UI of CNA
 Studio, and it is not the answer to "make it look professional" either.
 
-The migration is a strangler, not a flag day:
+The migration was a strangler, not a flag day:
 
 ```
 existing panels ──▶ compatibility adapter ──▶ new CNA Studio UI
 ```
 
-ImGui remains as a migration fallback and debug UI while panels are ported one at a time with tests
-green throughout. It is removed — code, CMake option and vendored source — only after feature
-parity, input parity, docking parity, visual acceptance via screenshot tests, and a period of
-stable daily use. `STUDIO-07099` is the architecture guard test that fails if production Studio UI
-regains a dependency on it after that point.
+**It is finished.** ImGui remained as a migration fallback while panels were ported one at a time
+with tests green throughout, and was then removed — code (`STUDIO-07030`), CMake option and
+vendored source (`STUDIO-07031`) — after feature, input and docking parity and visual acceptance.
+`STUDIO-07099` is the architecture guard test that fails if production Studio UI regains a
+dependency on it, and it checks three routes: a `#include` or symbol in any source, the option or
+vendor-target tokens in either `CMakeLists.txt`, and the vendored directory itself.
+
+**The temporary adapter and the permanent seam are not the same thing, and only one of them is
+still here.** `STUDIO-07001` was the compatibility adapter: the arrangement under which both
+presentations were alive at once. With nothing left to be compatible *with*, its requirement no
+longer applies and it is ⊘ superseded rather than complete — see `plans/phase-07-panel-migration.md`
+for why back-dating it to ✅ would have been a lie about what happened.
+
+What outlived it is `STUDIO-07016`, `StudioShell::setPanelContent`, and it outlived it because
+hosting a panel's content was never a migration concern:
+
+```
+StudioShell::registerPanel(descriptor)   ── the panel exists, has a tab, has a Window menu row
+StudioShell::setPanelContent(id, fn)     ── and this is what draws in it
+```
+
+Two calls rather than one, because the shell knows its panel *list* when it is assembled and a
+panel's content arrives with whoever binds it. A panel with nothing bound draws as an empty
+surface. That was the unported case during the migration; it is the not-yet-populated case now,
+which is what a plugin-contributed panel needs before its plugin has initialised — so
+`STUDIO-28005` depends on this seam rather than on the adapter that is gone.
 
 ---
 

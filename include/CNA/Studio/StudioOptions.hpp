@@ -121,11 +121,10 @@ namespace CNA::Studio
         /**
          * @brief Render the native Studio shell to this PNG and exit.
          *
-         * The shell of `plan.md` Phase 6 is real geometry but not yet interactive, so it is
-         * reachable as a preview rather than as `--ui=studio`: a flag that opened an unresponsive
-         * window would be a worse lie than one that says what it does. It runs headless, because
-         * the shell's geometry is CNA-free and is rasterised on the CPU -- which is also how its
-         * screenshot tests run without a GPU.
+         * The same shell `--ui=studio` runs, photographed rather than opened. It renders headless,
+         * because the shell's geometry is CNA-free and is rasterised on the CPU -- which is what
+         * lets every screenshot test in this repository run on a machine with no GPU and no
+         * display, and what makes the picture CI takes the picture a user sees.
          */
         std::string shellPreviewPath;
 

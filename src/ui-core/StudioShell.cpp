@@ -1999,9 +1999,9 @@ namespace CNA::Studio
                                        theme.color(StudioColorRole::PanelBackground));
         }
 
-        // The strangler seam. A panel with content described here is ported; one without is
-        // the empty surface every panel starts as, and the ImGui implementation keeps drawing
-        // it until it is deleted (Phase 7).
+        // The panel content seam (STUDIO-07016). A panel with content bound describes it here;
+        // one without is the empty surface every panel starts as -- which is the honest picture
+        // for a panel nothing has populated yet, and cheaper than refusing to register it.
         const auto content = std::find_if(panelContent_.begin(), panelContent_.end(),
             [&](const auto& entry) { return entry.first == active; });
         if (content == panelContent_.end() || !content->second) { return; }

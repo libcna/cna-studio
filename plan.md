@@ -31,13 +31,16 @@ uninstalled. Any task that would compromise that is wrong, however convenient it
 | ⬜ | Not started |
 | ⛔ | Deliberately deferred — the reasoning is recorded on the task |
 | 🔬 | Blocked on research or an architectural decision |
+| ⊘ | Superseded — the requirement was retired after the work it existed to support finished, and a permanent seam took its place. The row names that seam |
 
 ## Id scheme
 
 Task ids are `STUDIO-PPNNN`, where `PP` is the phase number (`00`–`35`) and `NNN` is the
 sequence within that phase. Phase 2's twentieth task is `STUDIO-02020`.
 
-- Ids are **stable** and **never reused**. A task that is cancelled keeps its id and is marked ⛔.
+- Ids are **stable** and **never reused**. A task that is cancelled keeps its id and is marked ⛔;
+  one whose requirement was retired by later work keeps its id and is marked ⊘. Neither is ever
+  back-dated into a ✅: a temporary requirement that stopped applying did not come true.
 - Adding a task appends within its phase; it never renumbers an existing one.
 - Sequence numbers are deliberately sparse, so related work can be inserted near what it belongs to.
 - The scheme has room for 999 tasks per phase — 36,000 in total — which is well beyond what this
@@ -48,15 +51,16 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**245 of 564 tasks complete** `██████████░░░░░░░░░░░░░░░`  43.4%
+**246 of 564 tasks complete** `██████████░░░░░░░░░░░░░░░`  43.6%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 245 |
-| 🔄 In progress | 10 |
+| ✅ Complete | 246 |
+| 🔄 In progress | 8 |
 | ⬜ Not started | 303 |
 | ⛔ Deferred | 2 |
 | 🔬 Blocked | 4 |
+| ⊘ Superseded | 1 |
 | **Total** | **564** |
 
 > **On the task count.** 564 tasks are decomposed today. That is not the final number: the
@@ -76,7 +80,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 4 | [CNAEXT UI renderer](plans/phase-04-ui-renderer.md) | `STUDIO-04NNN` | 🔄 | 29 | 25 | `████████░░` |
 | 5 | [Docking and workspace](plans/phase-05-docking.md) | `STUDIO-05NNN` | 🔄 | 15 | 14 | `█████████░` |
 | 6 | [Studio shell](plans/phase-06-studio-shell.md) | `STUDIO-06NNN` | ✅ | 24 | 24 | `██████████` |
-| 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | 🔄 | 46 | 44 | `█████████░` |
+| 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ✅ | 46 | 45 | `█████████░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 16 | 0 | `░░░░░░░░░░` |
 | 10 | [Asset pipeline and importing](plans/phase-10-asset-pipeline.md) | `STUDIO-10NNN` | ⬜ | 13 | 0 | `░░░░░░░░░░` |

@@ -373,10 +373,15 @@ namespace CNA::Studio
         /**
          * @brief Sets what draws inside a registered panel.
          *
-         * This is the strangler seam for Phase 7: a panel is ported by giving the shell its content
-         * function, and the ImGui implementation keeps working untouched until it is deleted. A
-         * panel with no content function is drawn as an empty surface, which is what every panel
-         * looks like before it is ported.
+         * The seam every panel is drawn through (`plan.md` STUDIO-07016). Registering a panel and
+         * saying what draws in it are two calls rather than one, because the two questions have
+         * different answers at different times: the shell knows its panel *list* when it is
+         * assembled, and a panel's content arrives with whatever binds it.
+         *
+         * A panel with no content function is drawn as an empty surface. That was the unported
+         * case during the Phase 7 migration (STUDIO-07001, ⊘ superseded by this); it is the
+         * not-yet-populated case now, which is what a plugin-contributed panel needs before its
+         * plugin has initialised (STUDIO-28005).
          *
          * @param id Panel id.
          * @param content What to draw, or an empty function to go back to an empty surface.
