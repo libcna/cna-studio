@@ -10,7 +10,7 @@
 > that section before reading the table: several tasks were ✅ against a classic XNA implementation
 > in a phase named for the modern one, and the corrections are recorded rather than quietly applied.
 
-**Progress:** 25 of 29 complete `████████░░░░`
+**Progress:** 25 of 29 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|

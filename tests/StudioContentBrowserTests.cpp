@@ -411,3 +411,204 @@ CNA_STUDIO_TEST(BothViewsHaveANameAndTheGridIsTheDefault)
     // a browser that shows only its name is a file manager.
     CNA_STUDIO_EXPECT(StudioContentBrowserState{}.view == StudioContentView::Grid);
 }
+
+// ------------------------------------------------------------------------------------------------
+// The folder pane (STUDIO-09001)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheFolderPaneShowsFoldersAndNoFilesAtAll)
+{
+    // The whole difference between this tree and the list's, and the difference that makes a
+    // folder tree worth having: a tree holding every asset in the project is a second copy of the
+    // content pane, and the reason to have a tree is to move between folders without reading them.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+    track(assets, "readme.txt", AssetType::RawData);
+
+    const StudioTreeState state;
+    const std::vector<StudioTreeRow> rows = studioContentFolderRows(assets, {}, state);
+
+    CNA_STUDIO_EXPECT(rowNamed(rows, "Project") != nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(rows, "Assets") != nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(rows, "Textures") != nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(rows, "Models") != nullptr);
+
+    // Not one file, including the one at the project root -- which is the case an implementation
+    // that filtered on "has a slash in it" would get wrong.
+    CNA_STUDIO_EXPECT(rowNamed(rows, "player.png") == nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(rows, "crate.gltf") == nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(rows, "readme.txt") == nullptr);
+
+    // Parents before children, and one deeper than the list's because `Project` is above them all.
+    CNA_STUDIO_EXPECT(indexOf(rows, "Project") < indexOf(rows, "Assets"));
+    CNA_STUDIO_EXPECT(indexOf(rows, "Assets") < indexOf(rows, "Models"));
+    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Project")->depth, 0);
+    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Assets")->depth, 1);
+    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Textures")->depth, 2);
+}
+
+CNA_STUDIO_TEST(TheProjectRootIsARowAndItIsWhereTheEmptyFolderPathPointsAt)
+{
+    // A tree whose only way back to the top is collapsing everything is a tree people navigate by
+    // clicking the breadcrumb instead, which makes half the pane decoration.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+
+    const StudioTreeState state;
+
+    const std::vector<StudioTreeRow> atRoot = studioContentFolderRows(assets, {}, state);
+    CNA_STUDIO_EXPECT(rowNamed(atRoot, "Project")->selected);
+    CNA_STUDIO_EXPECT(!rowNamed(atRoot, "Assets")->selected);
+
+    // The id is a constant rather than the empty string: an empty id would share its expansion
+    // state with every row that had not been given one.
+    CNA_STUDIO_EXPECT_EQ(rowNamed(atRoot, "Project")->id, std::string{kStudioContentRootRowId});
+
+    const std::vector<StudioTreeRow> inTextures =
+        studioContentFolderRows(assets, "Assets/Textures", state);
+    CNA_STUDIO_EXPECT(!rowNamed(inTextures, "Project")->selected);
+    CNA_STUDIO_EXPECT(rowNamed(inTextures, "Textures")->selected);
+
+    // And a folder's id is its path, so navigating is one assignment rather than a lookup.
+    CNA_STUDIO_EXPECT_EQ(rowNamed(inTextures, "Textures")->id, std::string{"Assets/Textures"});
+}
+
+CNA_STUDIO_TEST(AFolderPaneRowCountsWhatIsDirectlyInItRatherThanEverythingUnderIt)
+{
+    // Cumulative counts would make `Assets` read as holding the whole project, which is true and
+    // useless: the number a user wants beside a folder is how much they will see when they click.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+
+    track(assets, "Assets/notes.txt", AssetType::RawData);
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+    track(assets, "Assets/Textures/enemy.png", AssetType::Texture2D);
+
+    const StudioTreeState state;
+    const std::vector<StudioTreeRow> rows = studioContentFolderRows(assets, {}, state);
+
+    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Assets")->detail, std::string{"1"});
+    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Textures")->detail, std::string{"2"});
+
+    // A folder holding only other folders shows no count rather than a zero: "0" beside a folder
+    // full of subfolders reads as empty.
+    CNA_STUDIO_EXPECT(rowNamed(rows, "Project")->detail.empty());
+}
+
+CNA_STUDIO_TEST(AFolderWithSubfoldersGetsATriangleEvenWithNoFilesOfItsOwn)
+{
+    // The one thing a tree must never do is present a leaf that turns out to have children.
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+
+    const StudioTreeState state;
+    const std::vector<StudioTreeRow> rows = studioContentFolderRows(assets, {}, state);
+
+    CNA_STUDIO_EXPECT(rowNamed(rows, "Assets")->hasChildren);
+    CNA_STUDIO_EXPECT(!rowNamed(rows, "Textures")->hasChildren);
+
+    // And a sibling whose name is a prefix of another's is not mistaken for its parent:
+    // `Assets2` is not inside `Assets`, however the strings sort.
+    track(assets, "Assets2/readme.txt", AssetType::RawData);
+    const std::vector<StudioTreeRow> again = studioContentFolderRows(assets, {}, state);
+    CNA_STUDIO_EXPECT(rowNamed(again, "Assets2") != nullptr);
+    CNA_STUDIO_EXPECT(!rowNamed(again, "Assets2")->hasChildren);
+}
+
+CNA_STUDIO_TEST(CollapsingInTheFolderPaneHidesDescendantsAndCollapsingTheRootHidesEverything)
+{
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
+
+    StudioTreeState state;
+
+    // Open by default, which is what a folder tree should be: the state stores *collapsed* ids, so
+    // a user opening the Content Browser for the first time sees their folders rather than one row.
+    CNA_STUDIO_EXPECT_EQ(studioContentFolderRows(assets, {}, state).size(), std::size_t{3});
+
+    // Collapsed root: the row is still there -- it is where "go to the top" lives -- and nothing
+    // below it is.
+    state.setExpanded(std::string{kStudioContentRootRowId}, false);
+    const std::vector<StudioTreeRow> folded = studioContentFolderRows(assets, {}, state);
+    CNA_STUDIO_EXPECT_EQ(folded.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(rowNamed(folded, "Project") != nullptr);
+
+    state.setExpanded(std::string{kStudioContentRootRowId}, true);
+    state.setExpanded("Assets", false);
+    const std::vector<StudioTreeRow> partial = studioContentFolderRows(assets, {}, state);
+    CNA_STUDIO_EXPECT(rowNamed(partial, "Assets") != nullptr);
+    CNA_STUDIO_EXPECT(rowNamed(partial, "Textures") == nullptr);
+}
+
+CNA_STUDIO_TEST(TheFolderPaneIsBesideBothViewsAndClickingAFolderNavigatesThere)
+{
+    // Beside both presentations rather than inside either. Where a user is and what they are
+    // looking at are two questions, and a navigation tree that appeared in only one view would
+    // make switching views also mean switching how you move around.
+    for (const StudioContentView view : {StudioContentView::Grid, StudioContentView::List})
+    {
+        ScopedProject project{"folderpane"};
+        project.write("Assets/Textures/player.png");
+        project.write("Assets/Models/crate.gltf");
+
+        StudioContext context;
+        context.getAssets().setProjectRoot(project.root());
+        track(context.getAssets(), "Assets/Textures/player.png", AssetType::Texture2D);
+        track(context.getAssets(), "Assets/Models/crate.gltf", AssetType::Model);
+
+        StudioContentBrowserState state;
+        state.view = view;
+
+        auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+        shell->resetLayout();
+        shell->renderFrame(at(-1.0f, -1.0f));
+        CNA_STUDIO_EXPECT(shell->activatePanel("content"));
+
+        StudioContentBrowserResult drawn;
+        UiRect bounds;
+        CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+            [&](StudioFrame& frame, const UiRect& area) {
+                const StudioContentBrowserResult pass =
+                    studioContentBrowser(frame, area, context, state);
+                if (frame.isDrawPass()) { drawn = pass; bounds = area; }
+            }));
+        shell->renderFrame(at(-1.0f, -1.0f));
+
+        if (drawn.folderRowsDrawn == 0)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"the folder pane drew nothing in "}
+                + std::string{studioContentViewName(view)} + " view.");
+            continue;
+        }
+
+        // Project, Assets, Models, Textures.
+        CNA_STUDIO_EXPECT_EQ(drawn.folderRowsTotal, std::size_t{4});
+        CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+
+        // Clicking a folder navigates there, in both views. Swept rather than assuming a row
+        // height, so a metric change cannot turn this into a test that clicks empty space.
+        bool navigated = false;
+        for (float y = bounds.top() + 2.0f; y < bounds.top() + 160.0f && !navigated; y += 3.0f)
+        {
+            const float x = bounds.left() + 40.0f;
+            shell->renderFrame(at(x, y, false));
+            shell->renderFrame(at(x, y, true));
+            shell->renderFrame(at(x, y, false));
+            navigated = state.folder == "Assets/Models" || state.folder == "Assets/Textures";
+        }
+
+        if (!navigated)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                std::string{"clicking the folder pane navigated nowhere in "}
+                + std::string{studioContentViewName(view)} + " view.");
+        }
+    }
+}

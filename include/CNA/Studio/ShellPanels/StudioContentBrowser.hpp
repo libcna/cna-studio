@@ -3,7 +3,7 @@
  * @file CNA/Studio/ShellPanels/StudioContentBrowser.hpp
  * @brief The Content Browser — the project's assets, as folders and files.
  *
- * `plan.md` STUDIO-07008.
+ * `plan.md` STUDIO-07008, STUDIO-09001.
  *
  * The fourth panel ported, and the last of the four a person looks at first. It reads the
  * `AssetDatabase` rather than the filesystem: the database is what knows an asset's stable id, its
@@ -56,6 +56,15 @@ namespace CNA::Studio
      */
     inline constexpr std::string_view kStudioAssetDragType = "asset";
 
+    /**
+     * @brief The folder tree's id for the project root, which has no path of its own.
+     *
+     * A named constant because the root's id must not collide with a real folder's, and because
+     * the expansion state is keyed on it: a tree whose root row id was the empty string would
+     * share its expansion with every row that had not been given one.
+     */
+    inline constexpr std::string_view kStudioContentRootRowId = "<project>";
+
     /** @brief How the Content Browser presents what a folder holds. */
     enum class StudioContentView : std::uint8_t
     {
@@ -80,11 +89,52 @@ namespace CNA::Studio
     /** @brief Returns a stable English name for a view, for preferences and tests. */
     [[nodiscard]] std::string_view studioContentViewName(StudioContentView view);
 
+    /**
+     * @brief The folder tree beside the content, as rows.
+     *
+     * `plan.md` STUDIO-09001. Folders only — no files. That is the whole difference between this
+     * and the list view's rows, and it is the difference that makes a folder tree useful: a tree
+     * holding every asset in a project is a second copy of the content pane, and the reason to
+     * have a tree at all is to move between folders without reading their contents.
+     *
+     * A `Project` root sits above the folders, so "go back to the top" is a row rather than a
+     * gesture nobody finds. It carries the empty path, which is what @ref
+     * StudioContentBrowserState::folder holds for the project root.
+     *
+     * @param assets The database. Folders are derived from asset paths, so a folder exists exactly
+     *        when something tracked is in it or under it.
+     * @param folder The folder currently being shown, which is drawn selected.
+     * @param state Expansion state; a collapsed folder hides its descendants.
+     * @return The rows, outermost first, each folder's id being its project-relative path.
+     */
+    [[nodiscard]] std::vector<StudioTreeRow> studioContentFolderRows(const AssetDatabase& assets,
+                                                                     const std::string& folder,
+                                                                     const StudioTreeState& state);
+
     /** @brief What the Content Browser remembers between frames. */
     struct StudioContentBrowserState
     {
         /** @brief Which folders are open, and the scroll position. Shared by both views. */
         StudioTreeState tree;
+
+        /**
+         * @brief Expansion and scroll of the folder tree pane, kept apart from @ref tree.
+         *
+         * Two trees showing different things must not share one expansion set: collapsing
+         * `Assets/Textures` in the navigation pane would otherwise fold away the files the content
+         * pane is showing, which reads as the browser losing its place.
+         */
+        StudioTreeState folderTree;
+
+        /**
+         * @brief Width of the folder pane, in unscaled pixels. Zero hides it.
+         *
+         * Draggable, and remembered: a pane that reset to its default every time the panel was
+         * re-laid out would be one nobody bothers to resize. Zero is a real value — a browser
+         * docked into a narrow strip is more useful as content alone than as two things too thin
+         * to read.
+         */
+        float folderPaneWidth = 168.0f;
 
         /** @brief List or grid. */
         StudioContentView view = StudioContentView::Grid;
@@ -122,6 +172,12 @@ namespace CNA::Studio
 
         /** @brief Which view drew this frame. */
         StudioContentView view = StudioContentView::List;
+
+        /** @brief How many rows the folder pane drew. Zero when it is hidden. */
+        std::size_t folderRowsDrawn = 0;
+
+        /** @brief How many folders the database's paths imply, the `Project` root included. */
+        std::size_t folderRowsTotal = 0;
 
         /** @brief The folder the grid is showing, for the breadcrumb and for tests. */
         std::string folder;

@@ -6,7 +6,7 @@
 
 **Exit criteria.** The Studio/runtime boundary, the renderer/platform model and the host capability contract are written down, and each one has a guard test that fails when it is violated.
 
-**Progress:** 41 of 47 complete `████████░░░░`
+**Progress:** 41 of 47 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|

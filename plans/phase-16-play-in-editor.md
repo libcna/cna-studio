@@ -6,7 +6,7 @@
 
 **Exit criteria.** Play, pause, step, stop, restart, live edits and crash isolation all work against a real game process.
 
-**Progress:** 4 of 18 complete `███░░░░░░░░░`
+**Progress:** 4 of 18 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|

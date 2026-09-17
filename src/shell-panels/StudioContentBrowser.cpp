@@ -29,7 +29,61 @@ namespace CNA::Studio
         // Forward-declared so the entry point above them can read as the decision it is -- a bar,
         // then one of two presentations -- rather than as two large functions with a switch buried
         // at the bottom of the second.
-        StudioContentBrowserResult studioContentList(StudioFrame& frame, const UiRect& bounds,
+        StudioContentBrowserResult studioContentFolderPane(StudioFrame& frame, UiRect& area,
+                                                       StudioContext& context,
+                                                       StudioContentBrowserState& state,
+                                                       StudioContentBrowserResult result)
+    {
+        const StudioTheme& theme = frame.theme();
+        const float separator = metricOf(theme, StudioMetric::SeparatorThickness);
+        const float minimum = metricOf(theme, StudioMetric::RowHeight) * 3.0f;
+
+        const std::vector<StudioTreeRow> rows =
+            studioContentFolderRows(context.getAssets(), state.folder, state.folderTree);
+        result.folderRowsTotal = rows.size();
+
+        // Hidden rather than squeezed. A browser docked into a narrow strip is more useful as
+        // content alone than as two things too thin to read, and `folderPaneWidth == 0` is how a
+        // user says so by dragging.
+        const float wanted = state.folderPaneWidth * theme.scale();
+        if (wanted < minimum || area.width < minimum * 3.0f) { return result; }
+
+        UiRect pane = area.splitLeft(std::min(wanted, area.width * 0.5f));
+        UiRect grip = area.splitLeft(std::min(area.width, std::max(separator, 3.0f)));
+
+        frame.ids().push("folderpane");
+
+        const StudioTreeResult tree =
+            studioTreeView(frame, pane, rows, state.folderTree,
+                           context.hasProject() ? std::string_view{"This project has no folders."}
+                                                : std::string_view{"No project is open."});
+        result.folderRowsDrawn = tree.rowsDrawn;
+
+        if (tree.clicked.has_value())
+        {
+            // The root row carries the empty path, which is what `folder` holds for the project
+            // root -- so navigating is one assignment rather than a special case at every reader.
+            const std::string& id = rows[*tree.clicked].id;
+            state.folder = (id == kStudioContentRootRowId) ? std::string{} : id;
+            result.folder = state.folder;
+        }
+
+        const StudioSplitterResult drag =
+            studioSplitter(frame, frame.ids().make("width"), grip, StudioSplitterAxis::Horizontal);
+        if (drag.delta != 0.0f)
+        {
+            // Below the minimum it collapses to nothing rather than sticking at an unreadable
+            // width: dragging a pane shut is a gesture people expect to work, and one that stopped
+            // at forty pixels would look like the drag had broken.
+            const float next = state.folderPaneWidth + drag.delta / theme.scale();
+            state.folderPaneWidth = next < minimum / theme.scale() ? 0.0f : next;
+        }
+
+        frame.ids().pop();
+        return result;
+    }
+
+    StudioContentBrowserResult studioContentList(StudioFrame& frame, const UiRect& bounds,
                                                      StudioContext& context,
                                                      StudioTreeState& state,
                                                      StudioContentBrowserResult result);
@@ -37,6 +91,20 @@ namespace CNA::Studio
                                                      StudioContext& context,
                                                      StudioContentBrowserState& state,
                                                      StudioContentBrowserResult result);
+
+        /**
+         * @brief Draws the folder tree down the left of @p area and takes its width out of it.
+         *
+         * @param frame The frame.
+         * @param area The browser's body below the bar; narrowed by the pane and its splitter.
+         * @param context The open project's assets.
+         * @param state The browser's retained state; the folder and the pane width are written.
+         * @param result Carried through and filled in with what the pane drew.
+         */
+        StudioContentBrowserResult studioContentFolderPane(StudioFrame& frame, UiRect& area,
+                                                           StudioContext& context,
+                                                           StudioContentBrowserState& state,
+                                                           StudioContentBrowserResult result);
 
         /** @brief Splits a project-relative path into its directory part and its file name. */
         std::pair<std::string, std::string> splitPath(const std::string& path)
@@ -264,6 +332,83 @@ namespace CNA::Studio
         return crumbs;
     }
 
+    std::vector<StudioTreeRow> studioContentFolderRows(const AssetDatabase& assets,
+                                                       const std::string& folder,
+                                                       const StudioTreeState& state)
+    {
+        // How many assets sit *directly* in each folder, and which folders exist at all. Direct
+        // rather than cumulative: a count that included descendants would make `Assets` read as
+        // holding everything in the project, which is true and useless -- the number a user wants
+        // beside a folder is how much they will see when they click it.
+        std::map<std::string, std::size_t> directCount;
+        std::set<std::string> folders;
+
+        for (const AssetRecord* record : assets.getAll())
+        {
+            if (record == nullptr) { continue; }
+
+            const std::string directory = splitPath(record->sourcePath).first;
+            ++directCount[directory];
+            for (const std::string& ancestor : ancestorsOf(directory)) { folders.insert(ancestor); }
+        }
+
+        const auto depthOf = [](const std::string& path) {
+            return static_cast<int>(std::count(path.begin(), path.end(), '/'));
+        };
+
+        std::vector<StudioTreeRow> rows;
+
+        // The project root, which is a row rather than a gesture. A tree whose only way back to
+        // the top is collapsing everything is a tree people navigate by clicking the breadcrumb,
+        // which makes half of this pane decoration.
+        StudioTreeRow root;
+        root.id = kStudioContentRootRowId;
+        root.label = "Project";
+        root.icon = StudioIcon::Folder;
+        root.depth = 0;
+        root.hasChildren = !folders.empty();
+        root.selected = folder.empty();
+        if (const auto found = directCount.find(std::string{}); found != directCount.end())
+        {
+            root.detail = std::to_string(found->second);
+        }
+        rows.push_back(std::move(root));
+
+        // Sorted order interleaves parents with their children correctly, because `Assets` sorts
+        // before `Assets/Textures` and both before `Assets2` -- the same property the list relies
+        // on, and the reason neither builds an actual tree of nodes.
+        if (!state.isExpanded(std::string{kStudioContentRootRowId})) { return rows; }
+
+        for (const std::string& path : folders)
+        {
+            if (hiddenByCollapse(path, state)) { continue; }
+
+            StudioTreeRow row;
+            row.id = path;
+            row.label = leafName(path);
+            row.icon = StudioIcon::Folder;
+
+            // One deeper than the list's, because the `Project` root is above them all here and
+            // is not a row the list has.
+            row.depth = depthOf(path) + 1;
+            row.selected = path == folder;
+
+            // A folder with nothing directly in it still has a triangle when something is under
+            // it: the alternative is a leaf that turns out to have children, which is the one
+            // thing a tree must never do.
+            row.hasChildren = std::any_of(folders.begin(), folders.end(),
+                [&](const std::string& other) { return other.rfind(path + "/", 0) == 0; });
+
+            if (const auto found = directCount.find(path); found != directCount.end())
+            {
+                row.detail = std::to_string(found->second);
+            }
+
+            rows.push_back(std::move(row));
+        }
+        return rows;
+    }
+
     std::vector<StudioContentCard> studioContentCards(const AssetDatabase& assets,
                                                        const std::string& folder,
                                                        const Uuid& selected)
@@ -434,6 +579,13 @@ namespace CNA::Studio
             frame.ids().pop();
             result.folder = state.folder;
         }
+
+        // --- The folder pane ---------------------------------------------------------------
+        //
+        // Beside both presentations rather than inside either (STUDIO-09001). Where a user is and
+        // what they are looking at are two questions, and a navigation tree that appeared only in
+        // one view would make switching views also mean switching how you move around.
+        result = studioContentFolderPane(frame, area, context, state, std::move(result));
 
         if (state.view == StudioContentView::Grid)
         {
