@@ -39,7 +39,10 @@ the other side of it. The plan gained a ⊘ status for exactly this case, and th
 its status column gained the row. Resurrecting a deleted UI to earn a tick would have been the wrong
 answer to a bookkeeping problem.
 
-**`STUDIO-08011` is the result that matters most.** `STUDIO-02051` has proved since Phase 2 that an
+**`STUDIO-08011` passed on all four templates**, on a CNA-backed `SOFTWARE` build: `basic-sample`
+327 s, `empty-2d` 263 s, `empty-3d` 244 s, `xna-compatible` 215 s — each created, reopened in
+Studio, configured with nothing but CMake and a CNA checkout, compiled, and run to the line it had
+to print. **It is the result that matters most.** `STUDIO-02051` has proved since Phase 2 that an
 *exported* project builds with no Studio. Every project a user actually makes comes out of the
 Project Hub instead, and until this session that path had never been compiled by anything — a
 template producing a tree that does not build would have been found by the first person to press

@@ -202,6 +202,13 @@ which, so a template added tomorrow is asserted correctly without this file bein
 generator that composed a build target name from the project name without reducing it produces a
 `CMakeLists.txt` that will not configure, and the obvious test name would never have found out.
 
+**Measured, on a CNA-backed `SOFTWARE` build**: `basic-sample` 327 s, `empty-2d` 263 s,
+`empty-3d` 244 s, `xna-compatible` 215 s. Nearly all of that is compiling CNA into each project's
+own tree, which is the cost of the thing being proved — a test that reused one CNA build would be
+testing something other than "this project builds on a clean machine". They hold a `RESOURCE_LOCK`
+against each other and against `STUDIO-02051`, so ctest runs them one at a time however much
+parallelism it is given: several at once is how a CI runner runs out of memory.
+
 **Why this and not `STUDIO-02051`.** The export test already proves an *exported* project builds.
 Every project a user actually makes comes out of the Project Hub instead, and until this existed
 that path had never been compiled by anything: a template producing a tree that does not build
