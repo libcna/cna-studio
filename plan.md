@@ -59,13 +59,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**274 of 573 tasks complete** `███████████░░░░░░░░░░░░░░`  47.8%
+**275 of 573 tasks complete** `███████████░░░░░░░░░░░░░░`  48.0%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 274 |
+| ✅ Complete | 275 |
 | 🔄 In progress | 8 |
-| ⬜ Not started | 283 |
+| ⬜ Not started | 282 |
 | ⛔ Deferred | 3 |
 | 🔬 Blocked | 4 |
 | ⊘ Superseded | 1 |
@@ -111,7 +111,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 27 | [Profiling and diagnostics](plans/phase-27-profiling.md) | `STUDIO-27NNN` | ⬜ | 14 | 0 | `░░░░░░░░░░` |
 | 28 | [Plugins and SDK](plans/phase-28-plugins.md) | `STUDIO-28NNN` | ⬜ | 12 | 0 | `░░░░░░░░░░` |
 | 29 | [Renderer and platform matrix](plans/phase-29-renderer-matrix.md) | `STUDIO-29NNN` | 🔄 | 7 | 5 | `███████░░░` |
-| 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | 🔄 | 16 | 2 | `█░░░░░░░░░` |
+| 30 | [Large-project performance](plans/phase-30-performance.md) | `STUDIO-30NNN` | 🔄 | 16 | 3 | `█░░░░░░░░░` |
 | 31 | [Reliability](plans/phase-31-reliability.md) | `STUDIO-31NNN` | 🔄 | 13 | 1 | `░░░░░░░░░░` |
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 21 | 11 | `█████░░░░░` |

@@ -83,13 +83,18 @@ add_library(cna-studio-core STATIC
     src/core/PropertyValue.cpp
     src/core/ComponentDescriptor.cpp
     src/core/CommandHistory.cpp
+    src/core/StudioJobs.cpp
     src/core/FormatMigration.cpp
     src/core/ImageDiff.cpp
     src/core/MeshData.cpp
     src/core/NumberText.cpp
     src/core/StudioMatrix.cpp
     src/core/UserPaths.cpp)
-target_link_libraries(cna-studio-core PUBLIC cna-studio-settings)
+# Threads, for the background job system (STUDIO-30001). PUBLIC because the job system's header is
+# part of cna-studio-core's interface, and every target that uses it needs the same flags: on Linux
+# a missing -pthread is not a link error, it is a std::system_error at the first thread creation.
+find_package(Threads REQUIRED)
+target_link_libraries(cna-studio-core PUBLIC cna-studio-settings Threads::Threads)
 
 # The runtime an exported game carries, embedded the same way the typefaces are and for the same
 # reason: a shipped Studio has no source tree beside it, and export must work from the binary alone.

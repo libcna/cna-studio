@@ -6,11 +6,11 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 2 of 16 complete `█░░░░░░░░░░░`
+**Progress:** 3 of 16 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-30001` | Background job system: progress, cancellation, errors, clean shutdown | ⬜ | `STUDIO-02050` |
+| `STUDIO-30001` | Background job system: progress, cancellation, errors, clean shutdown | ✅ | `STUDIO-02050` |
 | `STUDIO-30002` | Bounded queues and backpressure for job submission | ⬜ | `STUDIO-30001` |
 | `STUDIO-30010` | Virtualised list and tree infrastructure | ⬜ | `STUDIO-03015` |
 | `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ⬜ | `STUDIO-30010` |
@@ -34,6 +34,71 @@ Tasks whose completion condition is not obvious from the title.
 ### `STUDIO-30001` — Background job system: progress, cancellation, errors, clean shutdown
 
 **Acceptance.** No document mutation races; deterministic handoff to the main thread; testable. Arbitrary detached threads are not scattered across subsystems
+
+**Done.** `StudioJobSystem` in `cna-studio-core`, owned by `StudioShellPanels` and drained once per
+`poll()`.
+
+**"No document mutation races" is a shape, not a rule.** A job body receives a `StudioJobContext`
+and nothing else: it cannot be handed a `StudioContext`, a `SceneDocument` or an `AssetDatabase`,
+because there is no parameter to pass one through. What happens *to* the document is the completion
+handler's, and a completion handler runs on the main thread inside `drain()`. The code that could
+race has nothing to race against — which is a guarantee that survives the next contributor, and a
+convention is not.
+
+**`drain()` is the only crossing, and that is what makes it testable.** Nothing a worker produced is
+visible until it has been called, so a test submits, waits for idle, drains and asserts. No test in
+this suite sleeps, and none of them can be flaky on a slow machine, because there is no window in
+which the answer depends on timing.
+
+**A drain is bounded by what was already waiting**, even with no budget. A completion may submit
+another job — which is the shape every real use has, a walk finishing and asking for the next piece
+— and on a fast machine that job can finish before the loop comes round again. An unbounded drain
+would then run a self-feeding chain to its end inside one frame, which is the opposite of what a
+background job system is for. Work produced *by* a drain belongs to the next one. This was found by
+a test that expected one completion and got two.
+
+**Cancellation is cooperative, because the alternative does not exist.** There is no portable way to
+stop a thread part-way that leaves its memory in a state anybody can reason about. A cancelled job
+still delivers its completion, with the state set to cancelled: a caller that allocated something
+for the job needs the handler to run, and one that cleaned up only on success would leak on every
+cancellation — the path taken most, because cancelling is what happens when the user looks
+elsewhere.
+
+**A body that throws is a failed job.** A background walk that hits an unreadable directory must not
+take the editor down with it, and the reason has to survive to the handler that will say so. The
+first reported reason wins: a body reporting two failures on its way out has one cause and one
+consequence.
+
+**Progress is a snapshot, not a stream.** The latest report wins and earlier ones are overwritten. A
+queue would fall behind a fast loop and then deliver the backlog to a progress bar with nothing left
+to say. An empty message leaves the previous one, so a loop reporting a fraction every iteration and
+a message every hundred does not blank the line in between. A negative fraction is a real answer —
+"working" — and a better one than a bar sitting at zero because the job invented a denominator.
+
+**Shutdown cancels, joins, and runs nothing.** Undrained completions exist to touch the document,
+and at teardown the document may already be gone; a handler that ran there would be the kind of
+crash that reproduces on one machine in ten.
+
+**`StudioJobMode::Immediate` is a real mode, not a test double.** Bodies run inside `drain()`, one
+per call — so a frame that submits a hundred jobs does not become a frame that runs a hundred, which
+is exactly the difference that would make a substitute behave unlike the thing it substitutes for.
+It makes Studio buildable and correct with no threads at all.
+
+**What it does not yet do, and why.** Nothing has been *moved* onto it: the dependency index, the
+relink search and the thumbnail work all still run on the frame. Moving them is not a wiring change,
+because each reads the `AssetDatabase` and a worker reading it while the main thread moves an asset
+is precisely the race the design forbids. Each needs a snapshot handed to the worker by value, which
+is its own task's work — `STUDIO-09003` for thumbnails, and the dependency index's rebuild with it.
+
+**Verification.** `tests/StudioJobTests.cpp`, every guarantee asserted against **both** modes where
+the guarantee applies to both: the result arriving only in `drain`, a cancelled job still delivering
+its completion and never starting its body, a running job seeing the flag and stopping at its first
+check, progress as a snapshot, a throwing body becoming a failed job with its reason intact, the
+drain budget spreading a burst over frames, a completion submitting another job without deadlocking
+on the system's own lock, shutdown running no handler, the worker count never being zero, immediate
+mode running one body per drain, and sixty-four jobs over four workers each arriving exactly once.
+
+**Run under ThreadSanitizer**, in a build configured for it: 1 401 tests, no data races reported.
 
 ### `STUDIO-30013` — `SceneDocument` child lookup is an index, not a scan of every entity
 

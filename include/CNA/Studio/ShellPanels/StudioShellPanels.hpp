@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "CNA/Studio/Core/StudioJobs.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Project/BuildRunner.hpp"
 #include "CNA/Studio/RuntimeBridge/PlayerProcess.hpp"
@@ -257,6 +258,15 @@ namespace CNA::Studio
 
         /** @brief What the panels reported over the last frame. */
         [[nodiscard]] const StudioShellPanelCounts& counts() const { return counts_; }
+
+        /**
+         * @brief The background job system (`plan.md` STUDIO-30001).
+         *
+         * Handed to whatever needs to do work off the frame, as a constructor argument rather than
+         * found through a locator (`docs/ARCHITECTURE.md` §10.1). Drained once per @ref poll.
+         */
+        [[nodiscard]] StudioJobSystem& jobs() { return jobs_; }
+        [[nodiscard]] const StudioJobSystem& jobs() const { return jobs_; }
 
         /**
          * @brief Hands the viewport its camera once a device exists to own one.
@@ -639,6 +649,16 @@ namespace CNA::Studio
 
         /** @brief Returns the index, rebuilding it first when something has changed. */
         [[nodiscard]] const AssetDependencyIndex* dependencyIndex();
+
+        /**
+         * @brief The one place background work happens (`plan.md` STUDIO-30001).
+         *
+         * Owned here rather than by each subsystem that wants it, which is the whole point: threads
+         * scattered across subsystems agree about nothing, are joined by nobody, and are one
+         * careless line from touching the document while the UI draws it. Its completions run on
+         * the main thread from @ref poll, so a job's result reaches the document between frames.
+         */
+        StudioJobSystem jobs_;
 
         StudioProblemsState problemsState_;
         StudioTreeState historyState_;

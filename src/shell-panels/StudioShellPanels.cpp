@@ -151,6 +151,12 @@ namespace CNA::Studio
         counts_.playerMessages += play_.poll();
         (void)comparison_.poll(nowSeconds);
         pollInteractionEnd();
+
+        // The one crossing background work makes into the document (STUDIO-30001). Budgeted, so a
+        // burst of jobs finishing together is spread over frames rather than producing one long
+        // one -- the last step of background work staying background.
+        (void)jobs_.drain(8);
+
         publishStatus();
     }
 
