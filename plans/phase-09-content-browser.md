@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 7 of 17 complete `████░░░░░░░░`
+**Progress:** 8 of 17 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-09011` | Reveal in the system file manager | ⬜ | `STUDIO-09001` |
 | `STUDIO-09012` | Dependency view: references-to and referenced-by | ✅ | `STUDIO-09001` |
 | `STUDIO-09013` | Missing asset handling with a clear path to relink | ✅ | `STUDIO-09012` |
-| `STUDIO-09014` | Asset metadata and import settings UI | ⬜ | `STUDIO-09001` |
+| `STUDIO-09014` | Asset metadata and import settings UI | ✅ | `STUDIO-09001` |
 | `STUDIO-09015` | Source file tracking and derived-data cache separation | ⬜ | `STUDIO-09004` |
 | `STUDIO-09016` | Virtualised browsing for very large asset counts | ⬜ | `STUDIO-30010` |
 | `STUDIO-09017` | A reference on a component with no descriptor survives a save and reload | ⬜ | — |
@@ -335,6 +335,53 @@ has already re-imported the file, nothing suggested for an id the database does 
 different extension ranked below an exact name. `tests/StudioDetailsPanelTests.cpp` drives the real
 panel through a shell frame: the suggestion appears, clicking it repairs the asset and keeps its id,
 and an asset with nothing that looks like it says so without the inspector losing its other rows.
+
+### `STUDIO-09014` — Asset metadata and import settings UI
+
+**Done.** The asset inspector now says what the file *is*, which of its import settings are
+decisions rather than defaults, and offers a way back to the default.
+
+**Most of the form already existed**, and saying so is the honest part of closing this: the panel
+had the identity rows, the importer's heading, one editable row per declared setting, and the
+importer's read-only facts (dimensions, mesh counts, font metrics) shown as text. Two things were
+missing, and both were ways the panel could mislead.
+
+**An overridden setting looked exactly like one at its default.** They are not the same thing: only
+one of them is a decision, and the difference shows up on the day an importer's default changes —
+every asset that was never touched follows the new default, and every asset that was does not. So an
+override is marked, and the mark is on the *label*, which is the part that is there whatever kind of
+editor the row carries.
+
+**Reset removes rather than writes.** Writing the default into the sidecar would freeze the setting
+at whatever this build thought the default was, and would put a field in every asset's diff that
+nobody chose. `ClearImporterSettingCommand` takes it back out; undo puts back exactly the JSON that
+was there, verbatim, because the command does not know the setting's declared type and
+round-tripping through a guess would be a reset that quietly changed the value it restored. A
+setting nobody set cannot be reset at all — an entry on the undo stack that does nothing reads as
+Ctrl+Z having broken.
+
+**The reset sits at the end of the row**, not beside the label: a control that pushed every editor
+right by its own width on the rows that have one would make the grid ragged.
+
+**Size and Modified come from the record, not from disk.** The record is what the last scan saw,
+which is also what "needs reimporting" is decided against. A panel showing the file's *current* size
+would disagree with the check that decides whether a reimport is pending, and the user would be
+reading the one that cannot explain it.
+
+**The File group sits below the settings**, because the top of an inspector is for what a user acts
+on and this is what they check.
+
+**Two formatters, exposed rather than buried.** Rounding a byte count and converting a filesystem
+timestamp are both wrong-without-looking-wrong: binary units keep the number the same as the file
+manager beside it, and the modification stamp is seconds on the *filesystem* clock, whose epoch is
+not the system clock's everywhere — handing it to a Unix-seconds formatter would print a date decades
+out. It goes through `formatRecoveryTime`, so Studio has one date format rather than two.
+
+**Verification.** `tests/ProjectAndAssetTests.cpp`: a reset removing the setting from the record and
+from the sidecar on disk, undo restoring it verbatim, and both refusals. `tests/StudioDetailsPanelTests.cpp`:
+the byte formatter across its boundaries including the top of its unit table, "unknown" for an
+absent stamp, and — through a real shell frame — an overridden setting being reset by clicking the
+control the inspector offers, then undone.
 
 ### `STUDIO-09015` — Source file tracking and derived-data cache separation
 

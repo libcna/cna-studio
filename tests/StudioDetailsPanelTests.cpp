@@ -17,6 +17,7 @@
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/AssetDependencies.hpp"
+#include "CNA/Studio/Assets/AssetImporters.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Core/NumberText.hpp"
@@ -1473,5 +1474,111 @@ CNA_STUDIO_TEST(AMissingAssetWithNoCandidatesSaysSoRatherThanShowingAnEmptySecti
     CNA_STUDIO_EXPECT(last.rowsDrawn > 0);
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
 
+    std::filesystem::remove_all(directory, code);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Asset metadata and import settings (STUDIO-09014)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AByteCountReadsTheWayAFileManagerWritesIt)
+{
+    // An asset browser that disagrees with the file manager beside it is one people stop trusting
+    // for the numbers they can check, so these are binary units.
+    CNA_STUDIO_EXPECT_EQ(studioDescribeByteSize(0), std::string{"0 B"});
+    CNA_STUDIO_EXPECT_EQ(studioDescribeByteSize(1023), std::string{"1023 B"});
+    CNA_STUDIO_EXPECT_EQ(studioDescribeByteSize(1024), std::string{"1.0 KB"});
+    CNA_STUDIO_EXPECT_EQ(studioDescribeByteSize(1536), std::string{"1.5 KB"});
+
+    // One decimal below ten and none above: a tenth of a megabyte is noise on a number somebody is
+    // comparing against their file manager.
+    CNA_STUDIO_EXPECT_EQ(studioDescribeByteSize(9u * 1024u * 1024u + 512u * 1024u),
+                         std::string{"9.5 MB"});
+    CNA_STUDIO_EXPECT_EQ(studioDescribeByteSize(100u * 1024u * 1024u), std::string{"100 MB"});
+
+    // It stops at TB rather than running off the end of the unit table.
+    CNA_STUDIO_EXPECT(studioDescribeByteSize(std::uint64_t{1} << 50).find("TB")
+                      != std::string::npos);
+
+    // Zero means unknown for a stamp, and says so rather than showing 1970.
+    CNA_STUDIO_EXPECT_EQ(studioDescribeFileTime(0), std::string{"unknown"});
+}
+
+/**
+ * @brief An overridden import setting says so and can be put back, without leaving the panel.
+ *
+ * A setting the user chose and one that happens to equal the default look identical otherwise, and
+ * only one of them is a decision. Before this the only way back to the default was Ctrl+Z, which
+ * stops being an option the moment anything else is edited.
+ */
+CNA_STUDIO_TEST(AnOverriddenImportSettingCanBeResetFromTheInspector)
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-importreset-ui";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Textures", code);
+    {
+        std::ofstream stream{directory / "Textures" / "Hero.png", std::ios::binary};
+        stream << "not really a png";
+    }
+
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+    registerBuiltinImporters(context.getImporterRegistry());
+    context.getAssets().setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Textures").succeeded);
+
+    const Uuid id = context.getAssets().findByPath("Textures/Hero.png")->id;
+    context.selectAsset(id);
+
+    // Overridden, through the same command the inspector's own editors use.
+    context.execute(std::make_unique<SetImporterSettingCommand>(
+        context.getAssets(), id, "generateMipmaps", PropertyValue{false}));
+    CNA_STUDIO_EXPECT(!context.getAssets().find(id)->importerSettings["generateMipmaps"].isNull());
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    UiRect bounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context);
+            if (frame.isInputPass()) { last = pass; }
+            if (frame.isDrawPass()) { bounds = area; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(last.rowsDrawn > 0);
+
+    // The reset sits at the right-hand end of the row, so the sweep runs down that edge. Swept
+    // rather than assuming a row height, so a metric change cannot make this click empty space.
+    bool reset = false;
+    for (float y = bounds.top() + 4.0f; y < bounds.bottom() - 4.0f && !reset; y += 4.0f)
+    {
+        const float x = bounds.right() - 14.0f;
+        shell->renderFrame(at(x, y, false));
+        shell->renderFrame(at(x, y, true));
+        shell->renderFrame(at(x, y, false));
+        reset = context.getAssets().find(id)->importerSettings["generateMipmaps"].isNull();
+    }
+
+    if (!reset)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "no control in the inspector reset the overridden setting.");
+    }
+    else
+    {
+        // Removed rather than written back as a default, and undoable like every other edit.
+        CNA_STUDIO_EXPECT(context.getHistory().canUndo());
+        CNA_STUDIO_EXPECT(context.getHistory().undo());
+        CNA_STUDIO_EXPECT(
+            !context.getAssets().find(id)->importerSettings["generateMipmaps"].isNull());
+    }
+
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
     std::filesystem::remove_all(directory, code);
 }

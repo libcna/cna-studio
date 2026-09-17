@@ -2269,3 +2269,71 @@ CNA_STUDIO_TEST(AFolderMoveRefusesTheDestinationsThatWouldNotSurviveIt)
 
     std::filesystem::remove_all(directory);
 }
+
+// --- Import settings: overridden, and resettable (STUDIO-09014) ---------------------------------
+
+/**
+ * @brief Reset removes the setting rather than writing the default into it.
+ *
+ * The difference matters on the day the importer's default changes: an *absent* setting follows the
+ * new default, and one written into the sidecar is frozen at whatever this build thought the
+ * default was. It is also what keeps an asset's diff to the decisions somebody actually made.
+ */
+CNA_STUDIO_TEST(ResettingAnImportSettingTakesItBackOutOfTheSidecar)
+{
+    const std::filesystem::path directory = makeScratchDirectory("importreset");
+    writeFile(directory / "Textures" / "Hero.png", "not really a png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Textures").succeeded);
+
+    const Uuid id = assets.findByPath("Textures/Hero.png")->id;
+
+    CommandHistory history;
+    history.execute(std::make_unique<SetImporterSettingCommand>(assets, id, "generateMipmaps",
+                                                                PropertyValue{false}));
+    CNA_STUDIO_EXPECT(!assets.find(id)->importerSettings["generateMipmaps"].isNull());
+
+    auto reset = std::make_unique<ClearImporterSettingCommand>(assets, id, "generateMipmaps");
+    CNA_STUDIO_EXPECT(reset->isValid());
+    history.execute(std::move(reset));
+
+    CNA_STUDIO_EXPECT(assets.find(id)->importerSettings["generateMipmaps"].isNull());
+
+    // On disk too, or the reset would come back on the next scan.
+    AssetDatabase reopened;
+    reopened.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(reopened.scan("Textures").succeeded);
+    CNA_STUDIO_EXPECT(reopened.find(id) != nullptr);
+    CNA_STUDIO_EXPECT(reopened.find(id)->importerSettings["generateMipmaps"].isNull());
+
+    // And undo puts back exactly what was there.
+    CNA_STUDIO_EXPECT(history.undo());
+    CNA_STUDIO_EXPECT(!assets.find(id)->importerSettings["generateMipmaps"].isNull());
+    CNA_STUDIO_EXPECT(assets.find(id)->importerSettings["generateMipmaps"].asBoolean() == false);
+
+    std::filesystem::remove_all(directory);
+}
+
+/** @brief A setting that was never set cannot be reset, rather than pushing an undo entry that does nothing. */
+CNA_STUDIO_TEST(ResettingASettingNobodySetIsRefusedRatherThanAnEmptyUndoEntry)
+{
+    const std::filesystem::path directory = makeScratchDirectory("importresetnoop");
+    writeFile(directory / "Textures" / "Hero.png", "not really a png");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(assets.scan("Textures").succeeded);
+
+    const Uuid id = assets.findByPath("Textures/Hero.png")->id;
+
+    // An entry on the undo stack that does nothing reads as Ctrl+Z having broken.
+    const ClearImporterSettingCommand reset{assets, id, "generateMipmaps"};
+    CNA_STUDIO_EXPECT(!reset.isValid());
+
+    const ClearImporterSettingCommand unknown{assets, Uuid::generate(), "generateMipmaps"};
+    CNA_STUDIO_EXPECT(!unknown.isValid());
+
+    std::filesystem::remove_all(directory);
+}

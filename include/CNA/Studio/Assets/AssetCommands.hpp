@@ -258,6 +258,38 @@ namespace CNA::Studio
         std::string fieldName_;
     };
 
+    /**
+     * @brief Takes one importer setting back out of an asset's sidecar.
+     *
+     * `plan.md` STUDIO-09014. Not the same as writing the default value: a sidecar carrying every
+     * field the user ever glanced at makes each asset's diff noise, and — more importantly — an
+     * *absent* setting follows the importer's default if that default ever changes, while a written
+     * one is frozen at whatever this build thought the default was.
+     *
+     * So "Reset" removes rather than overwrites, and undo puts the removed value back.
+     */
+    class ClearImporterSettingCommand final : public StudioCommand
+    {
+    public:
+        ClearImporterSettingCommand(AssetDatabase& assets, Uuid assetId, std::string settingName);
+
+        void execute() override;
+        void undo() override;
+        [[nodiscard]] std::string getDescription() const override;
+
+        /** @brief Returns false when the asset is unknown or the setting was not there anyway. */
+        [[nodiscard]] bool isValid() const { return valid_; }
+
+    private:
+        AssetDatabase* assets_;
+        Uuid assetId_;
+        std::string settingName_;
+
+        /** @brief The JSON that was there, replayed verbatim by undo so its type survives. */
+        JsonValue oldValue_;
+        bool valid_ = false;
+    };
+
     class SetImporterSettingCommand final : public StudioCommand
     {
     public:

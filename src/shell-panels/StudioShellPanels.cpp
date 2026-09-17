@@ -949,10 +949,18 @@ namespace CNA::Studio
                 // moment the selection moves off it.
                 animation_ = details.animation;
             }
-            if (details.edited)
+            if (details.relinked)
             {
+                log_.append(LogSeverity::Info, details.editedProperty + ".  Undo with Ctrl+Z.");
+            }
+            else if (details.edited)
+            {
+                // "Reset" and "Changed" are opposite things to say about a sidecar: one took a
+                // field out of it and the other put one in, and the diff the user is about to
+                // review shows which.
                 log_.append(LogSeverity::Info,
-                            "Changed " + details.editedProperty + ".  Undo with Ctrl+Z.");
+                            (details.resetProperty ? "Reset " : "Changed ")
+                                + details.editedProperty + ".  Undo with Ctrl+Z.");
             }
 
             // Revert and Apply (STUDIO-07042). Apply writes the prefab *file*, which every other

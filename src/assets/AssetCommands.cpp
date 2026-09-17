@@ -126,6 +126,55 @@ namespace CNA::Studio
         return "Set import setting '" + settingName_ + "'";
     }
 
+    ClearImporterSettingCommand::ClearImporterSettingCommand(AssetDatabase& assets, Uuid assetId,
+                                                             std::string settingName)
+        : assets_(&assets), assetId_(assetId), settingName_(std::move(settingName))
+    {
+        const AssetRecord* record = assets_->find(assetId_);
+        if (record == nullptr) { return; }
+
+        const JsonValue& stored = record->importerSettings[settingName_];
+
+        // A setting that is not there cannot be reset, and offering the command anyway would put an
+        // entry on the undo stack that does nothing -- which reads as Ctrl+Z having broken.
+        if (stored.isNull()) { return; }
+
+        // The JSON verbatim rather than a PropertyValue: this command does not know the setting's
+        // declared type, and round-tripping through a guess would be a reset that quietly changed
+        // the value it was meant to restore.
+        oldValue_ = stored;
+        valid_ = true;
+    }
+
+    void ClearImporterSettingCommand::execute()
+    {
+        if (!valid_) { return; }
+        if (AssetRecord* record = assets_->findMutable(assetId_); record != nullptr)
+        {
+            record->importerSettings.remove(settingName_);
+            assets_->writeSidecar(assetId_);
+        }
+    }
+
+    void ClearImporterSettingCommand::undo()
+    {
+        if (!valid_) { return; }
+        if (AssetRecord* record = assets_->findMutable(assetId_); record != nullptr)
+        {
+            if (record->importerSettings.isNull())
+            {
+                record->importerSettings = JsonValue::makeObject();
+            }
+            record->importerSettings.set(settingName_, oldValue_);
+            assets_->writeSidecar(assetId_);
+        }
+    }
+
+    std::string ClearImporterSettingCommand::getDescription() const
+    {
+        return "Reset import setting '" + settingName_ + "'";
+    }
+
     std::string SetImporterSettingCommand::getMergeKey() const
     {
         return "importer:" + assetId_.toString() + ":" + settingName_;

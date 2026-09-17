@@ -141,6 +141,33 @@ namespace CNA::Studio
     };
 
     /**
+     * @brief A byte count as something a person reads: `"1.4 MB"`.
+     *
+     * `plan.md` STUDIO-09014. Binary units, because that is what a file manager on every platform
+     * shows, and an asset browser disagreeing with the file manager beside it is a browser people
+     * stop trusting for the numbers they *can* check.
+     *
+     * Exposed rather than left inside the panel because rounding is the kind of thing that is wrong
+     * without looking wrong, and a test that had to build a frame to check it would not be written.
+     *
+     * @param bytes The size.
+     * @return The size with a unit, one decimal below ten and none above.
+     */
+    [[nodiscard]] std::string studioDescribeByteSize(std::uint64_t bytes);
+
+    /**
+     * @brief A scan's modification stamp as a local date and time.
+     *
+     * `plan.md` STUDIO-09014. The stamp is seconds on the *filesystem* clock, whose epoch is not
+     * the system clock's on every platform — so it is converted rather than handed to a Unix-seconds
+     * formatter, which would produce a date decades out wherever the two differ.
+     *
+     * @param fileClockSeconds `AssetRecord::sourceModifiedTime`. Zero means unknown.
+     * @return The date and time, or `"unknown"`.
+     */
+    [[nodiscard]] std::string studioDescribeFileTime(std::int64_t fileClockSeconds);
+
+    /**
      * @brief What the prefab section reported and did this frame.
      *
      * `plan.md` STUDIO-07042. Returned rather than logged, like everything else this panel
@@ -255,6 +282,15 @@ namespace CNA::Studio
 
         /** @brief A relink was applied this frame. Input pass only. */
         bool relinked = false;
+
+        /**
+         * @brief An import setting was reset to its importer default this frame. Input pass only.
+         *
+         * `plan.md` STUDIO-09014. Distinguished from @ref edited, which it also sets: resetting
+         * *removes* the setting from the sidecar rather than writing the default into it, and a
+         * caller that logged both the same way would tell the user the opposite of what happened.
+         */
+        bool resetProperty = false;
     };
 
     /**

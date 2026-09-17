@@ -7,6 +7,12 @@
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 
 #include "CNA/Studio/Assets/AssetRelink.hpp"
+#include "CNA/Studio/Project/RecoveryStore.hpp"
+
+#include <chrono>
+#include <cstdio>
+#include <filesystem>
+#include <iterator>
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
@@ -40,6 +46,41 @@
 
 namespace CNA::Studio
 {
+    std::string studioDescribeByteSize(std::uint64_t bytes)
+    {
+        if (bytes < 1024) { return std::to_string(bytes) + " B"; }
+
+        static constexpr const char* kUnits[] = {"KB", "MB", "GB", "TB"};
+        double value = static_cast<double>(bytes) / 1024.0;
+        std::size_t unit = 0;
+        while (value >= 1024.0 && unit + 1 < std::size(kUnits))
+        {
+            value /= 1024.0;
+            ++unit;
+        }
+
+        // One decimal below ten, none above: "9.4 MB" is useful and "943.7 MB" is a tenth of a
+        // megabyte nobody reads on a number they are checking against a file manager.
+        char text[32] = {};
+        std::snprintf(text, sizeof(text), value < 10.0 ? "%.1f %s" : "%.0f %s", value,
+                      kUnits[unit]);
+        return text;
+    }
+
+    std::string studioDescribeFileTime(std::int64_t fileClockSeconds)
+    {
+        if (fileClockSeconds == 0) { return "unknown"; }
+
+        using FileTime = std::filesystem::file_time_type;
+        const FileTime when{std::chrono::seconds{fileClockSeconds}};
+        const auto asSystem = FileTime::clock::to_sys(when);
+
+        // Through the one time formatter Studio already has, so the recovery prompt and the asset
+        // inspector cannot drift into two date formats.
+        return formatRecoveryTime(static_cast<std::int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(asSystem.time_since_epoch()).count()));
+    }
+
     namespace
     {
         /** @brief Returns a metric already scaled to physical pixels. */
@@ -2195,7 +2236,9 @@ namespace
         const std::size_t rows = 6 + (isAudibleAsset(record->type) ? 1u : 0u)
                                  + (record->type == AssetType::Material ? 8u : 0u)
                                  + (properties != nullptr ? properties->size() : 0)
-                                 + dependencyRows + relinkRows;
+                                 + dependencyRows + relinkRows
+                                 // The File group: its heading, Size and Modified.
+                                 + 3;
 
         StudioScrollOptions scroll;
         scroll.contentHeight = static_cast<float>(rows) * (rowHeight + spacing);
@@ -2405,10 +2448,7 @@ namespace
 
             for (const PropertyDescriptor& property : *properties)
             {
-                const PropertyRow parts = splitRow(theme, nextRow());
-                label(parts.label,
-                      property.displayName.empty() ? property.name : property.displayName,
-                      StudioColorRole::TextSecondary);
+                PropertyRow parts = splitRow(theme, nextRow());
 
                 // The stored setting when the sidecar carries one, the declared default otherwise.
                 // Writing every default into the sidecar on first sight would make each asset's diff
@@ -2418,7 +2458,56 @@ namespace
                     ? property.defaultValue
                     : PropertyValue::fromJson(stored, property.type);
 
+                // Overridden, and *said so* (STUDIO-09014). A setting the user chose and one that
+                // happens to equal the default look identical otherwise, and only one of them is a
+                // decision -- which matters on the day the importer's default changes: every asset
+                // that was never touched follows it, and every asset that was does not.
+                //
+                // A read-only fact is never an override; importers write those themselves.
+                const bool overridden = !stored.isNull() && !property.readOnly;
                 frame.ids().push(property.name);
+
+                if (overridden)
+                {
+                    // At the end of the row rather than beside the label, so the column of controls
+                    // stays a column: a button that pushed every editor right by its own width on
+                    // the rows that have one would make the grid ragged.
+                    const float buttonWidth =
+                        std::max(metricOf(theme, StudioMetric::ControlHeight),
+                                 metricOf(theme, StudioMetric::MinimumHitTarget));
+                    const UiRect reset =
+                        parts.control.splitRight(std::min(parts.control.width, buttonWidth));
+
+                    StudioButtonOptions resetOptions;
+                    resetOptions.kind = StudioButtonKind::Ghost;
+                    resetOptions.icon = StudioIcon::Undo;
+                    resetOptions.iconOnly = true;
+                    resetOptions.tooltip = "Reset to the importer's default";
+
+                    if (studioButton(frame, frame.ids().make("reset"), reset, "Reset",
+                                     resetOptions).activated)
+                    {
+                        // Removed rather than overwritten with the default: an absent setting
+                        // follows the importer if its default ever changes, and a written one is
+                        // frozen at whatever this build thought the default was.
+                        auto command = std::make_unique<ClearImporterSettingCommand>(
+                            context.getAssets(), assetId, property.name);
+                        if (command->isValid())
+                        {
+                            result.edited = true;
+                            result.resetProperty = true;
+                            result.editedProperty = record->sourcePath + "." + property.name;
+                            context.execute(std::move(command));
+                            frame.ids().pop();
+                            break;
+                        }
+                    }
+                }
+
+                label(parts.label,
+                      property.displayName.empty() ? property.name : property.displayName,
+                      overridden ? StudioColorRole::TextPrimary
+                                 : StudioColorRole::TextSecondary);
 
                 StudioPropertyEditResult edit;
                 if (property.readOnly)
@@ -2467,6 +2556,35 @@ namespace
                 break;
             }
 
+            frame.ids().pop();
+        }
+
+        // --- What the file itself is (STUDIO-09014) --------------------------------------------
+        //
+        // Below the settings rather than above them, because the top of an inspector is for what
+        // the user acts on and this is what they check. Read from the *record* rather than from
+        // disk: the record is what the last scan saw, which is also what "needs reimporting" is
+        // decided against, and a panel showing the file's current size would disagree with the
+        // check that decides whether a reimport is pending.
+        {
+            frame.ids().push("file");
+            label(nextRow(), "File", StudioColorRole::TextSecondary);
+
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                label(parts.label, "Size", StudioColorRole::TextSecondary);
+                label(parts.control,
+                      record->sourceSize == 0 ? std::string{"unknown"}
+                                              : studioDescribeByteSize(record->sourceSize),
+                      StudioColorRole::TextPrimary);
+            }
+
+            {
+                const PropertyRow parts = splitRow(theme, nextRow());
+                label(parts.label, "Modified", StudioColorRole::TextSecondary);
+                label(parts.control, studioDescribeFileTime(record->sourceModifiedTime),
+                      StudioColorRole::TextPrimary);
+            }
             frame.ids().pop();
         }
 
