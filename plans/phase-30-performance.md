@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 7 of 16 complete `█████░░░░░░░`
+**Progress:** 8 of 16 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,7 +21,7 @@
 | `STUDIO-30016` | The Details panel stops opening files to draw itself | ✅ | `STUDIO-30012` |
 | `STUDIO-30020` | Stress benchmark: 10,000+ scene entities | ⬜ | `STUDIO-13011` |
 | `STUDIO-30021` | Stress benchmark: deep hierarchies and large multi-selection | ⬜ | `STUDIO-30020` |
-| `STUDIO-30022` | Stress benchmark: 100,000 assets | ⬜ | `STUDIO-09016` |
+| `STUDIO-30022` | Stress benchmark: 100,000 assets | ✅ | `STUDIO-09016` |
 | `STUDIO-30023` | Stress benchmark: very large logs | ⬜ | `STUDIO-27021` |
 | `STUDIO-30024` | Stress benchmark: large property lists and large imported models | ⬜ | `STUDIO-14018` |
 | `STUDIO-30025` | Stress benchmark: many thumbnails and many concurrent import jobs | ⬜ | `STUDIO-09003` |
@@ -385,3 +385,61 @@ product.
 
 **Acceptance.** Measured before optimising, with the benchmark established early so a regression is visible
 
+### `STUDIO-30022` — Stress benchmark: 100,000 assets
+
+**Done.** Three scenarios in `--ui-benchmark`: `content-grid-100k`, `content-list-100k` and
+`content-scrolling-100k`, each over a hundred thousand assets backed by real files under a real
+project root.
+
+**Why this exists when `STUDIO-09016` already has a test.** They answer different halves of one
+question. The test counts what the panel *builds* and would still pass if every one of those forty
+cards cost a millisecond; the benchmark says what a frame costs and cannot say why. A project this
+size needs both, and the benchmark is the one that found what follows.
+
+**It found the last O(folder) pass, in the function whose entire purpose was not to have one.**
+`studioContentCardCount` answers "how many cards is this folder" from the database's own counts —
+`immediateSubfolders(...).size() + getDirectAssetCount(folder)`. The second is O(1). The first
+walked the *path* index, where files and folders interleave alphabetically, so finding the folders
+meant stepping over every file among them and allocating a substring for each. At a hundred
+thousand assets that was about eight thousand steps and eight thousand allocations, twice a frame,
+in both views, to establish that a leaf folder has no subfolders.
+
+`AssetDatabase::getFolderTotals()` is the fix: it is already maintained incrementally, its keys are
+folders, and every ancestor is present, so a folder's children are one `lower_bound` per child with
+each subtree skipped in a seek. `TheFolderPaneOverAHundredThousandAssetsIsAboutFoldersNotAssets`
+asserts that index is folder-sized rather than project-sized, which is the invariant the cheap
+enumeration stands on.
+
+**Measured**, 120 frames at 1920×1080, median microseconds per frame, before and after that fix:
+
+| scenario | before | after | verts |
+|---|---:|---:|---:|
+| `content-grid` (1 500) | 4691 | 4260 | 10 972 |
+| `content-grid-100k` | 15 911 | 5756 | 11 005 |
+| `content-list-100k` | 9826 | 1783 | 6109 |
+| `content-scrolling-100k` | 12 549 | 1823 | 6109 |
+
+**The property the task is about holds.** Between 12 000 assets and 100 000 — eight times the
+project — the grid moves about six per cent, and the drawn geometry does not move at all: 11 005
+vertices for a folder of a hundred thousand files, against 10 972 for one of a hundred and
+twenty-five. What a frame costs is what is on screen.
+
+**One residual, recorded rather than explained away.** Between 1 500 and 12 000 assets the grid
+costs about 1.5 ms more, and then stops: 6 000 → 4.0 ms, 12 000 → 5.5 ms, 25 000 → 6.0 ms,
+50 000 → 5.8 ms, 100 000 → 5.8 ms, with identical draw, clip and texture counts throughout. A step
+that saturates is not a pass over the project — a pass over the project would keep going — and the
+shape fits a working set outgrowing cache, where each step of a map walk over the window becomes a
+miss and stays one however many more records there are. That is a hypothesis, not a measurement,
+and it is written down as one. `STUDIO-30030` is where an interactive target would decide whether
+1.5 ms is worth attributing properly.
+
+**`content-scrolling-100k` is there because a standing window is the easy case.** A view whose
+first row never changes can be answered by any cache keyed on it; one that moves has to build a
+fresh slice every frame, which is what a user scrolling actually does. It costs the same as the
+standing list, which is the answer that was wanted.
+
+**The fixture is reused rather than rebuilt.** Writing a hundred thousand files costs more than
+every timed frame of every scenario put together, so `fillAssets` keeps its scratch directory
+between runs and only rebuilds it when it is not there. A benchmark that spent two minutes
+recreating a directory it had just deleted is a benchmark people stop running, which is the only
+way a benchmark actually fails.

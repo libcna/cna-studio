@@ -543,23 +543,33 @@ namespace CNA::Studio
             std::vector<std::string> subfolders;
 
             const std::string prefix = folder.empty() ? std::string{} : folder + "/";
-            const std::map<std::string, Uuid>& index = assets.getPathIndex();
 
-            for (auto entry = index.lower_bound(prefix); entry != index.end();)
+            // The *folder* index, not the path index (STUDIO-30022). Walking asset paths meant
+            // stepping over every file in the folder to find the folders among them -- files and
+            // folders interleave alphabetically, so no seek skips them -- which made answering
+            // "what is in here" cost what is in here. It was eight thousand steps and eight
+            // thousand substrings, twice a frame, inside the one function whose entire purpose is
+            // to answer without touching a record.
+            const std::map<std::string, std::size_t>& folders = assets.getFolderTotals();
+
+            for (auto entry = folders.lower_bound(prefix); entry != folders.end();)
             {
                 const std::string& path = entry->first;
                 if (path.compare(0, prefix.size(), prefix) != 0) { break; }
 
-                const std::string rest = path.substr(prefix.size());
-                const std::size_t slash = rest.find('/');
-                if (slash == std::string::npos) { ++entry; continue; }
+                // The folder itself, which sits in this map too and is not its own child. Only
+                // reachable at the project root, whose prefix is empty and whose key is as well.
+                if (path.size() <= prefix.size()) { ++entry; continue; }
+
+                const std::size_t slash = path.find('/', prefix.size());
 
                 // Recorded once and the whole of it skipped. `'/' + 1` is the first character that
-                // sorts after every path inside it, so one seek replaces walking however many
-                // thousand assets are under there.
-                const std::string child = prefix + rest.substr(0, slash);
+                // sorts after every path inside it, so one seek replaces walking however deep the
+                // tree under there goes.
+                const std::string child =
+                    slash == std::string::npos ? path : path.substr(0, slash);
                 subfolders.push_back(child);
-                entry = index.lower_bound(child + static_cast<char>('/' + 1));
+                entry = folders.lower_bound(child + static_cast<char>('/' + 1));
             }
             return subfolders;
         }

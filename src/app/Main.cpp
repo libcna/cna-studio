@@ -172,8 +172,16 @@ namespace
          *         happened to be on top would be a number about the default layout. */
         std::string panel;
 
-        /** @brief Arranges the document before the timed frames. */
-        std::function<void(CNA::Studio::StudioShell&, CNA::Studio::StudioContext&)> setUp;
+        /**
+         * @brief Arranges the document, and the panel, before the timed frames.
+         *
+         * The panels are handed over as well as the document (`plan.md` STUDIO-30022) because a
+         * scenario named after a *view* has to be able to put the browser in it. One that measured
+         * whichever view the layout happened to default to would be a number about the layout, and
+         * would go on being one after somebody changed the default.
+         */
+        std::function<void(CNA::Studio::StudioShell&, CNA::Studio::StudioContext&,
+                           CNA::Studio::StudioShellPanels&)> setUp;
 
         /**
          * @brief Adjusts the input for frame @p index, so a scenario can type, scroll or resize.
@@ -230,16 +238,36 @@ namespace
      * its way out would spend most of its wall clock doing that, and a temporary directory is the
      * operating system's to reclaim.
      */
-    void fillAssets(CNA::Studio::AssetDatabase& assets, int count)
+    std::string fillAssets(CNA::Studio::AssetDatabase& assets, int count, int folders = 12)
     {
         static const char* const kKinds[] = {".png", ".ogg", ".gltf", ".cnascene", ".cnaprefab",
                                              ".ttf", ".frag", ".txt"};
 
         std::error_code code;
         const std::filesystem::path root =
-            std::filesystem::temp_directory_path() / "cna-studio-benchmark-assets";
-        std::filesystem::remove_all(root, code);
-        std::filesystem::create_directories(root, code);
+            std::filesystem::temp_directory_path()
+            / ("cna-studio-benchmark-assets-" + std::to_string(count));
+
+        // Reused rather than rebuilt when it is already the right shape. At a hundred thousand
+        // files the setup costs more than every timed frame of every scenario put together, and a
+        // run that spent two minutes recreating a directory it had just deleted would be a
+        // benchmark people stop running -- which is the only way a benchmark actually fails.
+        const bool exists = std::filesystem::exists(root / "Content", code);
+        if (!exists)
+        {
+            std::filesystem::remove_all(root, code);
+            std::filesystem::create_directories(root, code);
+
+            // Once per folder rather than once per file: `create_directories` on a path that
+            // already exists is still a `stat` per component, and at a hundred thousand files that
+            // is three hundred thousand syscalls spent confirming what the last file established.
+            for (int folder = 0; folder < folders; ++folder)
+            {
+                std::filesystem::create_directories(
+                    root / "Content" / ("Folder" + std::to_string(folder)), code);
+            }
+        }
+
         assets.setProjectRoot(root.generic_string());
 
         for (int i = 0; i < count; ++i)
@@ -248,17 +276,19 @@ namespace
             record.id = CNA::Studio::Uuid::generate();
             // Across folders, because the grid's breadcrumb and its per-folder culling are both
             // part of what a large content browser costs and a flat directory exercises neither.
-            record.sourcePath = "Content/Folder" + std::to_string(i % 12) + "/asset"
+            record.sourcePath = "Content/Folder" + std::to_string(i % folders) + "/asset"
                               + std::to_string(i) + kKinds[static_cast<std::size_t>(i) % 8];
             record.type = CNA::Studio::AssetDatabase::guessTypeFromExtension(record.sourcePath);
             record.importerId = CNA::Studio::AssetDatabase::defaultImporterFor(record.type);
 
-            const std::filesystem::path file = root / record.sourcePath;
-            std::filesystem::create_directories(file.parent_path(), code);
-            std::ofstream{file, std::ios::binary} << "x";
+            if (!exists) { std::ofstream{root / record.sourcePath, std::ios::binary} << "x"; }
 
             (void)assets.add(std::move(record));
         }
+
+        // The folder the scenarios stand in. At the project root the browser shows one folder card
+        // and measures nothing, which is the mistake `STUDIO-30014` already made once.
+        return "Content/Folder0";
     }
 
     /** @brief The scenarios, in the order they are reported. */
@@ -267,22 +297,23 @@ namespace
         using CNA::Studio::StudioContext;
         using CNA::Studio::StudioShell;
         using CNA::Studio::UiInputState;
+        using Panels = CNA::Studio::StudioShellPanels;
 
         std::vector<UiBenchmarkScenario> scenarios;
 
         scenarios.push_back(UiBenchmarkScenario{
             "baseline", "the shell as it opens -- the floor every other row is read against",
-            "", [](StudioShell&, StudioContext&) {}, {}});
+            "", [](StudioShell&, StudioContext&, Panels&) {}, {}});
         scenarios.push_back(UiBenchmarkScenario{
             "outliner-2000", "a 2000-entity scene with the World Outliner raised",
             "outliner",
-            [](StudioShell&, StudioContext& context) { fillScene(context.getScene(), 2000); },
+            [](StudioShell&, StudioContext& context, Panels&) { fillScene(context.getScene(), 2000); },
             {}});
 
         scenarios.push_back(UiBenchmarkScenario{
             "outliner-scrolling", "the same scene, scrolled a notch every frame",
             "outliner",
-            [](StudioShell&, StudioContext& context) { fillScene(context.getScene(), 2000); },
+            [](StudioShell&, StudioContext& context, Panels&) { fillScene(context.getScene(), 2000); },
             [](UiInputState input, int frame) {
                 // Over the outliner, which is where the wheel has to be for the scroll to land.
                 input.mouseX = 160.0f;
@@ -295,13 +326,62 @@ namespace
         scenarios.push_back(UiBenchmarkScenario{
             "content-grid", "1500 assets in the Content Browser's card grid",
             "content",
-            [](StudioShell&, StudioContext& context) { fillAssets(context.getAssets(), 1500); },
+            [](StudioShell&, StudioContext& context, Panels& panels) {
+                panels.contentBrowserState().folder = fillAssets(context.getAssets(), 1500);
+                panels.contentBrowserState().view = CNA::Studio::StudioContentView::Grid;
+            },
             {}});
+
+        // `STUDIO-30022`. A hundred thousand assets is the number the Content Browser was made to
+        // survive, and the reason it is a benchmark as well as a test is that the test counts what
+        // is built and this says what a frame costs. They answer different halves of the same
+        // question: the test would still pass if every one of those forty cards cost a millisecond.
+        //
+        // Both views, because they are two implementations of one idea and only one of them was
+        // ever the slow one. The grid has windowed its model since `STUDIO-30010`; the list built a
+        // row per asset until `STUDIO-09016`, and before that this row would have read in seconds.
+        scenarios.push_back(UiBenchmarkScenario{
+            "content-grid-100k", "100,000 assets in the Content Browser's card grid",
+            "content",
+            [](StudioShell&, StudioContext& context, Panels& panels) {
+                panels.contentBrowserState().folder = fillAssets(context.getAssets(), 100000);
+                panels.contentBrowserState().view = CNA::Studio::StudioContentView::Grid;
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "content-list-100k", "the same 100,000 assets in the list view",
+            "content",
+            [](StudioShell&, StudioContext& context, Panels& panels) {
+                panels.contentBrowserState().folder = fillAssets(context.getAssets(), 100000);
+                panels.contentBrowserState().view = CNA::Studio::StudioContentView::List;
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "content-scrolling-100k",
+            "the same list, scrolled a notch every frame -- the window moving, not standing still",
+            "content",
+            [](StudioShell&, StudioContext& context, Panels& panels) {
+                panels.contentBrowserState().folder = fillAssets(context.getAssets(), 100000);
+                panels.contentBrowserState().view = CNA::Studio::StudioContentView::List;
+            },
+            [](UiInputState input, int frame) {
+                // Over the listing, which is where the wheel has to be for the scroll to land.
+                // A standing window can be answered by any cache keyed on the first row; a moving
+                // one has to build a fresh slice every frame, which is the cost this scenario is
+                // for.
+                input.mouseX = 640.0f;
+                input.mouseY = 620.0f;
+                input.mouseInWindow = true;
+                input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
+                return input;
+            }});
 
         scenarios.push_back(UiBenchmarkScenario{
             "details-components", "an entity carrying eight components, in the Details panel",
             "details",
-            [](StudioShell&, StudioContext& context) {
+            [](StudioShell&, StudioContext& context, Panels&) {
                 CNA::Studio::StudioEntity entity{CNA::Studio::Uuid::generate(), "Heavy"};
                 for (const char* kind : {"Transform", "SpriteRenderer", "Camera", "AudioSource",
                                          "Rigidbody", "Collider", "Light", "Script"})
@@ -321,7 +401,7 @@ namespace
         scenarios.push_back(UiBenchmarkScenario{
             "keystrokes", "a character a frame with the Output Log raised and nothing focused "
                           "-- the routing cost, which every frame of real typing also pays",
-            "output", [](StudioShell&, StudioContext&) {},
+            "output", [](StudioShell&, StudioContext&, Panels&) {},
             [](UiInputState input, int frame) {
                 input.characters.push_back(
                     static_cast<char16_t>(u'a' + static_cast<char16_t>(frame % 26)));
@@ -331,7 +411,7 @@ namespace
         scenarios.push_back(UiBenchmarkScenario{
             "atlas-growth", "text drawn in glyphs the atlas has not rasterised yet",
             "outliner",
-            [](StudioShell&, StudioContext& context) {
+            [](StudioShell&, StudioContext& context, Panels&) {
                 // Latin, Greek and Cyrillic: the three scripts the shipped faces actually carry,
                 // so this exercises atlas growth rather than the replacement box.
                 static const char* const kScripts[] = {
@@ -352,7 +432,7 @@ namespace
         scenarios.push_back(UiBenchmarkScenario{
             "resize", "the window changing size every frame, which relayouts everything",
             "outliner",
-            [](StudioShell&, StudioContext& context) { fillScene(context.getScene(), 300); },
+            [](StudioShell&, StudioContext& context, Panels&) { fillScene(context.getScene(), 300); },
             [](UiInputState input, int frame) {
                 // A sweep rather than an alternation between two sizes, which any cache keyed on
                 // the last size would answer for free.
@@ -422,7 +502,7 @@ namespace
             CNA::Studio::StudioShellPanels panels{shell, context, log};
             panels.poll(0.0);
 
-            if (scenario.setUp) { scenario.setUp(shell, context); }
+            if (scenario.setUp) { scenario.setUp(shell, context, panels); }
 
             // Raised, and refused loudly when it cannot be. A scenario named after a panel that
             // silently measured whichever one the default layout puts on top would be a number

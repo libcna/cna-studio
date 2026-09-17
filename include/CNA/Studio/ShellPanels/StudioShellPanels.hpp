@@ -343,6 +343,23 @@ namespace CNA::Studio
         [[nodiscard]] const StudioTemplateCatalogue& projectTemplates() const { return templates_; }
 
         /**
+         * @brief The Content Browser's retained state: the view, the folder, the filter, the stars.
+         *
+         * Exposed for the same reason @ref projectHubState is (`plan.md` STUDIO-30022): a benchmark
+         * scenario named after a view has to be able to *put* the browser in that view, and one
+         * that measured whichever view the last run happened to leave behind would be a number
+         * about nothing. The panel still owns it; this is how a caller arranges the frame it wants
+         * measured, not a second place the state lives.
+         */
+        [[nodiscard]] StudioContentBrowserState& contentBrowserState() { return contentState_; }
+
+        /** @brief The Content Browser's retained state. */
+        [[nodiscard]] const StudioContentBrowserState& contentBrowserState() const
+        {
+            return contentState_;
+        }
+
+        /**
          * @brief Records that a project was opened, so the Hub lists it next time.
          *
          * Called by whoever actually opens one — the Hub itself, `--project`, and the Open Project

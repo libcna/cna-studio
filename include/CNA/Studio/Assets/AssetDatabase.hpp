@@ -247,6 +247,27 @@ namespace CNA::Studio
         [[nodiscard]] std::size_t getTotalAssetCount(std::string_view folder) const;
 
         /**
+         * @brief Every folder that holds anything, in path order, with its cumulative count.
+         *
+         * `plan.md` STUDIO-30022. The same map @ref getTotalAssetCount answers from, exposed
+         * because it is the only index in the database whose keys are *folders* — and enumerating
+         * a folder's immediate subfolders from the path index means stepping over every file in
+         * it, since files and folders interleave alphabetically and no seek can skip them.
+         *
+         * That was the last O(folder) pass in the Content Browser, and it was invisible: it ran
+         * inside `studioContentCardCount`, whose whole purpose is to answer without touching a
+         * record. At a hundred thousand assets it was eight thousand map steps and eight thousand
+         * substring allocations, twice a frame, to discover that a leaf folder has no subfolders.
+         *
+         * Ordered, and every ancestor is present, so a caller walks a folder's children with one
+         * `lower_bound` per child and skips each subtree in a seek.
+         */
+        [[nodiscard]] const std::map<std::string, std::size_t>& getFolderTotals() const
+        {
+            return folderTotals_;
+        }
+
+        /**
          * @brief Every folder the tracked paths imply, in path order, the project root excluded.
          *
          * Derived from the folders that hold something plus their ancestors, so a folder exists

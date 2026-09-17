@@ -160,6 +160,20 @@ CNA_STUDIO_TEST(TheFolderPaneOverAHundredThousandAssetsIsAboutFoldersNotAssets)
     StudioTreeState collapsed;
     collapsed.setExpanded(std::string{kStudioContentRootRowId}, false);
     CNA_STUDIO_EXPECT_EQ(studioContentFolderRows(assets, {}, collapsed).size(), std::size_t{1});
+
+    // And the index those rows come from is folder-sized, not project-sized (STUDIO-30022). This
+    // is the invariant that makes "what folders are in here" answerable without stepping over
+    // what is in them: the path index interleaves files and folders alphabetically, so a walk of
+    // it cannot skip the files, and asking a leaf folder for its subfolders used to cost every
+    // file in it. Root, `Assets`, fifty folders, four subfolders each.
+    CNA_STUDIO_EXPECT_EQ(assets.getFolderTotals().size(), 1 + 1 + kFolders + kFolders * 4);
+
+    // Every key is a folder rather than a file, which is the other half of the same claim.
+    for (const auto& [path, count] : assets.getFolderTotals())
+    {
+        CNA_STUDIO_EXPECT(count > 0);
+        CNA_STUDIO_EXPECT(path.find(".png") == std::string::npos);
+    }
 }
 
 CNA_STUDIO_TEST(DrawingAHundredThousandAssetsDescribesAScreenfulRatherThanAProject)
