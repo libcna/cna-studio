@@ -372,6 +372,15 @@ namespace CNA::Studio
         std::string menuFolder;
 
         /**
+         * @brief The absolute path the user asked to see in their file manager, if any.
+         *
+         * `plan.md` STUDIO-09011. Reported rather than launched here, like every other outcome this
+         * panel produces: launching a process is the binder's business, and a panel that did it
+         * would be one no test could drive without a desktop.
+         */
+        std::string revealPath;
+
+        /**
          * @brief What the user just renamed, duplicated, deleted or moved.
          *
          * `plan.md` STUDIO-09009. Every one of them goes through the undo stack, so the visible

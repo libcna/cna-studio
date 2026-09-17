@@ -6,13 +6,13 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 9 of 17 complete `██████░░░░░░`
+**Progress:** 10 of 17 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-09001` | Folder tree and breadcrumb navigation | ✅ | `STUDIO-07008` |
 | `STUDIO-09002` | Grid and list views | ✅ | `STUDIO-09001` |
-| `STUDIO-09003` | Thumbnail generation as cancellable background jobs | ⬜ | `STUDIO-30001` |
+| `STUDIO-09003` | Thumbnail generation as cancellable background jobs | 🔬 | `STUDIO-30001`, `STUDIO-10014` |
 | `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ⬜ | `STUDIO-09003` |
 | `STUDIO-09005` | Search across name, type and path | ✅ | `STUDIO-09001` |
 | `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
@@ -20,7 +20,7 @@
 | `STUDIO-09008` | Drag and drop into the viewport, Inspector and hierarchy | ⬜ | `STUDIO-03023` |
 | `STUDIO-09009` | Rename, move, duplicate and delete, all undoable | ✅ | `STUDIO-09001` |
 | `STUDIO-09010` | Reimport, preserving Studio-side import settings | ✅ | `STUDIO-10001` |
-| `STUDIO-09011` | Reveal in the system file manager | ⬜ | `STUDIO-09001` |
+| `STUDIO-09011` | Reveal in the system file manager | ✅ | `STUDIO-09001` |
 | `STUDIO-09012` | Dependency view: references-to and referenced-by | ✅ | `STUDIO-09001` |
 | `STUDIO-09013` | Missing asset handling with a clear path to relink | ✅ | `STUDIO-09012` |
 | `STUDIO-09014` | Asset metadata and import settings UI | ✅ | `STUDIO-09001` |
@@ -110,6 +110,21 @@ now:
 
 The last of those is the one that mattered: it clicks through the shell rather than calling the
 model, so it exercised the new list path without being rewritten.
+
+### `STUDIO-09003` — Thumbnail generation as cancellable background jobs
+
+**Blocked, and on the half nobody expected.** `STUDIO-30001`'s job system is done, so the
+*cancellable background job* part is available. What is not is the decoding: the only thing in the
+project that turns an image file into pixels goes through CNA's `Texture2D` and therefore through
+the graphics device, which is not thread-safe and belongs to the main thread. `readImageSize` reads
+headers and no pixels.
+
+A job that read the file's bytes and handed them to the main thread to decode would move the cheap
+half off the frame and leave the expensive half on it. That is worth something and is not what this
+task says, so it is recorded as blocked rather than delivered as a smaller thing wearing this task's
+name.
+
+Filed as `STUDIO-10014`, which is a decision about a dependency rather than an implementation.
 
 ### `STUDIO-09005` — Search across name, type and path
 
@@ -231,6 +246,45 @@ rather than the selection. `tests/StudioShellActionTests.cpp`: `Ctrl+D` and `Del
 selected asset, and greying out when nothing is selected. A guard test asserts the menu's shortcut
 hints are the chords the action registry actually binds, because a hint that has drifted is a
 promise the user stops trusting rather than a bug they report.
+
+### `STUDIO-09011` — Reveal in the system file manager
+
+**Done.** "Show in Folder" on an asset and on a folder, in the right-click menu.
+
+**The moment it exists for**: an asset is in Studio and the next thing to do with it is not — open
+it in Krita, drop it into a chat, check what git thinks of it. Without this the user copies the path
+out of the inspector and pastes it into a file manager, which is a thing people do dozens of times a
+day and complain about once.
+
+**The three platforms cannot do the same thing, and that is reported rather than hidden.**
+`explorer /select,<path>` and `open -R <path>` open the folder *and highlight the file*; on Linux
+there is no portable way to highlight one — `xdg-open` takes a directory, and the desktop's own
+manager opens it. Some managers support a selection through D-Bus and no two agree, so the honest
+answer is the containing folder and `StudioRevealCommand::selectsTheFile` says which a caller got.
+
+**`xdg-open` is given the folder, not the file.** On a file it opens whatever application claims the
+type — an image viewer for a texture — which is a different action from the one asked for.
+
+**The command is separate from running it**, so *what gets run* is testable on a machine with no
+desktop, which is every machine this project's tests run on. The Windows form is the reason: the
+comma is part of the switch and there is no space after it, and `explorer /select, C:\x` opens the
+user's documents folder instead. That is a detail nobody remembers twice and a test remembers
+always.
+
+**Double-forked on POSIX**, so the file manager is reparented to init and outlives Studio. A direct
+child would have to be waited for, and a file manager the user is about to work in is not something
+an editor should be able to close by exiting.
+
+**Reported by the panel, launched by the binder** — the same division every other outcome here
+follows. A panel that launched a process would be one no test could drive.
+
+**A missing file is not offered it**, because a file manager opened onto a path that is not there
+lands somewhere arbitrary and reads as the editor having lost the file.
+
+**Verification.** `tests/StudioContentBrowserTests.cpp`: the command built for the host platform
+including the Windows comma and the Linux folder-not-file rule, a directory passed through as
+itself, a path that is not there refused with a reason, and the menu offering the row for an asset
+and a folder while greying it for a missing file.
 
 ### `STUDIO-09012` — Dependency view: references-to and referenced-by
 

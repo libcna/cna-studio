@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 1 of 13 complete `░░░░░░░░░░░░`
+**Progress:** 1 of 14 complete `░░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,6 +23,7 @@
 | `STUDIO-10011` | Import jobs are cancellable and report progress accurately | ⬜ | `STUDIO-30001` |
 | `STUDIO-10012` | Provenance record for every third-party dependency | ⬜ | — |
 | `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ⬜ | `STUDIO-10011` |
+| `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | 🔬 | `STUDIO-10012` |
 
 ## Acceptance and verification
 
@@ -80,6 +81,33 @@ row marker and the menu.
 ### `STUDIO-10004` — Model import: glTF (carried forward from the prototype)
 
 **Acceptance.** The existing cgltf-based importer keeps working and gains import settings
+
+### `STUDIO-10014` — Decide how Studio decodes an image without a graphics device
+
+**Found by `STUDIO-09003`**, which cannot be done without it, and filed rather than worked around.
+
+**What Studio can do today.** `readImageSize` reads a PNG, BMP or JPEG *header* — enough for the
+pixel size, and nothing at all of the pixels. The only thing in the project that turns an image file
+into pixels is `CnaStudioViewport::readImageFile`, which goes through CNA's `Texture2D` and
+therefore through the graphics device. A device is not thread-safe and belongs to the main thread,
+so nothing decodes an image off the frame.
+
+**Why that blocks thumbnails.** `STUDIO-09003` is "thumbnail generation as cancellable background
+jobs". The job system exists (`STUDIO-30001`) and is not the problem: the *work* a thumbnail job
+would do is decode-and-downscale, and on the one build that can decode, decoding must happen on the
+thread that owns the device. A job that read the bytes and handed them to the main thread to decode
+would move the file read off the frame and leave the expensive half on it — worth something, and not
+what the task says.
+
+**The decision, which is a decision rather than an implementation.** A CPU-side decoder means a
+third-party dependency (stb_image is the obvious candidate), and the rule is that a dependency
+arrives with its provenance, licence, version and reason recorded — `STUDIO-10012`. The alternatives
+are writing a PNG decoder, which is a week of work and a security surface, or accepting that
+thumbnails are a main-thread budget rather than a background job, which is a smaller product and
+should be chosen deliberately if it is chosen.
+
+**Acceptance.** Studio can turn a PNG on disk into pixels with no graphics device, from a worker
+thread, or the alternative has been chosen and `STUDIO-09003` has been rewritten to match.
 
 ### `STUDIO-10012` — Provenance record for every third-party dependency
 

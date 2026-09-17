@@ -16,6 +16,7 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/AssetReimport.hpp"
+#include "CNA/Studio/Project/StudioReveal.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -844,10 +845,13 @@ CNA_STUDIO_TEST(TheMenuOffersOnlyWhatTheThingUnderThePointerCanActuallyDo)
     // it in the undo stack.
     const std::vector<StudioContextMenuItem> folder =
         studioContentMenuItems(assets, Uuid{}, "Assets/Textures");
-    CNA_STUDIO_EXPECT_EQ(folder.size(), std::size_t{1});
     CNA_STUDIO_EXPECT(offersEnabled(folder, "Rename"));
     CNA_STUDIO_EXPECT(!offers(folder, "Duplicate"));
     CNA_STUDIO_EXPECT(!offers(folder, "Delete"));
+
+    // A folder *can* be shown in the file manager, on every platform: `xdg-open` on a directory is
+    // exactly the supported case (STUDIO-09011).
+    CNA_STUDIO_EXPECT(offersEnabled(folder, "Show in Folder"));
 
     // Empty space has nothing to offer, and an empty menu is not drawn at all rather than shown as
     // a rectangle the user has to click away.
@@ -1346,4 +1350,91 @@ CNA_STUDIO_TEST(AMissingAssetIsNotOfferedAReimportItCannotDo)
     const StudioContentOperation refused = studioContentReimport(context, gone);
     CNA_STUDIO_EXPECT(!refused.applied);
     CNA_STUDIO_EXPECT(!refused.message.empty());
+}
+
+// ------------------------------------------------------------------------------------------------
+// Show in the system file manager (STUDIO-09011)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(TheRevealCommandIsBuiltCorrectlyForThisPlatform)
+{
+    // What gets run is asserted on a machine with no desktop, which is every machine these tests
+    // run on. A reveal that quoted its path wrongly would otherwise be found by a user rather than
+    // by CI -- and the Windows form in particular is a detail nobody remembers twice.
+    ScopedProject project{"revealcommand"};
+    project.write("Assets/Textures/hero.png");
+
+    const std::string file =
+        (std::filesystem::path{project.root()} / "Assets" / "Textures" / "hero.png")
+            .generic_string();
+
+    const StudioRevealCommand command = studioRevealCommand(file);
+    CNA_STUDIO_EXPECT(command.isValid());
+    CNA_STUDIO_EXPECT(command.argv.size() >= 2);
+
+#if defined(_WIN32)
+    CNA_STUDIO_EXPECT_EQ(command.argv[0], std::string{"explorer.exe"});
+
+    // The comma is part of the switch and there is no space after it: `explorer /select, C:\x`
+    // opens the user's documents folder instead of the file.
+    CNA_STUDIO_EXPECT_EQ(command.argv[1], "/select," + file);
+    CNA_STUDIO_EXPECT(command.selectsTheFile);
+#elif defined(__APPLE__)
+    CNA_STUDIO_EXPECT_EQ(command.argv[1], std::string{"-R"});
+    CNA_STUDIO_EXPECT_EQ(command.argv[2], file);
+    CNA_STUDIO_EXPECT(command.selectsTheFile);
+#else
+    CNA_STUDIO_EXPECT_EQ(command.argv[0], std::string{"xdg-open"});
+
+    // The containing *folder*, because `xdg-open` on a file opens it in whatever application claims
+    // the type -- an image viewer for a texture, which is a different action from the one asked
+    // for. And reported as not selecting the file, so a caller does not promise what the desktop
+    // will not do.
+    CNA_STUDIO_EXPECT(command.argv[1].find("hero.png") == std::string::npos);
+    CNA_STUDIO_EXPECT(command.argv[1].find("Textures") != std::string::npos);
+    CNA_STUDIO_EXPECT(!command.selectsTheFile);
+
+    // A directory is passed through as itself rather than having its parent taken.
+    const std::string folder =
+        (std::filesystem::path{project.root()} / "Assets" / "Textures").generic_string();
+    const StudioRevealCommand onFolder = studioRevealCommand(folder);
+    CNA_STUDIO_EXPECT(onFolder.isValid());
+    CNA_STUDIO_EXPECT(onFolder.argv[1].find("Textures") != std::string::npos);
+#endif
+
+    // Nothing to show is not a command.
+    CNA_STUDIO_EXPECT(!studioRevealCommand({}).isValid());
+}
+
+CNA_STUDIO_TEST(RevealingSomethingThatIsNotThereIsRefusedWithAReason)
+{
+    // Rather than launching a file manager onto a path that does not exist, which opens somewhere
+    // arbitrary and looks like the editor lost the file.
+    std::string problem;
+    CNA_STUDIO_EXPECT(!studioRevealInFileManager("/no/such/path/at/all.png", &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+
+    CNA_STUDIO_EXPECT(!studioRevealInFileManager({}, &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+}
+
+CNA_STUDIO_TEST(TheBrowserReportsARevealRatherThanLaunchingOne)
+{
+    // Reported rather than launched, so a test can drive the whole path without a desktop -- and so
+    // the one piece that needs a process lives with the binder that already owns the Output Log.
+    ScopedProject project{"revealrow"};
+    project.write("Assets/hero.png");
+
+    StudioContext context;
+    AssetDatabase& assets = context.getAssets();
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/hero.png")->id;
+    CNA_STUDIO_EXPECT(offersEnabled(studioContentMenuItems(assets, id, {}), "Show in Folder"));
+
+    // A missing file has nothing to show, so the row is greyed rather than opening a folder the
+    // user will find the file absent from.
+    const Uuid gone = track(assets, "Assets/gone.png", AssetType::Texture2D);
+    CNA_STUDIO_EXPECT(!offersEnabled(studioContentMenuItems(assets, gone, {}), "Show in Folder"));
 }

@@ -14,6 +14,7 @@
 
 #include <ctime>
 #include "CNA/Studio/Project/ProjectValidation.hpp"
+#include "CNA/Studio/Project/StudioReveal.hpp"
 #include "CNA/Studio/Project/RecentProjects.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
@@ -944,6 +945,27 @@ namespace CNA::Studio
                 counts_.contentRowsDrawn = content.rowsDrawn;
                 counts_.contentRowsTotal = content.rowsTotal;
             }
+            if (!content.lastOperation.message.empty() && content.lastOperation.applied)
+            {
+                log_.append(LogSeverity::Info, content.lastOperation.message + ".");
+            }
+
+            // Launching a process is the binder's business, not a panel's (STUDIO-09011). Reported
+            // both ways round: a file manager that will not start is indistinguishable from one
+            // that opened behind the editor's window, and only one of those is a problem.
+            if (!content.revealPath.empty())
+            {
+                std::string problem;
+                if (studioRevealInFileManager(content.revealPath, &problem))
+                {
+                    log_.append(LogSeverity::Trace, "Showing '" + content.revealPath + "'.");
+                }
+                else
+                {
+                    log_.append(LogSeverity::Warning, "Could not show it: " + problem + ".");
+                }
+            }
+
             if (!content.selectedAsset.isValid()) { return; }
 
             const AssetRecord* record = context_.getAssets().find(content.selectedAsset);

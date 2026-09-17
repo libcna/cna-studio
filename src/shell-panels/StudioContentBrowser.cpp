@@ -750,7 +750,11 @@ namespace CNA::Studio
     {
         if (!folder.empty())
         {
-            return {StudioContextMenuItem{"Rename", true, "F2"}};
+            // A folder can be shown too, and on every platform: `xdg-open` on a directory is
+            // exactly the supported case, and the other two open it as readily as they select a
+            // file in it.
+            return {StudioContextMenuItem{"Rename", true, "F2"},
+                    StudioContextMenuItem{"Show in Folder"}};
         }
 
         if (!asset.isValid()) { return {}; }
@@ -768,6 +772,7 @@ namespace CNA::Studio
         return {StudioContextMenuItem{"Rename", true, "F2"},
                 StudioContextMenuItem{"Duplicate", present, "Ctrl+D"},
                 StudioContextMenuItem{"Reimport", present},
+                StudioContextMenuItem{"Show in Folder", present},
                 StudioContextMenuItem{},
                 StudioContextMenuItem{"Delete", present, "Delete"}};
     }
@@ -1024,6 +1029,20 @@ namespace CNA::Studio
         else if (action == "Reimport")
         {
             result.lastOperation = studioContentReimport(context, state.menuAsset);
+        }
+        else if (action == "Show in Folder")
+        {
+            // The asset's own path where there is one, so the file is highlighted on the platforms
+            // that can; the folder's otherwise.
+            if (const AssetRecord* record = context.getAssets().find(state.menuAsset);
+                record != nullptr)
+            {
+                result.revealPath = context.getAssets().resolvePath(record->sourcePath);
+            }
+            else if (!state.menuFolder.empty())
+            {
+                result.revealPath = context.getAssets().resolvePath(state.menuFolder);
+            }
         }
         else if (action == "Delete")
         {
