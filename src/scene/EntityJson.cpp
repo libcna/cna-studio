@@ -8,6 +8,38 @@ namespace CNA::Studio
     namespace
     {
         /**
+         * @brief The reserved key a component's reference types are written under.
+         *
+         * `plan.md` STUDIO-09017. Inside the component's own object rather than beside it, so the
+         * hint travels with the thing it describes. The `$` is what makes it reserved:
+         * `describeStudioAssetNameProblem` does not govern property names, but every property in
+         * this project's components and plugins is an identifier, and `$refs` is not one.
+         *
+         * The exported runtime (`Runtime/SceneLoader.hpp`) keeps a component's JSON verbatim and
+         * reads named fields out of it, so an extra key is invisible to a shipped game.
+         */
+        constexpr const char* kReferenceTypesKey = "$refs";
+
+        /** @brief The name a reference type is written as, or null when it is not one. */
+        const char* referenceTypeName(PropertyType type)
+        {
+            // Only the two that serialise as a bare UUID string, which is what makes them
+            // indistinguishable from a string property that happens to hold one. Everything else
+            // `readUntypedJson` can infer from the JSON's own shape.
+            if (type == PropertyType::AssetReference) { return "asset"; }
+            if (type == PropertyType::EntityReference) { return "entity"; }
+            return nullptr;
+        }
+
+        /** @brief The property type @p name denotes, or String when it denotes neither. */
+        PropertyType referenceTypeFor(std::string_view name)
+        {
+            if (name == "asset") { return PropertyType::AssetReference; }
+            if (name == "entity") { return PropertyType::EntityReference; }
+            return PropertyType::String;
+        }
+
+        /**
          * @brief Guesses a property type from raw JSON, for components with no descriptor.
          *
          * Only reached when a document references a component type the editor does not know -- a
@@ -80,9 +112,30 @@ namespace CNA::Studio
         for (const StudioComponent& component : entity.getComponents())
         {
             JsonValue componentJson = JsonValue::makeObject();
+            JsonValue referenceTypes = JsonValue::makeObject();
+
             for (const auto& [name, value] : component.getProperties())
             {
                 componentJson.set(name, value.toJson());
+
+                // An asset and an entity reference both serialise as a bare UUID string, which is
+                // indistinguishable from a string property holding one -- so a build with no
+                // descriptor for this component read them back as strings, and both the dependency
+                // index and the missing-reference report went blind to exactly the file that a
+                // failed plugin makes (STUDIO-09017).
+                //
+                // Written whenever the type is *known*, which is when the descriptor is present --
+                // the one moment the information exists to record. Writing it only where it is
+                // needed is impossible: by the time it is needed it has already been lost.
+                if (const char* reference = referenceTypeName(value.getType()); reference != nullptr)
+                {
+                    referenceTypes.set(name, JsonValue{std::string{reference}});
+                }
+            }
+
+            if (!referenceTypes.getMembers().empty())
+            {
+                componentJson.set(kReferenceTypesKey, std::move(referenceTypes));
             }
             componentsJson.set(component.getTypeId(), std::move(componentJson));
         }
@@ -130,14 +183,36 @@ namespace CNA::Studio
                                    + typeId + "'; its data is preserved but not editable");
             }
 
+            const JsonValue& referenceTypes = componentJson[kReferenceTypesKey];
+
             for (const auto& [propertyName, propertyJson] : componentJson.getMembers())
             {
+                // The hint itself is not a property. A component that grew one would write it back
+                // out twice and, worse, show it in an inspector as a field nobody declared.
+                if (propertyName == kReferenceTypesKey) { continue; }
+
                 const PropertyDescriptor* property =
                     descriptor != nullptr ? descriptor->findProperty(propertyName) : nullptr;
                 if (property == nullptr)
                 {
-                    // No descriptor: read for byte fidelity rather than for meaning, so that
-                    // opening and saving a document whose plugin is missing leaves the file alone.
+                    // The type the file recorded, when it recorded one (STUDIO-09017). This is the
+                    // whole of the fix: without it a reference on a component whose plugin failed
+                    // to load came back as a String, and the file a failed plugin produces is
+                    // exactly the one a dependency view is opened for.
+                    if (const JsonValue& hint = referenceTypes[propertyName]; !hint.isNull())
+                    {
+                        const PropertyType hinted = referenceTypeFor(hint.asString());
+                        if (hinted != PropertyType::String)
+                        {
+                            component.setProperty(propertyName,
+                                                  PropertyValue::fromJson(propertyJson, hinted));
+                            continue;
+                        }
+                    }
+
+                    // No descriptor and no hint: read for byte fidelity rather than for meaning, so
+                    // that opening and saving a document whose plugin is missing leaves the file
+                    // alone.
                     component.setProperty(propertyName, readUntypedJson(propertyJson));
                     continue;
                 }

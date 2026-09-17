@@ -302,19 +302,19 @@ CNA_STUDIO_TEST(AReferenceOnAComponentNoPluginProvidesIsStillFound)
 }
 
 /**
- * @brief The limitation `STUDIO-09017` exists to remove, asserted so it cannot change unnoticed.
+ * @brief A reference on a component with no descriptor survives a save and a reload
+ *        (`plan.md` STUDIO-09017).
  *
- * A component with no descriptor has its properties read back with their types *inferred from the
- * JSON shape* (`EntityJson.cpp`), and an asset reference is written as a bare UUID string — which
- * is indistinguishable from a string property that happens to hold one. So after a save and reload
- * the reference is a `String`, and neither this index nor `findMissingReferences` can see it.
+ * It did not, and the case it cost is the one a dependency view is opened for. A component the
+ * build has no descriptor for had its properties read back with their types *inferred from the JSON
+ * shape*, and an asset reference is written as a bare UUID string — indistinguishable from a string
+ * property holding one. So after a round trip the reference was a `String`, and neither this index
+ * nor `findMissingReferences` could see it.
  *
- * This is not new and not caused by the index: the same blind spot has always been there, and the
- * existing missing-reference test misses it only because it never round-trips. It is recorded here
- * rather than hidden because the case it costs — a plugin that failed to load — is precisely the
- * one a dependency view is opened for.
+ * The file now records the type alongside the value, written whenever the type is *known* — which
+ * is while the descriptor is present, the one moment the information exists to record.
  */
-CNA_STUDIO_TEST(AReferenceOnAnUnknownComponentIsLostByARoundTripUntilStudio09017)
+CNA_STUDIO_TEST(AReferenceOnAnUnknownComponentSurvivesARoundTrip)
 {
     ComponentRegistry registry;
     registerBuiltinComponents(registry);
@@ -324,11 +324,14 @@ CNA_STUDIO_TEST(AReferenceOnAnUnknownComponentIsLostByARoundTripUntilStudio09017
     AssetDatabase assets;
     assets.setProjectRoot(project.root());
     const Uuid atlasId = track(assets, "Assets/atlas.png", AssetType::Texture2D);
+    const Uuid targetId = Uuid::generate();
 
     SceneDocument scene;
     StudioEntity entity{Uuid::generate(), "Decal"};
     StudioComponent exotic{"ThirdParty.Decal"};
     exotic.setProperty("atlas", PropertyValue{PropertyValue::AssetReference{atlasId}});
+    exotic.setProperty("target", PropertyValue{PropertyValue::EntityReference{targetId}});
+    exotic.setProperty("label", PropertyValue{std::string{"front"}});
     entity.addComponent(std::move(exotic));
     scene.addEntity(std::move(entity));
     CNA_STUDIO_EXPECT(scene.saveToFile(project.absolute("Assets/Level.cnascene")));
@@ -338,15 +341,69 @@ CNA_STUDIO_TEST(AReferenceOnAnUnknownComponentIsLostByARoundTripUntilStudio09017
     CNA_STUDIO_EXPECT(
         reloaded.loadFromFile(project.absolute("Assets/Level.cnascene"), registry).succeeded);
 
-    // The value survives, which is what the inference promises. Its *type* does not.
     const StudioComponent& readBack = reloaded.getEntities().front().getComponents().front();
-    const PropertyValue atlas = readBack.getProperty("atlas");
-    CNA_STUDIO_EXPECT(atlas.getType() == PropertyType::String);
-    CNA_STUDIO_EXPECT_EQ(atlas.get<std::string>(), atlasId.toString());
 
+    // Both reference kinds come back as themselves, and they are told apart: an entity reference
+    // read as an asset one would be reported as a broken asset on every scene that has one.
+    const PropertyValue atlas = readBack.getProperty("atlas");
+    CNA_STUDIO_EXPECT(atlas.getType() == PropertyType::AssetReference);
+    CNA_STUDIO_EXPECT_EQ(atlas.get<PropertyValue::AssetReference>().id.toString(),
+                         atlasId.toString());
+
+    const PropertyValue target = readBack.getProperty("target");
+    CNA_STUDIO_EXPECT(target.getType() == PropertyType::EntityReference);
+    CNA_STUDIO_EXPECT_EQ(target.get<PropertyValue::EntityReference>().id.toString(),
+                         targetId.toString());
+
+    // A string property is still a string. The hint records only the two types that serialise as a
+    // bare UUID, so nothing else changes shape.
+    CNA_STUDIO_EXPECT(readBack.getProperty("label").getType() == PropertyType::String);
+
+    // And the hint is not itself a property: a component that grew one would write it back out
+    // twice and show it in an inspector as a field nobody declared.
+    CNA_STUDIO_EXPECT_EQ(readBack.getProperties().size(), std::size_t{3});
+
+    // Which is what the dependency index was blind to.
     AssetDependencyIndex index;
     (void)index.build(assets, registry);
-    CNA_STUDIO_EXPECT(index.referencedBy(atlasId).empty());
+    CNA_STUDIO_EXPECT_EQ(index.referencedBy(atlasId).size(), std::size_t{1});
+}
+
+CNA_STUDIO_TEST(ASceneWrittenBeforeTheHintExistedStillLoads)
+{
+    // The change is additive, so no migration and no version bump: a file without the hint reads
+    // exactly as it did, and an older Studio reading a file *with* one ignores a key it does not
+    // know. Both directions have to keep working or this would be a format break wearing the
+    // clothes of a bug fix.
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+
+    const ScopedProject project{"unknownnohint"};
+
+    SceneDocument scene;
+    StudioEntity entity{Uuid::generate(), "Decal"};
+    StudioComponent exotic{"ThirdParty.Decal"};
+    exotic.setProperty("atlas", PropertyValue{std::string{"not-a-uuid-at-all"}});
+    exotic.setProperty("count", PropertyValue{3.0f});
+    entity.addComponent(std::move(exotic));
+    scene.addEntity(std::move(entity));
+
+    // Saved with no reference-typed property, so no hint is written at all -- which is the shape
+    // every scene written before this had.
+    CNA_STUDIO_EXPECT(scene.saveToFile(project.absolute("Assets/Level.cnascene")));
+
+    std::ifstream stream{project.absolute("Assets/Level.cnascene"), std::ios::binary};
+    const std::string text{std::istreambuf_iterator<char>{stream},
+                           std::istreambuf_iterator<char>{}};
+    CNA_STUDIO_EXPECT(text.find("$refs") == std::string::npos);
+
+    SceneDocument reloaded;
+    CNA_STUDIO_EXPECT(
+        reloaded.loadFromFile(project.absolute("Assets/Level.cnascene"), registry).succeeded);
+
+    const StudioComponent& readBack = reloaded.getEntities().front().getComponents().front();
+    CNA_STUDIO_EXPECT(readBack.getProperty("atlas").getType() == PropertyType::String);
+    CNA_STUDIO_EXPECT(readBack.getProperty("count").getType() == PropertyType::Float);
 }
 
 CNA_STUDIO_TEST(AnUnreadableFileIsAWarningRatherThanAFailedIndex)

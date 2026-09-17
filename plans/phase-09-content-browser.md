@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 12 of 17 complete `████████░░░░`
+**Progress:** 13 of 17 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -26,7 +26,7 @@
 | `STUDIO-09014` | Asset metadata and import settings UI | ✅ | `STUDIO-09001` |
 | `STUDIO-09015` | Source file tracking and derived-data cache separation | ⬜ | `STUDIO-09004` |
 | `STUDIO-09016` | Virtualised browsing for very large asset counts | ⬜ | `STUDIO-30010` |
-| `STUDIO-09017` | A reference on a component with no descriptor survives a save and reload | ⬜ | — |
+| `STUDIO-09017` | A reference on a component with no descriptor survives a save and reload | ✅ | — |
 
 ## Acceptance and verification
 
@@ -556,25 +556,37 @@ control the inspector offers, then undone.
 
 ### `STUDIO-09017` — A reference on a component with no descriptor survives a save and reload
 
-**Why this exists.** Found by `STUDIO-09012`, and pre-existing rather than caused by it. A component
-the editor has no descriptor for has its properties read back with their types *inferred from the
-JSON shape* (`EntityJson.cpp`), and an asset reference is written as a bare UUID string — which is
-indistinguishable from a string property that happens to hold one. So after a save and a reload the
-reference is a `String`, and neither the dependency index nor `findMissingReferences` can see it.
+**Found by `STUDIO-09012`**, and pre-existing rather than caused by it. A component the build has no
+descriptor for had its properties read back with their types *inferred from the JSON shape*
+(`EntityJson.cpp`), and an asset reference is written as a bare UUID string — indistinguishable from
+a string property holding one. So after a save and a reload the reference was a `String`, and
+neither the dependency index nor `findMissingReferences` could see it. The case it cost is a plugin
+that failed to load, which is precisely the file both of those are opened for.
 
-The existing missing-reference test for components with no descriptor passes only because it
-never round-trips. `AReferenceOnAnUnknownComponentIsLostByARoundTripUntilStudio09017` asserts the
-limitation as it stands, so removing it is a test to change rather than a behaviour to discover.
+**The information has to be written while it still exists.** Inference cannot recover it: by the
+time the type is needed, the descriptor that knew it is gone. So the type is recorded whenever it is
+*known* — that is, whenever the descriptor is present — under a reserved `$refs` key inside the
+component's own object, so the hint travels with the thing it describes.
 
-**Why it matters.** The case it costs is a plugin that failed to load — precisely the file a
-dependency view and a missing-reference report are opened for.
+**Only the two types that serialise as a bare UUID.** An asset reference and an entity reference are
+the ambiguous pair; everything else `readUntypedJson` infers from the JSON's own shape. Recording
+more would add noise to every component in every scene to buy nothing.
 
-**Acceptance.** A scene saved and reloaded with a component the build has no descriptor for keeps
-that component's asset and entity references *as* references, and they appear in both the dependency
-index and the missing-reference report.
+**Both kinds are told apart, which is the reason the naive fix was rejected.** "A string that parses
+as a UUID is an asset reference" would turn every entity reference on a plugin-less component into a
+reported broken asset. The hint says which.
 
-**What it will take.** The information is simply not in the file, so inference cannot recover it:
-a type has to be written alongside the value for properties on components with no descriptor, which
-is a format change and therefore a migration. Guessing "a string that parses as a UUID is an asset
-reference" is rejected: an entity reference serialises identically, so the guess would silently
-change one into the other.
+**Additive, so there is no migration and no version bump.** A file without the hint reads exactly as
+it did; an older Studio reading a file *with* one ignores a key it does not know. The exported
+runtime (`Runtime/SceneLoader.hpp`) keeps a component's JSON verbatim and reads named fields out of
+it, so a shipped game never sees the extra key either. Both directions are asserted, because
+otherwise this would be a format break wearing the clothes of a bug fix.
+
+**The hint is not a property.** A component that grew one would write it back out twice and show it
+in an inspector as a field nobody declared.
+
+**Verification.** `tests/AssetDependencyTests.cpp`: an asset reference *and* an entity reference on a
+descriptor-less component surviving a round trip as themselves, a string property beside them
+staying a string, the component carrying three properties rather than four, the dependency index
+seeing the reference it was blind to, and a scene written before the hint existed loading unchanged
+with no `$refs` in it.
