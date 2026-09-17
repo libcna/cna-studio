@@ -85,7 +85,7 @@ namespace CNA::Studio
 
     StudioContentBrowserResult studioContentList(StudioFrame& frame, const UiRect& bounds,
                                                      StudioContext& context,
-                                                     StudioTreeState& state,
+                                                     StudioContentBrowserState& state,
                                                      StudioContentBrowserResult result);
         StudioContentBrowserResult studioContentGrid(StudioFrame& frame, const UiRect& bounds,
                                                      StudioContext& context,
@@ -192,106 +192,6 @@ namespace CNA::Studio
         // row has a picture reads as a row that failed to load rather than as one nobody
         // imports.
         return StudioIcon::File;
-    }
-
-    std::vector<StudioTreeRow> studioContentRows(const AssetDatabase& assets,
-                                                 const Uuid& selected,
-                                                 const StudioTreeState& state)
-    {
-        // Grouped by folder and sorted, because the database's own order is insertion order and a
-        // browser whose files moved about as the project was rescanned would be unusable.
-        std::map<std::string, std::vector<const AssetRecord*>> byFolder;
-        std::set<std::string> folders;
-
-        for (const AssetRecord* record : assets.getAll())
-        {
-            if (record == nullptr) { continue; }
-
-            const auto [directory, name] = splitPath(record->sourcePath);
-            byFolder[directory].push_back(record);
-            for (const std::string& ancestor : ancestorsOf(directory)) { folders.insert(ancestor); }
-        }
-
-        for (auto& [directory, records] : byFolder)
-        {
-            (void)directory;
-            std::sort(records.begin(), records.end(),
-                      [](const AssetRecord* lhs, const AssetRecord* rhs) {
-                          return lhs->sourcePath < rhs->sourcePath;
-                      });
-        }
-
-        std::vector<StudioTreeRow> rows;
-
-        // One pass over the folders in sorted order interleaves parents with their contents
-        // correctly, because "Assets" sorts before "Assets/Textures" and both before "Assets2".
-        const auto depthOf = [](const std::string& path) {
-            return static_cast<int>(std::count(path.begin(), path.end(), '/'));
-        };
-
-        const auto appendFiles = [&](const std::string& directory, int depth) {
-            const auto found = byFolder.find(directory);
-            if (found == byFolder.end()) { return; }
-
-            for (const AssetRecord* record : found->second)
-            {
-                StudioTreeRow row;
-                row.id = record->id.toString();
-                row.label = splitPath(record->sourcePath).second;
-                row.detail = toString(record->type);
-                row.icon = studioAssetIcon(record->type);
-                row.depth = depth;
-                row.selected = record->id == selected;
-                // Draggable onto anything that takes an asset: a property slot in the inspector,
-                // or a broken reference in the Problems panel. Folders are not — there is nothing
-                // a folder means as a property value.
-                row.dragType = std::string{kStudioAssetDragType};
-                row.dragValue = row.id;
-
-                // A tracked asset whose file has gone is still tracked: a scene references it by
-                // id, and dropping the record would turn a fixable problem into a broken scene.
-                // Drawn dimmed and labelled, because "what did I break when I moved that folder"
-                // is what a content browser is most often opened to answer.
-                if (assets.isMissing(record->id))
-                {
-                    // Dimmed, not disabled. This is the row a user most needs to click: clicking
-                    // it is how they find out what references the file that has gone.
-                    row.muted = true;
-                    row.detail = "missing";
-                    // Coloured, unlike every other icon in the list. A missing asset is the one row
-                    // whose *state* matters more than its kind, and the warning colour is what
-                    // makes it findable in a folder of two hundred without reading any of them.
-                    row.icon = StudioIcon::Warning;
-                    row.iconRole = StudioColorRole::Warning;
-                }
-
-                rows.push_back(std::move(row));
-            }
-        };
-
-        appendFiles(std::string{}, 0);
-
-        for (const std::string& folder : folders)
-        {
-            if (hiddenByCollapse(folder, state)) { continue; }
-
-            StudioTreeRow row;
-            row.id = folder;
-            row.label = leafName(folder);
-            row.depth = depthOf(folder);
-            row.hasChildren = true;
-            row.icon = StudioIcon::Folder;
-
-            const auto contents = byFolder.find(folder);
-            const std::size_t count = contents == byFolder.end() ? 0 : contents->second.size();
-            if (count > 0) { row.detail = std::to_string(count); }
-
-            rows.push_back(std::move(row));
-
-            if (state.isExpanded(folder)) { appendFiles(folder, depthOf(folder) + 1); }
-        }
-
-        return rows;
     }
 
     std::string_view studioContentViewName(StudioContentView view)
@@ -592,43 +492,89 @@ namespace CNA::Studio
             return studioContentGrid(frame, area, context, state, result);
         }
 
-        return studioContentList(frame, area, context, state.tree, result);
+        return studioContentList(frame, area, context, state, result);
     }
 
     namespace
     {
     StudioContentBrowserResult studioContentList(StudioFrame& frame, const UiRect& bounds,
                                                  StudioContext& context,
-                                                 StudioTreeState& state,
+                                                 StudioContentBrowserState& state,
                                                  StudioContentBrowserResult result)
     {
         const AssetDatabase& assets = context.getAssets();
-        const std::vector<StudioTreeRow> rows =
-            studioContentRows(assets, context.getSelectedAsset(), state);
-        result.rowsTotal = rows.size();
+
+        // The same model the grid draws (STUDIO-09002). Two presentations of one folder, rather
+        // than two browsers sharing a panel: before this the list showed the whole project as a
+        // tree and the grid showed one folder, so switching views also moved the user -- and the
+        // folder pane STUDIO-09001 put beside them navigated only one of the two.
+        const std::vector<StudioContentCard> cards =
+            studioContentCards(assets, state.folder, context.getSelectedAsset());
+
+        result.rowsTotal = cards.size();
         result.missingCount = assets.getMissingAssets().size();
 
-        const std::string_view empty = context.hasProject()
-            ? std::string_view{"This project has no assets yet."}
-            : std::string_view{"No project is open."};
+        std::vector<StudioTreeRow> rows;
+        rows.reserve(cards.size());
+        for (const StudioContentCard& card : cards)
+        {
+            StudioTreeRow row;
+            row.id = card.isFolder() ? card.folder : card.assetId.toString();
+            row.label = card.label;
+            row.detail = card.detail;
+            row.icon = card.icon;
+            row.iconRole = card.iconRole;
+            row.selected = card.selected;
 
-        const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state, empty);
+            // Dimmed, not disabled. A missing asset is the row a user most needs to click:
+            // clicking it is how they find out what references the file that has gone.
+            row.muted = card.missing;
+
+            // Flat, and no disclosure triangles. Indentation says "this is inside that", and
+            // inside one folder everything is at the same level; entering a folder is a *click*,
+            // the way it is in the grid and in every file manager, rather than an expansion that
+            // would put two folders' contents on screen and make the breadcrumb wrong.
+            row.depth = 0;
+            row.hasChildren = false;
+
+            if (!card.isFolder())
+            {
+                // Draggable onto anything that takes an asset. Folders are not -- there is
+                // nothing a folder means as a property value.
+                row.dragType = std::string{kStudioAssetDragType};
+                row.dragValue = row.id;
+            }
+
+            rows.push_back(std::move(row));
+        }
+
+        // Three states, not two. "No assets" in a project with two hundred of them is the sort of
+        // message that makes a user think the database is broken.
+        const std::string_view empty =
+            !context.hasProject()  ? std::string_view{"No project is open."}
+            : state.folder.empty() ? std::string_view{"This project has no assets yet."}
+                                   : std::string_view{"This folder is empty."};
+
+        const StudioTreeResult tree = studioTreeView(frame, bounds, rows, state.tree, empty);
         result.rowsDrawn = tree.rowsDrawn;
 
         if (tree.clicked.has_value())
         {
-            // A folder's id is its path and a file's is a UUID, so the parse decides which was
-            // clicked -- no second field to keep in step with the rows.
-            const Uuid clicked = Uuid::parse(rows[*tree.clicked].id);
-            if (clicked.isValid())
+            const StudioContentCard& card = cards[*tree.clicked];
+            if (card.isFolder())
+            {
+                state.folder = card.folder;
+                result.folder = state.folder;
+            }
+            else
             {
                 // Through the context, not into an out-parameter the shell keeps beside the one
                 // StudioContext already has. Two ideas of "the selected asset" meant the native
                 // Details panel could not see what the native Content Browser had selected --
                 // STUDIO-07045. Selecting an asset also clears the entity selection, which is what
                 // makes the inspector show one thing at a time.
-                context.selectAsset(clicked);
-                result.selectedAsset = clicked;
+                context.selectAsset(card.assetId);
+                result.selectedAsset = card.assetId;
             }
         }
 

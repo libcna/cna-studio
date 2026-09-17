@@ -6,12 +6,12 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 1 of 16 complete `░░░░░░░░░░░░`
+**Progress:** 2 of 16 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-09001` | Folder tree and breadcrumb navigation | ✅ | `STUDIO-07008` |
-| `STUDIO-09002` | Grid and list views | ⬜ | `STUDIO-09001` |
+| `STUDIO-09002` | Grid and list views | ✅ | `STUDIO-09001` |
 | `STUDIO-09003` | Thumbnail generation as cancellable background jobs | ⬜ | `STUDIO-30001` |
 | `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ⬜ | `STUDIO-09003` |
 | `STUDIO-09005` | Search across name, type and path | ⬜ | `STUDIO-09001` |
@@ -75,6 +75,40 @@ file at the project root, which a "has a slash in it" filter would get wrong), t
 selection and id, direct-not-cumulative counts, the triangle rule and the `Assets2` prefix case,
 collapse at both levels, and — through a real shell frame, in **both** views — the pane drawing and
 a click on a folder navigating there.
+
+### `STUDIO-09002` — Grid and list views
+
+**Done, and the work was making them the *same* view.** Both now draw `studioContentCards` — one
+folder's subfolders and then its assets — so the grid and the list differ in presentation and in
+nothing else.
+
+**They did not before, and that was a real bug the folder pane exposed.** The list showed the whole
+project as a tree and the grid showed one folder, so switching views also moved the user; and
+`STUDIO-09001`'s navigation pane could only navigate one of the two. A browser where the same
+folder selection means different things in two tabs is a browser that has two ideas of where you
+are.
+
+**In the list, entering a folder is a click**, the way it is in the grid and in every file manager,
+rather than a disclosure triangle. An expansion would put two folders' contents on screen at once
+and leave the breadcrumb describing only one of them. Rows are flat for the same reason:
+indentation says "this is inside that", and inside one folder everything is at the same level.
+
+**`studioContentRows` is deleted.** It built the whole-project tree and had no caller left; the
+behaviours `STUDIO-07008` accepted on it are all still asserted, on the functions that do the job
+now:
+
+| What `STUDIO-07008` accepted | Where it is checked now |
+|------------------------------|-------------------------|
+| Folders derived from paths, parents first | `TheFolderPaneShowsFoldersAndNoFilesAtAll` |
+| Collapsing hides subfolders as well as files | `CollapsingInTheFolderPaneHidesDescendantsAndCollapsingTheRootHidesEverything` |
+| Files sort within a folder | `FilesSortWithinTheirFolderSoARescanDoesNotShuffleThem` |
+| A missing source is listed and marked | `AnAssetWhoseFileHasGoneIsListedAndMarked` |
+| …and is dimmed rather than disabled | `AMissingAssetsCardSaysSoInTheWarningColour`, plus the list's `muted` mapping |
+| A file shows its type, a folder its count | `AFileShowsItsTypeAndAFolderShowsHowMuchIsInIt` |
+| Clicking a file selects it, a folder does not | `ClickingAFileSelectsItAndClickingAFolderDoesNot`, which drives the real panel in list view |
+
+The last of those is the one that mattered: it clicks through the shell rather than calling the
+model, so it exercised the new list path without being rewritten.
 
 ### `STUDIO-09009` — Rename, move, duplicate and delete, all undoable
 

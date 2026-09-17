@@ -196,21 +196,6 @@ namespace CNA::Studio
      */
     [[nodiscard]] StudioIcon studioAssetIcon(AssetType type);
 
-    /**
-     * @brief Flattens the asset database into tree rows, honouring @p state.
-     *
-     * Exposed separately so a test can assert on the shape of the tree without a frame — the two
-     * things this panel does, deciding what the tree *is* and drawing it, fail independently and a
-     * screenshot cannot tell them apart.
-     *
-     * @param assets The database.
-     * @param selected The currently selected asset, marked in the rows.
-     * @param state Which folders are open.
-     * @return Rows in display order: folders before files, each group in path order.
-     */
-    [[nodiscard]] std::vector<StudioTreeRow> studioContentRows(const AssetDatabase& assets,
-                                                               const Uuid& selected,
-                                                               const StudioTreeState& state);
 
     /**
      * @brief One card in the grid: an asset or a folder, with what it is and what it is called.

@@ -111,66 +111,26 @@ namespace
     }
 }
 
-CNA_STUDIO_TEST(FoldersComeFromPathsAndParentsComeFirst)
+CNA_STUDIO_TEST(FilesSortWithinTheirFolderSoARescanDoesNotShuffleThem)
 {
+    // Was asserted on the list's whole-project tree until STUDIO-09002 made the list a second
+    // presentation of one folder. The ordering matters for the same reason it always did: the
+    // database's own order is insertion order, and a browser whose files moved about as the
+    // project was rescanned would be unusable.
     StudioContext context;
     AssetDatabase& assets = context.getAssets();
 
     track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
     track(assets, "Assets/Textures/enemy.png", AssetType::Texture2D);
-    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
+    track(assets, "Assets/Textures/boss.png", AssetType::Texture2D);
 
-    const StudioTreeState state;
-    const std::vector<StudioTreeRow> rows = studioContentRows(assets, Uuid{}, state);
+    const std::vector<StudioContentCard> cards =
+        studioContentCards(assets, "Assets/Textures", Uuid{});
 
-    // Two folders exist because something is in them, and one because it contains those two.
-    CNA_STUDIO_EXPECT(rowNamed(rows, "Assets") != nullptr);
-    CNA_STUDIO_EXPECT(rowNamed(rows, "Textures") != nullptr);
-    CNA_STUDIO_EXPECT(rowNamed(rows, "Models") != nullptr);
-
-    // A folder is drawn before the things inside it, or the indentation says nothing.
-    CNA_STUDIO_EXPECT(indexOf(rows, "Assets") < indexOf(rows, "Models"));
-    CNA_STUDIO_EXPECT(indexOf(rows, "Models") < indexOf(rows, "crate.gltf"));
-    CNA_STUDIO_EXPECT(indexOf(rows, "Textures") < indexOf(rows, "player.png"));
-
-    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Assets")->depth, 0);
-    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Textures")->depth, 1);
-    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "player.png")->depth, 2);
-
-    // Files sort within their folder, so a rescan does not shuffle the list under the user.
-    CNA_STUDIO_EXPECT(indexOf(rows, "enemy.png") < indexOf(rows, "player.png"));
-
-    // Only folders get a disclosure triangle. One on a file is a promise the tree cannot keep.
-    CNA_STUDIO_EXPECT(rowNamed(rows, "Textures")->hasChildren);
-    CNA_STUDIO_EXPECT(!rowNamed(rows, "player.png")->hasChildren);
-}
-
-CNA_STUDIO_TEST(CollapsingAFolderHidesItsContentsAndItsSubfolders)
-{
-    StudioContext context;
-    AssetDatabase& assets = context.getAssets();
-
-    track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
-    track(assets, "Assets/Models/crate.gltf", AssetType::Model);
-
-    StudioTreeState state;
-    state.setExpanded("Assets", false);
-
-    const std::vector<StudioTreeRow> rows = studioContentRows(assets, Uuid{}, state);
-
-    // Just the root. Collapsing a folder has to hide what is *below* it, not only its own files --
-    // a tree that left the grandchildren showing would draw them at a depth with no parent.
-    CNA_STUDIO_EXPECT_EQ(rows.size(), std::size_t{1});
-    CNA_STUDIO_EXPECT_EQ(rows.front().label, std::string{"Assets"});
-    CNA_STUDIO_EXPECT(rows.front().hasChildren);
-
-    state.setExpanded("Assets", true);
-    state.setExpanded("Assets/Textures", false);
-
-    const std::vector<StudioTreeRow> partial = studioContentRows(assets, Uuid{}, state);
-    CNA_STUDIO_EXPECT(rowNamed(partial, "Textures") != nullptr);
-    CNA_STUDIO_EXPECT(rowNamed(partial, "player.png") == nullptr);
-    CNA_STUDIO_EXPECT(rowNamed(partial, "crate.gltf") != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{3});
+    CNA_STUDIO_EXPECT_EQ(cards[0].label, std::string{"boss.png"});
+    CNA_STUDIO_EXPECT_EQ(cards[1].label, std::string{"enemy.png"});
+    CNA_STUDIO_EXPECT_EQ(cards[2].label, std::string{"player.png"});
 }
 
 CNA_STUDIO_TEST(AnAssetWhoseFileHasGoneIsListedAndMarked)
@@ -182,21 +142,15 @@ CNA_STUDIO_TEST(AnAssetWhoseFileHasGoneIsListedAndMarked)
 
     const Uuid gone = track(assets, "Assets/Textures/player.png", AssetType::Texture2D);
 
-    const StudioTreeState state;
-    const std::vector<StudioTreeRow> rows = studioContentRows(assets, Uuid{}, state);
-
-    const StudioTreeRow* row = rowNamed(rows, "player.png");
-    CNA_STUDIO_EXPECT(row != nullptr);
-
     // There is no such file: the database is not pointed at a real project root, so every record
     // is missing. That is the condition under test, and it is what a moved folder looks like.
     CNA_STUDIO_EXPECT(assets.isMissing(gone));
-    CNA_STUDIO_EXPECT_EQ(row->detail, std::string{"missing"});
 
-    // Dimmed, not disabled. A row that reads as wrong and cannot be clicked is the one row a user
-    // needs to reach and cannot -- clicking it is how they find out what references the lost file.
-    CNA_STUDIO_EXPECT(row->muted);
-    CNA_STUDIO_EXPECT(row->enabled);
+    const std::vector<StudioContentCard> cards =
+        studioContentCards(assets, "Assets/Textures", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(cards.front().missing);
+    CNA_STUDIO_EXPECT_EQ(cards.front().detail, std::string{"missing"});
 }
 
 CNA_STUDIO_TEST(AFileShowsItsTypeAndAFolderShowsHowMuchIsInIt)
@@ -214,14 +168,17 @@ CNA_STUDIO_TEST(AFileShowsItsTypeAndAFolderShowsHowMuchIsInIt)
     track(assets, "Assets/Models/crate.gltf", AssetType::Model);
     track(assets, "Assets/Models/barrel.gltf", AssetType::Model);
 
-    const StudioTreeState state;
-    const std::vector<StudioTreeRow> rows = studioContentRows(assets, Uuid{}, state);
-
-    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "Models")->detail, std::string{"2"});
-
     // The type, not the extension: an importer decides what a file *is*, and two extensions can
     // map to one type.
-    CNA_STUDIO_EXPECT_EQ(rowNamed(rows, "crate.gltf")->detail, std::string{toString(AssetType::Model)});
+    const std::vector<StudioContentCard> cards =
+        studioContentCards(assets, "Assets/Models", Uuid{});
+    CNA_STUDIO_EXPECT_EQ(cards.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(cards.front().detail, std::string{toString(AssetType::Model)});
+
+    // And the count beside the folder, which the navigation pane carries now.
+    const StudioTreeState state;
+    const std::vector<StudioTreeRow> folders = studioContentFolderRows(assets, {}, state);
+    CNA_STUDIO_EXPECT_EQ(rowNamed(folders, "Models")->detail, std::string{"2"});
 }
 
 CNA_STUDIO_TEST(ClickingAFileSelectsItAndClickingAFolderDoesNot)
