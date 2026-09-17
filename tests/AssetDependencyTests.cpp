@@ -13,12 +13,15 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/AssetDependencies.hpp"
+#include "CNA/Studio/Assets/AssetRelink.hpp"
+#include "CNA/Studio/Core/StudioCommand.hpp"
 #include "CNA/Studio/Assets/MaterialDocument.hpp"
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/PrefabDocument.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -418,4 +421,157 @@ CNA_STUDIO_TEST(TheOpenSceneReplacesWhatTheIndexReadFromDisk)
     untitled.addEntity(spriteEntity(registry, "Hero", oldId));
     index.observeScene(untitled, Uuid{}, {});
     CNA_STUDIO_EXPECT(index.referencedBy(oldId).empty());
+}
+
+// ------------------------------------------------------------------------------------------------
+// Finding a missing asset's file again (STUDIO-09013)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(RelinkPrefersTheUntrackedFileBecauseThatRepairTouchesNoScene)
+{
+    // The two repairs are different operations and offering the wrong one is expensive: pointing
+    // the record back at its file edits nothing, and relinking references edits every scene that
+    // used the asset. So an untracked file outranks a tracked one, always.
+    const ScopedProject project{"relinkrank"};
+    project.write("Assets/Art/player.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+
+    // Tracked at a path where nothing is: the file moved and nothing has re-imported it.
+    const Uuid missingId = track(assets, "Assets/player.png", AssetType::Texture2D);
+    CNA_STUDIO_EXPECT(assets.isMissing(missingId));
+
+    const std::vector<RelinkCandidate> candidates = studioRelinkCandidates(assets, missingId);
+    CNA_STUDIO_EXPECT(!candidates.empty());
+    if (candidates.empty()) { return; }
+
+    CNA_STUDIO_EXPECT(candidates.front().kind == RelinkCandidate::Kind::UntrackedFile);
+    CNA_STUDIO_EXPECT_EQ(candidates.front().path, std::string{"Assets/Art/player.png"});
+    CNA_STUDIO_EXPECT_EQ(candidates.front().reason, std::string{"same name"});
+
+    // A sidecar is metadata, not an asset: offering one would point the record at the file that
+    // describes it.
+    for (const RelinkCandidate& candidate : candidates)
+    {
+        CNA_STUDIO_EXPECT(candidate.path.find(".cnaasset") == std::string::npos);
+    }
+}
+
+CNA_STUDIO_TEST(ARelinkKeepsTheIdSoNoSceneIsTouchedAndUndoPutsItBack)
+{
+    // The acceptance condition this shares with a move: the id does not change, so every reference
+    // that was broken is correct again and every reference that was correct stays so.
+    const ScopedProject project{"relinkapply"};
+    project.write("Assets/Art/player.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    const Uuid id = track(assets, "Assets/player.png", AssetType::Texture2D);
+
+    CommandHistory history;
+    auto relink = std::make_unique<RelinkAssetFileCommand>(assets, id, "Assets/Art/player.png");
+    CNA_STUDIO_EXPECT(relink->isValid());
+    history.execute(std::move(relink));
+
+    CNA_STUDIO_EXPECT_EQ(assets.find(id)->sourcePath, std::string{"Assets/Art/player.png"});
+    CNA_STUDIO_EXPECT(!assets.isMissing(id));
+
+    // A sidecar at the new location, or the next scan gives the file a fresh id and breaks every
+    // reference again -- which is the failure the relink exists to end.
+    CNA_STUDIO_EXPECT(
+        std::filesystem::exists(project.absolute("Assets/Art/player.png.cnaasset")));
+
+    // Undo restores the state the user had, and that state was an asset whose file was missing.
+    CNA_STUDIO_EXPECT(history.undo());
+    CNA_STUDIO_EXPECT_EQ(assets.find(id)->sourcePath, std::string{"Assets/player.png"});
+    CNA_STUDIO_EXPECT(assets.isMissing(id));
+}
+
+CNA_STUDIO_TEST(ARelinkIsRefusedWhereTheOtherRepairIsTheRightOne)
+{
+    const ScopedProject project{"relinkrefuse"};
+    project.write("Assets/here.png", "pixels");
+    project.write("Assets/Art/player.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+
+    // Its file is still where the record says. That is a *move*, and MoveAssetCommand is the
+    // operation that moves a file -- repointing here would leave the original behind for the next
+    // scan to give a fresh id, turning one file into two assets silently.
+    const Uuid present = track(assets, "Assets/here.png", AssetType::Texture2D);
+    const RelinkAssetFileCommand move{assets, present, "Assets/Art/player.png"};
+    CNA_STUDIO_EXPECT(!move.isValid());
+    CNA_STUDIO_EXPECT(move.getError().find("still on disk") != std::string::npos);
+
+    // The destination is already tracked, so the repair is to relink the references to *that*
+    // asset rather than to give one file two records.
+    const Uuid tracked = track(assets, "Assets/Art/player.png", AssetType::Texture2D);
+    (void)tracked;
+    const Uuid missing = track(assets, "Assets/gone.png", AssetType::Texture2D);
+    const RelinkAssetFileCommand taken{assets, missing, "Assets/Art/player.png"};
+    CNA_STUDIO_EXPECT(!taken.isValid());
+    CNA_STUDIO_EXPECT(taken.getError().find("already tracked") != std::string::npos);
+
+    // And a destination with nothing on it is not a repair at all.
+    const RelinkAssetFileCommand nowhere{assets, missing, "Assets/nothing-here.png"};
+    CNA_STUDIO_EXPECT(!nowhere.isValid());
+}
+
+CNA_STUDIO_TEST(ATrackedLookalikeIsOfferedWhenAScanAlreadyGaveTheFileANewId)
+{
+    // Two records exist and the scenes point at the one whose file is gone. This repair rewrites
+    // references, so it is offered -- below every untracked file, and labelled as what it is.
+    const ScopedProject project{"relinktracked"};
+    project.write("Assets/Art/player.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    const Uuid missingId = track(assets, "Assets/player.png", AssetType::Texture2D);
+    const Uuid reimported = track(assets, "Assets/Art/player.png", AssetType::Texture2D);
+
+    const std::vector<RelinkCandidate> candidates = studioRelinkCandidates(assets, missingId);
+    CNA_STUDIO_EXPECT_EQ(candidates.size(), std::size_t{1});
+    if (candidates.empty()) { return; }
+
+    CNA_STUDIO_EXPECT(candidates.front().kind == RelinkCandidate::Kind::TrackedAsset);
+    CNA_STUDIO_EXPECT_EQ(candidates.front().assetId.toString(), reimported.toString());
+    CNA_STUDIO_EXPECT_EQ(candidates.front().reason, std::string{"same name and kind"});
+}
+
+CNA_STUDIO_TEST(NothingIsSuggestedForAnIdTheDatabaseDoesNotKnow)
+{
+    // The other kind of broken reference: a scene pointing at an asset that was never imported
+    // here. There is no name to search on, so a suggestion would be a guess -- and its repair is
+    // dropping the right asset onto the row, which needs no name.
+    const ScopedProject project{"relinkunknown"};
+    project.write("Assets/player.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    (void)track(assets, "Assets/player.png", AssetType::Texture2D);
+
+    CNA_STUDIO_EXPECT(studioRelinkCandidates(assets, Uuid::generate()).empty());
+}
+
+CNA_STUDIO_TEST(ADifferentExtensionIsOfferedButNeverAboveAnExactName)
+{
+    // The extension decides the asset's type on the next scan, so a `.jpg` in place of a `.png` is
+    // a worse answer than the `.png` two folders over -- and a better one than nothing.
+    const ScopedProject project{"relinkextension"};
+    project.write("Assets/Art/player.jpg", "pixels");
+    project.write("Assets/Backup/player.png", "pixels");
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    const Uuid missingId = track(assets, "Assets/player.png", AssetType::Texture2D);
+
+    const std::vector<RelinkCandidate> candidates = studioRelinkCandidates(assets, missingId);
+    CNA_STUDIO_EXPECT_EQ(candidates.size(), std::size_t{2});
+    if (candidates.size() < 2) { return; }
+
+    CNA_STUDIO_EXPECT_EQ(candidates[0].path, std::string{"Assets/Backup/player.png"});
+    CNA_STUDIO_EXPECT_EQ(candidates[1].path, std::string{"Assets/Art/player.jpg"});
+    CNA_STUDIO_EXPECT_EQ(candidates[1].reason, std::string{"same name, different extension"});
 }

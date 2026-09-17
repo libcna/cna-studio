@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 6 of 17 complete `████░░░░░░░░`
+**Progress:** 7 of 17 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,7 +22,7 @@
 | `STUDIO-09010` | Reimport, preserving Studio-side import settings | ⬜ | `STUDIO-10001` |
 | `STUDIO-09011` | Reveal in the system file manager | ⬜ | `STUDIO-09001` |
 | `STUDIO-09012` | Dependency view: references-to and referenced-by | ✅ | `STUDIO-09001` |
-| `STUDIO-09013` | Missing asset handling with a clear path to relink | ⬜ | `STUDIO-09012` |
+| `STUDIO-09013` | Missing asset handling with a clear path to relink | ✅ | `STUDIO-09012` |
 | `STUDIO-09014` | Asset metadata and import settings UI | ⬜ | `STUDIO-09001` |
 | `STUDIO-09015` | Source file tracking and derived-data cache separation | ⬜ | `STUDIO-09004` |
 | `STUDIO-09016` | Virtualised browsing for very large asset counts | ⬜ | `STUDIO-30010` |
@@ -281,6 +281,60 @@ file warning without losing the rest, a component with no descriptor, and `obser
 rather than merging. `tests/StudioDetailsPanelTests.cpp` drives the real panel through a shell
 frame: the section finds the reference, a row click navigates to the file holding it, and a build
 with no index says so rather than drawing what an unreferenced asset would look like.
+
+### `STUDIO-09013` — Missing asset handling with a clear path to relink
+
+**Done.** An asset whose file has gone says so in its inspector and offers where it probably went,
+ranked, one click each.
+
+**The report existed; the repair did not.** A record whose source has vanished is kept rather than
+dropped (`AssetDatabase::scan`), because a scene references it by id and forgetting the record
+would turn a fixable problem into a broken scene. What that bought was a red row in the Content
+Browser and a line in the Problems panel — true, and not a fix. The user's remaining options were to
+put the file back exactly where the path says, or to edit a sidecar by hand.
+
+**The two repairs are different operations, and offering the wrong one is expensive.**
+
+- **The file moved and nothing has re-imported it.** The id is still right; only the path is wrong.
+  `RelinkAssetFileCommand` points the record at the file, and **no scene is touched** — every
+  reference that was broken becomes correct and every reference that was correct stays so.
+- **The file moved and a scan has already given it a new id.** Two records exist and the scenes
+  point at the wrong one. `RelinkAssetCommand` rewrites the references — a scene edit, because the
+  scenes really are wrong.
+
+Confusing them produces two records for one file, or a scene rewritten when nothing was wrong with
+it. So `RelinkCandidate` says which kind each suggestion is, the button's tooltip says which of the
+two it is about to do, and each command refuses the case it is not for: a relink is refused while
+the file is still on disk (that is a *move*), and refused when the destination is already tracked
+(that is a reference relink).
+
+**An untracked file always outranks a tracked one**, because the first repair edits nothing and the
+second edits every scene that used the asset.
+
+**The extension is part of the name, not a detail.** It decides the asset's type on the next scan,
+so a `.jpg` offered in place of a `.png` ranks below every exact match — and is still offered,
+because it is a better answer than nothing.
+
+**`repointAsset` is not `moveAsset`.** It moves no file: it changes where a record points and writes
+a sidecar at the new location. Without that sidecar the next scan would give the file a fresh id and
+break every reference again, which is the failure the relink exists to end.
+
+**Undo goes back to missing**, which is right: undoing a repair restores the state the user had, and
+that state was an asset whose file was gone.
+
+**One found limitation, recorded rather than hidden.** The candidate search walks the project root,
+and an immediate-mode panel describes itself twice per frame, so it runs twice a frame while a
+missing asset is selected. It is guarded by the asset actually being missing — a state a user is
+looking at while they repair it, not one a project sits in — and `STUDIO-30001`'s background jobs
+are where a search like this belongs when it is not.
+
+**Verification.** `tests/AssetDependencyTests.cpp`: an untracked file preferred over a tracked
+lookalike, sidecars never offered as candidates, a relink keeping the id and writing the sidecar at
+the new location, undo returning to missing, both refusals, a tracked lookalike offered when a scan
+has already re-imported the file, nothing suggested for an id the database does not know, and a
+different extension ranked below an exact name. `tests/StudioDetailsPanelTests.cpp` drives the real
+panel through a shell frame: the suggestion appears, clicking it repairs the asset and keeps its id,
+and an asset with nothing that looks like it says so without the inspector losing its other rows.
 
 ### `STUDIO-09015` — Source file tracking and derived-data cache separation
 

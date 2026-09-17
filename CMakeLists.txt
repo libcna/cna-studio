@@ -170,6 +170,7 @@ add_library(cna-studio-assets STATIC
     src/assets/AssetDatabase.cpp
     src/assets/AssetCommands.cpp
     src/assets/AssetDependencies.cpp
+    src/assets/AssetRelink.cpp
     src/assets/AssetWatcher.cpp
     src/assets/AssetImporters.cpp
     src/assets/ModelImport.cpp

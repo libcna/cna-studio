@@ -242,6 +242,19 @@ namespace CNA::Studio
          * makes the user find the file in the Content Browser themselves.
          */
         Uuid navigatedToAsset;
+
+        /**
+         * @brief How many relink suggestions the inspector offered for a missing file.
+         *
+         * `plan.md` STUDIO-09013. Zero when the asset's file is present, which is the ordinary
+         * case, and also when nothing in the project looks like it — the two are distinguished by
+         * what the panel says rather than by this number, which exists so a test can assert the
+         * suggestions were found without reading pixels.
+         */
+        std::size_t relinkCandidates = 0;
+
+        /** @brief A relink was applied this frame. Input pass only. */
+        bool relinked = false;
     };
 
     /**

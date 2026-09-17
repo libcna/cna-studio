@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <cstdint>
 #include <set>
 #include <cmath>
@@ -1342,4 +1343,135 @@ CNA_STUDIO_TEST(WithoutAnIndexTheDependencySectionSaysSoRatherThanLookingEmpty)
     CNA_STUDIO_EXPECT_EQ(last.dependencyRows, std::size_t{0});
     CNA_STUDIO_EXPECT(last.rowsDrawn > 0);
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+}
+
+// ------------------------------------------------------------------------------------------------
+// Finding a missing asset's file again (STUDIO-09013)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * @brief A missing asset's inspector offers the repair rather than only reporting the problem.
+ *
+ * A record whose source has vanished is kept rather than dropped, because a scene references it by
+ * id. What was missing was the *fixing*: a row marked red is a report, and the repair was to find
+ * the file by hand and put it back where the path says.
+ */
+CNA_STUDIO_TEST(AMissingAssetsInspectorOffersToRelinkItAndDoingSoKeepsTheId)
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-relinksection";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Assets" / "Art", code);
+    {
+        std::ofstream stream{directory / "Assets" / "Art" / "player.png", std::ios::binary};
+        stream << "pixels";
+    }
+
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+    context.getAssets().setProjectRoot(directory.generic_string());
+
+    AssetRecord record;
+    record.id = Uuid::generate();
+    record.sourcePath = "Assets/player.png";
+    record.type = AssetType::Texture2D;
+    const Uuid id = record.id;
+    CNA_STUDIO_EXPECT(context.getAssets().add(std::move(record)));
+    CNA_STUDIO_EXPECT(context.getAssets().isMissing(id));
+    context.selectAsset(id);
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    UiRect bounds;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context);
+            if (frame.isInputPass()) { last = pass; }
+            if (frame.isDrawPass()) { bounds = area; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT_EQ(last.relinkCandidates, std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+
+    // Clicking the suggestion applies it. Swept rather than assuming a row height, so a metric
+    // change cannot turn this into a test that clicks empty space and passes for the wrong reason.
+    bool relinked = false;
+    for (float y = bounds.top() + 4.0f; y < bounds.bottom() - 4.0f && !relinked; y += 5.0f)
+    {
+        const float x = bounds.left() + 40.0f;
+        shell->renderFrame(at(x, y, false));
+        shell->renderFrame(at(x, y, true));
+        shell->renderFrame(at(x, y, false));
+        relinked = !context.getAssets().isMissing(id);
+    }
+
+    if (!relinked)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "no suggestion in the inspector repaired the missing asset.");
+    }
+    else
+    {
+        // The same id, which is the whole point: every scene that referenced this asset is correct
+        // again without having been edited.
+        CNA_STUDIO_EXPECT_EQ(context.getAssets().find(id)->sourcePath,
+                             std::string{"Assets/Art/player.png"});
+        CNA_STUDIO_EXPECT_EQ(context.getHistory().getCount(), std::size_t{1});
+
+        // And it undoes, back to the state the user had.
+        CNA_STUDIO_EXPECT(context.getHistory().undo());
+        CNA_STUDIO_EXPECT(context.getAssets().isMissing(id));
+    }
+
+    std::filesystem::remove_all(directory, code);
+}
+
+/** @brief With nothing that looks like it, the inspector says so rather than offering nothing. */
+CNA_STUDIO_TEST(AMissingAssetWithNoCandidatesSaysSoRatherThanShowingAnEmptySection)
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-relinkempty";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Assets", code);
+
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+    context.getAssets().setProjectRoot(directory.generic_string());
+
+    AssetRecord record;
+    record.id = Uuid::generate();
+    record.sourcePath = "Assets/player.png";
+    record.type = AssetType::Texture2D;
+    const Uuid id = record.id;
+    CNA_STUDIO_EXPECT(context.getAssets().add(std::move(record)));
+    context.selectAsset(id);
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context);
+            if (frame.isInputPass()) { last = pass; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT_EQ(last.relinkCandidates, std::size_t{0});
+
+    // The rest of the inspector is still there: an honest dead end for one section is not a reason
+    // to stop showing the asset.
+    CNA_STUDIO_EXPECT(last.rowsDrawn > 0);
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+
+    std::filesystem::remove_all(directory, code);
 }

@@ -31,6 +31,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <cstdint>
 #include <set>
 #include <string>
@@ -87,7 +89,31 @@ namespace
         /** @brief Unset to run the panel the way a build with no audio device does. */
         bool withAudio = true;
 
-        Fixture() { frame.setFontAtlas(&fonts); }
+        /** @brief A scratch project root, so the assets these tests add really exist. */
+        std::filesystem::path projectRoot;
+
+        Fixture()
+        {
+            frame.setFontAtlas(&fonts);
+
+            projectRoot = std::filesystem::temp_directory_path()
+                        / ("cna-studio-audio-" + std::to_string(counter()++));
+            std::error_code code;
+            std::filesystem::remove_all(projectRoot, code);
+            std::filesystem::create_directories(projectRoot, code);
+            context.getAssets().setProjectRoot(projectRoot.generic_string());
+        }
+
+        ~Fixture()
+        {
+            std::error_code code;
+            std::filesystem::remove_all(projectRoot, code);
+        }
+
+        Fixture(const Fixture&) = delete;
+        Fixture& operator=(const Fixture&) = delete;
+
+        static int& counter() { static int value = 0; return value; }
 
         void run(const UiInputState& input)
         {
@@ -155,7 +181,13 @@ namespace
         }
     };
 
-    /** @brief Adds a sound asset and returns its id. */
+    /**
+     * @brief Adds a sound asset, with a real file behind it, and returns its id.
+     *
+     * The file matters: a tracked asset whose source is gone is a *different* state, and the
+     * inspector says so and offers to relink it (STUDIO-09013). A fixture that left every asset
+     * missing would be testing the preview against the one case where there is nothing to play.
+     */
     Uuid addSound(StudioContext& context, const std::string& path)
     {
         AssetRecord record;
@@ -165,6 +197,15 @@ namespace
         record.importerId = AssetDatabase::defaultImporterFor(record.type);
         const Uuid id = record.id;
         (void)context.getAssets().add(std::move(record));
+
+        if (!context.getAssets().getProjectRoot().empty())
+        {
+            const std::filesystem::path file{context.getAssets().resolvePath(path)};
+            std::error_code code;
+            std::filesystem::create_directories(file.parent_path(), code);
+            std::ofstream stream{file, std::ios::binary};
+            stream << "not really a wav";
+        }
         return id;
     }
 

@@ -227,6 +227,31 @@ namespace CNA::Studio
         bool moveAsset(const Uuid& id, const std::string& newRelativePath,
                        std::string* errorMessage = nullptr);
 
+        /**
+         * @brief Points @p id at @p newRelativePath without touching the filesystem.
+         *
+         * `plan.md` STUDIO-09013. Unlike moveAsset(), this moves *nothing*: it is how a record
+         * whose file went missing is pointed at the file again once it has turned up somewhere
+         * else. The id does not change, so no scene is touched -- every reference that was broken
+         * becomes correct, and every reference that was correct stays so.
+         *
+         * A sidecar is written at the new location, because that is what makes the repair survive
+         * a restart: without one the next scan would give the file a fresh id and break every
+         * reference again.
+         *
+         * Whether the *old* file is still there is deliberately not checked here -- undoing a
+         * relink points the record back at a path that has nothing on it, and that is correct.
+         * @ref RelinkAssetFileCommand is where that policy lives.
+         *
+         * @param id The asset.
+         * @param newRelativePath Where its file actually is, project-relative.
+         * @param errorMessage Set on failure. Optional.
+         * @return False when the id is unknown, the path is empty or escapes the project, or
+         *         another record already claims it.
+         */
+        bool repointAsset(const Uuid& id, const std::string& newRelativePath,
+                          std::string* errorMessage = nullptr);
+
         /** @brief Writes the sidecar for @p id. Returns false when the id is unknown or I/O fails. */
         bool writeSidecar(const Uuid& id, std::string* errorMessage = nullptr) const;
 

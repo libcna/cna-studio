@@ -5,6 +5,8 @@
  */
 
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
+
+#include "CNA/Studio/Assets/AssetRelink.hpp"
 #include "CNA/Studio/Assets/AssetCommands.hpp"
 
 #include "CNA/Studio/ShellPanels/StudioContentBrowser.hpp"
@@ -2172,13 +2174,28 @@ namespace
         const std::size_t dependencyRows =
             services.dependencies != nullptr ? 3 + usedBy.size() + uses.size() : 2;
 
+        // The relink suggestions (STUDIO-09013), found once here rather than inside the section
+        // below, because the scroll extent has to know how many rows there will be. The search
+        // walks the project root, so it is guarded by the asset actually being missing -- a state
+        // the user is looking at while they repair it, not one a project sits in.
+        //
+        // Twice a frame, once per pass. That is the cost of an immediate-mode panel describing
+        // itself twice, and it is acceptable only because the walk is guarded; `STUDIO-30001`'s
+        // background jobs are where a search like this belongs when it is not.
+        const bool fileMissing = context.getAssets().isMissing(assetId);
+        const std::vector<RelinkCandidate> relinkCandidates =
+            fileMissing ? studioRelinkCandidates(context.getAssets(), assetId, 4)
+                        : std::vector<RelinkCandidate>{};
+        const std::size_t relinkRows =
+            fileMissing ? 1 + std::max<std::size_t>(relinkCandidates.size(), 1) : 0;
+
         // Name, path, kind, a gap, the importer's heading, and one row per setting -- plus the
         // preview row when this is something that can be heard, and the material editor's own
         // rows when this is a material: a heading, six fields and the effect line.
         const std::size_t rows = 6 + (isAudibleAsset(record->type) ? 1u : 0u)
                                  + (record->type == AssetType::Material ? 8u : 0u)
                                  + (properties != nullptr ? properties->size() : 0)
-                                 + dependencyRows;
+                                 + dependencyRows + relinkRows;
 
         StudioScrollOptions scroll;
         scroll.contentHeight = static_cast<float>(rows) * (rowHeight + spacing);
@@ -2248,6 +2265,81 @@ namespace
             const PropertyRow parts = splitRow(theme, nextRow());
             label(parts.label, "Id", StudioColorRole::TextSecondary);
             label(parts.control, record->id.toString(), StudioColorRole::TextDisabled);
+        }
+
+        // --- The file is gone, and here is where it probably went (STUDIO-09013) ---------------
+        //
+        // A record whose source has vanished is kept rather than dropped, because a scene
+        // references it by id and forgetting it would turn a fixable problem into a broken scene.
+        // What was missing was the *fixing*: a row marked red in the browser is a report, and the
+        // repair was to find the file by hand and put it back where the path says.
+        if (fileMissing)
+        {
+            frame.ids().push("relink");
+            label(nextRow(), "This asset's file is missing.", StudioColorRole::Warning);
+
+            const std::vector<RelinkCandidate>& candidates = relinkCandidates;
+
+            if (candidates.empty())
+            {
+                // An honest dead end beats a button that does nothing. It also says what would
+                // make the repair possible, which is the part a user can act on.
+                label(nextRow(), "Nothing in the project looks like it.",
+                      StudioColorRole::TextDisabled);
+            }
+
+            for (std::size_t i = 0; i < candidates.size(); ++i)
+            {
+                const RelinkCandidate& candidate = candidates[i];
+
+                StudioButtonOptions options;
+                options.align = StudioTextAlign::Left;
+                options.font = StudioFontRole::BodySmall;
+
+                // The difference between the two repairs is the user's to know, because one of
+                // them edits every scene that used the asset and the other edits nothing. Said on
+                // the button rather than in a dialog afterwards.
+                options.tooltip = candidate.kind == RelinkCandidate::Kind::UntrackedFile
+                    ? "Point this asset at that file. No scene changes."
+                    : "Repoint every reference at that asset. Scenes change.";
+
+                const std::string text = candidate.path + "  (" + candidate.reason + ")";
+                if (!studioButton(frame, frame.ids().makeIndex(static_cast<std::int64_t>(i)),
+                                  nextRow(), text, options).activated)
+                {
+                    continue;
+                }
+
+                if (candidate.kind == RelinkCandidate::Kind::UntrackedFile)
+                {
+                    auto command = std::make_unique<RelinkAssetFileCommand>(
+                        context.getAssets(), assetId, candidate.path);
+                    if (command->isValid())
+                    {
+                        result.relinked = true;
+                        result.editedProperty = command->getDescription();
+                        context.execute(std::move(command));
+                    }
+                }
+                else
+                {
+                    // Every reference at once, as one undo entry: relinking is one action to the
+                    // user however many entities carry the reference.
+                    auto command = std::make_unique<RelinkAssetCommand>(
+                        context.getScene(), assetId, candidate.assetId);
+                    result.relinked = true;
+                    result.editedProperty = command->getDescription();
+                    context.execute(std::move(command));
+
+                    // And the inspector follows, because the asset it was showing is not the one
+                    // the scenes point at any more.
+                    context.selectAsset(candidate.assetId);
+                }
+                break;
+            }
+
+            result.relinkCandidates = candidates.size();
+            frame.ids().pop();
         }
 
         // Offered on the asset itself as well as on a component that references it: hearing a clip

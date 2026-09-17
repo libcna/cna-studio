@@ -276,6 +276,47 @@ namespace CNA::Studio
         return true;
     }
 
+    bool AssetDatabase::repointAsset(const Uuid& id, const std::string& newRelativePath,
+                                     std::string* errorMessage)
+    {
+        const auto fail = [&](std::string reason) {
+            if (errorMessage != nullptr) { *errorMessage = std::move(reason); }
+            return false;
+        };
+
+        AssetRecord* record = findMutable(id);
+        if (record == nullptr) { return fail("no asset with that id"); }
+        if (newRelativePath.empty()) { return fail("destination path is empty"); }
+
+        const std::filesystem::path normalised =
+            std::filesystem::path{newRelativePath}.lexically_normal();
+        if (normalised.is_absolute() || normalised.native().rfind("..", 0) == 0)
+        {
+            return fail("destination must stay inside the project");
+        }
+
+        const std::string destination = normalised.generic_string();
+        if (record->sourcePath == destination) { return true; }
+
+        if (const AssetRecord* occupant = findByPath(destination);
+            occupant != nullptr && occupant->id != id)
+        {
+            // Two records for one file is a database that cannot say which id a scene means, and
+            // the next scan would resolve it by whichever it walked last.
+            return fail("'" + destination + "' is already tracked");
+        }
+
+        idsByPath_.erase(record->sourcePath);
+        record->sourcePath = destination;
+        idsByPath_[destination] = id;
+
+        // At the new location, because that is what makes the repair survive a restart: with no
+        // sidecar beside it the next scan gives the file a fresh id and breaks every reference
+        // again, which is the failure this exists to end.
+        writeSidecar(id);
+        return true;
+    }
+
     bool AssetDatabase::removeRecord(const Uuid& id)
     {
         const auto found = recordsById_.find(id);
