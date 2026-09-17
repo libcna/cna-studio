@@ -202,10 +202,12 @@ CNA_STUDIO_TEST(EveryCommandThatIsStillUnimplementedIsNamedRatherThanDiscovered)
     // its name is removed, and adding an unbound command fails it until somebody writes down why.
     //
     // Each entry says what it is waiting for. None of them is waiting on nothing.
+    // `studio.file.newProject` and `studio.file.openProject` came off this list with
+    // STUDIO-08001: both are the Project Hub with a different tab in front. Neither is waiting on
+    // a file picker any more -- New Project never needed one, and Open Project shows the recent
+    // list, which is where a user's own projects are. A file dialog is a better Open Project and
+    // is not the difference between a row that works and a row that is greyed out for ever.
     const std::vector<std::pair<std::string, std::string>> pending = {
-        {"studio.file.newProject", "a project template and a file picker (STUDIO-08001); the "
-                                   "modal it also needed now exists"},
-        {"studio.file.openProject", "a file picker; --project opens one today"},
         {"studio.view.toggleGrid", "a grid option on the viewport, which the renderer does not take"},
     };
 

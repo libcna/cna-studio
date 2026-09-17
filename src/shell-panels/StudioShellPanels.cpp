@@ -10,6 +10,9 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Project/Project.hpp"
+#include "CNA/Studio/Project/ProjectTemplate.hpp"
+#include "CNA/Studio/Project/ProjectValidation.hpp"
+#include "CNA/Studio/Project/RecentProjects.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/ShellPanels/StudioComparisonPanel.hpp"
@@ -468,6 +471,30 @@ namespace CNA::Studio
             shell.actions().add(std::move(action));
         }
 
+        // New Project and Open Project, both of which are the Project Hub with a different tab in
+        // front. The commands existed with no handler since STUDIO-06001, which draws them greyed
+        // out for ever -- a File menu whose first two rows do nothing is worse than one without
+        // them.
+        //
+        // No file dialog: there is no modal window yet (STUDIO-03022 covers the layering, not the
+        // window), so Open Project shows the recent list, which is where a user's own projects
+        // are. A file dialog is the half this gets when there is a window to put one in.
+        for (const auto& [id, page] :
+             {std::pair{"studio.file.newProject", StudioProjectHubPage::New},
+              std::pair{"studio.file.openProject", StudioProjectHubPage::Recent}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.run = [this, &shell, page] {
+                hubState_.page = page;
+                if (!shell.isPanelOpen("projecthub")) { (void)shell.openPanel("projecthub"); }
+                (void)shell.activatePanel("projecthub");
+            };
+            shell.actions().add(std::move(action));
+        }
+
         // The two views. Exclusive and checkable for the same reason the tools are: a viewport can
         // only be showing one of them, and a menu that cannot say which is one a user tests by
         // pressing it.
@@ -675,6 +702,113 @@ namespace CNA::Studio
                 log_.append(LogSeverity::Trace, "Selection cleared.");
             }
         });
+    }
+
+    void bindStudioProjectHub(StudioShellPanels& panels, std::string_view executablePath,
+                              StudioLog& log)
+    {
+        StudioTemplateCatalogue templates;
+        for (const std::string& searchPath : studioTemplateSearchPaths(executablePath))
+        {
+            for (const std::string& problem : templates.addSearchPath(searchPath))
+            {
+                // A manifest that cannot be read is somebody's template not working, which is a
+                // problem worth a line. A search path that is not there is not, and the catalogue
+                // already passes over those in silence.
+                log.append(LogSeverity::Warning, "Project templates: " + problem);
+            }
+        }
+
+        panels.setProjectHubServices(std::move(templates),
+                                     StudioRecentProjectsStore::defaultPath());
+    }
+
+    void StudioShellPanels::setProjectHubServices(StudioTemplateCatalogue templates,
+                                                  std::string recentProjectsPath)
+    {
+        templates_ = std::move(templates);
+        recentProjectsPath_ = std::move(recentProjectsPath);
+    }
+
+    void StudioShellPanels::rememberProject(const std::string& projectFilePath,
+                                            std::int64_t nowSeconds)
+    {
+        if (recentProjectsPath_.empty() || projectFilePath.empty()) { return; }
+
+        std::string problem;
+        if (!StudioRecentProjectsStore{recentProjectsPath_}.remember(
+                projectFilePath, context_.getProject().getName(), nowSeconds, &problem))
+        {
+            // A list that could not be written is a convenience that did not work, and nothing
+            // more: said once, at trace, rather than raised at somebody who was opening a project.
+            log_.append(LogSeverity::Trace, "Recent projects: " + problem);
+        }
+    }
+
+    void StudioShellPanels::openProjectFromHub(StudioShell& shell,
+                                               const std::string& projectFilePath)
+    {
+        const std::string unavailable = describeStudioProjectAvailability(projectFilePath);
+        if (!unavailable.empty())
+        {
+            log_.append(LogSeverity::Error, "Cannot open '" + projectFilePath + "': " + unavailable);
+            return;
+        }
+
+        if (!context_.openProject(projectFilePath))
+        {
+            log_.append(LogSeverity::Error, "'" + projectFilePath + "' could not be opened.");
+            return;
+        }
+
+        // Everything wrong with it, said once and where it can be acted on (STUDIO-08012). A
+        // project with a missing startup scene still opens: a broken project is exactly the
+        // project somebody needs the editor for.
+        for (const StudioProjectDiagnostic& diagnostic :
+             validateStudioProject(context_.getProject(), context_.getLanguages()))
+        {
+            const LogSeverity severity =
+                diagnostic.severity == StudioProjectDiagnosticSeverity::Error ? LogSeverity::Error
+                : diagnostic.severity == StudioProjectDiagnosticSeverity::Warning
+                    ? LogSeverity::Warning
+                    : LogSeverity::Info;
+            log_.append(severity, diagnostic.toLine());
+        }
+
+        rememberProject(projectFilePath, 0);
+
+        applyProjectDefaultView(shell);
+
+        // The viewport, because a project that opened has a world in it and the Hub has done its
+        // job. Leaving the Hub in front would make the next thing the user does be closing a tab.
+        (void)shell.activatePanel("viewport");
+    }
+
+    void StudioShellPanels::applyProjectDefaultView(StudioShell& shell)
+    {
+        // STUDIO-11014. A new CNA-native Empty 3D project opens directly into its 3D world
+        // viewport, because a 3D world opened in the 2D view is a grid with the level somewhere
+        // off the edge of it -- and "press 3" is a first five minutes nobody should have.
+        //
+        // Through the *command* rather than by assigning the state, and that is the whole reason
+        // this is four lines rather than one: `studio.view.3d` also frames the camera on the scene,
+        // ends any gesture in flight and says in the log which view is now on. Setting
+        // `viewportState_.view` here would open a 3D view looking straight down an axis at nothing,
+        // which is exactly the picture this task exists to prevent.
+        const std::string& view = context_.getProject().getDefaultView();
+        if (view.empty()) { return; }
+
+        const std::string actionId =
+            view == "3d" ? "studio.view.3d" : (view == "2d" ? "studio.view.2d" : std::string{});
+        if (actionId.empty())
+        {
+            log_.append(LogSeverity::Warning,
+                        "This project asks to open in the '" + view
+                            + "' view, which Studio does not have. Opening in 2D.");
+            return;
+        }
+
+        (void)shell.actions().invoke(actionId);
     }
 
     void StudioShellPanels::bind(StudioShell& shell)
@@ -1012,6 +1146,73 @@ namespace CNA::Studio
                 log_.append(LogSeverity::Trace,
                             "Selected " + std::to_string(layers.selectEntities.size())
                                 + " on layer '" + layers.clickedLayer + "'.");
+            }
+        });
+
+        // The Project Hub (STUDIO-08001 … STUDIO-08004). It is given the templates and the recent
+        // list by the host; a Studio that was given neither still draws it, saying there are no
+        // templates -- the honest picture of a build whose templates were not installed.
+        shell.setPanelContent("projecthub", [this, &shell](StudioFrame& frame,
+                                                           const UiRect& bounds) {
+            StudioProjectHubModel model;
+            model.templates = &templates_;
+            model.languages = &context_.getLanguages();
+            if (!recentProjectsPath_.empty())
+            {
+                // Read each frame rather than cached, because availability is a fact about the
+                // filesystem and the filesystem changes while Studio is running: a project deleted
+                // in another window should grey out here without anybody pressing refresh.
+                model.recent = StudioRecentProjectsStore{recentProjectsPath_}.load();
+            }
+
+            const StudioProjectHubResult hub =
+                studioProjectHubPanel(frame, bounds, model, hubState_);
+
+            if (frame.isDrawPass())
+            {
+                counts_.hubRecentRowsDrawn = hub.recentRowsDrawn;
+                counts_.hubTemplateRowsDrawn = hub.templateRowsDrawn;
+                return;
+            }
+
+            if (!hub.forgetProjectPath.empty() && !recentProjectsPath_.empty())
+            {
+                (void)StudioRecentProjectsStore{recentProjectsPath_}.forget(hub.forgetProjectPath);
+            }
+
+            if (!hub.openProjectPath.empty()) { openProjectFromHub(shell, hub.openProjectPath); }
+
+            if (hub.createRequested)
+            {
+                StudioNewProjectResult created = createStudioProject(
+                    studioProjectHubRequest(hubState_, context_.getLanguages()), templates_,
+                    context_.getLanguages());
+
+                // Kept on the state rather than shown once: a refusal that vanished on the next
+                // frame would be a form that appears to do nothing when the Create button is
+                // pressed, which is the single worst thing a New Project dialog can do.
+                hubState_.problems = created.problems;
+
+                for (const std::string& warning : created.warnings)
+                {
+                    log_.append(LogSeverity::Warning, "New project: " + warning);
+                }
+
+                if (created.succeeded())
+                {
+                    log_.append(LogSeverity::Info,
+                                "Created " + std::to_string(created.writtenFiles.size())
+                                    + " files in " + created.projectFilePath + ".");
+                    openProjectFromHub(shell, created.projectFilePath);
+                }
+                else
+                {
+                    for (const StudioNewProjectProblem& problem : created.problems)
+                    {
+                        log_.append(LogSeverity::Error,
+                                    "New project: " + problem.field + ": " + problem.message);
+                    }
+                }
             }
         });
 

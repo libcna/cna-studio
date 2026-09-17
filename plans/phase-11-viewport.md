@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 5 of 15 complete `███░░░░░░░░░`
+**Progress:** 6 of 15 complete `████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-11011` | Lighting modes, unlit mode, normal and material debug views | ⬜ | `STUDIO-19001` |
 | `STUDIO-11012` | Camera preview and game view | ⬜ | `STUDIO-11001` |
 | `STUDIO-11013` | Preserve the existing 2D viewport workflow without regression | ✅ | `STUDIO-07009` |
-| `STUDIO-11014` | A new CNA-native project opens directly into a 3D world viewport | ⬜ | `STUDIO-11001`, `STUDIO-08006` |
+| `STUDIO-11014` | A new CNA-native project opens directly into a 3D world viewport | ✅ | `STUDIO-11001`, `STUDIO-08006` |
 | `STUDIO-11015` | Maya and Blender navigation schemes, not only Studio's own | ✅ | `STUDIO-11002` |
 
 ## Acceptance and verification
@@ -143,3 +143,31 @@ preference, which is the defect this task exists to close.
 `BlenderPutsEveryCameraGestureOnTheMiddleButton`, and — the one that makes the others worth having —
 `TheSchemesDisagreeAboutSomethingOrTheyWouldNotBeThreeSchemes`. Three enumerators that resolved to
 one mapping would pass every other case and would be this same defect one level further in.
+
+### `STUDIO-11014` — A new CNA-native project opens directly into a 3D world viewport
+
+**Acceptance.** A project created from Empty 3D opens showing its 3D world, without the user
+pressing anything.
+
+**Done, and the mechanism is a property of the project rather than a preference.** A `.cnaproject`
+carries `defaultView`, set from the template that created it, and a project that names one opens in
+it. That is a fact about what kind of game it is: a 3D world opened in the 2D view is a grid with
+the level somewhere off the edge of it, and telling every new user to press 3 is a first five
+minutes nobody should have.
+
+**Not a lock**, deliberately. It decides the view a project *opens* in and nothing else; switching
+is still `2` and `3`, and the value is never written back from the viewport — so a project's answer
+does not drift because somebody glanced at the other view.
+
+**Applied by invoking `studio.view.3d`, not by assigning the viewport's state**, and that is the
+whole reason it is four lines rather than one. The command also frames the camera on the scene,
+ends any gesture in flight and says in the log which view is on. Assigning the state would have
+opened a 3D view looking straight down an axis at nothing — which is exactly the picture this task
+exists to prevent.
+
+**Both routes, not one.** A project opened from the Hub and one opened with `--project` make the
+same switch, because a project's answer must not depend on which of the two opened it.
+
+**The key is additive** and written only when set, like `language` and `gridSnap`: an existing
+project does not gain a diff the first time Studio touches it, and an absent key means Studio's
+default.

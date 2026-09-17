@@ -9,6 +9,7 @@
 #include "CNA/Studio/UiCore/StudioUiBenchmark.hpp"
 
 #include <algorithm>
+#include <ctime>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -295,6 +296,11 @@ namespace CNA::Studio
                 panels_ = std::make_unique<StudioShellPanels>(*shell_, *context_, log_,
                                                               std::move(services));
 
+                // The Project Hub's templates and the user's recent list (STUDIO-08001). Through
+                // the same function the headless preview calls, so what CI photographs is what a
+                // user sees rather than a Hub with different templates in it.
+                bindStudioProjectHub(*panels_, options.executablePath, log_);
+
                 // The preferences the theme already came from, and the seam that writes them back.
                 panels_->preferences() = storedPreferences.preferences;
                 // The seam rather than watching the invoked actions for an id. A host matching on
@@ -320,6 +326,27 @@ namespace CNA::Studio
                 // editor beside it would be a second plugin contract nobody wrote down.
                 pluginLoad_ = studioLoadPlugins(plugins_, *context_, options.pluginDirectory,
                                                 options.executablePath);
+
+                if (context_->hasProject())
+                {
+                    // Remembered here rather than inside StudioContext::openProject: the context is
+                    // the CNA-free document model, and a list of recently opened files is not its
+                    // business. A project opened with --project is as recent as one opened from the
+                    // Hub, and a list that only knew about one of the two would be wrong in the way
+                    // that is hardest to notice.
+                    panels_->rememberProject(context_->getProject().getFilePath(),
+                                             static_cast<std::int64_t>(std::time(nullptr)));
+
+                    // And the view the project asks to open in (STUDIO-11014), which for a project
+                    // created from Empty 3D is the 3D world viewport.
+                    panels_->applyProjectDefaultViewOnOpen(*shell_);
+                }
+                else
+                {
+                    // No project: the Hub is the thing to be looking at, and it is the state a
+                    // fresh Studio starts in.
+                    (void)shell_->activatePanel("projecthub");
+                }
 
                 if (!options.selectEntity.empty())
                 {

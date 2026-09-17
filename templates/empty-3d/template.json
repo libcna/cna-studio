@@ -1,0 +1,11 @@
+{
+ "description": "A 3D world with a perspective camera and a directional light, and nothing else. Opens in the 3D viewport.",
+ "id": "empty-3d",
+ "kind": "CnaNative",
+ "name": "Empty 3D",
+ "order": 10,
+ "platform": "sdl3",
+ "renderer": "opengl33",
+ "startupScene": "Scenes/Main.cnascene",
+ "view": "3d"
+}

@@ -191,6 +191,10 @@ add_library(cna-studio-project STATIC
     src/project/RecoveryStore.cpp
     src/project/BuildRunner.cpp
     src/project/LanguageAdapter.cpp
+    src/project/ProjectTemplate.cpp
+    src/project/ProjectCreation.cpp
+    src/project/ProjectValidation.cpp
+    src/project/RecentProjects.cpp
     src/project/StudioBuiltInLanguages.cpp
     src/project/ProjectPackaging.cpp
     src/project/cpp/CppLanguage.cpp
@@ -199,6 +203,13 @@ add_library(cna-studio-project STATIC
     src/project/cpp/CppProjectExport.cpp
     ${CNA_STUDIO_EMBEDDED_RUNTIME_SOURCES})
 target_link_libraries(cna-studio-project PUBLIC cna-studio-core)
+
+# Where a development build finds the templates that ship with Studio. An installed Studio keeps
+# them beside the executable (see studioTemplateSearchPaths); baking the source tree in as well is
+# what lets `cna-studio` run out of a build directory offer the same templates a user gets -- and
+# what lets CI create and build every one of them with no install step, which is STUDIO-08011.
+target_compile_definitions(cna-studio-project PRIVATE
+    CNA_STUDIO_TEMPLATE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/templates")
 
 # cna-studio-ui -- the toolkit-independent UI surface plus its null implementation, and the two
 # types that carry data across the toolkit boundary: UiDrawData (geometry out) and UiInputState
@@ -431,6 +442,7 @@ add_library(cna-studio-shell-panels STATIC
     src/shell-panels/StudioPluginMenus.cpp
     src/shell-panels/StudioPreferencesPanel.cpp
     src/shell-panels/StudioProblemsPanel.cpp
+    src/shell-panels/StudioProjectHubPanel.cpp
     src/shell-panels/StudioShellPanels.cpp
     src/shell-panels/StudioShortcutEditor.cpp
     src/shell-panels/StudioViewportPanel.cpp)

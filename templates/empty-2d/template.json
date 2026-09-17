@@ -1,0 +1,11 @@
+{
+ "description": "An orthographic 2D world with a camera, and nothing else. Opens in the 2D viewport.",
+ "id": "empty-2d",
+ "kind": "CnaNative",
+ "name": "Empty 2D",
+ "order": 20,
+ "platform": "sdl3",
+ "renderer": "opengles3",
+ "startupScene": "Scenes/Main.cnascene",
+ "view": "2d"
+}

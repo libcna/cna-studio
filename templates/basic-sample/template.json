@@ -1,0 +1,11 @@
+{
+ "description": "A 2D scene with a camera and a sprite that draws, so there is something on screen to change.",
+ "id": "basic-sample",
+ "kind": "CnaNative",
+ "name": "Basic Sample",
+ "order": 30,
+ "platform": "sdl3",
+ "renderer": "opengles3",
+ "startupScene": "Scenes/Main.cnascene",
+ "view": "2d"
+}

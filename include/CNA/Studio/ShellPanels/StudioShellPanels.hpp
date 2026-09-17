@@ -42,6 +42,7 @@
 #include "CNA/Studio/ShellPanels/StudioPreferencesPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioPreferencesService.hpp"
 #include "CNA/Studio/ShellPanels/StudioProblemsPanel.hpp"
+#include "CNA/Studio/ShellPanels/StudioProjectHubPanel.hpp"
 #include "CNA/Studio/ShellPanels/StudioViewportPanel.hpp"
 #include "CNA/Studio/StudioRecovery.hpp"
 #include "CNA/Studio/Ui/StudioLog.hpp"
@@ -152,6 +153,8 @@ namespace CNA::Studio
         std::size_t diagnosticRowsDrawn = 0;
         std::size_t viewportSelections = 0;
         std::size_t layerRowsDrawn = 0;
+        std::size_t hubRecentRowsDrawn = 0;
+        std::size_t hubTemplateRowsDrawn = 0;
         std::size_t comparisonRowsDrawn = 0;
         std::size_t preferenceChanges = 0;
         std::size_t playerMessages = 0;
@@ -205,6 +208,25 @@ namespace CNA::Studio
                                                             const UiRect& bounds,
                                                             bool pointerInside);
 
+    class StudioShellPanels;
+
+    /**
+     * @brief Gives @p panels the templates this build ships and the user's recent-projects list.
+     *
+     * One function rather than two call sites' worth of setup, because there are two hosts — the
+     * CNA-backed editor and the headless shell preview — and a Hub that offered different
+     * templates in the one CI photographs would make the picture a lie.
+     *
+     * A Studio whose templates were not installed still gets a Hub: the catalogue comes back empty
+     * and the panel says so, which is a diagnosis rather than a missing panel.
+     *
+     * @param panels The panels to configure.
+     * @param executablePath `argv[0]`, for the install-relative template search paths.
+     * @param log Where a manifest that could not be read is reported.
+     */
+    void bindStudioProjectHub(StudioShellPanels& panels, std::string_view executablePath,
+                              StudioLog& log);
+
     class StudioShellPanels
     {
     public:
@@ -249,6 +271,55 @@ namespace CNA::Studio
          */
         void setViewportServices(StudioCamera2D& camera, StudioCamera3D& camera3D,
                                  SpriteSizeProvider spriteSize);
+
+        /**
+         * @brief Hands the Project Hub the templates it offers and the list it remembers.
+         *
+         * Separate from the constructor because both depend on where the executable is, which the
+         * panels do not know and should not go looking for — the same argument the viewport's
+         * camera is handed in on.
+         *
+         * A Studio that is never given these still draws a Hub: it says there are no templates,
+         * which is the honest picture of a build whose templates were not installed, rather than a
+         * panel that is missing.
+         *
+         * @param templates The templates on offer. Copied; the Hub outlives whoever built it.
+         * @param recentProjectsPath Where the recent list is stored. Empty remembers nothing.
+         */
+        void setProjectHubServices(StudioTemplateCatalogue templates,
+                                   std::string recentProjectsPath);
+
+        /** @brief The Hub's retained state: the page, the selection and the half-typed form. */
+        [[nodiscard]] StudioProjectHubState& projectHubState() { return hubState_; }
+
+        /** @brief The Hub's retained state. */
+        [[nodiscard]] const StudioProjectHubState& projectHubState() const { return hubState_; }
+
+        /** @brief The templates the Hub offers. */
+        [[nodiscard]] const StudioTemplateCatalogue& projectTemplates() const { return templates_; }
+
+        /**
+         * @brief Records that a project was opened, so the Hub lists it next time.
+         *
+         * Called by whoever actually opens one — the Hub itself, `--project`, and the Open Project
+         * command — rather than from inside `StudioContext::openProject`, because the context is
+         * the CNA-free document model and a list of recently opened files is not its business.
+         *
+         * @param projectFilePath Absolute path of the `.cnaproject`.
+         * @param nowSeconds Seconds since the epoch, passed in like every other clock here.
+         */
+        void rememberProject(const std::string& projectFilePath, std::int64_t nowSeconds);
+
+        /**
+         * @brief Switches the viewport to the view the open project asks to open in.
+         *
+         * `plan.md` STUDIO-11014. Public because a host that opened a project with `--project`
+         * has to make the same switch the Hub does, and a project's answer must not depend on
+         * which of the two routes opened it.
+         *
+         * @param shell The shell whose view commands are invoked.
+         */
+        void applyProjectDefaultViewOnOpen(StudioShell& shell) { applyProjectDefaultView(shell); }
 
         /**
          * @brief Hands a running game the pointer and the keys.
@@ -493,6 +564,29 @@ namespace CNA::Studio
         /** @brief Asks the shell's host to close, and says so when nothing can. */
         void closeStudio();
 
+        /**
+         * @brief Opens a project the Hub named, and brings the viewport forward when it works.
+         *
+         * The last two steps of the user story the Project Hub exists for: a project that opens
+         * has a world in it, and leaving the Hub in front of it would make the next thing the user
+         * does be closing a tab. A project that does *not* open leaves the Hub where it is, with
+         * the reason in the log, because sending somebody to an empty viewport to be told nothing
+         * is the worse answer.
+         *
+         * @param shell The shell, for the tab to raise.
+         * @param projectFilePath Absolute path of the `.cnaproject`.
+         */
+        void openProjectFromHub(StudioShell& shell, const std::string& projectFilePath);
+
+        /**
+         * @brief Switches the viewport to the view the open project asks to open in.
+         *
+         * `plan.md` STUDIO-11014. Through the view command rather than by assigning the state, so
+         * the camera is framed on the scene and the log says which view is on -- the difference
+         * between opening a 3D project and opening a 3D view of nothing.
+         */
+        void applyProjectDefaultView(StudioShell& shell);
+
         /** @brief Rebuilds the plugin menus when the extension registry has moved on. */
         /** @brief Closes the undo merge chain on the first frame nothing is being dragged. */
         void pollInteractionEnd();
@@ -535,6 +629,11 @@ namespace CNA::Studio
         StudioTreeState diagnosticsState_;
         StudioTreeState comparisonState_;
         StudioShortcutEditorState shortcutEditor_;
+        StudioProjectHubState hubState_;
+
+        /** @brief The templates the Hub offers, and where the recent list is kept. */
+        StudioTemplateCatalogue templates_;
+        std::string recentProjectsPath_;
 
         /** @brief Snapshots of the open scene, and whatever a previous session left behind. */
         StudioRecoverySession recovery_{context_};

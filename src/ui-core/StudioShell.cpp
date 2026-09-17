@@ -48,6 +48,12 @@ namespace CNA::Studio
         toolbar_ = defaultToolbar();
 
         registerPanel({"viewport", "Viewport", false, /*closable=*/false, /*isViewport=*/true});
+
+        // The Project Hub docks beside the viewport rather than floating over it. A modal window
+        // in front of the editor would be the obvious shape and is the wrong one: it cannot be
+        // photographed by the headless preview, it cannot be reached again once dismissed, and it
+        // makes "open a second project" a different gesture from "open the first". A tab is a tab.
+        registerPanel({"projecthub", "Project Hub"});
         registerPanel({"outliner", "World Outliner"});
         registerPanel({"layers", "Layers"});
         registerPanel({"details", "Details"});
@@ -414,6 +420,7 @@ namespace CNA::Studio
         dock_.addPanel(bottom, "preferences");
         dock_.addPanel(bottom, "diagnostics");
         dock_.addPanel(centre, "viewport");
+        dock_.addPanel(centre, "projecthub");
 
         for (const StudioDockNodeId leaf : dock_.leaves())
         {

@@ -1,0 +1,12 @@
+{
+ "formatVersion": 1,
+ "id": "9e4f0a21-3c6d-4b58-8e17-2f905c8a4d63",
+ "importer": "CNA.TextureImporter",
+ "settings": {
+  "pixelSize": [
+   32,
+   32
+  ]
+ },
+ "type": "Texture2D"
+}

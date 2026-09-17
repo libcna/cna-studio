@@ -1,0 +1,11 @@
+{
+ "description": "A hand-written CNA game with its own Initialize, LoadContent, Update and Draw, and no entity model. Studio offers assets, content preview, renderer configuration and Play.",
+ "id": "xna-compatible",
+ "kind": "XnaCompatible",
+ "name": "XNA-Compatible",
+ "order": 40,
+ "platform": "sdl3",
+ "renderer": "opengles3",
+ "startupScene": "",
+ "view": "2d"
+}

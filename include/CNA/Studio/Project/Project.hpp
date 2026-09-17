@@ -117,6 +117,23 @@ namespace CNA::Studio
         /** @brief Absolute path of the `.cnaproject` file itself. */
         [[nodiscard]] const std::string& getFilePath() const { return filePath_; }
 
+        /**
+         * @brief Which viewport the project opens in: `"2d"`, `"3d"`, or empty for Studio's default.
+         *
+         * `plan.md` STUDIO-11014. A property of the *project* rather than a preference, because it
+         * is a fact about what kind of game this is: a 3D world opened in the 2D view shows a grid
+         * with the level somewhere off the edge of it, and telling every new user to press 3 is a
+         * first five minutes nobody should have.
+         *
+         * Not a lock. It decides the view a project *opens* in and nothing else; switching is a
+         * keystroke away and this is never written back from it, so a project's answer does not
+         * drift because somebody glanced at the other view.
+         */
+        [[nodiscard]] const std::string& getDefaultView() const { return defaultView_; }
+
+        /** @brief Sets the view the project opens in. Empty restores Studio's default. */
+        void setDefaultView(std::string view) { defaultView_ = std::move(view); }
+
         /** @brief Project-relative path of the scene opened when the game starts. */
         [[nodiscard]] const std::string& getStartupScene() const { return startupScene_; }
         void setStartupScene(std::string path) { startupScene_ = std::move(path); }
@@ -236,6 +253,9 @@ namespace CNA::Studio
 
         /** @brief Language id, or empty for this build's default. See @ref getLanguage. */
         std::string language_;
+
+        /** @brief `"2d"`, `"3d"` or empty. See @ref getDefaultView. */
+        std::string defaultView_;
         std::string rootPath_;
         std::string filePath_;
         std::string startupScene_;

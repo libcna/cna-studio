@@ -26,6 +26,7 @@ add_executable(cna-studio-tests
     StudioTargetProfileTests.cpp
     ProjectExportTests.cpp
     StudioLanguageAdapterTests.cpp
+    StudioProjectHubTests.cpp
     StudioWorkspaceStoreTests.cpp
     StudioLogPanelTests.cpp
     StudioOutlinerPanelTests.cpp
@@ -553,6 +554,8 @@ if(CNA_STUDIO_WITH_CNA)
     set_tests_properties(CnaStudioStandaloneExport PROPERTIES
         LABELS "slow"
         TIMEOUT 5400)
+    set_property(TEST CnaStudioStandaloneExport
+                 APPEND PROPERTY RESOURCE_LOCK cna-studio-heavy-build)
 
     if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
         set_tests_properties(CnaStudioStandaloneExport PROPERTIES
@@ -562,6 +565,52 @@ if(CNA_STUDIO_WITH_CNA)
         set_tests_properties(CnaStudioStandaloneExport PROPERTIES
             ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
     endif()
+
+    # Every template, created and built (plan.md STUDIO-08011). One CTest case per template
+    # directory, discovered by globbing `templates/` rather than by a list here -- STUDIO-08005's
+    # acceptance is that adding a template does not require changing Studio, and a list of test
+    # names in this file would be exactly the change it forbids.
+    #
+    # `CONFIGURE_DEPENDS` so a template added without re-running CMake by hand still gets a case.
+    # The glob is over manifests rather than directories: a directory without one is not a template,
+    # and the catalogue skips it for the same reason.
+    file(GLOB _templateManifests CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/../templates/*/template.json")
+    foreach(_manifest IN LISTS _templateManifests)
+        get_filename_component(_templateDirectory "${_manifest}" DIRECTORY)
+        get_filename_component(_templateId "${_templateDirectory}" NAME)
+
+        add_test(NAME CnaStudioTemplateBuilds_${_templateId}
+            COMMAND "${CMAKE_COMMAND}"
+                "-DSTUDIO=$<TARGET_FILE:cna-studio>"
+                "-DTEMPLATE=${_templateId}"
+                "-DCNA_ROOT=${CNA_STUDIO_CNA_ROOT}"
+                "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/template-build/${_templateId}"
+                "-DRENDERER=${CNA_GRAPHICS_RENDERER}"
+                "-DJOBS=${CNA_STUDIO_EXPORT_TEST_JOBS}"
+                "-DGENERATOR=${CMAKE_GENERATOR}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/TemplateBuildTest.cmake")
+
+        set_tests_properties(CnaStudioTemplateBuilds_${_templateId} PROPERTIES
+            LABELS "slow"
+            TIMEOUT 5400)
+
+        if(CNA_GRAPHICS_RENDERER STREQUAL "SOFTWARE" OR CNA_GRAPHICS_RENDERER STREQUAL "HEADLESS")
+            set_tests_properties(CnaStudioTemplateBuilds_${_templateId} PROPERTIES
+                ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+        else()
+            set_property(TEST CnaStudioTemplateBuilds_${_templateId}
+                         APPEND PROPERTY LABELS "needs-display")
+            set_tests_properties(CnaStudioTemplateBuilds_${_templateId} PROPERTIES
+                ENVIRONMENT "DISPLAY=${CNA_STUDIO_TEST_DISPLAY}")
+        endif()
+
+        # They all build CNA into their own tree, so running four at once on a small machine is how
+        # a CI job runs out of memory. Serialised against each other and against the export test,
+        # which is the same kind of work.
+        set_property(TEST CnaStudioTemplateBuilds_${_templateId}
+                     APPEND PROPERTY RESOURCE_LOCK cna-studio-heavy-build)
+    endforeach()
 
     if(CNA_STUDIO_HOST_MEETS_MODERN_PROFILE)
     # The native Studio shell in a real window, through a real CNA renderer -- the whole strangler

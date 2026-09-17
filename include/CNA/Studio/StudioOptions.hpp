@@ -293,6 +293,30 @@ namespace CNA::Studio
         bool exportOverwrite = false;
 
         /**
+         * @brief Create a new project in this directory and exit.
+         *
+         * On the command line for the same reason `--export` is, and it is the stronger case:
+         * `STUDIO-08011` says *every template produces a project that builds and runs without
+         * Studio*, which is a claim about project **creation** rather than about export, and the
+         * only thing that settles it is a script that creates one and builds it. A Hub-only New
+         * Project could not be checked that way, so the central invariant would rest on the one
+         * path CI never takes.
+         */
+        std::string newProjectPath;
+
+        /** @brief Which template `--new-project` creates from. */
+        std::string newProjectTemplate;
+
+        /** @brief What `--new-project` calls the project. Defaults to the directory's name. */
+        std::string newProjectName;
+
+        /** @brief Which language `--new-project` creates in. Empty means this build's default. */
+        std::string newProjectLanguage;
+
+        /** @brief List the templates this build offers, and exit. */
+        bool listTemplates = false;
+
+        /**
          * @brief Where the native shell remembers its workspace arrangement.
          *
          * Defaults to the user's configuration directory. `--workspace=none` turns remembering off,

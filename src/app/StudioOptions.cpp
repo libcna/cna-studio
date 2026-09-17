@@ -94,11 +94,16 @@ namespace CNA::Studio
             if (argument == "--ui-benchmark") { options.uiBenchmark = "all"; continue; }
             if (argument == "--export-overwrite") { options.exportOverwrite = true; continue; }
             if (argument == "--shell-tooltip") { options.shellPreviewTooltip = true; continue; }
+            if (argument == "--list-templates") { options.listTemplates = true; continue; }
 
             if (splitOption(argument, name, value))
             {
                 if (name == "--project") { options.projectPath = value; continue; }
                 if (name == "--export") { options.exportPath = value; continue; }
+                if (name == "--new-project") { options.newProjectPath = value; continue; }
+                if (name == "--template") { options.newProjectTemplate = value; continue; }
+                if (name == "--project-name") { options.newProjectName = value; continue; }
+                if (name == "--language") { options.newProjectLanguage = value; continue; }
                 if (name == "--workspace") { options.workspacePath = value; continue; }
                 if (name == "--select") { options.selectEntity = value; continue; }
                 if (name == "--select-asset") { options.selectAsset = value; continue; }
@@ -397,6 +402,11 @@ namespace CNA::Studio
             "                     refuses to start regardless.\n"
             "  --workspace=PATH   Where --ui=studio remembers its layout. 'none' forgets it.\n"
             "  --select=NAME      Select this entity at start-up, for --ui=studio.\n"
+            "  --new-project=DIR  Create a project in DIR from --template and exit.\n"
+            "  --template=ID      Which template --new-project creates from.\n"
+            "  --project-name=N   What --new-project calls it. Default: the directory name.\n"
+            "  --language=ID      Which language --new-project creates in. Default: cpp.\n"
+            "  --list-templates   List the project templates this build offers, and exit.\n"
             "  --export=DIR       Export the project as a standalone CNA game and exit.\n"
             "  --export-overwrite  Let --export write into a non-empty directory.\n"
             "  --host-capabilities  Report what Studio requires of a host renderer, evaluate it\n"

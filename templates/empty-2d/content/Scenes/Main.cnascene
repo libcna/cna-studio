@@ -1,0 +1,45 @@
+{
+ "entities": [
+  {
+   "components": {
+    "CNA.Camera": {
+     "clearColor": [
+      100,
+      149,
+      237,
+      255
+     ],
+     "farPlane": 1000,
+     "fieldOfView": 45,
+     "isPrimary": true,
+     "nearPlane": 0.1,
+     "orthographicSize": 600,
+     "projection": "Orthographic"
+    },
+    "CNA.Transform": {
+     "position": [
+      400,
+      300,
+      0
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    }
+   },
+   "id": "5da06084-7f12-4253-9026-9e4182b35f74",
+   "name": "Main Camera"
+  }
+ ],
+ "formatVersion": 1,
+ "name": "Main",
+ "sceneId": "4c9d5f73-6e01-4142-8f15-8d3071a24e63"
+}

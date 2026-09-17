@@ -1,0 +1,80 @@
+{
+ "entities": [
+  {
+   "components": {
+    "CNA.Camera": {
+     "clearColor": [
+      30,
+      34,
+      46,
+      255
+     ],
+     "farPlane": 1000,
+     "fieldOfView": 60,
+     "isPrimary": true,
+     "nearPlane": 0.1,
+     "orthographicSize": 600,
+     "projection": "Perspective"
+    },
+    "CNA.Transform": {
+     "position": [
+      0,
+      2,
+      10
+     ],
+     "rotation": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    }
+   },
+   "id": "2a7b3d51-4c8e-4f20-ad93-6b1e5f802c41",
+   "name": "Main Camera"
+  },
+  {
+   "components": {
+    "CNA.Light": {
+     "color": [
+      255,
+      244,
+      224,
+      255
+     ],
+     "intensity": 1.0,
+     "kind": "Directional",
+     "range": 10.0
+    },
+    "CNA.Transform": {
+     "position": [
+      0,
+      6,
+      4
+     ],
+     "rotation": [
+      -0.3826834,
+      0.0,
+      0.0,
+      0.9238795
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    }
+   },
+   "id": "3b8c4e62-5d9f-4031-be04-7c2f6a913d52",
+   "name": "Directional Light"
+  }
+ ],
+ "formatVersion": 1,
+ "name": "Main",
+ "sceneId": "1f6a2c40-3b7d-4e19-9c82-5a0d4e7f1b30"
+}

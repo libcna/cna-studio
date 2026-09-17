@@ -20,6 +20,8 @@
 
 #include "CNA/Studio/Project/Project.hpp"
 #include "CNA/Studio/Project/LanguageAdapter.hpp"
+#include "CNA/Studio/Project/ProjectCreation.hpp"
+#include "CNA/Studio/Project/ProjectTemplate.hpp"
 #include "CNA/Studio/Project/RendererCatalog.hpp"
 #include "CNA/Studio/Project/StudioHostRequirements.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellActions.hpp"
@@ -566,6 +568,10 @@ namespace
 
         CNA::Studio::StudioShellPanels panels{shell, context, log};
 
+        // And the Project Hub's templates, from the same search paths the editor uses -- a preview
+        // whose Hub offered different templates would photograph a Studio nobody runs.
+        CNA::Studio::bindStudioProjectHub(panels, options.executablePath, log);
+
         // The viewport's own camera, bound even with no graphics device: without it the viewport's
         // commands -- `--view=3d` among them -- are found and refused rather than run, which is
         // exactly what left `--view=3d` and `--orbit` reaching only the prototype (STUDIO-07049).
@@ -589,6 +595,15 @@ namespace
 
         // Through the panels, which is what fills the status bar in the real editor -- a preview
         // that composed its own status line would photograph a bar this Studio never draws.
+        // The Hub in front when there is no project, which is the state a fresh Studio starts in
+        // and the one the whole of Phase 8 exists for. With a project open the viewport wins: a
+        // Hub in front of a world somebody just opened is a tab they have to close.
+        if (options.projectPath.empty() && options.shellPreviewPanelOnly.empty()
+            && options.focusPanel.empty())
+        {
+            (void)shell.activatePanel("projecthub");
+        }
+
         panels.poll(0.0);
         shell.status().renderer = "none, headless preview";
         if (options.projectPath.empty())
@@ -1073,6 +1088,73 @@ int main(int argc, char** argv)
                      "contract against. Rebuild with -DCNA_STUDIO_WITH_CNA=ON for the live verdict.\n";
         return 0;
 #endif
+    }
+
+    // Creating a project and listing the templates need no window, no toolkit and no graphics
+    // device, and are handled before anything that would open one -- the same argument `--export`
+    // makes below, and a stronger one: STUDIO-08011's claim is that *every template produces a
+    // project that builds and runs without Studio*, which is a claim about creation. A New Project
+    // that existed only in the Hub would leave the central invariant resting on the one path CI
+    // never takes.
+    if (options.listTemplates || !options.newProjectPath.empty())
+    {
+        CNA::Studio::StudioTemplateCatalogue templates;
+        for (const std::string& searchPath :
+             CNA::Studio::studioTemplateSearchPaths(options.executablePath))
+        {
+            for (const std::string& problem : templates.addSearchPath(searchPath))
+            {
+                std::cerr << "cna-studio: warning: " << problem << "\n";
+            }
+        }
+
+        const CNA::Studio::StudioLanguageRegistry languages = CNA::Studio::studioBuiltInLanguages();
+
+        if (options.listTemplates)
+        {
+            if (templates.empty())
+            {
+                std::cerr << "cna-studio: no templates were found on any search path.\n";
+                return 6;
+            }
+            for (const CNA::Studio::StudioProjectTemplate& value : templates.all())
+            {
+                // Id first and on its own, because this listing is read by scripts as well as by
+                // people -- STUDIO-08011 enumerates it to decide what to build.
+                std::cout << value.id << "\t" << value.name << "\t"
+                          << CNA::Studio::toString(value.kind) << "\t"
+                          << CNA::Studio::toString(value.view) << "\n";
+            }
+            return 0;
+        }
+
+        CNA::Studio::StudioNewProjectRequest request;
+        request.directory = std::filesystem::absolute(
+            std::filesystem::path{options.newProjectPath}).lexically_normal().generic_string();
+        request.templateId = options.newProjectTemplate;
+        request.languageId = options.newProjectLanguage;
+        request.name = options.newProjectName.empty()
+            ? std::filesystem::path{request.directory}.filename().generic_string()
+            : options.newProjectName;
+
+        const CNA::Studio::StudioNewProjectResult created =
+            CNA::Studio::createStudioProject(request, templates, languages);
+
+        for (const CNA::Studio::StudioNewProjectProblem& problem : created.problems)
+        {
+            std::cerr << "cna-studio: " << problem.field << ": " << problem.message << "\n";
+        }
+        if (!created.succeeded()) { return 6; }
+
+        for (const std::string& warning : created.warnings)
+        {
+            std::cerr << "cna-studio: warning: " << warning << "\n";
+        }
+
+        std::cout << "cna-studio: created " << created.writtenFiles.size() << " files in '"
+                  << request.directory << "'\n"
+                  << created.projectFilePath << "\n";
+        return 0;
     }
 
     // Export needs no window, no toolkit and no graphics device -- and, more to the point,

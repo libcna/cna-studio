@@ -62,6 +62,7 @@ namespace CNA::Studio
         // Project::getLanguage -- so the absent key and "cpp" mean the same thing today, and the
         // key exists so that they stop meaning the same thing without a migration when they must.
         if (!language_.empty()) { json.set("language", JsonValue{language_}); }
+        if (!defaultView_.empty()) { json.set("defaultView", JsonValue{defaultView_}); }
 
         json.set("startupScene", JsonValue{startupScene_});
         json.set("assetDirectory", JsonValue{assetDirectory_});
@@ -167,6 +168,7 @@ namespace CNA::Studio
         // registry that knows what this build implements, and answering it here would put a second
         // opinion in the loader.
         language_ = document["language"].asString();
+        defaultView_ = document["defaultView"].asString();
 
         startupScene_ = document["startupScene"].asString();
         assetDirectory_ = document["assetDirectory"].asString("Assets");
