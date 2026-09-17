@@ -855,3 +855,44 @@ CNA_STUDIO_TEST(ARecentEntrysTimestampSurvivesBeingWrittenAndReadBack)
 
     std::filesystem::remove_all(root);
 }
+
+CNA_STUDIO_TEST(TheTemplateSearchPathsCoverAnInstalledStudioAndADevelopmentBuild)
+{
+    // The function that decides whether a Studio finds any templates at all. Untested, its two
+    // failure modes are silent in opposite directions: an installed Studio that offers none, and a
+    // development build whose Hub is empty so nobody notices the installed case is broken either.
+    const std::vector<std::string> paths =
+        studioTemplateSearchPaths("/opt/cna-studio/bin/cna-studio");
+
+    CNA_STUDIO_EXPECT(paths.size() >= 3);
+
+    // Beside the executable, for a self-contained directory somebody unpacked.
+    CNA_STUDIO_EXPECT(std::any_of(paths.begin(), paths.end(), [](const std::string& path) {
+        return path == "/opt/cna-studio/bin/templates";
+    }));
+
+    // And under `share/`, for a Unix install. Normalised, so it is a path somebody can read in a
+    // log rather than one with `/../` in the middle of it.
+    CNA_STUDIO_EXPECT(std::any_of(paths.begin(), paths.end(), [](const std::string& path) {
+        return path == "/opt/cna-studio/share/cna-studio/templates";
+    }));
+
+    // The source tree is baked in at configure time and is last, so an installed template with the
+    // same id as a shipped one wins -- "most specific first" is what makes the order mean anything.
+    //
+    // Compared as paths rather than as strings: CMake bakes in `${CMAKE_CURRENT_SOURCE_DIR}/..`
+    // spellings that name the same directory as this test's `CNA_STUDIO_SOURCE_ROOT` without
+    // matching it character for character, and a check that failed over `/../` would be a check
+    // about how the two were spelt.
+    CNA_STUDIO_EXPECT(std::filesystem::path{paths.back()}.lexically_normal()
+                      == (sourceRoot() / "templates").lexically_normal());
+
+    // And this build's own paths find the four templates that ship with it, which is the property
+    // `--list-templates` and STUDIO-08011 both rest on.
+    StudioTemplateCatalogue catalogue;
+    for (const std::string& path : studioTemplateSearchPaths(std::string_view{}))
+    {
+        (void)catalogue.addSearchPath(path);
+    }
+    CNA_STUDIO_EXPECT_EQ(catalogue.all().size(), std::size_t{4});
+}
