@@ -155,6 +155,38 @@ namespace
      * @param options Parsed command line.
      * @return Process exit code.
      */
+    // -------------------------------------------------------------------------------------------
+    // The interactive target (`plan.md` STUDIO-30030)
+    // -------------------------------------------------------------------------------------------
+    //
+    // Sixty frames a second is 16 667 microseconds for everything a frame does. Describing the UI
+    // is one of four things inside that -- describing it, submitting the geometry, rendering the
+    // viewport's own scene, and presenting -- so it gets a quarter. That is the number below, and
+    // it is a *description* budget rather than a frame time: a row at 4 167 us is not a Studio
+    // running at sixty frames a second, it is a Studio whose UI has spent its entire share.
+    //
+    // The exact value matters less than having one. What a budget buys is that a regression shows
+    // up as a row going over rather than as a number somebody has to remember last week's value of
+    // -- and this phase has just been reminded why that matters: absolute microseconds taken on a
+    // busy machine are not comparable with the same row taken on an idle one, which is why every
+    // row also reports its multiple of the idle shell.
+
+    /** @brief What one frame gets, at sixty frames a second. */
+    constexpr double kInteractiveFrameMicroseconds = 1000000.0 / 60.0;
+
+    /** @brief Describing the UI gets a quarter of it. */
+    constexpr double kUiDescriptionBudgetMicroseconds = kInteractiveFrameMicroseconds / 4.0;
+
+    /**
+     * @brief What a deliberately extreme scenario gets instead.
+     *
+     * Twice the interactive budget, and it promises something different: at twenty thousand
+     * entities or a hundred thousand assets Studio does not claim sixty frames a second, it claims
+     * that nothing collapses. Holding these to the interactive budget would make them fail on the
+     * day they were written, and a budget that is over from birth is one nobody reads.
+     */
+    constexpr double kStressBudgetMicroseconds = kUiDescriptionBudgetMicroseconds * 2.0;
+
     /**
      * @brief One benchmark scenario: a name, a setup, and what each frame feeds the shell.
      *
@@ -188,6 +220,15 @@ namespace
          * @return The input for that frame.
          */
         std::function<CNA::Studio::UiInputState(CNA::Studio::UiInputState, int)> driveFrame;
+
+        /**
+         * @brief What this shape of frame is allowed to cost, in microseconds.
+         *
+         * Zero means @ref kUiDescriptionBudgetMicroseconds, which is what a scenario modelling a
+         * project somebody actually has wants. A stress scenario says @ref
+         * kStressBudgetMicroseconds and means something different by it.
+         */
+        double budgetMicroseconds = 0.0;
     };
 
     /** @brief What one scenario measured. */
@@ -199,6 +240,23 @@ namespace
         CNA::Studio::StudioUiFrameCost total;
         double medianMicroseconds = 0.0;
         double minMicroseconds = 0.0;
+        double budgetMicroseconds = 0.0;
+
+        /**
+         * @brief Cost as a multiple of the idle shell's.
+         *
+         * The part of a measurement that survives a change of machine. Absolute microseconds do
+         * not: this phase recorded 4 260 us for `content-grid` on a loaded container and 520 us
+         * for the same code on an idle one, and a reader comparing those two would conclude
+         * something that never happened.
+         */
+        double baselineMultiple = 0.0;
+
+        /** @brief Whether the median went over what this scenario is allowed. */
+        [[nodiscard]] bool isOverBudget() const
+        {
+            return budgetMicroseconds > 0.0 && medianMicroseconds > budgetMicroseconds;
+        }
     };
 
     /** @brief Adds @p count entities to @p scene under a shallow hierarchy. */
@@ -522,6 +580,27 @@ namespace
                 return input;
             }});
 
+        // The deliberately extreme rows get the stress ceiling rather than the interactive one.
+        // Named here in one list rather than repeated in each aggregate, so that the *reason* a
+        // scenario is held to a different promise is in one readable place.
+        static const char* const kStressScenarios[] = {
+            "outliner-20000", "outliner-20000-deep", "outliner-20000-scrolling",
+            "outliner-20000-all-selected", "content-grid-100k", "content-list-100k",
+            "content-scrolling-100k"};
+
+        for (UiBenchmarkScenario& scenario : scenarios)
+        {
+            scenario.budgetMicroseconds = kUiDescriptionBudgetMicroseconds;
+            for (const char* stressed : kStressScenarios)
+            {
+                if (scenario.name == stressed)
+                {
+                    scenario.budgetMicroseconds = kStressBudgetMicroseconds;
+                    break;
+                }
+            }
+        }
+
         if (options.uiBenchmark.empty() || options.uiBenchmark == "all") { return scenarios; }
 
         std::vector<UiBenchmarkScenario> selected;
@@ -614,6 +693,9 @@ namespace
             row.name = scenario.name;
             row.what = scenario.what;
             row.frames = options.uiBenchmarkFrames;
+            row.budgetMicroseconds = scenario.budgetMicroseconds > 0.0
+                ? scenario.budgetMicroseconds
+                : kUiDescriptionBudgetMicroseconds;
 
             std::vector<double> samples;
             samples.reserve(static_cast<std::size_t>(options.uiBenchmarkFrames));
@@ -642,20 +724,43 @@ namespace
             rows.push_back(std::move(row));
         }
 
+        // Against the idle shell, which is the part of a measurement that survives a change of
+        // machine. `baseline` is the first scenario, and when a selection excludes it there is
+        // nothing to divide by and the column says so rather than inventing a figure.
+        const auto idle = std::find_if(rows.begin(), rows.end(), [](const UiBenchmarkRow& row) {
+            return row.name == "baseline";
+        });
+        if (idle != rows.end() && idle->medianMicroseconds > 0.0)
+        {
+            for (UiBenchmarkRow& row : rows)
+            {
+                row.baselineMultiple = row.medianMicroseconds / idle->medianMicroseconds;
+            }
+        }
+
         std::cout << "cna-studio: UI render benchmark (STUDIO-04028), "
                   << options.uiBenchmarkFrames << " frames per scenario at "
                   << options.shellPreviewWidth << "x" << options.shellPreviewHeight << "\n"
                   << "Per frame. 'classic KB' and 'modern KB' are the geometry bytes each UI "
                      "render backend\nputs on the bus for the same frame -- what is submitted, "
-                     "not how long a GPU takes.\n\n";
+                     "not how long a GPU takes.\n\n"
+                  << "Interactive target (STUDIO-30030): 60 frames a second is "
+                  << std::fixed << std::setprecision(0) << kInteractiveFrameMicroseconds
+                  << " us a frame, of which\ndescribing the UI gets a quarter -- "
+                  << kUiDescriptionBudgetMicroseconds
+                  << " us. Deliberately extreme rows get " << kStressBudgetMicroseconds
+                  << " us instead\nand promise only that nothing collapses. 'xbase' is the cost as "
+                     "a multiple of the idle\nshell, which is the part of a measurement that "
+                     "survives a change of machine.\n\n";
 
         std::cout << std::left << std::setw(20) << "scenario" << std::right
                   << std::setw(10) << "us(med)" << std::setw(10) << "us(min)"
+                  << std::setw(9) << "xbase" << std::setw(10) << "budget" << std::setw(7) << ""
                   << std::setw(10) << "draws" << std::setw(10) << "verts"
                   << std::setw(9) << "tex" << std::setw(9) << "clip"
                   << std::setw(12) << "classic KB" << std::setw(11) << "modern KB"
                   << std::setw(8) << "ratio" << "\n";
-        std::cout << std::string(109, '-') << "\n";
+        std::cout << std::string(135, '-') << "\n";
 
         for (const UiBenchmarkRow& row : rows)
         {
@@ -666,7 +771,11 @@ namespace
             std::cout << std::left << std::setw(20) << row.name << std::right
                       << std::setw(10) << std::fixed << std::setprecision(1) << row.medianMicroseconds
                       << std::setw(10) << row.minMicroseconds
-                      << std::setw(10) << static_cast<double>(row.total.drawCalls) / frames
+                      << std::setw(8) << std::setprecision(1) << row.baselineMultiple << "x"
+                      << std::setw(10) << std::setprecision(0) << row.budgetMicroseconds
+                      << std::setw(7) << (row.isOverBudget() ? "OVER" : "ok")
+                      << std::setw(10) << std::setprecision(1)
+                      << static_cast<double>(row.total.drawCalls) / frames
                       << std::setw(10) << static_cast<double>(row.total.vertices) / frames
                       << std::setw(9) << static_cast<double>(row.total.textureChanges) / frames
                       << std::setw(9) << static_cast<double>(row.total.clipChanges) / frames
@@ -699,7 +808,33 @@ namespace
                       << static_cast<double>(row.total.modernSubmittedBytes) / perFrame / 1024.0
                       << " KB modern\n";
         }
-        return 0;
+
+        // The gate (`plan.md` STUDIO-30030). A benchmark that only prints numbers is one whose
+        // regressions are noticed by whoever happens to read it; an exit code is one a perf job can
+        // act on. Deliberately *not* a ctest assertion: a wall-clock check on a shared machine
+        // fails for reasons that have nothing to do with the code, which is why the suite counts
+        // work instead. This is run on purpose, by somebody who wants a verdict.
+        std::vector<const UiBenchmarkRow*> over;
+        for (const UiBenchmarkRow& row : rows)
+        {
+            if (row.isOverBudget()) { over.push_back(&row); }
+        }
+
+        if (over.empty())
+        {
+            std::cout << "\nEvery scenario is inside its budget.\n";
+            return 0;
+        }
+
+        std::cout << "\n" << over.size() << " scenario" << (over.size() == 1 ? " is" : "s are")
+                  << " over budget:\n";
+        for (const UiBenchmarkRow* row : over)
+        {
+            std::cout << "  " << row->name << " -- " << std::fixed << std::setprecision(1)
+                      << row->medianMicroseconds << " us against " << std::setprecision(0)
+                      << row->budgetMicroseconds << " us allowed\n";
+        }
+        return 3;
     }
 
     int renderShellPreview(const CNA::Studio::StudioOptions& options)

@@ -217,6 +217,41 @@ and it applies to the new module exactly as it applies to the old one.
 
 ---
 
+## The interactive target (`STUDIO-30030`)
+
+Sixty frames a second is **16 667 µs** for everything a frame does. Describing the UI is one of four
+things inside that — describing it, submitting the geometry, rendering the viewport's own scene, and
+presenting — so it gets a quarter: **4 167 µs**. `--ui-benchmark` prints that budget beside every
+scenario, marks each row `ok` or `OVER`, and **exits 3** when any row is over, so a performance job
+can act on it rather than relying on somebody reading the table.
+
+It is a *description* budget, not a frame time. A row at 4 167 µs is not a Studio running at sixty
+frames a second; it is a Studio whose UI has spent its entire share.
+
+**Deliberately extreme scenarios get 8 333 µs instead** — the 20 000-entity outliner, the
+100 000-asset browser — and promise something different by it. At those sizes Studio does not claim
+sixty frames a second, it claims that nothing collapses. Holding them to the interactive budget
+would have made them fail on the day they were written, and a budget that is over from birth is one
+nobody reads.
+
+### Why every row also reports `xbase`
+
+Absolute microseconds are not comparable between machines, or between the same machine busy and
+idle. This project has the receipt: `content-grid` was recorded at 4 260 µs during a session with
+builds running and measures about 520 µs for the same code on a quiet container. Anyone comparing
+those two would conclude something that never happened.
+
+So each row also prints its cost as a multiple of the idle shell (`baseline`). That ratio cancels
+the machine, and it is the figure worth writing into a plan entry or a commit message. Absolute
+values are worth recording only alongside the ratios measured in the same run.
+
+This is the same instinct as the test suite's: it counts work done rather than time taken, because a
+wall-clock assertion on a shared CI machine fails for reasons that have nothing to do with the code.
+The budget gate lives in the benchmark — run deliberately, by somebody who wants a verdict — and not
+in `ctest`.
+
+---
+
 ## What the two backends actually cost (`STUDIO-04028`)
 
 "The modern renderer is not slower" was an assumption repeated for four tasks. It is a number now.

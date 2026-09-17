@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 12 of 17 complete `████████░░░░`
+**Progress:** 13 of 17 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -26,7 +26,7 @@
 | `STUDIO-30024` | Stress benchmark: large property lists and large imported models | ⬜ | `STUDIO-14018` |
 | `STUDIO-30025` | Stress benchmark: many thumbnails and many concurrent import jobs | ⬜ | `STUDIO-09003` |
 | `STUDIO-30026` | Attribute and remove the cost of a very large multi-selection | ✅ | `STUDIO-30021` |
-| `STUDIO-30030` | Establish the interactive frame-rate target and measure against it | ⬜ | `STUDIO-30020` |
+| `STUDIO-30030` | Establish the interactive frame-rate target and measure against it | ✅ | `STUDIO-30020` |
 
 ## Acceptance and verification
 
@@ -386,6 +386,69 @@ product.
 
 **Acceptance.** Measured before optimising, with the benchmark established early so a regression is visible
 
+**Done.** The target is stated, `--ui-benchmark` measures against it, and a breach is an exit code
+rather than a number somebody has to notice.
+
+**The target.** Sixty frames a second is 16 667 µs for everything a frame does. Describing the UI is
+one of four things inside that — describing it, submitting the geometry, rendering the viewport's
+own scene, and presenting — so it gets a quarter: **4 167 µs**. It is a *description* budget, not a
+frame time: a row at 4 167 µs is not a Studio running at sixty frames a second, it is a Studio whose
+UI has spent its whole share.
+
+The exact value matters less than having one. What a budget buys is that a regression shows up as a
+row going `OVER` rather than as a number somebody has to remember last week's value of.
+
+**Two promises, not one.** The deliberately extreme scenarios — the 20 000-entity outliner, the
+100 000-asset browser — get 8 333 µs and mean something different by it: at those sizes Studio does
+not claim sixty frames a second, it claims that nothing collapses. Holding them to the interactive
+budget would have made them fail on the day they were written, and a budget that is over from birth
+is one nobody reads.
+
+**The gate is an exit code, deliberately not a test.** `--ui-benchmark` returns 3 when any row is
+over its budget and 0 when none is, and it names the rows. Both paths were checked by forcing a
+breach. It is not a `ctest` assertion because a wall-clock check on a shared machine fails for
+reasons that have nothing to do with the code — which is exactly why the suite counts work instead.
+This is run on purpose, by somebody who wants a verdict.
+
+**And the thing this task actually had to fix: the numbers were not comparable.** Setting a budget
+made it obvious that absolute microseconds are worth less than this phase has been treating them as.
+`content-grid` is recorded at 4 260 µs in `STUDIO-30022`'s entry above and measures about 520 µs for
+the same code on a quiet container; the difference is the machine, not the code. Every row now also
+reports `xbase`, its cost as a multiple of the idle shell, because that ratio cancels the machine
+and is the figure worth writing into a plan entry.
+
+The absolute tables already written in this phase are left as they were. They are honest records of
+what was measured, and their *comparisons* — before against after, taken minutes apart in one
+session — are the part that was ever durable. Rewriting them with today's numbers would replace one
+set of machine-specific figures with another.
+
+**Measured**, `--ui-benchmark=all`, Release, 120 frames at 1920×1080, on an idle container:
+
+| scenario | µs (med) | ×base | budget | |
+|---|---:|---:|---:|---|
+| `baseline` | 119 | 1.0× | 4167 | ok |
+| `outliner-2000` | 473 | 4.0× | 4167 | ok |
+| `outliner-scrolling` | 518 | 4.3× | 4167 | ok |
+| `outliner-20000` | 4320 | 36.3× | 8333 | ok |
+| `outliner-20000-deep` | 5881 | 49.4× | 8333 | ok |
+| `outliner-20000-scrolling` | 5726 | 48.1× | 8333 | ok |
+| `outliner-20000-all-selected` | 6053 | 50.8× | 8333 | ok |
+| `content-grid` | 391 | 3.3× | 4167 | ok |
+| `content-grid-100k` | 537 | 4.5× | 8333 | ok |
+| `content-list-100k` | 170 | 1.4× | 8333 | ok |
+| `content-scrolling-100k` | 171 | 1.4× | 8333 | ok |
+| `details-components` | 182 | 1.5× | 4167 | ok |
+| `keystrokes` | 81 | 0.7× | 4167 | ok |
+| `atlas-growth` | 239 | 2.0× | 4167 | ok |
+| `resize` | 185 | 1.5× | 4167 | ok |
+
+Everything is inside its budget, and every scenario modelling a project somebody actually has costs
+under 600 µs — a seventh of its share. **So the answer to the question the other entries deferred to
+this one is no**: the residual ~5 ms in the Outliner's walk at twenty thousand entities does not
+justify a second index. It is inside the stress ceiling with room, and a maintained visible-row count
+would be a new invalidation story for a cost nothing is waiting on. That is recorded here so the
+question stops being reopened.
+
 ### `STUDIO-30022` — Stress benchmark: 100,000 assets
 
 **Done.** Three scenarios in `--ui-benchmark`: `content-grid-100k`, `content-list-100k` and
@@ -520,8 +583,8 @@ this task alone:
 about 5 ms, and it is the walk itself: counting the visible rows visits every open node, because a
 hierarchy has no maintained row count to read. Removing *that* means maintaining a visible-row
 count against the expansion state, which is a different index with a different invalidation
-story — worth doing only if `STUDIO-30030`'s interactive target says 5 ms is too much, and not
-worth guessing at before then.
+story — and `STUDIO-30030` has since answered that it is not worth doing: 5 ms is inside the stress
+ceiling with room, and nothing is waiting on it.
 
 **Scoped to this rebuild, not to "throughout".** The other per-frame rebuilds this phase named have
 already gone their own way: `STUDIO-30015` for the Content Browser's filesystem probes,
