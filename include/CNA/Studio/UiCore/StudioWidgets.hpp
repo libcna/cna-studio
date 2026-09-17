@@ -484,7 +484,57 @@ namespace CNA::Studio
          */
         void visibleRows(float rowHeight, std::size_t rowCount,
                          std::size_t& outFirst, std::size_t& outLast) const;
+
+        /**
+         * @brief The range of items worth describing in a uniform grid.
+         *
+         * `plan.md` STUDIO-30010, the grid's answer to @ref visibleRows. Culling *inside* the loop
+         * is not the same thing: it stops the drawing and still walks every item, which at a
+         * hundred thousand assets is a hundred thousand iterations a pass to show forty.
+         *
+         * More than that, this is answerable *before* the items exist — which is the part that
+         * matters, because the expensive half of a large grid is building the model, not drawing
+         * it. A caller asks the window, then builds only what is in it.
+         *
+         * @param cellWidth Width of one cell, spacing excluded.
+         * @param cellHeight Height of one cell, spacing excluded.
+         * @param spacing The gap between cells, and the margin before the first.
+         * @param itemCount How many items there are.
+         * @param outColumns Receives how many fit across, never less than one.
+         * @param outFirst Receives the first visible item's index.
+         * @param outLast Receives one past the last.
+         */
+        void visibleCells(float cellWidth, float cellHeight, float spacing, std::size_t itemCount,
+                          std::size_t& outColumns, std::size_t& outFirst,
+                          std::size_t& outLast) const;
     };
+
+    /**
+     * @brief How tall a uniform grid's content is, for @ref StudioScrollOptions::contentHeight.
+     *
+     * The same arithmetic @ref StudioScrollResult::visibleCells does, available *before* the scroll
+     * region exists — which is the order a caller needs it in, because the extent has to be handed
+     * to `studioBeginScroll` and the window can only be asked afterwards.
+     *
+     * @param viewportWidth The width the cells are laid out across.
+     * @param cellWidth Width of one cell, spacing excluded.
+     * @param cellHeight Height of one cell, spacing excluded.
+     * @param spacing The gap between cells, and the margin before the first.
+     * @param itemCount How many items there are.
+     * @return The total height, including the margin at each end.
+     */
+    [[nodiscard]] float studioGridContentHeight(float viewportWidth, float cellWidth,
+                                                float cellHeight, float spacing,
+                                                std::size_t itemCount);
+
+    /**
+     * @brief How many cells of @p cellWidth fit across @p viewportWidth, never fewer than one.
+     *
+     * One function rather than the same `floor` written at each call site: a grid whose extent and
+     * whose layout disagreed about the column count would scroll past its own last row, and the two
+     * are computed in different places.
+     */
+    [[nodiscard]] std::size_t studioGridColumns(float viewportWidth, float cellWidth, float spacing);
 
     /**
      * @brief A scrollable region: wheel, draggable thumb, and a clipped viewport.

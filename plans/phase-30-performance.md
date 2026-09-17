@@ -6,13 +6,13 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 6 of 16 complete `████░░░░░░░░`
+**Progress:** 7 of 16 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-30001` | Background job system: progress, cancellation, errors, clean shutdown | ✅ | `STUDIO-02050` |
 | `STUDIO-30002` | Bounded queues and backpressure for job submission | ⬜ | `STUDIO-30001` |
-| `STUDIO-30010` | Virtualised list and tree infrastructure | ⬜ | `STUDIO-03015` |
+| `STUDIO-30010` | Virtualised list and tree infrastructure | ✅ | `STUDIO-03015` |
 | `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ⬜ | `STUDIO-30010` |
 | `STUDIO-30012` | Caching strategy with explicit invalidation | ✅ | — |
 | `STUDIO-30013` | `SceneDocument` child lookup is an index, not a scan of every entity | ✅ | — |
@@ -185,6 +185,37 @@ failed early — 8.6 ms against the 21.5 ms a real project cost. It now writes r
 root. A benchmark that only ever sees the fast path cannot see the problem, which is the thing this
 one exists for; that it now reports 9.5 ms *with* a root where it reported 9.4 ms without one is
 itself the result, because with the cache having a project stopped costing anything.
+
+### `STUDIO-30010` — Virtualised list and tree infrastructure
+
+**Half of it was already there, and saying which half is the honest part.** `StudioScrollResult::visibleRows`
+has existed since `STUDIO-03015`'s scroll region, and `StudioTreeView` and the Output Log both build
+only the rows in its window — a scene with fifty thousand entities already costs what one with five
+costs. What had no equivalent was the **grid**, and the grid is what a content browser is.
+
+**Culling inside the loop is not virtualisation.** The Content Browser's grid walked every card and
+skipped the ones off screen. That stops the drawing and still walks the list — a hundred thousand
+iterations a pass to show forty — and, more importantly, it cannot stop the model being built,
+because by then it has been. `StudioScrollResult::visibleCells` answers the window *before* any item
+exists, which is the shape a caller needs to build only what it draws.
+
+**The extent and the layout now share one function.** `studioGridColumns` and
+`studioGridContentHeight` are computed in different places by different callers, and a grid whose
+two ideas of the column count disagreed would scroll past its own last row. One function, used by
+both.
+
+**What this does not fix, and which task does.** At 1 500 assets the loop was never the cost:
+`--ui-benchmark=content` reads 9.6–10.4 ms across runs, against 9.5 ms before — inside the noise,
+because the dominant cost is now `studioContentCards` building all 1 500 cards on every pass. That
+is `STUDIO-09016`'s work, and this is the infrastructure it needs: the window is the thing that lets
+a listing be built for forty items instead of a hundred thousand.
+
+**Verification.** `tests/StudioVirtualisationTests.cpp` tests both windows as arithmetic rather than
+through a frame, because that is what they are: the list window's size and its one row of slack at
+each end, the same window at a hundred thousand rows as at a thousand, the column count either side
+of each boundary and floored at one, the extent matching the rows the window produces, the grid
+window moving with the scroll without growing, and the awkward cases — nothing to show, a zero-height
+cell, scrolled past the end, and the negative offset an over-scroll produces for a frame.
 
 ### `STUDIO-30013` — `SceneDocument` child lookup is an index, not a scan of every entity
 

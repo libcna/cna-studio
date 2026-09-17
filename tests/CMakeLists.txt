@@ -40,6 +40,7 @@ add_executable(cna-studio-tests
     StudioContentBrowserTests.cpp
     AssetDependencyTests.cpp
     StudioJobTests.cpp
+    StudioVirtualisationTests.cpp
     StudioDialogTests.cpp
     StudioDockDragTests.cpp
     StudioEmptyStateTests.cpp

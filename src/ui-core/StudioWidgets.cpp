@@ -699,6 +699,52 @@ namespace CNA::Studio
         outLast = std::min(rowCount, first + visible);
     }
 
+    std::size_t studioGridColumns(float viewportWidth, float cellWidth, float spacing)
+    {
+        if (cellWidth <= 0.0f) { return 1; }
+
+        // Floored at one: a panel narrower than a card still has to show it, clipped, rather than
+        // dividing by zero and drawing nothing.
+        return static_cast<std::size_t>(
+            std::max(1.0f, std::floor((viewportWidth - spacing) / (cellWidth + spacing))));
+    }
+
+    float studioGridContentHeight(float viewportWidth, float cellWidth, float cellHeight,
+                                  float spacing, std::size_t itemCount)
+    {
+        if (itemCount == 0) { return 0.0f; }
+
+        const std::size_t columns = studioGridColumns(viewportWidth, cellWidth, spacing);
+        const std::size_t rows = (itemCount + columns - 1) / columns;
+        return static_cast<float>(rows) * (cellHeight + spacing) + spacing;
+    }
+
+    void StudioScrollResult::visibleCells(float cellWidth, float cellHeight, float spacing,
+                                          std::size_t itemCount, std::size_t& outColumns,
+                                          std::size_t& outFirst, std::size_t& outLast) const
+    {
+        outColumns = studioGridColumns(viewport.width, cellWidth, spacing);
+        outFirst = 0;
+        outLast = 0;
+        if (cellHeight <= 0.0f || itemCount == 0) { return; }
+
+        const float stride = cellHeight + spacing;
+        const auto firstRow =
+            static_cast<std::size_t>(std::max(0.0f, std::floor((offsetY - spacing) / stride)));
+
+        const std::size_t rows = (itemCount + outColumns - 1) / outColumns;
+        if (firstRow >= rows) { outFirst = outLast = itemCount; return; }
+
+        // One row of slack at each end, exactly as visibleRows takes: a row scrolled half out of
+        // view is still described, and the edge of the grid does not pop in and out as the offset
+        // crosses a row boundary.
+        const auto visibleRowCount =
+            static_cast<std::size_t>(std::ceil(viewport.height / stride)) + std::size_t{2};
+
+        outFirst = firstRow * outColumns;
+        outLast = std::min(itemCount, (firstRow + visibleRowCount) * outColumns);
+    }
+
     StudioScrollResult studioBeginScroll(StudioFrame& frame, WidgetId id, const UiRect& bounds,
                                          const StudioScrollOptions& options)
     {

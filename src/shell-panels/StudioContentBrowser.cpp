@@ -1356,21 +1356,29 @@ namespace CNA::Studio
         const float labelHeight = metricOf(theme, StudioMetric::RowHeight) * 1.6f;
         const float cardHeight = card + labelHeight;
 
-        // Columns from the width available, floored at one: a panel narrower than a card still has
-        // to show it, clipped, rather than dividing by zero and drawing nothing.
-        const auto columns = static_cast<std::size_t>(
-            std::max(1.0f, std::floor((bounds.width - spacing) / (card + spacing))));
-        const std::size_t rows = (cards.size() + columns - 1) / columns;
-
         StudioScrollOptions scroll;
-        scroll.contentHeight = static_cast<float>(rows) * (cardHeight + spacing) + spacing;
+
+        // Through the shared helper rather than the same `floor` written here (STUDIO-30010): the
+        // extent and the layout are computed in different places, and a grid whose two ideas of the
+        // column count disagreed would scroll past its own last row.
+        scroll.contentHeight =
+            studioGridContentHeight(bounds.width, card, cardHeight, spacing, cards.size());
         scroll.wheelStep = (cardHeight + spacing) * 0.5f;
 
         const StudioScrollResult view =
             studioBeginScroll(frame, frame.ids().make("contentgrid"), bounds, scroll);
 
+        // The window, rather than a loop over everything that skips what it cannot see. Culling
+        // inside the loop stops the drawing and still walks every card, which at a hundred thousand
+        // assets is a hundred thousand iterations a pass to show forty.
+        std::size_t columns = 1;
+        std::size_t firstVisible = 0;
+        std::size_t lastVisible = 0;
+        view.visibleCells(card, cardHeight, spacing, cards.size(), columns, firstVisible,
+                          lastVisible);
+
         frame.ids().push("cards");
-        for (std::size_t index = 0; index < cards.size(); ++index)
+        for (std::size_t index = firstVisible; index < lastVisible; ++index)
         {
             const StudioContentCard& entry = cards[index];
             const std::size_t column = index % columns;
@@ -1383,13 +1391,6 @@ namespace CNA::Studio
                     + static_cast<float>(row) * (cardHeight + spacing),
                 card, cardHeight};
 
-            // Culled against the viewport rather than left to the scissor. A project with four
-            // thousand assets in one folder would otherwise describe four thousand widgets to show
-            // twenty, and each one registers with the router whether or not it is visible.
-            if (box.bottom() < view.viewport.top() || box.top() > view.viewport.bottom())
-            {
-                continue;
-            }
 
             frame.ids().pushIndex(static_cast<std::int64_t>(index));
 
