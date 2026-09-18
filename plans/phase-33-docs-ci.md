@@ -61,6 +61,16 @@ same treatment, so this is a sweep rather than a one-line fix.
 **Not weakened in the meantime.** The assertion stays exactly as it is until then: a test that is
 right and occasionally unlucky is worth more than one relaxed into never failing.
 
+**Seen a second time, and the second one is not identified.** During `STUDIO-10006` a TSan run
+reported one failure out of 1522 cases and the name was not captured. Sixteen consecutive TSan runs
+since — four immediately, then a twelve-run loop — have all been clean, so the rate is low enough
+that reproducing it on demand is not practical. It is recorded here rather than rounded off, and it
+is recorded as *unidentified*: the frame-counting pattern above is the obvious suspect and there is
+no evidence it was this one. What both sightings have in common is a loaded machine, which is what
+the pattern is sensitive to and is also what a CI runner is. Whoever does this sweep should start by
+finding every test that drives background work through a fixed number of frames, rather than by
+trying to reproduce either sighting.
+
 ### `STUDIO-33013` — Visual tests at multiple resolutions
 
 **Acceptance.** The shell is rasterised at 1280x720, 1600x900, 1920x1080, 2560x1440 and 3440x1440 —
