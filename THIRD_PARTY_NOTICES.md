@@ -1,5 +1,14 @@
 # Third-party components
 
+Every file under `third_party/` is listed in `third_party/PROVENANCE.tsv` with its origin, licence,
+version and hash, and `tests/ThirdPartyProvenanceTests.cpp` fails the build when the tree and that
+list disagree — a file vendored without a record, a record for a file that has gone, or a vendored
+file that has drifted from the hash it was recorded with (`plan.md` STUDIO-10012).
+
+That file is the machine-checkable half. This one is where the *reasons* live, which is what an
+audit actually needs: a licence file says what may be done with a dependency and cannot say why it
+is here, or what was considered instead.
+
 ## cgltf
 
 `third_party/cgltf/` contains cgltf version 1.15, by Johannes Kuhlmann and contributors, licensed
@@ -15,6 +24,13 @@ forbids the editor from reaching into CNA's internals.
 `cgltf_impl.cpp` is *not* upstream. cgltf is header-only and requires exactly one translation unit
 to define `CGLTF_IMPLEMENTATION`; upstream ships no such file, so that file is this repository's
 and carries this repository's licence.
+
+`cgltf_prefixed.h` is not upstream either, and for a sharper reason. CNA vendors the same cgltf and
+compiles its implementation, and cgltf declares its whole API inside `extern "C"` — so a build that
+links both defines the same unmangled symbols twice and fails at the link with "multiple definition
+of cgltf_parse". A namespace does not help: `extern "C"` is the instruction to ignore one. That
+header renames cgltf's public symbols so the two copies cannot collide, and the file's own comment
+explains why every caller must include it rather than `cgltf.h`.
 
 ## stb_truetype
 

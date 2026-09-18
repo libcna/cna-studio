@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 1 of 14 complete `░░░░░░░░░░░░`
+**Progress:** 2 of 14 complete `█░░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,7 +21,7 @@
 | `STUDIO-10009` | Animation import | ⬜ | `STUDIO-21001` |
 | `STUDIO-10010` | Environment map import and processing | ⬜ | `STUDIO-20001` |
 | `STUDIO-10011` | Import jobs are cancellable and report progress accurately | ⬜ | `STUDIO-30001` |
-| `STUDIO-10012` | Provenance record for every third-party dependency | ⬜ | — |
+| `STUDIO-10012` | Provenance record for every third-party dependency | ✅ | — |
 | `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ⬜ | `STUDIO-10011` |
 | `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | 🔬 | `STUDIO-10012` |
 
@@ -112,4 +112,36 @@ thread, or the alternative has been chosen and `STUDIO-09003` has been rewritten
 ### `STUDIO-10012` — Provenance record for every third-party dependency
 
 **Acceptance.** Provenance, licence, version and reason for inclusion recorded before a dependency is added
+
+**Done, and the point of doing it now is that it is a gate rather than a habit.** `THIRD_PARTY_
+NOTICES.md` already carried the reasons for everything vendored — that was written as each
+dependency arrived, which is the rule working. What it could not do is fail. A rule of the form
+"recorded before it is added" decays the ordinary way: somebody drops a header into `third_party/`
+to get a build working, means to write it up, and does not; by the time anybody audits the tree the
+file has been there for months and nobody remembers where it came from.
+
+So the facts now live in `third_party/PROVENANCE.tsv` — path, hash, licence, version, origin, one
+row per file — and `tests/ThirdPartyProvenanceTests.cpp` walks the directory and fails on a file
+that is not listed, a listing for a file that has gone, or a hash that no longer matches. Both
+failure modes were checked by causing them. `THIRD_PARTY_NOTICES.md` keeps the reasons, and the test
+requires every component to be named there too, so the write-up and the tree cannot drift into
+describing different sets of things.
+
+**The audit found one gap and one inconsistency.** `third_party/cgltf/cgltf_prefixed.h` was in the
+tree and in nobody's write-up — it is this repository's own file, and "this repository's own" is a
+licence statement that has to be made rather than assumed. And cgltf was described as "verbatim
+copies of upstream" with no hash, where stb_truetype and the fonts had recorded theirs; every
+vendored file now has one, so "verbatim" is checked rather than asserted. The four hashes that were
+already recorded all still matched.
+
+**SHA-256 is written out in the test.** Studio's core has no cryptographic dependency and is not
+acquiring one in order to check its dependencies, which would be funny in the wrong way. It is sixty
+lines of FIPS 180-4 and the known-answer vectors beside it are what make it trustworthy — a hash
+subtly wrong would report every vendored file as drifted, which reads as a supply-chain scare rather
+than as a bug.
+
+**What this unblocks.** `STUDIO-10014` — how Studio decodes an image with no graphics device — is
+the decision that has been waiting on this, because the candidate answer is a vendored CPU decoder
+and the rule was that a dependency arrives with its provenance recorded. The rule is now enforceable,
+so that decision can be taken on its merits.
 

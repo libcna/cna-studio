@@ -59,13 +59,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**295 of 576 tasks complete** `████████████░░░░░░░░░░░░░`  51.2%
+**296 of 576 tasks complete** `████████████░░░░░░░░░░░░░`  51.4%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 295 |
+| ✅ Complete | 296 |
 | 🔄 In progress | 8 |
-| ⬜ Not started | 263 |
+| ⬜ Not started | 262 |
 | ⛔ Deferred | 3 |
 | 🔬 Blocked | 6 |
 | ⊘ Superseded | 1 |
@@ -91,7 +91,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 7 | [Existing-panel migration](plans/phase-07-panel-migration.md) | `STUDIO-07NNN` | ✅ | 46 | 45 | `█████████░` |
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ✅ | 12 | 12 | `██████████` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 17 | 14 | `████████░░` |
-| 10 | [Asset pipeline and importing](plans/phase-10-asset-pipeline.md) | `STUDIO-10NNN` | ⬜ | 14 | 1 | `░░░░░░░░░░` |
+| 10 | [Asset pipeline and importing](plans/phase-10-asset-pipeline.md) | `STUDIO-10NNN` | ⬜ | 14 | 2 | `█░░░░░░░░░` |
 | 11 | [3D viewport 2](plans/phase-11-viewport.md) | `STUDIO-11NNN` | 🔄 | 15 | 6 | `████░░░░░░` |
 | 12 | [Selection and gizmos 2](plans/phase-12-gizmos.md) | `STUDIO-12NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
 | 13 | [World Outliner 2](plans/phase-13-outliner.md) | `STUDIO-13NNN` | ⬜ | 12 | 1 | `░░░░░░░░░░` |
