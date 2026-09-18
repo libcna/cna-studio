@@ -287,6 +287,21 @@ namespace CNA::Studio
                                                      : kUiTextureNone;
                 };
 
+                // Pixels made on a worker, turned into a texture by the one module that has a
+                // device (STUDIO-35041). The cache keyed on `key` lives in the viewport, because
+                // the texture's lifetime is the device's business rather than the panel's.
+                services.uploadThumbnail = [this](const Uuid& assetId,
+                                                  const StudioThumbnail& thumbnail) {
+                    return sceneViewport_ != nullptr
+                        ? sceneViewport_->uploadThumbnail(assetId, thumbnail.key, thumbnail.width,
+                                                          thumbnail.height, thumbnail.pixels)
+                        : kUiTextureNone;
+                };
+
+                services.releaseThumbnail = [this](const Uuid& assetId) {
+                    if (sceneViewport_ != nullptr) { sceneViewport_->releaseThumbnail(assetId); }
+                };
+
                 // What the material editor tells a user about their own build (STUDIO-07046).
                 services.modelEffectName = [this] {
                     return sceneViewport_ != nullptr ? sceneViewport_->getModelEffectName()

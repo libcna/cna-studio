@@ -227,6 +227,15 @@ namespace CNA::Studio
         // Thumbnails for whatever the browser last drew, and cancellation for whatever it has
         // scrolled past (STUDIO-09003). Budgeted for the same reason the drain below is: one poll
         // must not turn a folder into a queue, and the next poll is a sixtieth of a second away.
+        // The host is told when a thumbnail is dropped, so its textures are bounded by the cache
+        // rather than by everything the user has ever scrolled past (STUDIO-35041). Installed here
+        // rather than at construction because the services arrive afterwards.
+        if (services_.releaseThumbnail && !thumbnailReleaseInstalled_)
+        {
+            thumbnails_.setOnDropped(services_.releaseThumbnail);
+            thumbnailReleaseInstalled_ = true;
+        }
+
         (void)thumbnails_.pump(jobs_, context_.getAssets(), 4);
 
         // The one crossing background work makes into the document (STUDIO-30001). Budgeted, so a
@@ -1048,12 +1057,26 @@ namespace CNA::Studio
 
         // The Content Browser (STUDIO-07008), the fourth ported panel.
         shell.setPanelContent("content", [this](StudioFrame& frame, const UiRect& bounds) {
+            // The browser asks for a texture; the cache has the pixels; only the host can make one
+            // (STUDIO-35041). Three responsibilities, and the binder is where they meet -- which is
+            // why the resolver is built here rather than handed to the panel as state.
+            StudioContentBrowserServices services;
+            if (services_.uploadThumbnail)
+            {
+                services.thumbnailTexture = [this](const Uuid& id) -> UiTextureId {
+                    const StudioThumbnail* thumbnail = thumbnails_.find(id);
+                    if (thumbnail == nullptr || thumbnail->isEmpty()) { return kUiTextureNone; }
+                    return services_.uploadThumbnail(id, *thumbnail);
+                };
+            }
+
             const StudioContentBrowserResult content =
-                studioContentBrowser(frame, bounds, context_, contentState_);
+                studioContentBrowser(frame, bounds, context_, contentState_, services);
             if (frame.isDrawPass())
             {
                 counts_.contentRowsDrawn = content.rowsDrawn;
                 counts_.contentRowsTotal = content.rowsTotal;
+                counts_.contentThumbnailsDrawn = content.thumbnailsDrawn;
 
                 // What is on screen is what is worth a thumbnail (STUDIO-09003). Recorded on the
                 // draw pass and acted on in `poll`, so the drawing itself starts nothing: the

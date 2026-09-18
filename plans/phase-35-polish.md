@@ -36,7 +36,7 @@ no icons, no layout, no trade dress. Where these tools agree on something, they 
 true — axis colours, a property grid's shape, what a tab strip looks like — and Studio follows the
 truth rather than any one product's expression of it.
 
-**Progress:** 14 of 38 complete `████░░░░░░░░`
+**Progress:** 15 of 38 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -63,7 +63,7 @@ truth rather than any one product's expression of it.
 | `STUDIO-35034` | Entity and asset reference fields that show what they point at | ⬜ | `STUDIO-35033` |
 | `STUDIO-35035` | Multi-selection state in the Details panel | ⬜ | `STUDIO-35033` |
 | `STUDIO-35040` | Content Browser card grid, with a list/grid switch | ✅ | `STUDIO-35030` |
-| `STUDIO-35041` | Real content thumbnails, cached and generated off the frame | ⬜ | `STUDIO-35040` |
+| `STUDIO-35041` | Real content thumbnails, cached and generated off the frame | ✅ | `STUDIO-35040` |
 | `STUDIO-35042` | Content Browser search and type filters | ⬜ | `STUDIO-35040` |
 | `STUDIO-35050` | Viewport toolbar: view, transform mode, space and snap, over the scene | ✅ | `STUDIO-35021` |
 | `STUDIO-35051` | Viewport grid that reads as a ground plane, with origin axes | ⬜ | — |
@@ -464,3 +464,37 @@ out — the value being the half anybody is looking for. And the left-hand messa
 answer to "what am I looking at", is primary text unconditionally. It used to share the build
 target's grey unless the scene was dirty, which made the project's own name the faintest deliberate
 text in the window.
+
+### `STUDIO-35041` — Real content thumbnails, cached and generated off the frame
+
+**Done**, and it is the visible end of a chain rather than a feature on its own: `STUDIO-10014`
+gave Studio a CPU decoder, `STUDIO-09003` made the thumbnails on worker threads, `STUDIO-09004`
+keyed them on what they were made from, and this draws them.
+
+**Three responsibilities, deliberately kept apart.** The cache has pixels and no idea what a texture
+is. The grid wants a texture and cannot make one. Only `cna-studio-viewport` may touch a graphics
+device (decision D-03). So the browser gains a `StudioContentBrowserServices` with one function —
+asset id to `UiTextureId` — the binder builds it from the cache and the host's uploader, and the
+viewport owns the texture because a texture's lifetime is the device's business.
+
+**Unset is the quiet default, not a degraded mode.** Every CNA-free build, the headless preview and
+the whole test suite leave the seam empty, and the grid draws its icons exactly as it did before
+thumbnails existed. That is why `STUDIO-35040` put the icon in the rectangle a thumbnail would use:
+nothing moves when one arrives, and nothing moves when one cannot be made.
+
+**The host caches on the thumbnail's key, not on the asset's id.** It is asked once per visible card
+per draw pass — forty times a frame, twice a frame — so re-uploading would be a texture upload per
+card per pass, which is precisely what a thumbnail was supposed to save. Comparing the pixels
+instead would cost more than the upload it avoided, so `StudioThumbnail` carries the content-and-
+settings key it was made under and the host compares that. It changes exactly when the picture does.
+
+**And the host is told when to let go.** The cache is bounded at 256 entries and a host's textures
+are not, so without an eviction hook a project of a hundred thousand images fills a GPU with
+pictures of folders nobody is in — a leak invisible until somebody profiles memory on a real
+project. `StudioThumbnailCache::setOnDropped` closes that, and a test holds it.
+
+**What a headless suite can and cannot check.** It cannot look at a thumbnail: there is no device,
+so no texture is ever resolved. What it can check is that the grid *asks*, that it draws an image
+when a resolver answers and an icon when it does not, and that `thumbnailsDrawn` counts them —
+because a grid that had silently stopped asking would look identical in every screenshot this
+project takes. The upload itself is compiled in the CNA configuration and exercised there.

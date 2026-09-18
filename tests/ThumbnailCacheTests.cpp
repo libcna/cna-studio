@@ -170,6 +170,17 @@ namespace
         return png;
     }
 
+    UiInputState at(float x, float y)
+    {
+        UiInputState input;
+        input.displayWidth = 1280.0f;
+        input.displayHeight = 720.0f;
+        input.mouseX = x;
+        input.mouseY = y;
+        input.mouseInWindow = true;
+        return input;
+    }
+
     /** @brief Tracks @p relative and returns its id. */
     Uuid track(AssetDatabase& assets, const std::string& relative)
     {
@@ -670,4 +681,119 @@ CNA_STUDIO_TEST(ChangingImporterSettingsRemakesTheThumbnailAlthoughTheFileDidNot
 
     CNA_STUDIO_EXPECT_EQ(cache.pump(jobs, assets), std::size_t{0});
     CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), std::uint64_t{2});
+}
+
+CNA_STUDIO_TEST(TheGridDrawsAThumbnailWhereOneCanBeMadeAndAnIconWhereItCannot)
+{
+    // The difference is invisible to every test this project can run unaided: the headless suite
+    // has no graphics device, so it never resolves a texture, and a grid that had silently stopped
+    // asking would look identical in every screenshot. A fake resolver is how the asking becomes
+    // observable -- and the count is how it stays observable.
+    ScopedProject project{"drawn"};
+    project.write("Assets/A.png", makePng(48, 48, 0x10u, 0x80u, 0x40u));
+    project.write("Assets/B.png", makePng(48, 48, 0x80u, 0x10u, 0x40u));
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    StudioContentBrowserState state;
+    state.view = StudioContentView::Grid;
+    state.folder = "Assets";
+    state.folderPaneWidth = 0.0f;
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("content"));
+
+    StudioContentBrowserServices services;
+    std::size_t asked = 0;
+
+    // Stands in for a host with a device: every asset resolves, so every card should draw one.
+    services.thumbnailTexture = [&asked](const Uuid& id) -> UiTextureId {
+        (void)id;
+        ++asked;
+        return UiTextureId{42};
+    };
+
+    StudioContentBrowserResult drawn;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioContentBrowserResult pass =
+                studioContentBrowser(frame, area, context, state, services);
+            if (frame.isDrawPass()) { drawn = pass; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT_EQ(drawn.thumbnailsDrawn, std::size_t{2});
+    CNA_STUDIO_EXPECT(asked >= 2);
+
+    // A build with no device leaves the seam unset, and the grid draws its icons exactly as it did
+    // before thumbnails existed. That is the headless preview, the whole test suite, and any build
+    // without CNA -- so it has to be the quiet default rather than a degraded mode.
+    StudioContentBrowserResult withoutDevice;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioContentBrowserResult pass =
+                studioContentBrowser(frame, area, context, state);
+            if (frame.isDrawPass()) { withoutDevice = pass; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT_EQ(withoutDevice.thumbnailsDrawn, std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(withoutDevice.rowsTotal, drawn.rowsTotal);
+
+    // And a host that has no texture for a particular asset gets an icon for that card rather than
+    // a blank one -- "not yet" is the normal state of a thumbnail, not an error.
+    StudioContentBrowserServices partial;
+    partial.thumbnailTexture = [](const Uuid&) { return kUiTextureNone; };
+
+    StudioContentBrowserResult none;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("content",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioContentBrowserResult pass =
+                studioContentBrowser(frame, area, context, state, partial);
+            if (frame.isDrawPass()) { none = pass; }
+        }));
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    CNA_STUDIO_EXPECT_EQ(none.thumbnailsDrawn, std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+}
+
+CNA_STUDIO_TEST(DroppingAThumbnailTellsWhoeverUploadedIt)
+{
+    // The cache is bounded and a host's textures are not. Without this a project of a hundred
+    // thousand images fills a GPU with pictures of folders nobody is in -- a leak that is invisible
+    // until somebody profiles memory on a real project.
+    ScopedProject project{"dropped"};
+    project.write("Assets/Gone.png", makePng(32, 32, 0x33u, 0x66u, 0x99u));
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+    const Uuid id = assets.findByPath("Assets/Gone.png")->id;
+
+    std::vector<Uuid> released;
+
+    StudioJobSystem jobs{StudioJobMode::Immediate};
+    StudioThumbnailCache cache;
+    cache.setOnDropped([&released](const Uuid& dropped) { released.push_back(dropped); });
+
+    cache.setWanted({id});
+    cache.pump(jobs, assets);
+    jobs.waitForIdle();
+    jobs.drain();
+    CNA_STUDIO_EXPECT(cache.find(id) != nullptr);
+    CNA_STUDIO_EXPECT(released.empty());
+
+    cache.invalidate(id);
+    CNA_STUDIO_EXPECT_EQ(released.size(), std::size_t{1});
+    if (!released.empty()) { CNA_STUDIO_EXPECT(released.front() == id); }
+
+    // And invalidating an asset with no thumbnail tells nobody, or a host would forget textures it
+    // never made.
+    cache.invalidate(id);
+    CNA_STUDIO_EXPECT_EQ(released.size(), std::size_t{1});
 }

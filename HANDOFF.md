@@ -341,7 +341,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **301 of 576 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **302 of 576 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -580,7 +580,7 @@ synchronous `exists()` calls, measured by stubbing them out rather than by readi
 
 **Phase 31 — Reliability** (1 of 13).
 
-**Phase 35 — Production polish** (14 of 38). **CNA Studio Visual Quality 1.0**, brought forward from
+**Phase 35 — Production polish** (15 of 38). **CNA Studio Visual Quality 1.0**, brought forward from
 "near the end" to now, for a reason worth repeating: every panel written after this point inherits
 whatever visual language exists when it is written, and restyling six panels is a session while
 restyling twenty-six is a phase. Tab strips that read as tab strips — a recessed strip, inactive

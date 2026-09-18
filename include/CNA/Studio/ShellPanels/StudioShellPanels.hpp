@@ -123,6 +123,30 @@ namespace CNA::Studio
         std::function<UiTextureId(const Uuid&)> assetThumbnail;
 
         /**
+         * @brief Uploads a generated thumbnail's pixels and returns a texture (`STUDIO-35041`).
+         *
+         * Different from @ref assetThumbnail, which resolves an asset's *source file* to a texture
+         * for the sprite preview and therefore decodes on the main thread. These pixels are already
+         * decoded and downscaled — `StudioThumbnailCache` made them on a worker — and all that is
+         * left is the one step that needs a device.
+         *
+         * The host is expected to cache by id and to notice when the pixels change, because this is
+         * called once per visible card per draw pass. Unset — every CNA-free build, the headless
+         * preview, the whole test suite — means the grid draws its icons, which is the honest
+         * answer for a build that cannot make a texture.
+         */
+        std::function<UiTextureId(const Uuid&, const StudioThumbnail&)> uploadThumbnail;
+
+        /**
+         * @brief Forgets a thumbnail texture the host uploaded. Unset forgets nothing.
+         *
+         * Called when the cache evicts, so a host that keeps a texture per thumbnail does not keep
+         * one per thumbnail it has *ever* seen. A project of a hundred thousand images would
+         * otherwise fill a GPU with pictures of folders nobody is in.
+         */
+        std::function<void(const Uuid&)> releaseThumbnail;
+
+        /**
          * @brief Names the effect this build's model pass draws through.
          *
          * `STUDIO-07046`. Which effect a build got decides whether a material's metallic and
@@ -159,6 +183,9 @@ namespace CNA::Studio
         std::size_t outlinerRowsTotal = 0;
         std::size_t detailsRowsDrawn = 0;
         std::size_t contentRowsDrawn = 0;
+
+        /** @brief How many cards drew a real thumbnail. Zero in a build with no graphics device. */
+        std::size_t contentThumbnailsDrawn = 0;
         std::size_t contentRowsTotal = 0;
         std::size_t logRowsDrawn = 0;
         std::size_t logRowsMatching = 0;
@@ -742,6 +769,9 @@ namespace CNA::Studio
          * do about it.
          */
         StudioThumbnailCache thumbnails_;
+
+        /** @brief Whether the host's release hook has been handed to the cache yet. */
+        bool thumbnailReleaseInstalled_ = false;
 
         /** @brief Returns the index, rebuilding it first when something has changed. */
         [[nodiscard]] const AssetDependencyIndex* dependencyIndex();

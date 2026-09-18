@@ -59,13 +59,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**301 of 576 tasks complete** `█████████████░░░░░░░░░░░░`  52.3%
+**302 of 576 tasks complete** `█████████████░░░░░░░░░░░░`  52.4%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 301 |
+| ✅ Complete | 302 |
 | 🔄 In progress | 8 |
-| ⬜ Not started | 259 |
+| ⬜ Not started | 258 |
 | ⛔ Deferred | 3 |
 | 🔬 Blocked | 4 |
 | ⊘ Superseded | 1 |
@@ -116,7 +116,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 32 | [Accessibility and localisation groundwork](plans/phase-32-accessibility.md) | `STUDIO-32NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
 | 33 | [Documentation, templates and CI](plans/phase-33-docs-ci.md) | `STUDIO-33NNN` | 🔄 | 21 | 11 | `█████░░░░░` |
 | 34 | [Release engineering](plans/phase-34-release.md) | `STUDIO-34NNN` | ⬜ | 6 | 0 | `░░░░░░░░░░` |
-| 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | 🔄 | 38 | 14 | `███░░░░░░░` |
+| 35 | [Production polish](plans/phase-35-polish.md) | `STUDIO-35NNN` | 🔄 | 38 | 15 | `███░░░░░░░` |
 
 ## Phase purposes
 

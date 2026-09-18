@@ -303,6 +303,7 @@ namespace CNA::Studio
                     {
                         // Told apart, because "made" and "already had these bytes" are different
                         // facts and a single counter would hide whichever mattered.
+                        entry.thumbnail.key = sharingKey(*content, settings);
                         if (*reused) { ++sharedHits_; }
                         else { ++generated_; }
                     }
@@ -320,10 +321,23 @@ namespace CNA::Studio
         return submitted;
     }
 
+    void StudioThumbnailCache::setOnDropped(std::function<void(const Uuid&)> onDropped)
+    {
+        onDropped_ = std::move(onDropped);
+    }
+
     void StudioThumbnailCache::invalidate(const Uuid& id)
     {
         if (!id.isValid())
         {
+            if (onDropped_)
+            {
+                for (const auto& [dropped, entry] : entries_)
+                {
+                    (void)entry;
+                    onDropped_(dropped);
+                }
+            }
             entries_.clear();
             const std::lock_guard<std::mutex> lock{shared_->mutex};
             shared_->byKey.clear();
@@ -332,7 +346,7 @@ namespace CNA::Studio
 
         // The shared thumbnail stays: another asset may hold the same bytes, and dropping it here
         // would make invalidating one copy cost every other copy a decode.
-        entries_.erase(id);
+        if (entries_.erase(id) > 0 && onDropped_) { onDropped_(id); }
     }
 
     std::size_t StudioThumbnailCache::getCount() const { return entries_.size(); }
@@ -355,6 +369,7 @@ namespace CNA::Studio
         for (std::size_t i = 0; i < excess; ++i)
         {
             entries_.erase(order[i].second);
+            if (onDropped_) { onDropped_(order[i].second); }
             ++evicted_;
         }
     }

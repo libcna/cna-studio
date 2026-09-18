@@ -242,6 +242,39 @@ namespace CNA::Studio
         }
 
         /**
+         * @brief Uploads already-decoded thumbnail pixels as a texture (`plan.md` STUDIO-35041).
+         *
+         * Different from @ref getAssetThumbnail, which loads an asset's *source file* — this is
+         * handed pixels that `StudioThumbnailCache` already decoded and downscaled on a worker
+         * thread, so all that is left is the one step that needs a device.
+         *
+         * Called once per visible card per draw pass, so an implementation caches: @p key changes
+         * exactly when the picture does, which is what makes "has this changed" answerable without
+         * comparing pixels.
+         *
+         * @param assetId The asset, and the cache key.
+         * @param key What the pixels were made from. Re-upload when it differs from last time.
+         * @param width Pixel width.
+         * @param height Pixel height.
+         * @param rgba `width * height * 4` bytes, row-major, top row first.
+         * @return The texture's id, or zero when this build cannot make one.
+         */
+        virtual UiTextureId uploadThumbnail(const Uuid& assetId, const std::string& key,
+                                            std::uint32_t width, std::uint32_t height,
+                                            const std::vector<unsigned char>& rgba)
+        {
+            (void)assetId;
+            (void)key;
+            (void)width;
+            (void)height;
+            (void)rgba;
+            return kUiTextureNone;
+        }
+
+        /** @brief Forgets a texture @ref uploadThumbnail made, when the cache evicts its pixels. */
+        virtual void releaseThumbnail(const Uuid& assetId) { (void)assetId; }
+
+        /**
          * @brief Reads an image file into memory, or returns an empty buffer.
          *
          * Here rather than in a file utility because decoding a PNG needs a graphics API, and this

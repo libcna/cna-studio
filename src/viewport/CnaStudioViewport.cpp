@@ -132,6 +132,70 @@ namespace CNA::Studio
             return uiRenderer_->adoptTexture(assetId, *texture);
         }
 
+        UiTextureId uploadThumbnail(const Uuid& assetId, const std::string& key,
+                                    std::uint32_t width, std::uint32_t height,
+                                    const std::vector<unsigned char>& rgba) override
+        {
+            if (device_ == nullptr || uiRenderer_ == nullptr) { return kUiTextureNone; }
+            if (width == 0 || height == 0) { return kUiTextureNone; }
+
+            const std::size_t expected =
+                static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u;
+            if (rgba.size() != expected) { return kUiTextureNone; }
+
+            // Cached on the key the pixels were made from (STUDIO-35041). This is called once per
+            // visible card per draw pass -- forty times a frame, twice a frame -- so re-uploading
+            // would be a texture upload per card per pass, which is the one thing a thumbnail was
+            // supposed to save. Comparing the pixels instead would cost more than the upload.
+            ThumbnailTexture& cached = thumbnails_[assetId];
+            if (cached.texture != nullptr && cached.key == key)
+            {
+                return uiRenderer_->adoptTexture(assetId, *cached.texture);
+            }
+
+            try
+            {
+                // Color has no default constructor (CNA gap G-01), so the buffer is filled rather
+                // than sized -- the same shape `writeImageFile` above uses, for the same reason.
+                std::vector<Microsoft::Xna::Framework::Color> pixels;
+                pixels.reserve(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+                for (std::size_t pixel = 0;
+                     pixel < static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+                     ++pixel)
+                {
+                    pixels.emplace_back(static_cast<int>(rgba[pixel * 4 + 0]),
+                                        static_cast<int>(rgba[pixel * 4 + 1]),
+                                        static_cast<int>(rgba[pixel * 4 + 2]),
+                                        static_cast<int>(rgba[pixel * 4 + 3]));
+                }
+
+                auto texture = std::make_unique<Microsoft::Xna::Framework::Graphics::Texture2D>(
+                    *device_, static_cast<int>(width), static_cast<int>(height));
+                texture->SetData(pixels.data(), static_cast<int>(pixels.size()));
+
+                cached.key = key;
+                cached.texture = std::move(texture);
+                return uiRenderer_->adoptTexture(assetId, *cached.texture);
+            }
+            catch (const std::exception&)
+            {
+                // A device that refused the upload is a card that draws its icon, not an editor
+                // that stops. Forgotten rather than left half-built, so the next frame tries again
+                // rather than returning a texture that was never filled.
+                thumbnails_.erase(assetId);
+                return kUiTextureNone;
+            }
+        }
+
+        void releaseThumbnail(const Uuid& assetId) override
+        {
+            // Asked for when the cache evicts, so a host holding a texture per thumbnail does not
+            // end up holding one per thumbnail it has ever seen: a project of a hundred thousand
+            // images would otherwise fill a GPU with pictures of folders nobody is in.
+            if (uiRenderer_ != nullptr) { uiRenderer_->releaseAdoptedTexture(assetId); }
+            thumbnails_.erase(assetId);
+        }
+
         [[nodiscard]] ImageBuffer readImageFile(const std::string& path) const override
         {
             if (device_ == nullptr) { return {}; }
@@ -286,12 +350,22 @@ namespace CNA::Studio
         [[nodiscard]] ViewportStats getLastStats() const override { return lastStats_; }
 
     private:
+        /** @brief One uploaded thumbnail, and the key its pixels were made from. */
+        struct ThumbnailTexture
+        {
+            std::string key;
+            std::unique_ptr<Microsoft::Xna::Framework::Graphics::Texture2D> texture;
+        };
+
         CnaSceneRenderer renderer_;
         Microsoft::Xna::Framework::Graphics::GraphicsDevice* device_;
         StudioUiRenderBackend* uiRenderer_;
         StudioCamera2D camera_;
         StudioCamera3D camera3D_;
         ViewportStats lastStats_;
+
+        /** @brief Textures made from `StudioThumbnailCache` pixels. See uploadThumbnail. */
+        std::unordered_map<Uuid, ThumbnailTexture> thumbnails_;
     };
 
     std::unique_ptr<StudioViewport> createCnaStudioViewport(

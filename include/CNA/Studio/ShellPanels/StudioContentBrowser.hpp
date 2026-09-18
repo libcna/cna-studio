@@ -39,6 +39,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 #include <string>
@@ -398,6 +399,15 @@ namespace CNA::Studio
          */
         std::vector<Uuid> visibleAssets;
 
+        /**
+         * @brief How many cards drew a real thumbnail rather than an icon (`plan.md` STUDIO-35041).
+         *
+         * Counted because the difference is invisible to every test this project can run: the
+         * headless suite has no graphics device, so it never resolves a texture, and a grid that
+         * had silently stopped asking would look exactly the same in every screenshot.
+         */
+        std::size_t thumbnailsDrawn = 0;
+
         /** @brief How many listed assets have no source file on disk. */
         std::size_t missingCount = 0;
 
@@ -611,7 +621,29 @@ namespace CNA::Studio
      * @param state The view, the folder, the expansion and the card size.
      * @return What happened.
      */
+    /** @brief What a host can offer the Content Browser that the browser cannot do itself. */
+    struct StudioContentBrowserServices
+    {
+        /**
+         * @brief Resolves an asset to its thumbnail as a UI texture, or `kUiTextureNone`.
+         *
+         * `plan.md` STUDIO-35041. The pixels are made by `StudioThumbnailCache`, which is
+         * CNA-free and runs on worker threads; turning them into a *texture* needs a graphics
+         * device, and exactly one module may have one (decision D-03). So this is a seam, like the
+         * clipboard and the audio preview before it.
+         *
+         * Unset — which is every CNA-free build, the headless preview and the whole test suite —
+         * means the grid draws its icons, exactly as it did before thumbnails existed. That is the
+         * honest answer for a build that cannot make a texture, and it is why the card layout put
+         * the icon in the rectangle a thumbnail would use: nothing moves when one arrives.
+         *
+         * Called once per visible card per draw pass, so it must be a lookup rather than an upload.
+         */
+        std::function<UiTextureId(const Uuid&)> thumbnailTexture;
+    };
+
     StudioContentBrowserResult studioContentBrowser(StudioFrame& frame, const UiRect& bounds,
                                                     StudioContext& context,
-                                                    StudioContentBrowserState& state);
+                                                    StudioContentBrowserState& state,
+                                                    const StudioContentBrowserServices& services = {});
 }

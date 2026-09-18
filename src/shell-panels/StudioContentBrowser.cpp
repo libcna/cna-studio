@@ -118,6 +118,7 @@ namespace CNA::Studio
         StudioContentBrowserResult studioContentGrid(StudioFrame& frame, const UiRect& bounds,
                                                      StudioContext& context,
                                                      StudioContentBrowserState& state,
+                                                     const StudioContentBrowserServices& services,
                                                      StudioContentBrowserResult result);
 
         /**
@@ -1137,7 +1138,8 @@ namespace CNA::Studio
 
     StudioContentBrowserResult studioContentBrowser(StudioFrame& frame, const UiRect& bounds,
                                                     StudioContext& context,
-                                                    StudioContentBrowserState& state)
+                                                    StudioContentBrowserState& state,
+                                                    const StudioContentBrowserServices& services)
     {
         const StudioTheme& theme = frame.theme();
         const float spacing = metricOf(theme, StudioMetric::SpacingSmall);
@@ -1341,7 +1343,7 @@ namespace CNA::Studio
         result = studioContentFolderPane(frame, area, context, state, std::move(result));
 
         result = state.view == StudioContentView::Grid
-            ? studioContentGrid(frame, area, context, state, std::move(result))
+            ? studioContentGrid(frame, area, context, state, services, std::move(result))
             : studioContentList(frame, area, context, state, std::move(result));
 
         // --- The right-click menu (STUDIO-09009) --------------------------------------------
@@ -1589,6 +1591,7 @@ namespace CNA::Studio
     StudioContentBrowserResult studioContentGrid(StudioFrame& frame, const UiRect& bounds,
                                                  StudioContext& context,
                                                  StudioContentBrowserState& state,
+                                                 const StudioContentBrowserServices& services,
                                                  StudioContentBrowserResult result)
     {
         const StudioTheme& theme = frame.theme();
@@ -1711,17 +1714,34 @@ namespace CNA::Studio
                                                : StudioColorRole::Border),
                     metricOf(theme, StudioMetric::BorderWidth));
 
-                // The icon fills most of the card, which is what makes this a grid of *things*
-                // rather than a grid of buttons with pictures on them. STUDIO-35041 replaces it
-                // with the asset's own thumbnail where one can be made; the layout does not change
-                // when it does, which is why the icon is drawn into the same rectangle.
+                // The asset's own picture where one can be made, and its icon where one cannot
+                // (STUDIO-35041). The same rectangle either way, which is why STUDIO-35040 put the
+                // icon here in the first place: a grid whose cards changed size when a thumbnail
+                // arrived would reflow itself as a folder loaded.
                 const float art = card * 0.56f;
-                studioDrawIcon(frame,
-                               UiRect{std::round(box.centerX() - art * 0.5f),
-                                      std::round(box.top() + (card - art) * 0.5f), art, art},
-                               entry.icon,
-                               theme.color(entry.missing ? StudioColorRole::Warning
-                                                         : StudioColorRole::TextSecondary));
+                const UiRect artBox{std::round(box.centerX() - art * 0.5f),
+                                    std::round(box.top() + (card - art) * 0.5f), art, art};
+
+                const UiTextureId thumbnail =
+                    (!entry.isFolder() && !entry.missing && services.thumbnailTexture)
+                        ? services.thumbnailTexture(entry.assetId)
+                        : kUiTextureNone;
+
+                if (thumbnail != kUiTextureNone)
+                {
+                    // Fitted rather than stretched: a thumbnail is a downscale of the source and
+                    // keeps its proportions, so drawing it into a square would make every
+                    // non-square texture a lie about its own shape -- which is the one thing a
+                    // thumbnail must not be.
+                    frame.drawList().drawImage(artBox, thumbnail);
+                    ++result.thumbnailsDrawn;
+                }
+                else
+                {
+                    studioDrawIcon(frame, artBox, entry.icon,
+                                   theme.color(entry.missing ? StudioColorRole::Warning
+                                                             : StudioColorRole::TextSecondary));
+                }
 
                 // Centred, and truncated rather than wrapped: two lines of file name would make
                 // the cards different heights, and a grid whose rows do not line up is not a grid.

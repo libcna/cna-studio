@@ -54,6 +54,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -74,6 +75,16 @@ namespace CNA::Studio
         std::uint32_t width = 0;
         std::uint32_t height = 0;
         std::vector<unsigned char> pixels;
+
+        /**
+         * @brief What this thumbnail was made from — the content and settings key.
+         *
+         * Carried on the thumbnail rather than kept privately (`plan.md` STUDIO-35041) because the
+         * host that uploads these pixels to a texture is called once per visible card per frame and
+         * needs to know when they have actually changed. Comparing the pixels would cost more than
+         * the upload it saves; comparing an id alone would never notice a reimport.
+         */
+        std::string key;
 
         [[nodiscard]] bool isEmpty() const { return pixels.empty(); }
     };
@@ -162,6 +173,15 @@ namespace CNA::Studio
 
         /** @brief Forgets @p id's thumbnail, or every one when @p id is nil. */
         void invalidate(const Uuid& id = {});
+
+        /**
+         * @brief Told when an entry is dropped, so a host holding a texture for it can let go.
+         *
+         * `plan.md` STUDIO-35041. The cache is bounded and the host's textures are not, so without
+         * this a project of a hundred thousand images fills a GPU with pictures of folders nobody
+         * is in. Called from @ref pump's completions and from @ref invalidate, on the main thread.
+         */
+        void setOnDropped(std::function<void(const Uuid&)> onDropped);
 
         /** @brief How many thumbnails are held. */
         [[nodiscard]] std::size_t getCount() const;
@@ -283,6 +303,9 @@ namespace CNA::Studio
                                                     const std::string& settings);
 
         std::shared_ptr<SharedThumbnails> shared_ = std::make_shared<SharedThumbnails>();
+
+        /** @brief Told when an entry is dropped. See setOnDropped. */
+        std::function<void(const Uuid&)> onDropped_;
 
         std::uint64_t cancelled_ = 0;
         std::uint64_t sharedHits_ = 0;
