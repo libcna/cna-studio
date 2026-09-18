@@ -2282,13 +2282,47 @@ namespace
         const std::size_t relinkRows =
             fileMissing ? 1 + std::max<std::size_t>(relinkCandidates.size(), 1) : 0;
 
+        // What the texture importer's settings actually produce (STUDIO-10003). Worked out here
+        // rather than where it is drawn because the scroll extent has to know how many rows the
+        // section will be, and the notes -- the substitutions Studio had to make -- are a row
+        // each. Recomputed every frame and stored nowhere: this is a *derivation* of the facts and
+        // the settings, and a sidecar holding a resolved format would carry a `mipLevels` that
+        // disagrees with the box above it the moment somebody unticks it.
+        if (record->type == AssetType::Texture2D)
+        {
+            StudioTextureSource source;
+            const JsonValue& measuredSize = record->importerSettings["pixelSize"];
+            if (!measuredSize.isNull())
+            {
+                const StudioVector2 pixels =
+                    PropertyValue::fromJson(measuredSize, PropertyType::Vector2).get<StudioVector2>();
+                source.width = static_cast<int>(pixels.x);
+                source.height = static_cast<int>(pixels.y);
+            }
+            source.hasAlphaChannel = record->importerSettings["sourceAlpha"].asBoolean(false);
+
+            result.texturePlan = studioPlanTextureImport(
+                StudioTextureImportSettings::fromJson(record->importerSettings), source);
+        }
+
+        // A heading, the three resolved lines and one row per note -- or, for a file whose header
+        // Studio cannot read, the heading and the one note saying so. The three lines are dropped
+        // in that case rather than filled with "unknown", because the plan declines to resolve a
+        // format at all without the facts to resolve it from.
+        const bool hasTexturePlan = !result.texturePlan.surfaceFormat.empty();
+        const std::size_t textureRows =
+            record->type == AssetType::Texture2D
+                ? 1 + (hasTexturePlan ? 3u : 0u) + result.texturePlan.notes.size()
+                : 0;
+
         // Name, path, kind, a gap, the importer's heading, and one row per setting -- plus the
-        // preview row when this is something that can be heard, and the material editor's own
-        // rows when this is a material: a heading, six fields and the effect line.
+        // preview row when this is something that can be heard, the material editor's own rows
+        // when this is a material -- a heading, six fields and the effect line -- and the texture
+        // plan's rows above.
         const std::size_t rows = 6 + (isAudibleAsset(record->type) ? 1u : 0u)
                                  + (record->type == AssetType::Material ? 8u : 0u)
                                  + (properties != nullptr ? properties->size() : 0)
-                                 + dependencyRows + relinkRows
+                                 + textureRows + dependencyRows + relinkRows
                                  // The File group: its heading, Size and Modified.
                                  + 3;
 
@@ -2606,6 +2640,50 @@ namespace
                 result.edited = true;
                 result.editedProperty = record->sourcePath + "." + property.name;
                 break;
+            }
+
+            frame.ids().pop();
+        }
+
+        // --- What those settings actually produce (STUDIO-10003) -------------------------------
+        //
+        // Below the settings, because it is the consequence of them. The rows worth having are the
+        // last ones: a texture whose settings were honoured exactly says so by having no notes at
+        // all, and the cases where Studio had to substitute something -- DXT on an edge that is
+        // not a multiple of four, or CNA's missing sRGB DXT1 -- are the ones a user would
+        // otherwise discover as a texture that is quietly the wrong format.
+        if (record->type == AssetType::Texture2D)
+        {
+            frame.ids().push("texture-plan");
+            label(nextRow(), "Imports As", StudioColorRole::TextSecondary);
+
+            if (hasTexturePlan)
+            {
+                {
+                    const PropertyRow parts = splitRow(theme, nextRow());
+                    label(parts.label, "Surface Format", StudioColorRole::TextSecondary);
+                    label(parts.control, result.texturePlan.surfaceFormat,
+                          StudioColorRole::TextPrimary);
+                }
+
+                {
+                    const PropertyRow parts = splitRow(theme, nextRow());
+                    label(parts.label, "Mip Levels", StudioColorRole::TextSecondary);
+                    label(parts.control, std::to_string(result.texturePlan.mipLevels),
+                          StudioColorRole::TextPrimary);
+                }
+
+                {
+                    const PropertyRow parts = splitRow(theme, nextRow());
+                    label(parts.label, "On The GPU", StudioColorRole::TextSecondary);
+                    label(parts.control, studioDescribeByteSize(result.texturePlan.estimatedBytes),
+                          StudioColorRole::TextPrimary);
+                }
+            }
+
+            for (const std::string& note : result.texturePlan.notes)
+            {
+                label(nextRow(), note, StudioColorRole::Warning);
             }
 
             frame.ids().pop();

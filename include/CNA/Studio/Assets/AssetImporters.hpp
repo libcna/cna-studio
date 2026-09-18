@@ -95,6 +95,43 @@ namespace CNA::Studio
      */
     [[nodiscard]] std::optional<ImageSize> readImageSize(const std::string& absolutePath);
 
+    /** @brief What an image file's header says about itself. */
+    struct ImageDescription
+    {
+        int width = 0;
+        int height = 0;
+
+        /**
+         * @brief "PNG", "JPEG" or "BMP", read from the file's own magic bytes.
+         *
+         * Never from the extension. A `.png` that is really a JPEG is a file somebody renamed, and
+         * the editor reporting the name back at them is the one answer that helps nobody.
+         */
+        std::string format;
+
+        /**
+         * @brief Whether the encoding carries an alpha channel.
+         *
+         * Not whether any pixel uses it -- that needs a decode, and the question this answers is
+         * whether a compressed import may be DXT1, which the encoding settles on its own. A
+         * paletted PNG is the one case that needs looking past the fixed header, since its
+         * transparency lives in a `tRNS` chunk.
+         */
+        bool hasAlphaChannel = false;
+    };
+
+    /**
+     * @brief Reads an image's dimensions, format and alpha from its header, without decoding it.
+     *
+     * The same three formats and the same bounded walk as readImageSize(), which is a thin wrapper
+     * over this. Separate because most callers want a size and nothing else, and the texture
+     * importer (`plan.md` STUDIO-10003) wants all of it.
+     *
+     * @return The description, or std::nullopt when the file cannot be read or is not one of the
+     *         three formats.
+     */
+    [[nodiscard]] std::optional<ImageDescription> readImageDescription(const std::string& absolutePath);
+
     /**
      * @brief Fills in the facts an importer can determine by reading a file.
      *

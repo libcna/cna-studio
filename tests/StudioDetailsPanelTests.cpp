@@ -1556,15 +1556,44 @@ CNA_STUDIO_TEST(AnOverriddenImportSettingCanBeResetFromTheInspector)
     CNA_STUDIO_EXPECT(last.rowsDrawn > 0);
 
     // The reset sits at the right-hand end of the row, so the sweep runs down that edge. Swept
-    // rather than assuming a row height, so a metric change cannot make this click empty space.
+    // rather than assuming a row height, so a metric change cannot make this click empty space --
+    // and scrolled between sweeps, because the inspector is taller than the panel and the row this
+    // is looking for need not be on the first screenful. A sweep that only searched what happened
+    // to be visible would pass or fail on how many settings the importer declares that week.
+    // Two x positions, because the inspector is taller than the panel and therefore has a
+    // scrollbar: the one that reaches the reset is inside the content, which the scrollbar's
+    // thickness has already been taken out of. Sweeping the bare right edge alone would click the
+    // track and pass for nobody.
+    const float scrollbar = metricOf(StudioTheme::dark(), StudioMetric::ScrollbarThickness);
+    const float wheelAt = bounds.centerX();
+
     bool reset = false;
-    for (float y = bounds.top() + 4.0f; y < bounds.bottom() - 4.0f && !reset; y += 4.0f)
+    for (int screenful = 0; screenful < 8 && !reset; ++screenful)
     {
-        const float x = bounds.right() - 14.0f;
-        shell->renderFrame(at(x, y, false));
-        shell->renderFrame(at(x, y, true));
-        shell->renderFrame(at(x, y, false));
-        reset = context.getAssets().find(id)->importerSettings["generateMipmaps"].isNull();
+        // Scrolled between sweeps, so the row this is looking for does not have to be on the first
+        // screenful. A sweep that only searched what happened to be visible would pass or fail on
+        // how many settings the importer declares that week.
+        if (screenful > 0)
+        {
+            for (int turn = 0; turn < 3; ++turn)
+            {
+                UiInputState wheel = at(wheelAt, bounds.centerY());
+                wheel.wheelY = -1.0f;
+                shell->renderFrame(wheel);
+            }
+        }
+
+        for (float y = bounds.top() + 4.0f; y < bounds.bottom() - 4.0f && !reset; y += 4.0f)
+        {
+            for (const float x : {bounds.right() - 14.0f, bounds.right() - scrollbar - 14.0f})
+            {
+                shell->renderFrame(at(x, y, false));
+                shell->renderFrame(at(x, y, true));
+                shell->renderFrame(at(x, y, false));
+                reset = context.getAssets().find(id)->importerSettings["generateMipmaps"].isNull();
+                if (reset) { break; }
+            }
+        }
     }
 
     if (!reset)
@@ -1580,6 +1609,116 @@ CNA_STUDIO_TEST(AnOverriddenImportSettingCanBeResetFromTheInspector)
         CNA_STUDIO_EXPECT(
             !context.getAssets().find(id)->importerSettings["generateMipmaps"].isNull());
     }
+
+    CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
+    std::filesystem::remove_all(directory, code);
+}
+
+CNA_STUDIO_TEST(ATexturesInspectorSaysWhatItsSettingsActuallyProduce)
+{
+    // `plan.md` STUDIO-10003. The settings above this section are what the user asked for; this is
+    // what they get. The two differ often enough that a user who could not see the difference would
+    // meet it as a texture that is quietly the wrong format.
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / "cna-studio-textureplan-ui";
+    std::error_code code;
+    std::filesystem::remove_all(directory, code);
+    std::filesystem::create_directories(directory / "Textures", code);
+
+    // A PNG header and nothing more. `readImageDescription` never decodes and never checks a CRC,
+    // so this is the whole of what the facts pass reads -- and keeping it to that makes the case
+    // legible in a review, which a committed binary would not be.
+    const auto writePngHeader = [&](const std::string& name, std::uint32_t width,
+                                    std::uint32_t height, unsigned char colorType) {
+        std::vector<unsigned char> png{0x89u, 'P', 'N', 'G', 0x0Du, 0x0Au, 0x1Au, 0x0Au};
+        const auto bigEndian = [&](std::uint32_t value) {
+            png.push_back(static_cast<unsigned char>((value >> 24) & 0xFFu));
+            png.push_back(static_cast<unsigned char>((value >> 16) & 0xFFu));
+            png.push_back(static_cast<unsigned char>((value >> 8) & 0xFFu));
+            png.push_back(static_cast<unsigned char>(value & 0xFFu));
+        };
+        bigEndian(13);
+        for (const char letter : std::string{"IHDR"}) { png.push_back(static_cast<unsigned char>(letter)); }
+        bigEndian(width);
+        bigEndian(height);
+        png.push_back(8);
+        png.push_back(colorType);
+        png.push_back(0);
+        png.push_back(0);
+        png.push_back(0);
+        bigEndian(0);
+
+        std::ofstream stream{directory / "Textures" / name, std::ios::binary};
+        stream.write(reinterpret_cast<const char*>(png.data()),
+                     static_cast<std::streamsize>(png.size()));
+    };
+
+    writePngHeader("Crate.png", 256, 256, 2);  // opaque
+    {
+        std::ofstream stream{directory / "Textures" / "Broken.png", std::ios::binary};
+        stream << "not really a png";
+    }
+
+    StudioContext context;
+    registerBuiltinComponents(context.getComponentRegistry());
+    registerBuiltinImporters(context.getImporterRegistry());
+    context.getAssets().setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Textures").succeeded);
+    (void)applyImporterFacts(context.getAssets());
+
+    const Uuid crate = context.getAssets().findByPath("Textures/Crate.png")->id;
+    const Uuid broken = context.getAssets().findByPath("Textures/Broken.png")->id;
+
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(shell->activatePanel("details"));
+
+    StudioDetailsResult last;
+    CNA_STUDIO_EXPECT(shell->setPanelContent("details",
+        [&](StudioFrame& frame, const UiRect& area) {
+            const StudioDetailsResult pass = studioDetailsPanel(frame, area, context);
+            if (frame.isInputPass()) { last = pass; }
+        }));
+
+    context.selectAsset(crate);
+    shell->renderFrame(at(-1.0f, -1.0f));
+
+    // Defaults: uncompressed, no hardware sRGB, no mips. One level, four bytes a pixel.
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.surfaceFormat, std::string{"Color"});
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.mipLevels, std::uint32_t{1});
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.estimatedBytes, std::uint64_t{256} * 256u * 4u);
+    CNA_STUDIO_EXPECT(last.texturePlan.isExactlyAsAsked());
+
+    // A setting changed through the same command the inspector's own editors use, and the section
+    // follows it on the very next frame. That is the property that makes this a derivation rather
+    // than a fact: nothing was reimported, nothing was written to the sidecar to say so.
+    context.execute(std::make_unique<SetImporterSettingCommand>(
+        context.getAssets(), crate, "outputFormat",
+        PropertyValue{PropertyValue::EnumValue{"DxtCompressed"}}));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.surfaceFormat, std::string{"Dxt1"});
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.estimatedBytes, std::uint64_t{256} * 256u / 2u);
+
+    context.execute(std::make_unique<SetImporterSettingCommand>(
+        context.getAssets(), crate, "generateMipmaps", PropertyValue{true}));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.mipLevels, std::uint32_t{9});
+
+    // sRGB on an opaque compressed texture is the case CNA has no format for, and the inspector
+    // is where a user meets it: the substitution is a row of its own rather than a silent change.
+    context.execute(std::make_unique<SetImporterSettingCommand>(
+        context.getAssets(), crate, "srgbRead", PropertyValue{true}));
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.surfaceFormat, std::string{"Dxt5SrgbEXT"});
+    CNA_STUDIO_EXPECT(!last.texturePlan.isExactlyAsAsked());
+
+    // A file whose header Studio cannot read gets no resolved format at all, rather than one built
+    // out of struct defaults that would read exactly like a real answer.
+    context.selectAsset(broken);
+    shell->renderFrame(at(-1.0f, -1.0f));
+    CNA_STUDIO_EXPECT(last.texturePlan.surfaceFormat.empty());
+    CNA_STUDIO_EXPECT_EQ(last.texturePlan.notes.size(), std::size_t{1});
 
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
     std::filesystem::remove_all(directory, code);

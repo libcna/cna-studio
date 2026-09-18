@@ -38,6 +38,7 @@
 
 #include "CNA/Studio/Assets/AssetDependencies.hpp"
 #include "CNA/Studio/Assets/AssetDocumentCache.hpp"
+#include "CNA/Studio/Assets/TextureImport.hpp"
 #include "CNA/Studio/Core/PropertyValue.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 #include "CNA/Studio/Scene/SpriteAnimation.hpp"
@@ -305,6 +306,17 @@ namespace CNA::Studio
          * caller that logged both the same way would tell the user the opposite of what happened.
          */
         bool resetProperty = false;
+
+        /**
+         * @brief What the shown texture's import settings resolve to, or a default plan otherwise.
+         *
+         * `plan.md` STUDIO-10003. Recomputed each frame and stored nowhere else: it is a
+         * *derivation* of the facts and the settings, and a sidecar holding one would be a
+         * `mipLevels` that disagrees with the "Generate Mipmaps" above it the moment somebody
+         * unticks the box. Reported so a test can assert the inspector says what a setting
+         * actually produces, without reading pixels.
+         */
+        StudioTextureImportPlan texturePlan;
     };
 
     /**

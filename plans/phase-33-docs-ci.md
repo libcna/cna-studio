@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 11 of 21 complete `██████░░░░░░`
+**Progress:** 11 of 22 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,10 +31,35 @@
 | `STUDIO-33019` | The handoff's own arithmetic is checked against the same phase files | ✅ | `STUDIO-33018` |
 | `STUDIO-33020` | Headless test seams maintained for every core subsystem | ⬜ | — |
 | `STUDIO-33021` | CI matrix: Linux, Windows, macOS as infrastructure allows | ⬜ | — |
+| `STUDIO-33026` | A test waiting on a worker counts completions, not frames | ⬜ | `STUDIO-30001` |
 
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-33026` — A test waiting on a worker counts completions, not frames
+
+**Found while doing `STUDIO-10003`**, and filed rather than chased: `ThumbnailCacheTests`'
+`ThumbnailsAreAskedForOnlyForWhatTheBrowserIsShowing` failed once, at the
+`panels.thumbnails().find(shown) != nullptr` line, on a run whose build tree was mid-compile and
+whose cores were all busy. It has not reproduced in any run since, before or after the change.
+
+**Why that is a defect and not bad luck.** The loop counts twelve *frames* and then asserts that a
+thumbnail exists. But the thumbnail is produced on a worker thread, and a frame is not a unit of
+that worker's progress — so the test counts on the consumer's side of an asynchronous boundary and
+asserts on the producer's. On an idle machine twelve frames is far more than enough; on a machine
+whose cores are all taken, the worker need not have been scheduled at all. That is the "counted,
+not timed" rule broken in the way that is hardest to see: the number in the loop *is* a count, and
+it is a count of the wrong thing.
+
+**What it should count.** `StudioThumbnailCache` already reports `getGeneratedCount()`,
+`getFailedCount()` and `getPendingCount()`. A loop that runs until nothing is pending — bounded, and
+failing with what it was still waiting for — asserts the same property and cannot lose a race.
+Every test in the suite that drives a background job through a fixed number of frames wants the
+same treatment, so this is a sweep rather than a one-line fix.
+
+**Not weakened in the meantime.** The assertion stays exactly as it is until then: a test that is
+right and occasionally unlucky is worth more than one relaxed into never failing.
 
 ### `STUDIO-33013` — Visual tests at multiple resolutions
 

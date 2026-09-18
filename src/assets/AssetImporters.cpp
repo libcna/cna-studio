@@ -141,9 +141,38 @@ namespace CNA::Studio
                                                      "Matches XNA's SamplerState presets.");
             filter.enumOptions = {"Point", "Linear", "Anisotropic"};
 
+            // Spelled as XNA's TextureProcessorOutputFormat spells it. XNA's third option,
+            // NoChange, is deliberately missing: it means "keep the source bitmap's own format",
+            // and Studio's only decoder produces eight-bit RGBA whatever it is handed -- so it
+            // would be a choice with one outcome, which is a place for a user to look for
+            // behaviour that is not there (`plan.md` STUDIO-10003).
+            PropertyDescriptor output = makeProperty("outputFormat", "Output Format",
+                                                     PropertyType::Enum,
+                                                     PropertyValue{PropertyValue::EnumValue{"Color"}},
+                                                     "Color is eight bits a channel. DxtCompressed "
+                                                     "is block compression -- DXT1 without alpha at "
+                                                     "an eighth the size, DXT5 with it at a quarter "
+                                                     "-- and needs both edges to be a multiple of 4.");
+            output.enumOptions = {"Color", "DxtCompressed"};
+
+            const auto fact = [](std::string name, std::string display, PropertyType type,
+                                 PropertyValue defaultValue, std::string tooltip) {
+                PropertyDescriptor property = makeProperty(std::move(name), std::move(display), type,
+                                                           std::move(defaultValue), std::move(tooltip));
+                property.readOnly = true;
+                return property;
+            };
+
             descriptor.properties = {
                 std::move(wrap),
                 std::move(filter),
+                std::move(output),
+                makeProperty("srgbRead", "sRGB Read", PropertyType::Boolean,
+                             PropertyValue{false},
+                             "Whether the hardware converts this texture from sRGB to linear as it "
+                             "samples it. Off is XNA's own behaviour -- it renders in gamma space, "
+                             "so the bytes are sampled as they stand -- and off is also the only "
+                             "correct answer for a normal map, a mask or a lookup table."),
                 makeProperty("generateMipmaps", "Generate Mipmaps", PropertyType::Boolean,
                              PropertyValue{false},
                              "Costs a third more memory and is wrong for most 2D art, which is "
@@ -154,16 +183,18 @@ namespace CNA::Studio
                              "by default; turning it off means also passing NonPremultiplied when "
                              "drawing, or the edges of every sprite will halo."),
 
-                // Read-only, because it is a fact about the file rather than a choice about it.
-                // Shown because "why is this sprite blurry" is usually answered by its size.
-                [] {
-                    PropertyDescriptor size = makeProperty("pixelSize", "Pixel Size",
-                                                           PropertyType::Vector2,
-                                                           PropertyValue{StudioVector2{}},
-                                                           "Read from the file's header. Zero means the format is one Studio cannot measure yet.");
-                    size.readOnly = true;
-                    return size;
-                }(),
+                // Read-only, because these are facts about the file rather than choices about it.
+                // Shown because "why is this sprite blurry" is usually answered by its size, and
+                // because the other two are what decide whether the format above can be given.
+                fact("pixelSize", "Pixel Size", PropertyType::Vector2, PropertyValue{StudioVector2{}},
+                     "Read from the file's header. Zero means the format is one Studio cannot "
+                     "measure yet."),
+                fact("sourceFormat", "Source Format", PropertyType::String, PropertyValue{std::string{}},
+                     "Read from the file's magic bytes rather than its name, so a renamed file "
+                     "reports what it actually is."),
+                fact("sourceAlpha", "Source Alpha", PropertyType::Boolean, PropertyValue{false},
+                     "Whether the file's encoding carries an alpha channel -- not whether any "
+                     "pixel uses it. This is what decides DXT1 against DXT5."),
             };
 
             descriptor.unique = true;
@@ -363,7 +394,49 @@ namespace CNA::Studio
         }
     }
 
-    std::optional<ImageSize> readImageSize(const std::string& absolutePath)
+    namespace
+    {
+        /**
+         * @brief Whether a paletted PNG carries a `tRNS` chunk, which is where its alpha lives.
+         *
+         * Colour type 3 is the one case a PNG's fixed header cannot answer: the palette entries
+         * themselves are opaque, and transparency arrives later in an optional chunk. That chunk is
+         * required to appear before the first `IDAT`, so the walk is bounded by the image data
+         * rather than by the end of the file -- a hundred-megabyte PNG costs the same few reads as
+         * a small one.
+         */
+        bool pngPaletteHasTransparency(std::istream& stream)
+        {
+            stream.clear();
+            stream.seekg(8, std::ios::beg);
+
+            // Bounded twice over: by `IDAT` and by a chunk count, because a file whose lengths are
+            // nonsense can otherwise send this round a loop that seeks nowhere.
+            for (int chunk = 0; chunk < 64; ++chunk)
+            {
+                std::array<char, 8> header{};
+                stream.read(header.data(), static_cast<std::streamsize>(header.size()));
+                if (stream.gcount() < static_cast<std::streamsize>(header.size())) { return false; }
+
+                const auto byteAt = [&](std::size_t index) {
+                    return static_cast<std::uint32_t>(static_cast<unsigned char>(header[index]));
+                };
+                const std::uint32_t length = (byteAt(0) << 24) | (byteAt(1) << 16)
+                                             | (byteAt(2) << 8) | byteAt(3);
+                const std::string type{header.data() + 4, 4};
+
+                if (type == "tRNS") { return true; }
+                if (type == "IDAT" || type == "IEND") { return false; }
+
+                // The length, then the four-byte CRC that follows every chunk.
+                stream.seekg(static_cast<std::streamoff>(length) + 4, std::ios::cur);
+                if (!stream) { return false; }
+            }
+            return false;
+        }
+    }
+
+    std::optional<ImageDescription> readImageDescription(const std::string& absolutePath)
     {
         std::ifstream stream{absolutePath, std::ios::binary};
         if (!stream) { return std::nullopt; }
@@ -379,7 +452,7 @@ namespace CNA::Studio
         // PNG: an 8-byte signature, then an IHDR chunk whose first two fields are the width and
         // the height, big-endian. Fixed offsets, so no parsing is needed.
         static const std::array<unsigned char, 8> kPngSignature{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
-        if (read >= 24)
+        if (read >= 26)
         {
             bool isPng = true;
             for (std::size_t index = 0; index < kPngSignature.size(); ++index)
@@ -393,16 +466,31 @@ namespace CNA::Studio
                     return static_cast<int>((byteAt(at) << 24) | (byteAt(at + 1) << 16)
                                             | (byteAt(at + 2) << 8) | byteAt(at + 3));
                 };
-                return ImageSize{bigEndian(16), bigEndian(20)};
+
+                ImageDescription description;
+                description.format = "PNG";
+                description.width = bigEndian(16);
+                description.height = bigEndian(20);
+
+                // IHDR byte 9, which is offset 25: 0 grey, 2 RGB, 3 palette, 4 grey+alpha,
+                // 6 RGBA. Only the palette needs looking further.
+                const std::uint32_t colorType = byteAt(25);
+                description.hasAlphaChannel =
+                    colorType == 4 || colorType == 6
+                    || (colorType == 3 && pngPaletteHasTransparency(stream));
+                return description;
             }
         }
 
         // JPEG: no fixed offsets at all. The size lives in a "start of frame" segment somewhere
         // after a chain of others whose lengths have to be walked -- which is why this needs the
-        // stream rather than the header block above.
+        // stream rather than the header block above. JPEG has no alpha channel in any of its
+        // forms, so there is nothing to look for.
         if (read >= 2 && byteAt(0) == 0xFF && byteAt(1) == 0xD8)
         {
-            return readJpegSize(stream);
+            const std::optional<ImageSize> size = readJpegSize(stream);
+            if (!size) { return std::nullopt; }
+            return ImageDescription{size->width, size->height, "JPEG", false};
         }
 
         // BMP: "BM", then a DIB header whose width and height are little-endian at fixed offsets.
@@ -413,12 +501,35 @@ namespace CNA::Studio
                 return static_cast<std::int32_t>(byteAt(at) | (byteAt(at + 1) << 8)
                                                  | (byteAt(at + 2) << 16) | (byteAt(at + 3) << 24));
             };
+
+            ImageDescription description;
+            description.format = "BMP";
+            description.width = static_cast<int>(littleEndian(18));
             const std::int32_t height = littleEndian(22);
-            return ImageSize{static_cast<int>(littleEndian(18)),
-                             static_cast<int>(height < 0 ? -height : height)};
+            description.height = static_cast<int>(height < 0 ? -height : height);
+
+            // Bit count, at offset 28. Thirty-two bits is the only BMP depth with a fourth
+            // channel; a `BITMAPINFOHEADER` leaves it undefined and a `BITMAPV4HEADER` gives it a
+            // mask, and neither distinction changes the answer to "may this be DXT1".
+            if (read >= 30)
+            {
+                const std::uint32_t bitCount = byteAt(28) | (byteAt(29) << 8);
+                description.hasAlphaChannel = bitCount == 32;
+            }
+            return description;
         }
 
         return std::nullopt;
+    }
+
+    std::optional<ImageSize> readImageSize(const std::string& absolutePath)
+    {
+        // The size is the part of the description that had a caller first, and most of them still
+        // want only that. Kept as its own name rather than making every one of them reach past a
+        // format and an alpha flag they have no use for.
+        const std::optional<ImageDescription> description = readImageDescription(absolutePath);
+        if (!description) { return std::nullopt; }
+        return ImageSize{description->width, description->height};
     }
 
     bool Detail::writeFactsIfChanged(AssetDatabase& assets, const AssetRecord& record,
@@ -638,29 +749,21 @@ namespace CNA::Studio
 
     bool Detail::applyTextureFacts(AssetDatabase& assets, const AssetRecord& record)
     {
-        const std::optional<ImageSize> size = readImageSize(assets.resolvePath(record.sourcePath));
-        if (!size) { return false; }
+        const std::optional<ImageDescription> description =
+            readImageDescription(assets.resolvePath(record.sourcePath));
+        if (!description) { return false; }
 
-        const StudioVector2 measured{static_cast<float>(size->width),
-                                     static_cast<float>(size->height)};
+        // Through the shared writer like every other facts pass, rather than a comparison written
+        // out here. Three facts instead of one is where a hand-rolled "did anything change" starts
+        // getting one of them wrong, and getting it wrong means a sidecar rewritten on every open.
+        JsonValue facts = JsonValue::makeObject();
+        facts.set("pixelSize", PropertyValue{StudioVector2{static_cast<float>(description->width),
+                                                           static_cast<float>(description->height)}}
+                                   .toJson());
+        facts.set("sourceFormat", JsonValue{description->format});
+        facts.set("sourceAlpha", JsonValue{description->hasAlphaChannel});
 
-        const JsonValue& stored = record.importerSettings["pixelSize"];
-        if (!stored.isNull()
-            && PropertyValue::fromJson(stored, PropertyType::Vector2).get<StudioVector2>() == measured)
-        {
-            return false;
-        }
-
-        AssetRecord* mutableRecord = assets.findMutable(record.id);
-        if (mutableRecord == nullptr) { return false; }
-
-        if (mutableRecord->importerSettings.isNull())
-        {
-            mutableRecord->importerSettings = JsonValue::makeObject();
-        }
-        mutableRecord->importerSettings.set("pixelSize", PropertyValue{measured}.toJson());
-        assets.writeSidecar(record.id);
-        return true;
+        return writeFactsIfChanged(assets, record, facts);
     }
 
     void registerBuiltinImporters(ComponentRegistry& registry)

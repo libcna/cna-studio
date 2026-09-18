@@ -6,13 +6,13 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 4 of 14 complete `███░░░░░░░░░`
+**Progress:** 5 of 14 complete `████░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-10001` | Import settings model, persisted per asset and preserved across reimport | ✅ | `STUDIO-09014` |
 | `STUDIO-10002` | Importer plugin interface | ✅ | `STUDIO-10001` |
-| `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ⬜ | `STUDIO-10001` |
+| `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ✅ | `STUDIO-10001` |
 | `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ⬜ | `STUDIO-10002` |
 | `STUDIO-10005` | Audio import | ⬜ | `STUDIO-10002` |
 | `STUDIO-10006` | Font import | ⬜ | `STUDIO-04005` |
@@ -116,6 +116,87 @@ by causing it: an added `#include "stb_image.h"` in `AssetShortcuts.cpp` fails t
 
 **An asset type nothing claims is left alone** rather than reported as a failure. A project holds
 files Studio does not import, and a scan that complained about each of them is a scan nobody reads.
+
+### `STUDIO-10003` — Texture import: formats, sRGB, mips, compression settings
+
+**Acceptance.** The four settings exist, mean something specific, survive a reimport, and the
+combinations that cannot be honoured are said rather than silently resolved.
+
+**What the settings are.** `outputFormat` (`Color` or `DxtCompressed`) and `srgbRead` are new;
+`generateMipmaps` and `premultiplyAlpha` were already there and are unchanged. `outputFormat` is
+spelled the way XNA's `TextureProcessorOutputFormat` spells it, and XNA's third option, `NoChange`,
+is deliberately missing: it means "keep the source bitmap's own format", and the only decoder
+Studio has produces eight-bit RGBA whatever it is handed — so it would be a choice with one
+outcome, which is a place for a user to look for behaviour that is not there.
+
+**`srgbRead` is off by default, and that is XNA's answer rather than the industry's.** Unity and
+Unreal both default their sRGB checkbox *on*, because both render in linear space. XNA renders in
+gamma space: its textures are sampled as the bytes stand, and `SurfaceFormat.Color` is what every
+existing XNA game expects. Defaulting it on would change what faithful content looks like, so it is
+opt-in — named after what it *does* (does the hardware convert on read) rather than after what the
+data *is*, because the second reading is the one that gets normal maps wrong.
+
+**The resolved outcome is a function, not a sidecar field.** `studioPlanTextureImport` takes the
+settings and the facts and answers with a `SurfaceFormat` name, a mip count, a byte estimate and a
+list of notes. It is pure — no filesystem, no device, no state — so the inspector calls it every
+frame and stores nothing. Writing a resolved format into the sidecar was the obvious alternative
+and is the wrong one: it is a *derivation* of two things that change independently, and a project
+would end up carrying a `mipLevels: 11` next to a "Generate Mipmaps" that was unticked half an hour
+ago. That is the same failure the fact/setting split exists to prevent, one level up.
+
+**Three combinations cannot be given, and each one says so.**
+
+- **DXT on an edge that is not a multiple of four** resolves back to `Color`. Padding is a decision
+  about somebody else's art — a row of invented pixels that shows up as a seam when it is sampled —
+  and the note names the size, because "this texture" is not findable and "100 x 62" is.
+- **An opaque texture that wants hardware sRGB and compression** is a **CNA gap**, recorded as one
+  rather than worked around invisibly. `SurfaceFormat` has `Dxt5SrgbEXT` and `Bc7SrgbEXT` and *no*
+  sRGB DXT1, although D3D and OpenGL both define one (`BC1_UNORM_SRGB`,
+  `COMPRESSED_SRGB_S3TC_DXT1_EXT`). So Studio gives it `Dxt5SrgbEXT` — correct colour, twice the
+  size — and the note says what the alternative is, because a user reading "CNA has no sRGB DXT1"
+  has no way to know the setting they can actually reach is the one next to it.
+- **A file whose header Studio cannot read** gets *no* format at all. This is the one it would be
+  easy to get wrong: resolving one anyway looks harmless, since the format does not depend on the
+  size — but it depends on the alpha channel, and an unmeasured source's `hasAlphaChannel` is a
+  struct default rather than a fact. "Dxt1" reads as a decision somebody can rely on, and that one
+  would be a coin toss; "0 bytes" reads as "this costs nothing".
+
+**Two facts were added to read those settings against.** `sourceFormat` and `sourceAlpha`, both
+read-only, both from the file's own magic bytes rather than its name — so a renamed file reports
+what it actually is. `readImageSize` grew into `readImageDescription` and became a wrapper over it,
+because two readers that could disagree about a size is a bug waiting to be written. The alpha
+question is answered from the encoding, not the pixels: whether *any* pixel uses alpha needs a
+decode, and the question that matters here — may this be DXT1 — the encoding settles on its own. A
+paletted PNG is the one case the fixed header cannot answer, since its transparency lives in an
+optional `tRNS` chunk, so that chunk is walked for, bounded by the first `IDAT`.
+
+**The byte estimate walks the chain rather than multiplying by four thirds.** A DXT mip chain does
+not bottom out at a byte: its unit is a 4x4 block, so the last three levels of a 1024-square
+texture cost a whole block each however few pixels are in them. That is the part a hand-rolled
+estimate gets wrong, and the number it produces — "what does this occupy on the GPU" — is the
+answer to "why is this build nine hundred megabytes", which nothing in the editor could answer
+before.
+
+**What Studio still does not do.** Compress anything. Block compression is the content build's work
+in CNA, and moving it into the editor would be the responsibility shift this project forbids. What
+is new is that a user can see, before the build, what their settings will produce — including the
+cases where what they asked for cannot be given to them.
+
+**Verification.** `tests/TextureImportTests.cpp` covers the mip arithmetic, the defaults a missing
+sidecar field reads back as (the failure being prevented is premultiplied alpha silently turning
+*off* for every asset nobody has touched), each of the three refusals, the byte estimates against
+worked constants, and the header reader across six colour types and depths including a renamed
+file. `tests/StudioDetailsPanelTests.cpp` covers the inspector following a setting on the very next
+frame with nothing reimported and nothing written — which is the property that makes the plan a
+derivation rather than a fact.
+
+**One existing test had to reach further, and was not relaxed.**
+`AnOverriddenImportSettingCanBeResetFromTheInspector` sweeps the inspector for the reset control.
+Four more property rows made the panel taller than its viewport, which gave it a scrollbar — and
+the sweep had been running down the bare right edge, which is now the scrollbar's track. It now
+sweeps both sides of the track and scrolls between screenfuls. The assertion is untouched; what
+changed is that it can no longer pass or fail on how many settings the importer happens to declare
+that week.
 
 ### `STUDIO-10004` — Model import: glTF (carried forward from the prototype)
 
