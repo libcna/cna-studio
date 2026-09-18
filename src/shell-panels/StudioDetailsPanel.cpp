@@ -6,6 +6,7 @@
 
 #include "CNA/Studio/ShellPanels/StudioDetailsPanel.hpp"
 
+#include "CNA/Studio/Assets/AudioImport.hpp"
 #include "CNA/Studio/Assets/AssetRelink.hpp"
 #include "CNA/Studio/Project/RecoveryStore.hpp"
 
@@ -2474,12 +2475,17 @@ namespace
         // Offered on the asset itself as well as on a component that references it: hearing a clip
         // is most often wanted right after importing it, when no entity uses it yet.
         //
-        // Neutral settings, unlike the component preview -- this is the file as imported, with
-        // nothing an entity chose applied to it.
+        // The asset's own Import Volume and nothing else. Unlike the component preview, no entity
+        // has chosen a pitch or a pan here -- but `importVolume` is a property of the *file as
+        // imported*, so playing at 1.0 would make it the one setting in the inspector that changes
+        // nothing a user can hear (`plan.md` STUDIO-10005).
         if (isAudibleAsset(record->type))
         {
+            const StudioAudioImportSettings audioSettings =
+                StudioAudioImportSettings::fromJson(record->importerSettings);
             result.audio = studioAudioPreviewRow(frame, nextRow(), theme, services,
-                                                 context.getAssets(), assetId, 1.0f, 0.0f, 0.0f);
+                                                 context.getAssets(), assetId,
+                                                 audioSettings.importVolume, 0.0f, 0.0f);
         }
 
         nextRow();

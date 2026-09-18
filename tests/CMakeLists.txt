@@ -41,6 +41,7 @@ add_executable(cna-studio-tests
     AssetDependencyTests.cpp
     StudioJobTests.cpp
     AssetImporterTests.cpp
+    AudioImportTests.cpp
     TextureImportTests.cpp
     DerivedDataTests.cpp
     ImageDecodeTests.cpp

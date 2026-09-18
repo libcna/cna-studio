@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 6 of 14 complete `█████░░░░░░░`
+**Progress:** 7 of 15 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -14,7 +14,7 @@
 | `STUDIO-10002` | Importer plugin interface | ✅ | `STUDIO-10001` |
 | `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ✅ | `STUDIO-10001` |
 | `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ✅ | `STUDIO-10002` |
-| `STUDIO-10005` | Audio import | ⬜ | `STUDIO-10002` |
+| `STUDIO-10005` | Audio import | ✅ | `STUDIO-10002` |
 | `STUDIO-10006` | Font import | ⬜ | `STUDIO-04005` |
 | `STUDIO-10007` | Material assets | ⬜ | `STUDIO-19001` |
 | `STUDIO-10008` | Shader and effect assets | ⬜ | `STUDIO-22001` |
@@ -24,6 +24,7 @@
 | `STUDIO-10012` | Provenance record for every third-party dependency | ✅ | — |
 | `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ⬜ | `STUDIO-10011` |
 | `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | ✅ | `STUDIO-10012` |
+| `STUDIO-10015` | Measure an MP3 and a FLAC as exactly as a WAV and an Ogg | ⬜ | `STUDIO-10005` |
 
 ## Acceptance and verification
 
@@ -255,6 +256,80 @@ than the one instance, so the next dead setting is caught too. Checked by causin
 its times out of the positions buffer view, so the fixture's buffer needs nothing added — the count
 is the only thing under test, and an animation that failed `cgltf_validate` would fail the whole
 load instead of testing anything.
+
+### `STUDIO-10005` — Audio import
+
+**Acceptance.** A clip's own facts are read without a sound device, both audio types have an
+importer, and no declared setting is one nothing reads.
+
+**There was no audio importer at all.** `registerBuiltinAssetImporters` held Texture, SpriteFont and
+Model, so a `.wav` and an `.ogg` were tracked, given an importer id and never asked a single
+question. And `ImporterIds::kSong` had a type id with no descriptor behind it: `AssetDatabase` has
+assigned `CNA.SongImporter` to every `.ogg`, `.mp3` and `.flac` since it was written, and nothing
+registered one — so the inspector told a user that the importer for their music "is not registered
+in this build", which is true and reads as a broken installation.
+
+**The facts are the same for both types, so they are one list.** The split between `SoundEffect` and
+`Song` is about how a *game* uses a clip — one is loaded and fired, the other streamed through the
+media player — and not about what is in the file, which answers identical questions either way.
+
+**`decodedBytes` is the number nothing in the editor could answer.** A file size does not say what a
+clip costs: a three-minute Ogg is four megabytes on disk and forty in memory. "Load Into Memory" is
+a decision somebody has been making without it, and the fact next to the setting is what makes it an
+informed one — the same move the texture importer's "On The GPU" makes.
+
+**`importVolume` was a number that changed nothing.** Declared, editable, persisted, and read by
+nothing. The inspector's preview now plays at it, so auditioning a clip plays it at the volume the
+setting claims — which is the one thing an audio editor is least able to get away with being wrong
+about. `loadIntoMemory` stays a recorded instruction for the content build, and its tooltip now says
+so rather than implying Studio streams.
+
+**WAV and Ogg Vorbis, and MP3 and FLAC said to be unmeasurable.** A WAV's chunks are *walked*, not
+assumed: `fmt ` and `data` are not at fixed offsets and a file written by a DAW routinely carries a
+`LIST` or `bext` between them, so a reader that assumed `data` at offset 36 reads its length out of
+the middle of somebody's metadata. A Vorbis stream's length is not stated anywhere at all — it is
+the granule position of the *last* page, so the reader takes the end of the file and scans backwards
+for the last page belonging to the first page's stream, rather than walking tens of thousands of
+pages from the front for one number. An Ogg carrying something that is not Vorbis (Opus, Theora) is
+left unmeasured rather than read as Vorbis. MP3's length genuinely is not in its header when it is
+variable-bitrate, and a duration wrong by a factor of two is worse than one that is absent —
+`STUDIO-10015` is the rest.
+
+**`bitsPerSample` is zero for a compressed format, and that is not "unknown".** A Vorbis stream
+stores coefficients rather than samples; reporting "16" because that is what it decodes to would be
+an answer to a question nobody asked.
+
+**Verification.** `tests/AudioImportTests.cpp`: a WAV's rate, channels, depth and length; the same
+clip with 2 KB of junk between its chunks reading identically, which is the case a fixed-offset
+reader fails; an Ogg's length coming from the last page rather than the first or an intermediate
+one; an Opus-in-Ogg and an MP3 reported as unmeasured; a renamed file reporting what it is; the
+defaults a missing sidecar field reads back as (an `importVolume` that read back as zero would make
+every untouched clip preview as silence, which is indistinguishable from a broken device); both
+types' facts reaching their sidecars and not being rewritten on a second pass.
+`EverySettingAnAudioImporterDeclaresIsOneSomethingReads` holds both to the policy the model importer
+is held to. `tests/StudioAudioPreviewTests.cpp` covers the preview playing at the asset's import
+volume. Checked by causing each: a backward scan turned forwards, a bit-depth offset moved by two, a
+declared setting nothing reads, and the preview put back to 1.0 each fail by name.
+
+### `STUDIO-10015` — Measure an MP3 and a FLAC as exactly as a WAV and an Ogg
+
+**Found while doing `STUDIO-10005`**, filed rather than half-done. Both are `AssetType::Song`, both
+are formats a project really holds, and both are reported as unmeasured today — which is honest and
+is not the same as answered.
+
+**FLAC is the easy half and was still left out**, deliberately: its `STREAMINFO` block states the
+sample rate, the channel count and the total sample count outright, so it is a bit-unpacking
+exercise and nothing more. It was not folded into `STUDIO-10005` because that task's shape was "read
+the two formats the two asset types are actually made of", and a third parser added on momentum is
+how a task stops having an edge.
+
+**MP3 is the hard half and is where the design question is.** A constant-bitrate MP3's length is
+arithmetic on the file size; a variable-bitrate one's is in a `Xing` or `VBRI` header *if the
+encoder wrote one*, and is otherwise only knowable by walking every frame — which for a long track
+is the whole file. So the task has to decide what to do when the header is absent: walk it (exact,
+slow, and on the scan path), estimate from the first frame (fast and wrong for exactly the files
+VBR is used for), or report it unmeasured (what happens now). A guess stated as a fact is the one
+option ruled out.
 
 ### `STUDIO-10014` — Decide how Studio decodes an image without a graphics device
 

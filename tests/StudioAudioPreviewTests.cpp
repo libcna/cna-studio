@@ -399,8 +399,9 @@ CNA_STUDIO_TEST(WithNoAudioInThisBuildThePreviewIsDisabledRatherThanAbsent)
 CNA_STUDIO_TEST(ASelectedSoundAssetCanBeHeardBeforeAnythingUsesIt)
 {
     // Hearing a clip is most often wanted right after importing it, when no entity references it
-    // yet -- so the asset inspector offers the same preview, with neutral settings: this is the
-    // file as imported, with nothing an entity chose applied to it.
+    // yet -- so the asset inspector offers the same preview: this is the file as imported, with
+    // nothing an *entity* chose applied to it. An asset nobody has edited has the importer's own
+    // Import Volume of 1.0, which is why that is what this expects.
     Fixture fixture;
     const Uuid clip = addSound(fixture.context, "Assets/Audio/pickup.wav");
     fixture.context.selectAsset(clip);
@@ -417,6 +418,44 @@ CNA_STUDIO_TEST(ASelectedSoundAssetCanBeHeardBeforeAnythingUsesIt)
     const NullStudioAudio::Request& request = fixture.audio.getRequests().front();
     CNA_STUDIO_EXPECT(request.assetId == clip);
     CNA_STUDIO_EXPECT_EQ(request.volume, 1.0f);
+    CNA_STUDIO_EXPECT_EQ(request.pitch, 0.0f);
+    CNA_STUDIO_EXPECT_EQ(request.pan, 0.0f);
+}
+
+/**
+ * The asset preview plays at the clip's Import Volume (`plan.md` STUDIO-10005).
+ *
+ * Not decoration: `importVolume` was declared, was editable, was persisted, and nothing anywhere
+ * read it. A number in an inspector that changes nothing a user can hear is the one thing an audio
+ * editor is least able to get away with, and playing the clip at 1.0 while the setting says 0.2 is
+ * exactly that.
+ */
+CNA_STUDIO_TEST(TheAssetPreviewPlaysAtTheClipsImportVolume)
+{
+    Fixture fixture;
+    const Uuid clip = addSound(fixture.context, "Assets/Audio/pickup.wav");
+
+    AssetRecord* record = fixture.context.getAssets().findMutable(clip);
+    CNA_STUDIO_EXPECT(record != nullptr);
+    if (record == nullptr) { return; }
+    if (record->importerSettings.isNull()) { record->importerSettings = JsonValue::makeObject(); }
+    record->importerSettings.set("importVolume", JsonValue{0.2});
+
+    fixture.context.selectAsset(clip);
+    fixture.settle();
+
+    // name, path, type, id, then the preview.
+    fixture.clickPlay(4);
+
+    CNA_STUDIO_EXPECT_EQ(fixture.audio.getRequests().size(), std::size_t{1});
+    if (fixture.audio.getRequests().empty()) { return; }
+
+    const NullStudioAudio::Request& request = fixture.audio.getRequests().front();
+    CNA_STUDIO_EXPECT(request.assetId == clip);
+    CNA_STUDIO_EXPECT(std::fabs(request.volume - 0.2f) < 1e-5f);
+
+    // Only the volume. Pitch and pan belong to the *entity* playing the clip, and an asset has no
+    // opinion about either -- a file is not quiet on the left.
     CNA_STUDIO_EXPECT_EQ(request.pitch, 0.0f);
     CNA_STUDIO_EXPECT_EQ(request.pan, 0.0f);
 }

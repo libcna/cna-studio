@@ -3,6 +3,7 @@
 
 #include "CNA/Studio/Assets/AssetImporter.hpp"
 
+#include "CNA/Studio/Assets/AudioImport.hpp"
 #include "CNA/Studio/Assets/ModelImport.hpp"
 
 #include <array>
@@ -103,6 +104,17 @@ namespace CNA::Studio
          * @return True when something changed.
          */
         bool applyModelFacts(AssetDatabase& assets, const AssetRecord& record);
+
+        /**
+         * @brief Writes what an audio file says about itself into its sidecar.
+         *
+         * One reader for both audio types, because a `.wav` and an `.ogg` answer the same
+         * questions and the split between `SoundEffect` and `Song` is about how a *game* uses
+         * them, not about what is in the file.
+         *
+         * @return True when something changed, so that opening a project twice produces no diff.
+         */
+        bool applyAudioFacts(AssetDatabase& assets, const AssetRecord& record);
     }
 
     namespace
@@ -237,6 +249,61 @@ namespace CNA::Studio
             return descriptor;
         }
 
+        /**
+         * @brief The facts both audio importers report, which are the same facts.
+         *
+         * Shared rather than written twice: a `.wav` and an `.ogg` answer identical questions, and
+         * two copies of one list is how they come to disagree about a name.
+         */
+        std::vector<PropertyDescriptor> audioFacts()
+        {
+            const auto fact = [](std::string name, std::string display, PropertyType type,
+                                 PropertyValue defaultValue, std::string tooltip) {
+                PropertyDescriptor property = makeProperty(std::move(name), std::move(display), type,
+                                                           std::move(defaultValue), std::move(tooltip));
+                property.readOnly = true;
+                return property;
+            };
+
+            return {
+                fact("sourceFormat", "Source Format", PropertyType::String, PropertyValue{std::string{}},
+                     "Read from the file's magic bytes rather than its name. Empty means a format "
+                     "Studio cannot measure yet -- MP3 and FLAC, today."),
+                fact("duration", "Duration", PropertyType::String, PropertyValue{std::string{}}, ""),
+                fact("sampleRate", "Sample Rate", PropertyType::Integer, PropertyValue{0}, "In hertz."),
+                fact("channels", "Channels", PropertyType::Integer, PropertyValue{0},
+                     "One is mono, which is what XNA needs for a sound to be positioned in 3D; a "
+                     "stereo clip plays as-is wherever the listener is."),
+                fact("decodedBytes", "In Memory", PropertyType::Integer, PropertyValue{0},
+                     "What this occupies once decoded, which is what Load Into Memory costs. The "
+                     "file size does not say: a three-minute Ogg is four megabytes on disk and "
+                     "forty in memory."),
+            };
+        }
+
+        PropertyDescriptor importVolumeProperty()
+        {
+            PropertyDescriptor volume = makeProperty("importVolume", "Import Volume",
+                                                     PropertyType::Float, PropertyValue{1.0f},
+                                                     "Applied once at import rather than at every "
+                                                     "play, so a clip that is simply too loud is "
+                                                     "fixed in one place. The inspector's preview "
+                                                     "plays at this volume, so it can be heard.");
+            volume.minimum = 0.0;
+            volume.maximum = 1.0;
+            return volume;
+        }
+
+        PropertyDescriptor loadIntoMemoryProperty()
+        {
+            return makeProperty("loadIntoMemory", "Load Into Memory", PropertyType::Boolean,
+                                PropertyValue{true},
+                                "Off streams the clip from disk instead, which is right for music-"
+                                "length audio and wrong for a footstep. Recorded for the content "
+                                "build; Studio streams nothing itself. \"In Memory\" below is what "
+                                "the decision costs.");
+        }
+
         ComponentDescriptor makeSoundEffectImporter()
         {
             ComponentDescriptor descriptor;
@@ -244,21 +311,38 @@ namespace CNA::Studio
             descriptor.displayName = "Sound Effect Importer";
             descriptor.category = "Import";
 
-            PropertyDescriptor volume = makeProperty("importVolume", "Import Volume",
-                                                     PropertyType::Float, PropertyValue{1.0f},
-                                                     "Applied once at import rather than at every "
-                                                     "play, so a clip that is simply too loud is "
-                                                     "fixed in one place.");
-            volume.minimum = 0.0;
-            volume.maximum = 1.0;
+            descriptor.properties = {importVolumeProperty(), loadIntoMemoryProperty()};
+            for (PropertyDescriptor& property : audioFacts())
+            {
+                descriptor.properties.push_back(std::move(property));
+            }
+            return descriptor;
+        }
 
-            descriptor.properties = {
-                std::move(volume),
-                makeProperty("loadIntoMemory", "Load Into Memory", PropertyType::Boolean,
-                             PropertyValue{true},
-                             "Off streams the clip from disk instead, which is right for music-"
-                             "length audio and wrong for a footstep."),
-            };
+        /**
+         * @brief The Song importer, which had a type id and no descriptor at all.
+         *
+         * `AssetDatabase` has assigned `CNA.SongImporter` to every `.ogg`, `.mp3` and `.flac` since
+         * it was written, and nothing registered one -- so the inspector told a user that the
+         * importer for their music "is not registered in this build", which is true and reads as a
+         * broken installation (`plan.md` STUDIO-10005).
+         *
+         * Its settings are the sound effect's. The split between the two types is about how a
+         * *game* uses a clip -- `SoundEffect` is loaded and fired, `Song` is streamed through the
+         * media player -- and not about what is in the file, so the questions are the same ones.
+         */
+        ComponentDescriptor makeSongImporter()
+        {
+            ComponentDescriptor descriptor;
+            descriptor.typeId = ImporterIds::kSong;
+            descriptor.displayName = "Song Importer";
+            descriptor.category = "Import";
+
+            descriptor.properties = {importVolumeProperty(), loadIntoMemoryProperty()};
+            for (PropertyDescriptor& property : audioFacts())
+            {
+                descriptor.properties.push_back(std::move(property));
+            }
             return descriptor;
         }
 
@@ -629,6 +713,22 @@ namespace CNA::Studio
         return writeFactsIfChanged(assets, record, facts);
     }
 
+    bool Detail::applyAudioFacts(AssetDatabase& assets, const AssetRecord& record)
+    {
+        const std::optional<StudioAudioDescription> description =
+            readAudioDescription(assets.resolvePath(record.sourcePath));
+        if (!description) { return false; }
+
+        JsonValue facts = JsonValue::makeObject();
+        facts.set("sourceFormat", JsonValue{description->format});
+        facts.set("duration", JsonValue{studioDescribeDuration(description->durationSeconds)});
+        facts.set("sampleRate", JsonValue{static_cast<double>(description->sampleRate)});
+        facts.set("channels", JsonValue{static_cast<double>(description->channels)});
+        facts.set("decodedBytes", JsonValue{static_cast<double>(description->decodedBytes)});
+
+        return writeFactsIfChanged(assets, record, facts);
+    }
+
     std::optional<SpriteFontDescription> readSpriteFontDescription(const std::string& path)
     {
         std::ifstream stream{path, std::ios::binary};
@@ -709,6 +809,10 @@ namespace CNA::Studio
             ImporterIds::kSpriteFont, AssetType::SpriteFont, &Detail::applySpriteFontFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
             ImporterIds::kModel, AssetType::Model, &Detail::applyModelFacts));
+        (void)registry.add(std::make_unique<BuiltinImporter>(
+            ImporterIds::kSoundEffect, AssetType::SoundEffect, &Detail::applyAudioFacts));
+        (void)registry.add(std::make_unique<BuiltinImporter>(
+            ImporterIds::kSong, AssetType::Song, &Detail::applyAudioFacts));
     }
 
     const StudioImporterRegistry& getBuiltinAssetImporters()
@@ -790,6 +894,7 @@ namespace CNA::Studio
         registry.registerComponent(makeTextureImporter());
         registry.registerComponent(makeSpriteFontImporter());
         registry.registerComponent(makeSoundEffectImporter());
+        registry.registerComponent(makeSongImporter());
         registry.registerComponent(makeModelImporter());
     }
 }
