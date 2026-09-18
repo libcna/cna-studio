@@ -182,6 +182,7 @@ add_library(cna-studio-assets STATIC
     src/assets/AssetShortcuts.cpp
     src/assets/AssetRelink.cpp
     src/assets/AssetWatcher.cpp
+    src/assets/AssetImporter.cpp
     src/assets/AssetImporters.cpp
     src/assets/ImageDecode.cpp
     src/assets/ThumbnailCache.cpp

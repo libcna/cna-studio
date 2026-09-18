@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MS-PL
 #include "CNA/Studio/Assets/AssetImporters.hpp"
 
+#include "CNA/Studio/Assets/AssetImporter.hpp"
+
 #include "CNA/Studio/Assets/ModelImport.hpp"
 
 #include <array>
@@ -533,22 +535,91 @@ namespace CNA::Studio
         return description;
     }
 
+    namespace
+    {
+        /**
+         * @brief A built-in importer: an id, the type it claims, and the reader it delegates to.
+         *
+         * The readers are unchanged and stay here, beside the libraries they need. What moved is
+         * *who decides which one runs* (`plan.md` STUDIO-10002) -- rewriting the readers in the
+         * same change would have made a refactor and a behaviour change one diff.
+         */
+        class BuiltinImporter final : public StudioAssetImporter
+        {
+        public:
+            using Reader = bool (*)(AssetDatabase&, const AssetRecord&);
+
+            BuiltinImporter(std::string_view importerId, AssetType type, Reader reader)
+                : id_(importerId), type_(type), reader_(reader)
+            {
+            }
+
+            [[nodiscard]] std::string_view id() const override { return id_; }
+
+            [[nodiscard]] bool handles(AssetType type) const override { return type == type_; }
+
+            [[nodiscard]] bool readFacts(AssetDatabase& assets,
+                                         const AssetRecord& record) const override
+            {
+                return reader_ != nullptr && reader_(assets, record);
+            }
+
+        private:
+            std::string id_;
+            AssetType type_;
+            Reader reader_;
+        };
+    }
+
+    void registerBuiltinAssetImporters(StudioImporterRegistry& registry)
+    {
+        (void)registry.add(std::make_unique<BuiltinImporter>(
+            ImporterIds::kTexture, AssetType::Texture2D, &Detail::applyTextureFacts));
+        (void)registry.add(std::make_unique<BuiltinImporter>(
+            ImporterIds::kSpriteFont, AssetType::SpriteFont, &Detail::applySpriteFontFacts));
+        (void)registry.add(std::make_unique<BuiltinImporter>(
+            ImporterIds::kModel, AssetType::Model, &Detail::applyModelFacts));
+    }
+
+    const StudioImporterRegistry& getBuiltinAssetImporters()
+    {
+        // Built once. The built-ins are fixed for a build, and a registry rebuilt per call would
+        // allocate three importers per asset.
+        static const StudioImporterRegistry registry = [] {
+            StudioImporterRegistry built;
+            registerBuiltinAssetImporters(built);
+            return built;
+        }();
+        return registry;
+    }
+
     bool applyImporterFacts(AssetDatabase& assets, const Uuid& id)
+    {
+        return applyImporterFacts(assets, id, getBuiltinAssetImporters());
+    }
+
+    bool applyImporterFacts(AssetDatabase& assets, const Uuid& id,
+                            const StudioImporterRegistry& importers)
     {
         const AssetRecord* record = assets.find(id);
         if (record == nullptr) { return false; }
 
-        if (record->type == AssetType::SpriteFont)
-        {
-            return Detail::applySpriteFontFacts(assets, *record);
-        }
-        if (record->type == AssetType::Model) { return Detail::applyModelFacts(assets, *record); }
-        if (record->type != AssetType::Texture2D) { return false; }
+        // One lookup where there was a chain of type comparisons. An asset whose type nothing
+        // claims is left alone rather than treated as a failure: a project holds files Studio does
+        // not import, and a scan that reported each of them as a problem would be a scan nobody
+        // reads (`plan.md` STUDIO-10002).
+        const StudioAssetImporter* importer = importers.forType(record->type);
+        if (importer == nullptr) { return false; }
 
-        return Detail::applyTextureFacts(assets, *record);
+        return importer->readFacts(assets, *record);
     }
 
     std::size_t applyImporterFacts(AssetDatabase& assets)
+    {
+        return applyImporterFacts(assets, getBuiltinAssetImporters());
+    }
+
+    std::size_t applyImporterFacts(AssetDatabase& assets, const StudioImporterRegistry& importers)
     {
         std::size_t changed = 0;
 
@@ -560,7 +631,7 @@ namespace CNA::Studio
 
         for (const Uuid& assetId : ids)
         {
-            changed += applyImporterFacts(assets, assetId) ? 1u : 0u;
+            changed += applyImporterFacts(assets, assetId, importers) ? 1u : 0u;
         }
         return changed;
     }

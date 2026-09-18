@@ -40,6 +40,7 @@ add_executable(cna-studio-tests
     StudioContentBrowserTests.cpp
     AssetDependencyTests.cpp
     StudioJobTests.cpp
+    AssetImporterTests.cpp
     DerivedDataTests.cpp
     ImageDecodeTests.cpp
     Sha256Tests.cpp

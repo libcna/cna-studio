@@ -21,6 +21,7 @@
 #include <string_view>
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
+#include "CNA/Studio/Assets/AssetImporter.hpp"
 #include "CNA/Studio/Core/ComponentDescriptor.hpp"
 
 namespace CNA::Studio
@@ -105,6 +106,9 @@ namespace CNA::Studio
      */
     std::size_t applyImporterFacts(AssetDatabase& assets);
 
+    /** @brief As above, through @p importers rather than the built-in set (`plan.md` STUDIO-10002). */
+    std::size_t applyImporterFacts(AssetDatabase& assets, const StudioImporterRegistry& importers);
+
     /**
      * @brief Fills in the facts for one asset, leaving every *setting* alone.
      *
@@ -120,4 +124,8 @@ namespace CNA::Studio
      * @return True when a fact changed.
      */
     bool applyImporterFacts(AssetDatabase& assets, const Uuid& id);
+
+    /** @brief As above, through @p importers rather than the built-in set (`plan.md` STUDIO-10002). */
+    bool applyImporterFacts(AssetDatabase& assets, const Uuid& id,
+                            const StudioImporterRegistry& importers);
 }

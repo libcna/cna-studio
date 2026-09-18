@@ -6,12 +6,12 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 3 of 14 complete `██░░░░░░░░░░`
+**Progress:** 4 of 14 complete `███░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-10001` | Import settings model, persisted per asset and preserved across reimport | ✅ | `STUDIO-09014` |
-| `STUDIO-10002` | Importer plugin interface | ⬜ | `STUDIO-10001` |
+| `STUDIO-10002` | Importer plugin interface | ✅ | `STUDIO-10001` |
 | `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ⬜ | `STUDIO-10001` |
 | `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ⬜ | `STUDIO-10002` |
 | `STUDIO-10005` | Audio import | ⬜ | `STUDIO-10002` |
@@ -77,6 +77,45 @@ row marker and the menu.
 ### `STUDIO-10002` — Importer plugin interface
 
 **Acceptance.** Importers are isolated; a third-party library lives behind one, not in Studio core
+
+**Done.** `StudioAssetImporter` is the interface; `StudioImporterRegistry` holds them;
+`applyImporterFacts` dispatches through it.
+
+**What it replaces.** Importing was a chain of `if (record->type == AssetType::SpriteFont) … if (…
+== Model) …` in the middle of the asset system, each branch reaching whatever library it needed.
+That works, and it has two properties that get worse with every format: adding one means editing a
+function nobody else has business touching, and the function that dispatches ends up naming every
+third-party parser Studio has. A plugin cannot edit it at all, which is why `STUDIO-28003` waits on
+this.
+
+**The built-ins went through the interface too**, rather than staying a special case beside it. A
+dispatch with one path for "ours" and another for "theirs" is two dispatches, and the second one is
+the one that rots.
+
+**What is deliberately not on the interface.** How to *edit* an importer's settings: that is a
+`ComponentDescriptor`, which the inspector already draws (decision D-05), and two ways to describe
+one importer's settings would be one too many. Nor does an importer own the walk, the sidecar write
+or the "only write when something actually changed" rule — those are identical for every importer,
+and one that got them wrong would fill a repository with spurious diffs.
+
+**The readers did not change.** `applyTextureFacts` and its siblings stay exactly where they were,
+beside the libraries they need; what moved is *who decides which one runs*. Rewriting them in the
+same change would have made a refactor and a behaviour change indistinguishable in one diff.
+
+**A duplicate id is refused rather than replacing**, and the first importer claiming a *type* wins
+in registration order. Two importers answering to one id is a build that behaves differently
+depending on which was registered last; an ambiguity resolved by hash order is one that behaves
+differently on another machine.
+
+**The structural half of the acceptance is a test.** "A third-party library lives behind one, not in
+Studio core" is the half that decays quietly: somebody needs a parser for one thing, includes it
+where it is convenient, and a module that was dependency-free is not any more — and nobody notices
+until the build breaks somewhere else. `NoThirdPartyLibraryIsReachedFromOutsideTheFilesAllowedToReachIt` scans every `.cpp` and `.hpp` under `src/` and `include/` and fails on an include of a vendored
+header outside a four-entry allowlist, each entry a translation unit that owns one library. Checked
+by causing it: an added `#include "stb_image.h"` in `AssetShortcuts.cpp` fails the suite by name.
+
+**An asset type nothing claims is left alone** rather than reported as a failure. A project holds
+files Studio does not import, and a scan that complained about each of them is a scan nobody reads.
 
 ### `STUDIO-10004` — Model import: glTF (carried forward from the prototype)
 
