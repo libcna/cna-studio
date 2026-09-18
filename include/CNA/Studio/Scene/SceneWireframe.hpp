@@ -144,6 +144,34 @@ namespace CNA::Studio
         int gridHalfExtent = 24;
 
         /**
+         * @brief Where the grid starts fading, as a fraction of its radius. Zero disables the fade.
+         *
+         * `plan.md` STUDIO-11005. The grid used to stop: forty-nine lines each way at full
+         * strength and then nothing, which draws a bright square edge across the middle of a
+         * scene and, in any view that is not straight down, a solid aliased band where the far
+         * lines converge. Fading from here to the rim turns the square into a disc that dissolves,
+         * which is what an editor grid is expected to look like and what stops the far side of it
+         * competing with the geometry.
+         *
+         * Radial from the grid's centre rather than measured from the eye, deliberately: a fade
+         * that depended on where the camera was would shimmer as the user orbited, and the far
+         * edge of the grid *is* the horizon in a grazing view, so the simpler rule covers the case
+         * the harder one was for.
+         */
+        float gridFadeStart = 0.45f;
+
+        /**
+         * @brief How many pieces each grid line is cut into so it can fade along its length.
+         *
+         * A `WireSegment` carries one colour, so a line that runs from the centre to the rim can
+         * only fade if it is more than one segment. Six is enough that the steps are not visible
+         * at the widths a grid is drawn at, and it is a multiplier on the segment count -- which
+         * is why it is a number here rather than a constant, and why a test pins what the grid
+         * costs. One disables the subdivision and gives the old single-segment lines back.
+         */
+        int gridFadeSteps = 6;
+
+        /**
          * @brief Ceiling on the segments produced, so a large scene cannot stall a frame.
          *
          * Reached rather than approached silently: `WireframeResult::truncated` says so, and the

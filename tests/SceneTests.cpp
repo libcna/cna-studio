@@ -1951,6 +1951,129 @@ CNA_STUDIO_TEST(TheSceneGridIsCentredOnThePivotAndMarksTheAxes)
     CNA_STUDIO_EXPECT(!buildSceneGrid(camera, automatic).empty());
 }
 
+/**
+ * The grid dissolves at its rim instead of stopping (`plan.md` STUDIO-11005).
+ *
+ * It used to draw forty-nine lines each way at full strength and then nothing, which puts a bright
+ * square edge across the middle of a scene -- and, in any view that is not straight down, a solid
+ * aliased band where the far lines converge. The fade is what turns the square into a disc.
+ */
+CNA_STUDIO_TEST(TheGridFadesOutTowardsItsRimRatherThanStopping)
+{
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+
+    WireframeOptions options;
+    options.gridSpacing = 10.0f;
+    options.gridHalfExtent = 8;
+
+    const std::vector<WireSegment> faded = buildSceneGrid(camera, options);
+    CNA_STUDIO_EXPECT(!faded.empty());
+
+    // Every line of one colour family, gathered by alpha: the grid's own dim grey, so the axis and
+    // major lines -- which have colours of their own -- do not muddle the comparison.
+    std::uint8_t strongest = 0;
+    std::uint8_t weakest = 255;
+    for (const WireSegment& segment : faded)
+    {
+        if (segment.color.r != WireColors::kGrid.r || segment.color.g != WireColors::kGrid.g
+            || segment.color.b != WireColors::kGrid.b)
+        {
+            continue;
+        }
+        strongest = std::max(strongest, segment.color.a);
+        weakest = std::min(weakest, segment.color.a);
+    }
+
+    // Something is at full strength near the middle and something is nearly gone further out,
+    // which is the whole claim.
+    CNA_STUDIO_EXPECT_EQ(strongest, WireColors::kGrid.a);
+    CNA_STUDIO_EXPECT(weakest < WireColors::kGrid.a / 2);
+
+    // Nothing is emitted at zero strength: a fully transparent segment is work the renderer does
+    // to draw nothing, and the grid is the one thing in the scene there are hundreds of.
+    for (const WireSegment& segment : faded) { CNA_STUDIO_EXPECT(segment.color.a > 0); }
+
+    // The discriminating assertion, and the one it is easy to write a test that misses: a *single
+    // line* has to vary in strength along its length. The X axis is the case that proves it,
+    // because it passes through the grid's centre -- so a fade measured only from a line to the
+    // centre, rather than from each piece of it, leaves this one line at full strength end to end.
+    std::uint8_t axisStrongest = 0;
+    std::uint8_t axisWeakest = 255;
+    std::size_t axisPieces = 0;
+    for (const WireSegment& segment : faded)
+    {
+        if (segment.color.r != WireColors::kAxisX.r || segment.color.g != WireColors::kAxisX.g
+            || segment.color.b != WireColors::kAxisX.b)
+        {
+            continue;
+        }
+        ++axisPieces;
+        axisStrongest = std::max(axisStrongest, segment.color.a);
+        axisWeakest = std::min(axisWeakest, segment.color.a);
+    }
+
+    CNA_STUDIO_EXPECT(axisPieces > 1);
+    CNA_STUDIO_EXPECT_EQ(axisStrongest, WireColors::kAxisX.a);
+    if (axisWeakest >= axisStrongest)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "the X axis line is one strength from end to end, so the grid "
+                                     "fades between its lines rather than along them.");
+    }
+
+    // Turning the fade off gives the old grid back exactly -- one strength everywhere -- which is
+    // what makes this an option rather than a new opinion baked in.
+    WireframeOptions solid = options;
+    solid.gridFadeStart = 0.0f;
+    solid.gridFadeSteps = 1;
+
+    const std::vector<WireSegment> unfaded = buildSceneGrid(camera, solid);
+    CNA_STUDIO_EXPECT(!unfaded.empty());
+    for (const WireSegment& segment : unfaded)
+    {
+        if (segment.color.r == WireColors::kGrid.r && segment.color.g == WireColors::kGrid.g
+            && segment.color.b == WireColors::kGrid.b)
+        {
+            CNA_STUDIO_EXPECT_EQ(segment.color.a, WireColors::kGrid.a);
+        }
+    }
+}
+
+CNA_STUDIO_TEST(TheGridsSegmentCountIsWhatTheSubdivisionSaysItIs)
+{
+    // The fade costs segments, because a `WireSegment` carries one colour and a line that fades
+    // along its length has to be more than one. Counted rather than assumed: this is the one thing
+    // in a 3D frame there are hundreds of, and a subdivision quietly multiplying it is the kind of
+    // cost that shows up as a frame rate rather than as a number anybody looked at.
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+
+    WireframeOptions single;
+    single.gridSpacing = 10.0f;
+    single.gridHalfExtent = 6;
+    single.gridFadeStart = 0.0f;
+    single.gridFadeSteps = 1;
+
+    const std::size_t lines = buildSceneGrid(camera, single).size();
+    CNA_STUDIO_EXPECT(lines > 0);
+
+    WireframeOptions divided = single;
+    divided.gridFadeSteps = 6;
+
+    // Six pieces a line, so six times the segments -- no more, because nothing else changed, and
+    // no fewer, because the fade is off and so nothing is dropped for being transparent.
+    CNA_STUDIO_EXPECT_EQ(buildSceneGrid(camera, divided).size(), lines * 6u);
+
+    // With the fade on, the corners of the square fall outside the disc and are dropped, so the
+    // count comes *down* from the full multiple rather than up.
+    WireframeOptions round = divided;
+    round.gridFadeStart = 0.45f;
+    const std::size_t rounded = buildSceneGrid(camera, round).size();
+    CNA_STUDIO_EXPECT(rounded > lines);
+    CNA_STUDIO_EXPECT(rounded < lines * 6u);
+}
+
 CNA_STUDIO_TEST(TheWireframeBoxesEveryEntityAndMarksTheSelection)
 {
     ComponentRegistry registry = makeRegistry();

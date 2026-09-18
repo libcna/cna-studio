@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 8 of 15 complete `██████░░░░░░`
+**Progress:** 9 of 15 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -14,7 +14,7 @@
 | `STUDIO-11002` | Orbit, fly and pan navigation with configurable speed | ✅ | `STUDIO-11001` |
 | `STUDIO-11003` | Focus selection | ✅ | `STUDIO-11001` |
 | `STUDIO-11004` | Standard views: front, back, left, right, top, bottom | ✅ | `STUDIO-11001` |
-| `STUDIO-11005` | Adaptive grid | ⬜ | `STUDIO-11001` |
+| `STUDIO-11005` | Adaptive grid | ✅ | `STUDIO-11001` |
 | `STUDIO-11006` | Object picking through the 3D projection | ✅ | `STUDIO-11001` |
 | `STUDIO-11007` | Selection outlines | ⬜ | `STUDIO-11006` |
 | `STUDIO-11008` | Bounds and collision debug visualisation | ⬜ | `STUDIO-11006` |
@@ -119,6 +119,47 @@ makes the pole continuous rather than merely defined.
 `tests/StudioViewportPanelTests.cpp` covers the commands through the registry, including their being
 disabled in the 2D view. Checked by causing it: reverting `getRight` to the singular form and
 swapping the Left and Right yaws each fail by name.
+
+### `STUDIO-11005` — Adaptive grid
+
+**Acceptance.** The grid stays useful at any distance and does not draw an edge across the scene.
+
+**Half of this was already done, and saying which half is the honest part.** `buildSceneGrid` has
+chosen its *spacing* from the camera since it was written, through the same `chooseGridSpacing` the
+2D grid uses — one answer to "how far apart are the lines", so a 2D and a 3D view of one scene never
+disagree about what a grid square means. It also already marks the world axes and every tenth line,
+which is what gives a 3D view its one landmark.
+
+**What did not adapt was where the grid *stops*.** Forty-nine lines each way at full strength and
+then nothing: a bright square edge across the middle of a scene, and — in any view that is not
+straight down — a solid aliased band at the far side where the lines converge into fewer pixels than
+they need. The spacing was adaptive and the presence was not.
+
+**The grid now fades radially to nothing at its rim**, which turns the square into a disc that
+dissolves. Radial from the grid's centre rather than measured from the eye, and that is the
+non-obvious choice: a fade that depended on where the camera was would shimmer as the user orbited,
+and the far edge of the grid *is* the horizon in a grazing view — so the simpler, view-independent
+rule covers the case the harder one was for.
+
+**A line has to be cut up to fade along its length**, because a `WireSegment` carries one colour.
+`gridFadeSteps` is that subdivision, defaulting to six, and it is a straight multiplier on the
+segment count — which is why it is an option rather than a constant, and why a test counts what the
+grid costs rather than trusting it. With the fade on, the corners of the square fall outside the
+disc and are dropped, so the count lands *below* the full multiple.
+
+**Nothing is emitted at zero strength.** A fully transparent segment is work the renderer does to
+draw nothing, and the grid is the one thing in a 3D frame there are hundreds of.
+
+**`gridFadeStart = 0` gives the old grid back exactly**, one strength everywhere. That is what makes
+this an option rather than a new opinion baked in, and the test asserts it rather than assuming it.
+
+**Verification.** `tests/SceneTests.cpp`: the grey lines spanning full strength near the centre to
+nearly gone further out, nothing emitted at zero, and the fade switching off cleanly. The assertion
+that matters is the one about the **X axis line**, and it is there because the first version of this
+test passed against a wrong implementation: a fade measured from each *line* to the centre, rather
+than from each *piece* of it, leaves the axis — which passes through the centre — at full strength
+end to end, and every other assertion still held. Checked by causing exactly that: the corrected
+case fails by name, the earlier one did not.
 
 ### `STUDIO-11013` — Preserve the existing 2D viewport workflow without regression
 
@@ -267,6 +308,47 @@ makes the pole continuous rather than merely defined.
 `tests/StudioViewportPanelTests.cpp` covers the commands through the registry, including their being
 disabled in the 2D view. Checked by causing it: reverting `getRight` to the singular form and
 swapping the Left and Right yaws each fail by name.
+
+### `STUDIO-11005` — Adaptive grid
+
+**Acceptance.** The grid stays useful at any distance and does not draw an edge across the scene.
+
+**Half of this was already done, and saying which half is the honest part.** `buildSceneGrid` has
+chosen its *spacing* from the camera since it was written, through the same `chooseGridSpacing` the
+2D grid uses — one answer to "how far apart are the lines", so a 2D and a 3D view of one scene never
+disagree about what a grid square means. It also already marks the world axes and every tenth line,
+which is what gives a 3D view its one landmark.
+
+**What did not adapt was where the grid *stops*.** Forty-nine lines each way at full strength and
+then nothing: a bright square edge across the middle of a scene, and — in any view that is not
+straight down — a solid aliased band at the far side where the lines converge into fewer pixels than
+they need. The spacing was adaptive and the presence was not.
+
+**The grid now fades radially to nothing at its rim**, which turns the square into a disc that
+dissolves. Radial from the grid's centre rather than measured from the eye, and that is the
+non-obvious choice: a fade that depended on where the camera was would shimmer as the user orbited,
+and the far edge of the grid *is* the horizon in a grazing view — so the simpler, view-independent
+rule covers the case the harder one was for.
+
+**A line has to be cut up to fade along its length**, because a `WireSegment` carries one colour.
+`gridFadeSteps` is that subdivision, defaulting to six, and it is a straight multiplier on the
+segment count — which is why it is an option rather than a constant, and why a test counts what the
+grid costs rather than trusting it. With the fade on, the corners of the square fall outside the
+disc and are dropped, so the count lands *below* the full multiple.
+
+**Nothing is emitted at zero strength.** A fully transparent segment is work the renderer does to
+draw nothing, and the grid is the one thing in a 3D frame there are hundreds of.
+
+**`gridFadeStart = 0` gives the old grid back exactly**, one strength everywhere. That is what makes
+this an option rather than a new opinion baked in, and the test asserts it rather than assuming it.
+
+**Verification.** `tests/SceneTests.cpp`: the grey lines spanning full strength near the centre to
+nearly gone further out, nothing emitted at zero, and the fade switching off cleanly. The assertion
+that matters is the one about the **X axis line**, and it is there because the first version of this
+test passed against a wrong implementation: a fade measured from each *line* to the centre, rather
+than from each *piece* of it, leaves the axis — which passes through the centre — at full strength
+end to end, and every other assertion still held. Checked by causing exactly that: the corrected
+case fails by name, the earlier one did not.
 
 ### `STUDIO-11013` — Preserve the existing 2D viewport workflow without regression
 

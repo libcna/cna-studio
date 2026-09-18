@@ -396,6 +396,33 @@ namespace CNA::Studio
         const int extent = options.gridHalfExtent;
         const float half = static_cast<float>(extent) * spacing;
 
+        // One piece is the old behaviour exactly: a whole line, one colour, no fade.
+        const int pieces = std::max(1, options.gridFadeSteps);
+        const float fadeStart = std::clamp(options.gridFadeStart, 0.0f, 1.0f);
+
+        /**
+         * @brief How strongly to draw a point at (@p offsetU, @p offsetV) from the grid's centre.
+         *
+         * Radial, so the square of lines reads as a disc that dissolves rather than a plate with a
+         * bright edge. Full strength inside `gridFadeStart` of the radius and zero at the rim,
+         * linear between -- a curve would be a parameter nobody has a reason to choose.
+         */
+        const auto fadeAt = [&](float offsetU, float offsetV) {
+            if (fadeStart <= 0.0f || half <= 0.0f) { return 1.0f; }
+
+            const float distance = std::sqrt(offsetU * offsetU + offsetV * offsetV);
+            const float inner = fadeStart * half;
+            if (distance <= inner) { return 1.0f; }
+            if (distance >= half) { return 0.0f; }
+            return 1.0f - (distance - inner) / (half - inner);
+        };
+
+        const auto withFade = [](StudioColor color, float fade) {
+            color.a = static_cast<std::uint8_t>(
+                std::lround(static_cast<float>(color.a) * std::clamp(fade, 0.0f, 1.0f)));
+            return color;
+        };
+
         for (int step = -extent; step <= extent; ++step)
         {
             const float offset = static_cast<float>(step) * spacing;
@@ -418,20 +445,47 @@ namespace CNA::Studio
             const StudioColor alongU =
                 vIsAxis ? WireColors::kAxisX : (isMajor ? WireColors::kGridMajor : WireColors::kGrid);
 
-            const std::optional<std::pair<StudioVector2, StudioVector2>> lineAlongV =
-                projectSegment(camera, pointAt(u, centerV - half), pointAt(u, centerV + half));
-            if (lineAlongV)
+            // Each line is cut into pieces so it can fade along its length: a `WireSegment` carries
+            // one colour, so a single segment running from the centre to the rim can only be one
+            // strength the whole way (`plan.md` STUDIO-11005).
+            for (int piece = 0; piece < pieces; ++piece)
             {
-                segments.push_back(WireSegment{lineAlongV->first, lineAlongV->second, alongV,
-                                               uIsAxis ? 2.0f : 1.0f});
-            }
+                const float t0 = static_cast<float>(piece) / static_cast<float>(pieces);
+                const float t1 = static_cast<float>(piece + 1) / static_cast<float>(pieces);
 
-            const std::optional<std::pair<StudioVector2, StudioVector2>> lineAlongU =
-                projectSegment(camera, pointAt(centerU - half, v), pointAt(centerU + half, v));
-            if (lineAlongU)
-            {
-                segments.push_back(WireSegment{lineAlongU->first, lineAlongU->second, alongU,
-                                               vIsAxis ? 2.0f : 1.0f});
+                const float v0 = centerV - half + t0 * (2.0f * half);
+                const float v1 = centerV - half + t1 * (2.0f * half);
+                const float u0 = centerU - half + t0 * (2.0f * half);
+                const float u1 = centerU - half + t1 * (2.0f * half);
+
+                // Measured at the piece's midpoint, which is what makes the strength vary along the
+                // line rather than only between lines.
+                const float fadeAlongV = fadeAt(u - centerU, (v0 + v1) * 0.5f - centerV);
+                const float fadeAlongU = fadeAt((u0 + u1) * 0.5f - centerU, v - centerV);
+
+                if (fadeAlongV > 0.0f)
+                {
+                    const std::optional<std::pair<StudioVector2, StudioVector2>> lineAlongV =
+                        projectSegment(camera, pointAt(u, v0), pointAt(u, v1));
+                    if (lineAlongV)
+                    {
+                        segments.push_back(WireSegment{lineAlongV->first, lineAlongV->second,
+                                                       withFade(alongV, fadeAlongV),
+                                                       uIsAxis ? 2.0f : 1.0f});
+                    }
+                }
+
+                if (fadeAlongU > 0.0f)
+                {
+                    const std::optional<std::pair<StudioVector2, StudioVector2>> lineAlongU =
+                        projectSegment(camera, pointAt(u0, v), pointAt(u1, v));
+                    if (lineAlongU)
+                    {
+                        segments.push_back(WireSegment{lineAlongU->first, lineAlongU->second,
+                                                       withFade(alongU, fadeAlongU),
+                                                       vIsAxis ? 2.0f : 1.0f});
+                    }
+                }
             }
         }
 
