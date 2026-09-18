@@ -189,6 +189,7 @@ add_library(cna-studio-assets STATIC
     src/assets/ModelImport.cpp
     src/assets/TextureImport.cpp
     src/assets/AudioImport.cpp
+    src/assets/ImportJobs.cpp
     src/assets/MaterialDocument.cpp
     src/assets/MeshCache.cpp
     src/assets/AssetTree.cpp)

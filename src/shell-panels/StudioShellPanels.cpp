@@ -238,6 +238,11 @@ namespace CNA::Studio
 
         (void)thumbnails_.pump(jobs_, context_.getAssets(), 4);
 
+        // Re-reading what the watcher saw change, off the frame (STUDIO-10011). Pumped after the
+        // poll that queued it, so a file saved this frame is submitted this frame rather than
+        // waiting for the next one.
+        (void)imports_.pump(jobs_, context_.getAssets());
+
         // The one crossing background work makes into the document (STUDIO-30001). Budgeted, so a
         // burst of jobs finishing together is spread over frames rather than producing one long
         // one -- the last step of background work staying background.
@@ -285,7 +290,12 @@ namespace CNA::Studio
         }
         sinks.reloadInPlayer = [this](const Uuid& assetId) { (void)play_.reloadAsset(assetId); };
 
-        (void)studioPollAssetChanges(watcher_, context_, sinks, delta);
+        const StudioAssetReloadResult reload = studioPollAssetChanges(watcher_, context_, sinks, delta);
+
+        // The reload reports which assets went stale; queueing the re-read is this layer's job,
+        // because this is the layer that owns the job system. Reading them where the watcher
+        // noticed would put a glTF parse back on the frame, which is what STUDIO-10011 took off it.
+        if (!reload.needsReimport.empty()) { (void)imports_.request(reload.needsReimport); }
     }
 
     void StudioShellPanels::notify(StudioNotification notification)

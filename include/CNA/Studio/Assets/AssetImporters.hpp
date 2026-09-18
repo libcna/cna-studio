@@ -165,4 +165,20 @@ namespace CNA::Studio
     /** @brief As above, through @p importers rather than the built-in set (`plan.md` STUDIO-10002). */
     bool applyImporterFacts(AssetDatabase& assets, const Uuid& id,
                             const StudioImporterRegistry& importers);
+
+    /**
+     * @brief Merges @p facts into @p id's sidecar, writing only where a value would change.
+     *
+     * The second half of an import, split out because the first half moved off the frame
+     * (`plan.md` STUDIO-10011): a worker gathers facts with `StudioAssetImporter::gatherFacts`,
+     * and this puts them on the record. **Main thread only** — it writes a sidecar and may
+     * reallocate the record store.
+     *
+     * The "only where a value would change" rule lives here rather than in each importer because
+     * it is identical for all of them, and an importer that got it wrong would rewrite every
+     * sidecar on every open and fill a repository with spurious diffs.
+     *
+     * @return True when something was written.
+     */
+    bool studioApplyImporterFacts(AssetDatabase& assets, const Uuid& id, const JsonValue& facts);
 }

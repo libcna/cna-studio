@@ -20,10 +20,18 @@
  * `AssetImporters.hpp` already registers and the inspector already knows how to draw (decision
  * D-05). Two ways to describe one importer's settings would be one too many.
  *
- * It also does not open files on its own account, or decide when to run: `applyImporterFacts` owns
- * the walk, the sidecar write and the "only write when something actually changed" rule, because
- * those are the same for every importer and an importer that got them wrong would produce a
- * repository full of spurious diffs.
+ * It also does not decide when to run, compare its facts against what is on record, or write a
+ * sidecar: `applyImporterFacts` owns the walk, the sidecar write and the "only write when something
+ * actually changed" rule, because those are the same for every importer and an importer that got
+ * them wrong would produce a repository full of spurious diffs.
+ *
+ * ### It is given a path and settings, and nothing else
+ *
+ * `plan.md` STUDIO-10011. Reading a file is the slow half of importing and the half that must
+ * happen off the frame, so `gatherFacts` takes only values a job body can be handed: a resolved
+ * path and a copy of the settings. A signature that took an `AssetDatabase&` could not be called
+ * from a worker at all, and one that took it and promised not to touch it would be a promise
+ * nothing checks.
  *
  * ### Facts, not settings
  *
@@ -72,19 +80,30 @@ namespace CNA::Studio
         [[nodiscard]] virtual bool handles(AssetType type) const = 0;
 
         /**
-         * @brief Fills in what is true of @p record's file, leaving every *setting* alone.
+         * @brief Reads what is true of the file at @p absolutePath, given @p settings.
          *
-         * Called with the record already found and the caller holding the walk. An importer may
-         * read the file; it must not delete the record, rescan, or write a sidecar — the caller
-         * does that, once, and only when this returns true.
+         * **Runs on a worker thread** (`plan.md` STUDIO-10011). It is given a path and a copy of
+         * the asset's settings, and it is given nothing else: no database, no record, no document,
+         * no graphics device. That is not politeness, it is the reason importing can move off the
+         * frame at all — a signature that took an `AssetDatabase&` could not be called from a job
+         * body, and one that took it and promised not to touch it would be a promise nobody can
+         * check.
          *
-         * @param assets The database, for `resolvePath` and for the mutable record.
-         * @param record The asset. Const, because changing it is done through @p assets so that the
-         *        database can keep its indexes right.
-         * @return True when a fact changed and the sidecar is worth writing.
+         * It reads facts and it returns them. It does not compare them against what is on record,
+         * does not write a sidecar and does not decide when to run: those are identical for every
+         * importer, they need the database, and an importer that got them wrong would fill a
+         * repository with spurious diffs.
+         *
+         * @param absolutePath The file. Already resolved, because resolving needs the database.
+         * @param settings The asset's `importerSettings`, because some facts depend on a choice —
+         *        a model's size is measured at its `scaleFactor`, and reporting one taken at 1.0
+         *        beside a scale of 100 would be two answers to one question.
+         * @return The facts as a JSON object, or a null value when the file cannot be read. An
+         *         empty object and a null value are different answers: the first says "read, and it
+         *         says nothing", the second says "not read".
          */
-        [[nodiscard]] virtual bool readFacts(AssetDatabase& assets,
-                                             const AssetRecord& record) const = 0;
+        [[nodiscard]] virtual JsonValue gatherFacts(const std::string& absolutePath,
+                                                    const JsonValue& settings) const = 0;
     };
 
     /**

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 7 of 15 complete `█████░░░░░░░`
+**Progress:** 8 of 15 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -20,7 +20,7 @@
 | `STUDIO-10008` | Shader and effect assets | ⬜ | `STUDIO-22001` |
 | `STUDIO-10009` | Animation import | ⬜ | `STUDIO-21001` |
 | `STUDIO-10010` | Environment map import and processing | ⬜ | `STUDIO-20001` |
-| `STUDIO-10011` | Import jobs are cancellable and report progress accurately | ⬜ | `STUDIO-30001` |
+| `STUDIO-10011` | Import jobs are cancellable and report progress accurately | ✅ | `STUDIO-30001` |
 | `STUDIO-10012` | Provenance record for every third-party dependency | ✅ | — |
 | `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ⬜ | `STUDIO-10011` |
 | `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | ✅ | `STUDIO-10012` |
@@ -405,6 +405,68 @@ test failure rather than a quiet widening.
 
 **What this unblocks.** `STUDIO-09003` (thumbnails as cancellable background jobs), and behind it
 `STUDIO-09004`, `STUDIO-09015` and `STUDIO-30025`.
+
+### `STUDIO-10011` — Import jobs are cancellable and report progress accurately
+
+**Acceptance.** Importing happens off the frame, can be stopped, and the fraction it reports is a
+fraction of work actually done.
+
+**The enabling change is the importer signature.** A job body is given a `StudioJobContext` and
+nothing else — that is the rule that makes background work safe rather than merely encouraged — so
+`StudioAssetImporter::readFacts(AssetDatabase&, const AssetRecord&)` could not be called from a
+worker at all. It is now `gatherFacts(absolutePath, settings) -> JsonValue`: a path, a copy of the
+settings, and no way to reach the document even by accident. A signature that took the database and
+promised not to touch it would be a promise nothing checks.
+
+That splits an import where the job system already cuts it: **on a worker**, read a file and produce
+facts; **on the main thread**, put them on the record, compare before writing, write the sidecar.
+The second half is `studioApplyImporterFacts`, and it is where the "only write when something
+actually changed" rule stayed — identical for every importer, and an importer that got it wrong
+would fill a repository with spurious diffs.
+
+**Chunks of thirty-two, not one job and not one job per asset.** One job for a whole run would apply
+two thousand sidecar writes in a single completion, which is the long frame this exists to prevent
+with the location changed. One job per asset would make the progress fraction per-asset — every bar
+full, two thousand times — and spend a bounded queue slot each (`STUDIO-30002`). A chunk is both: a
+completion short enough for a frame, and a run whose fraction is real.
+
+**The fraction is `applied / asked for`, and both numbers are honest.** The denominator is known when
+the run starts, so it is a fraction rather than a guess; a *finished* run keeps its numbers until
+the next request, so a caller can show a full bar before taking it away, and "nothing has ever been
+asked for" is negative rather than zero. Asking for more assets mid-run extends it and the fraction
+can fall — which is the true answer, because the work really did grow, and a bar kept monotonic by
+hiding that would be the lie this task removes.
+
+**Cancelling keeps what was read.** Those files really were read and their facts really are what the
+files say, so throwing them away would undo work nobody asked to undo. A chunk whose worker had
+already finished is applied rather than dropped for the same reason. Nothing is left half-imported
+because the smallest thing the queue applies is one asset's whole facts object — which is also why
+`STUDIO-10013` is about *failure*, not about interruption.
+
+**Every asset is accounted for exactly once**, and the four outcomes are told apart because they are
+different answers to "why is this number not what I expected": read, unreadable (a file no importer
+claims, which a project is full of and which is not a failure), cancelled, or deleted from under the
+run — the last leaving the run's total rather than counting as anything, since a file that no longer
+exists cannot be read.
+
+**What it replaced was worse than synchronous.** `StudioAssetReload` answered a single changed file
+by calling `applyImporterFacts(assets)` — *every tracked asset in the project*, on the frame. On a
+project of a thousand models that is a full glTF parse of each of them every time somebody saves a
+texture. The reload now *reports* which assets went stale ("panels report, the binder acts", one
+layer down) and `StudioShellPanels` queues those, so the work is proportional to what changed and
+happens on a worker. Nothing tested the old behaviour, which is part of why it survived.
+
+**Verification.** `tests/ImportJobTests.cpp`: a run reading every asset and saying so exactly; the
+fraction never going backwards within a run and never running ahead of what has been read; a cancel
+mid-run leaving what was read on the records and accounting for the rest; an unreadable file counted
+rather than failed; a second run of the same assets reading everything and writing nothing; a
+refused submission offering the same work again next pump rather than dropping it or waiting; an
+asset deleted while queued leaving the run. All in immediate mode, which runs the same bodies,
+completions and ordering as the threaded one — so nothing sleeps and nothing races.
+`AFileChangedOnDiskHasItsFactsReadAgainOffTheFrame` is the wiring end to end, through the real
+shell, and it polls until the queue has *read* something rather than for a fixed number of frames —
+counting the producer's side of the boundary, per `STUDIO-33026`. Checked by causing it: dropping
+the one line that queues the reload's report fails that case by name.
 
 ### `STUDIO-10012` — Provenance record for every third-party dependency
 

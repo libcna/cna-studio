@@ -80,41 +80,37 @@ namespace CNA::Studio
                                  const JsonValue& facts);
 
         /**
-         * @brief Writes what a `.spritefont` says about itself into its sidecar.
+         * @brief What a `.spritefont` says about itself, as a facts object.
          *
-         * @return True when something changed, so that opening a project twice produces no diff.
+         * Each of these takes a path and a settings object and returns JSON, and is therefore
+         * callable from a worker thread -- which is what lets importing happen off the frame
+         * (`plan.md` STUDIO-10011). None of them touches the database, compares against what is on
+         * record, or writes anything.
+         *
+         * @return A JSON object, or a null value when the file is not one this reads.
          */
-        bool applySpriteFontFacts(AssetDatabase& assets, const AssetRecord& record);
+        JsonValue gatherSpriteFontFacts(const std::string& absolutePath, const JsonValue& settings);
+
+        /** @brief What an image's header says about itself. See gatherSpriteFontFacts(). */
+        JsonValue gatherTextureFacts(const std::string& absolutePath, const JsonValue& settings);
 
         /**
-         * @brief Writes an image's dimensions into its sidecar.
+         * @brief What a model file says about itself. See gatherSpriteFontFacts().
          *
-         * @return True when something changed, so that opening a project twice produces no diff.
+         * The most expensive gather the editor has, because glTF states none of these in a header
+         * -- a triangle count is the sum of every primitive's, so the whole file has to be read to
+         * find it. That cost is the reason `StudioImportQueue` exists.
          */
-        bool applyTextureFacts(AssetDatabase& assets, const AssetRecord& record);
+        JsonValue gatherModelFacts(const std::string& absolutePath, const JsonValue& settings);
 
         /**
-         * @brief Writes what a model file says about itself into its sidecar.
-         *
-         * The most expensive facts pass the editor has, because glTF states none of these in a
-         * header -- a triangle count is the sum of every primitive's, so the whole file has to be
-         * read to find it. `writeFactsIfChanged` is what keeps that cost from turning into sidecar
-         * churn on every open.
-         *
-         * @return True when something changed.
-         */
-        bool applyModelFacts(AssetDatabase& assets, const AssetRecord& record);
-
-        /**
-         * @brief Writes what an audio file says about itself into its sidecar.
+         * @brief What an audio file's header says about itself. See gatherSpriteFontFacts().
          *
          * One reader for both audio types, because a `.wav` and an `.ogg` answer the same
          * questions and the split between `SoundEffect` and `Song` is about how a *game* uses
          * them, not about what is in the file.
-         *
-         * @return True when something changed, so that opening a project twice produces no diff.
          */
-        bool applyAudioFacts(AssetDatabase& assets, const AssetRecord& record);
+        JsonValue gatherAudioFacts(const std::string& absolutePath, const JsonValue& settings);
     }
 
     namespace
@@ -361,7 +357,7 @@ namespace CNA::Studio
             scale.minimum = 0.0001;
             scale.maximum = 10000.0;
 
-            // What the file says about itself, read by `Detail::applyModelFacts`. Read-only for
+            // What the file says about itself, read by `Detail::gatherModelFacts`. Read-only for
             // the reason the sprite font's are: these are answers taken from the file, and an
             // editable copy would be a second answer to a settled question. They are also the only
             // way to tell a model that imported cleanly from one whose geometry was skipped --
@@ -669,11 +665,11 @@ namespace CNA::Studio
         return true;
     }
 
-    bool Detail::applySpriteFontFacts(AssetDatabase& assets, const AssetRecord& record)
+    JsonValue Detail::gatherSpriteFontFacts(const std::string& absolutePath, const JsonValue&)
     {
         const std::optional<SpriteFontDescription> description =
-            readSpriteFontDescription(assets.resolvePath(record.sourcePath));
-        if (!description) { return false; }
+            readSpriteFontDescription(absolutePath);
+        if (!description) { return JsonValue{}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("fontName", JsonValue{description->fontName});
@@ -682,23 +678,20 @@ namespace CNA::Studio
         facts.set("useKerning", JsonValue{description->useKerning});
         facts.set("characterRange", JsonValue{std::to_string(description->firstCharacter) + "-"
                                               + std::to_string(description->lastCharacter)});
-
-        return writeFactsIfChanged(assets, record, facts);
+        return facts;
     }
 
-    bool Detail::applyModelFacts(AssetDatabase& assets, const AssetRecord& record)
+    JsonValue Detail::gatherModelFacts(const std::string& absolutePath, const JsonValue& settings)
     {
-        // Gathered with the settings the sidecar already holds, because every one of them changes
-        // what the answers *are*: a size measured at scale 1.0 beside a scale factor of 100, or a
-        // vertex count taken with the file's normals beside a "Normals: Calculate" that triples
-        // it, would each be two answers to one question -- which is the thing the fact/setting
-        // split exists to prevent. The facts describe what this asset imports as, not what the
-        // file would yield to somebody else's settings.
-        const ModelImportSettings settings = ModelImportSettings::fromJson(record.importerSettings);
-
+        // Gathered with the settings, because every one of them changes what the answers *are*: a
+        // size measured at scale 1.0 beside a scale factor of 100, or a vertex count taken with
+        // the file's normals beside a "Normals: Calculate" that triples it, would each be two
+        // answers to one question -- which is the thing the fact/setting split exists to prevent.
+        // The facts describe what this asset imports as, not what the file would yield to somebody
+        // else's settings.
         const std::optional<ModelDescription> description =
-            readModelDescription(assets.resolvePath(record.sourcePath), settings);
-        if (!description) { return false; }
+            readModelDescription(absolutePath, ModelImportSettings::fromJson(settings));
+        if (!description) { return JsonValue{}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("meshCount", JsonValue{static_cast<double>(description->partCount)});
@@ -709,15 +702,13 @@ namespace CNA::Studio
         facts.set("skippedPrimitives",
                   JsonValue{static_cast<double>(description->skippedPrimitives)});
         facts.set("modelSize", PropertyValue{description->size}.toJson());
-
-        return writeFactsIfChanged(assets, record, facts);
+        return facts;
     }
 
-    bool Detail::applyAudioFacts(AssetDatabase& assets, const AssetRecord& record)
+    JsonValue Detail::gatherAudioFacts(const std::string& absolutePath, const JsonValue&)
     {
-        const std::optional<StudioAudioDescription> description =
-            readAudioDescription(assets.resolvePath(record.sourcePath));
-        if (!description) { return false; }
+        const std::optional<StudioAudioDescription> description = readAudioDescription(absolutePath);
+        if (!description) { return JsonValue{}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("sourceFormat", JsonValue{description->format});
@@ -725,8 +716,7 @@ namespace CNA::Studio
         facts.set("sampleRate", JsonValue{static_cast<double>(description->sampleRate)});
         facts.set("channels", JsonValue{static_cast<double>(description->channels)});
         facts.set("decodedBytes", JsonValue{static_cast<double>(description->decodedBytes)});
-
-        return writeFactsIfChanged(assets, record, facts);
+        return facts;
     }
 
     std::optional<SpriteFontDescription> readSpriteFontDescription(const std::string& path)
@@ -770,14 +760,14 @@ namespace CNA::Studio
         /**
          * @brief A built-in importer: an id, the type it claims, and the reader it delegates to.
          *
-         * The readers are unchanged and stay here, beside the libraries they need. What moved is
-         * *who decides which one runs* (`plan.md` STUDIO-10002) -- rewriting the readers in the
-         * same change would have made a refactor and a behaviour change one diff.
+         * The readers stay here, beside the libraries they need. What moved was *who decides which
+         * one runs* (`plan.md` STUDIO-10002), and then what a reader is *given*: a path and a
+         * settings object, so it can run on a worker (STUDIO-10011).
          */
         class BuiltinImporter final : public StudioAssetImporter
         {
         public:
-            using Reader = bool (*)(AssetDatabase&, const AssetRecord&);
+            using Reader = JsonValue (*)(const std::string&, const JsonValue&);
 
             BuiltinImporter(std::string_view importerId, AssetType type, Reader reader)
                 : id_(importerId), type_(type), reader_(reader)
@@ -788,10 +778,10 @@ namespace CNA::Studio
 
             [[nodiscard]] bool handles(AssetType type) const override { return type == type_; }
 
-            [[nodiscard]] bool readFacts(AssetDatabase& assets,
-                                         const AssetRecord& record) const override
+            [[nodiscard]] JsonValue gatherFacts(const std::string& absolutePath,
+                                                const JsonValue& settings) const override
             {
-                return reader_ != nullptr && reader_(assets, record);
+                return reader_ != nullptr ? reader_(absolutePath, settings) : JsonValue{};
             }
 
         private:
@@ -804,15 +794,15 @@ namespace CNA::Studio
     void registerBuiltinAssetImporters(StudioImporterRegistry& registry)
     {
         (void)registry.add(std::make_unique<BuiltinImporter>(
-            ImporterIds::kTexture, AssetType::Texture2D, &Detail::applyTextureFacts));
+            ImporterIds::kTexture, AssetType::Texture2D, &Detail::gatherTextureFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
-            ImporterIds::kSpriteFont, AssetType::SpriteFont, &Detail::applySpriteFontFacts));
+            ImporterIds::kSpriteFont, AssetType::SpriteFont, &Detail::gatherSpriteFontFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
-            ImporterIds::kModel, AssetType::Model, &Detail::applyModelFacts));
+            ImporterIds::kModel, AssetType::Model, &Detail::gatherModelFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
-            ImporterIds::kSoundEffect, AssetType::SoundEffect, &Detail::applyAudioFacts));
+            ImporterIds::kSoundEffect, AssetType::SoundEffect, &Detail::gatherAudioFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
-            ImporterIds::kSong, AssetType::Song, &Detail::applyAudioFacts));
+            ImporterIds::kSong, AssetType::Song, &Detail::gatherAudioFacts));
     }
 
     const StudioImporterRegistry& getBuiltinAssetImporters()
@@ -825,6 +815,16 @@ namespace CNA::Studio
             return built;
         }();
         return registry;
+    }
+
+    bool studioApplyImporterFacts(AssetDatabase& assets, const Uuid& id, const JsonValue& facts)
+    {
+        if (facts.isNull()) { return false; }
+
+        const AssetRecord* record = assets.find(id);
+        if (record == nullptr) { return false; }
+
+        return Detail::writeFactsIfChanged(assets, *record, facts);
     }
 
     bool applyImporterFacts(AssetDatabase& assets, const Uuid& id)
@@ -845,7 +845,16 @@ namespace CNA::Studio
         const StudioAssetImporter* importer = importers.forType(record->type);
         if (importer == nullptr) { return false; }
 
-        return importer->readFacts(assets, *record);
+        // Read, then compared, then written -- in that order and in this one place. The gather is
+        // the half that reads a file and is therefore the half `StudioImportQueue` can move to a
+        // worker (`plan.md` STUDIO-10011); everything after it needs the database and stays on the
+        // main thread. Copying the record's path and settings out first also survives the sidecar
+        // write reallocating the record store underneath.
+        const std::string absolutePath = assets.resolvePath(record->sourcePath);
+        const JsonValue facts = importer->gatherFacts(absolutePath, record->importerSettings);
+        if (facts.isNull()) { return false; }
+
+        return Detail::writeFactsIfChanged(assets, *record, facts);
     }
 
     std::size_t applyImporterFacts(AssetDatabase& assets)
@@ -870,23 +879,18 @@ namespace CNA::Studio
         return changed;
     }
 
-    bool Detail::applyTextureFacts(AssetDatabase& assets, const AssetRecord& record)
+    JsonValue Detail::gatherTextureFacts(const std::string& absolutePath, const JsonValue&)
     {
-        const std::optional<ImageDescription> description =
-            readImageDescription(assets.resolvePath(record.sourcePath));
-        if (!description) { return false; }
+        const std::optional<ImageDescription> description = readImageDescription(absolutePath);
+        if (!description) { return JsonValue{}; }
 
-        // Through the shared writer like every other facts pass, rather than a comparison written
-        // out here. Three facts instead of one is where a hand-rolled "did anything change" starts
-        // getting one of them wrong, and getting it wrong means a sidecar rewritten on every open.
         JsonValue facts = JsonValue::makeObject();
         facts.set("pixelSize", PropertyValue{StudioVector2{static_cast<float>(description->width),
                                                            static_cast<float>(description->height)}}
                                    .toJson());
         facts.set("sourceFormat", JsonValue{description->format});
         facts.set("sourceAlpha", JsonValue{description->hasAlphaChannel});
-
-        return writeFactsIfChanged(assets, record, facts);
+        return facts;
     }
 
     void registerBuiltinImporters(ComponentRegistry& registry)

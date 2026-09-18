@@ -27,6 +27,7 @@
 #pragma once
 
 #include "CNA/Studio/Assets/AssetDocumentCache.hpp"
+#include "CNA/Studio/Assets/ImportJobs.hpp"
 #include "CNA/Studio/Assets/ThumbnailCache.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Core/StudioJobs.hpp"
@@ -334,6 +335,18 @@ namespace CNA::Studio
 
         /** @brief The thumbnails made for the Content Browser's visible assets. */
         [[nodiscard]] const StudioThumbnailCache& thumbnails() const { return thumbnails_; }
+
+        /**
+         * @brief Assets being re-read off the frame (`plan.md` STUDIO-10011).
+         *
+         * Fed by the watcher: a file that changed on disk needs its facts read again, and reading
+         * a model is a whole glTF parse. Exposed so a status line can show what it is doing and a
+         * user can stop it.
+         */
+        [[nodiscard]] StudioImportQueue& imports() { return imports_; }
+
+        /** @brief Assets being re-read off the frame (`plan.md` STUDIO-10011). */
+        [[nodiscard]] const StudioImportQueue& imports() const { return imports_; }
         [[nodiscard]] const StudioJobSystem& jobs() const { return jobs_; }
 
         /**
@@ -769,6 +782,7 @@ namespace CNA::Studio
          * do about it.
          */
         StudioThumbnailCache thumbnails_;
+        StudioImportQueue imports_;
 
         /** @brief Whether the host's release hook has been handed to the cache yet. */
         bool thumbnailReleaseInstalled_ = false;

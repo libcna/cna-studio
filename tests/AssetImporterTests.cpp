@@ -17,6 +17,8 @@
 #include "CNA/Studio/Assets/AssetImporters.hpp"
 
 #include <filesystem>
+#include "CNA/Studio/Core/Json.hpp"
+
 #include <fstream>
 #include <memory>
 #include <set>
@@ -39,12 +41,19 @@ namespace
         [[nodiscard]] std::string_view id() const override { return id_; }
         [[nodiscard]] bool handles(AssetType type) const override { return type == type_; }
 
-        [[nodiscard]] bool readFacts(AssetDatabase& assets, const AssetRecord& record) const override
+        [[nodiscard]] JsonValue gatherFacts(const std::string& absolutePath,
+                                            const JsonValue& settings) const override
         {
-            (void)assets;
-            (void)record;
+            (void)absolutePath;
+            (void)settings;
             if (calls_ != nullptr) { ++(*calls_); }
-            return true;
+
+            // A different value every call, so that `applyImporterFacts` -- which writes only what
+            // would actually change -- reports a change every time and the call count and the
+            // return value stay the same assertion.
+            JsonValue facts = JsonValue::makeObject();
+            facts.set("calls", JsonValue{static_cast<double>(calls_ != nullptr ? *calls_ : 0)});
+            return facts;
         }
 
     private:

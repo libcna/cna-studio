@@ -68,8 +68,16 @@ namespace CNA::Studio
                               "References.");
         }
 
-        // The pixel size of a texture that just changed is no longer the one on record.
-        (void)applyImporterFacts(context.getAssets());
+        // The pixel size of a texture that just changed is no longer the one on record -- so the
+        // assets that moved are *reported* as needing a reimport rather than re-read here. Two
+        // things were wrong with reading them here: it was the whole project rather than the files
+        // that changed, and it was on the frame, where a glTF parse does not belong
+        // (`plan.md` STUDIO-10011).
+        result.needsReimport.reserve(changes.changed.size() + changes.restored.size());
+        result.needsReimport.insert(result.needsReimport.end(), changes.changed.begin(),
+                                    changes.changed.end());
+        result.needsReimport.insert(result.needsReimport.end(), changes.restored.begin(),
+                                    changes.restored.end());
 
         result.changed = changes.changed.size();
         result.restored = changes.restored.size();

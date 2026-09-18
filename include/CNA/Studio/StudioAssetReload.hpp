@@ -26,6 +26,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <vector>
 
 namespace CNA::Studio
 {
@@ -44,6 +45,21 @@ namespace CNA::Studio
 
         /** @brief Assets whose file went away. */
         std::size_t removed = 0;
+
+        /**
+         * @brief The assets whose facts are now out of date: those that changed, and those that
+         *        came back.
+         *
+         * *Reported*, not acted on -- "panels report, the binder acts", and this is the same rule
+         * one layer down. Reading a model is a whole glTF parse, which belongs on a worker
+         * (`plan.md` STUDIO-10011), and this function has no job system and no business having one.
+         * Its caller feeds these to a `StudioImportQueue`.
+         *
+         * This used to be a call to `applyImporterFacts(assets)` right here: every tracked file in
+         * the project re-read, on the frame, because one file changed. On a project of a thousand
+         * models that is a full parse of every one of them each time somebody saves a texture.
+         */
+        std::vector<Uuid> needsReimport;
 
         /** @brief Whether anything at all happened. */
         [[nodiscard]] bool any() const { return changed + restored + removed > 0; }
