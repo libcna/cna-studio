@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iomanip>
+#include <sstream>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -771,7 +772,16 @@ namespace
             std::cout << std::left << std::setw(20) << row.name << std::right
                       << std::setw(10) << std::fixed << std::setprecision(1) << row.medianMicroseconds
                       << std::setw(10) << row.minMicroseconds
-                      << std::setw(8) << std::setprecision(1) << row.baselineMultiple << "x"
+                      << std::setw(9)
+                      << (row.baselineMultiple > 0.0
+                              ? (std::ostringstream{}
+                                 << std::fixed << std::setprecision(1) << row.baselineMultiple
+                                 << "x")
+                                    .str()
+                              // A dash rather than 0.0x, which reads as a measurement. The
+                              // baseline row is absent whenever a selection excludes it, and a
+                              // ratio nobody can compute is not a ratio of zero.
+                              : std::string{"-"})
                       << std::setw(10) << std::setprecision(0) << row.budgetMicroseconds
                       << std::setw(7) << (row.isOverBudget() ? "OVER" : "ok")
                       << std::setw(10) << std::setprecision(1)

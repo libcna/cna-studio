@@ -224,6 +224,11 @@ namespace CNA::Studio
         pollInteractionEnd();
         pollAssetChanges(nowSeconds);
 
+        // Thumbnails for whatever the browser last drew, and cancellation for whatever it has
+        // scrolled past (STUDIO-09003). Budgeted for the same reason the drain below is: one poll
+        // must not turn a folder into a queue, and the next poll is a sixtieth of a second away.
+        (void)thumbnails_.pump(jobs_, context_.getAssets(), 4);
+
         // The one crossing background work makes into the document (STUDIO-30001). Budgeted, so a
         // burst of jobs finishing together is spread over frames rather than producing one long
         // one -- the last step of background work staying background.
@@ -1049,6 +1054,11 @@ namespace CNA::Studio
             {
                 counts_.contentRowsDrawn = content.rowsDrawn;
                 counts_.contentRowsTotal = content.rowsTotal;
+
+                // What is on screen is what is worth a thumbnail (STUDIO-09003). Recorded on the
+                // draw pass and acted on in `poll`, so the drawing itself starts nothing: the
+                // panel reports and the binder acts.
+                thumbnails_.setWanted(content.visibleAssets);
             }
             if (content.shortcutsChanged) { saveAssetShortcuts(); }
 

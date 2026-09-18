@@ -27,6 +27,7 @@
 #pragma once
 
 #include "CNA/Studio/Assets/AssetDocumentCache.hpp"
+#include "CNA/Studio/Assets/ThumbnailCache.hpp"
 #include "CNA/Studio/Assets/AssetWatcher.hpp"
 #include "CNA/Studio/Core/StudioJobs.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
@@ -300,6 +301,12 @@ namespace CNA::Studio
          * found through a locator (`docs/ARCHITECTURE.md` §10.1). Drained once per @ref poll.
          */
         [[nodiscard]] StudioJobSystem& jobs() { return jobs_; }
+
+        /** @brief The thumbnails made for the Content Browser's visible assets. */
+        [[nodiscard]] StudioThumbnailCache& thumbnails() { return thumbnails_; }
+
+        /** @brief The thumbnails made for the Content Browser's visible assets. */
+        [[nodiscard]] const StudioThumbnailCache& thumbnails() const { return thumbnails_; }
         [[nodiscard]] const StudioJobSystem& jobs() const { return jobs_; }
 
         /**
@@ -726,6 +733,15 @@ namespace CNA::Studio
          * an editor showing a file it has already overwritten.
          */
         StudioAssetDocumentCache documents_;
+
+        /**
+         * @brief Thumbnails for the assets the browser is showing (`plan.md` STUDIO-09003).
+         *
+         * Owned here rather than by the panel, because starting and cancelling background work is
+         * the binder's job: the panel reports which assets are on screen and this decides what to
+         * do about it.
+         */
+        StudioThumbnailCache thumbnails_;
 
         /** @brief Returns the index, rebuilding it first when something has changed. */
         [[nodiscard]] const AssetDependencyIndex* dependencyIndex();

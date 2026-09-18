@@ -183,6 +183,7 @@ add_library(cna-studio-assets STATIC
     src/assets/AssetWatcher.cpp
     src/assets/AssetImporters.cpp
     src/assets/ImageDecode.cpp
+    src/assets/ThumbnailCache.cpp
     src/assets/ModelImport.cpp
     src/assets/MaterialDocument.cpp
     src/assets/MeshCache.cpp

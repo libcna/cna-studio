@@ -386,6 +386,18 @@ namespace CNA::Studio
          */
         std::size_t rowsBuilt = 0;
 
+        /**
+         * @brief The assets in the window this pass, in display order (`plan.md` STUDIO-09003).
+         *
+         * Reported rather than acted on. The browser is the only thing that knows which assets are
+         * on screen — that is exactly `studioContentCardWindow`'s window — and the thumbnail cache
+         * is the binder's to own, because starting and cancelling background work is not something
+         * a draw path does. Panels report, the binder acts (`docs/ARCHITECTURE.md` §10.1).
+         *
+         * Folders are not in it: there is no picture to make of one.
+         */
+        std::vector<Uuid> visibleAssets;
+
         /** @brief How many listed assets have no source file on disk. */
         std::size_t missingCount = 0;
 

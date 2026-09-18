@@ -6,13 +6,13 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 14 of 17 complete `█████████░░░`
+**Progress:** 15 of 17 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-09001` | Folder tree and breadcrumb navigation | ✅ | `STUDIO-07008` |
 | `STUDIO-09002` | Grid and list views | ✅ | `STUDIO-09001` |
-| `STUDIO-09003` | Thumbnail generation as cancellable background jobs | 🔬 | `STUDIO-30001`, `STUDIO-10014` |
+| `STUDIO-09003` | Thumbnail generation as cancellable background jobs | ✅ | `STUDIO-30001`, `STUDIO-10014` |
 | `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ⬜ | `STUDIO-09003` |
 | `STUDIO-09005` | Search across name, type and path | ✅ | `STUDIO-09001` |
 | `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
@@ -112,6 +112,55 @@ The last of those is the one that mattered: it clicks through the shell rather t
 model, so it exercised the new list path without being rewritten.
 
 ### `STUDIO-09003` — Thumbnail generation as cancellable background jobs
+
+**Done**, once `STUDIO-10014` supplied the missing half. `StudioThumbnailCache` decodes and
+downscales on worker threads, files the result on the main thread from `drain`, and cancels the work
+for anything the browser has scrolled past.
+
+**Drawing asks and never waits.** `find` is a hash lookup that touches no filesystem and starts
+nothing, because the browser calls it forty times a frame over a project of a hundred thousand
+assets. A thumbnail cache is *precisely* the feature that would put file access back on the draw
+path — checking freshness with a `stat` is the obvious way to write it — so freshness comes from the
+record's stamp, the way `STUDIO-30012` says, and a test counts the probes to prove it.
+
+**Wanting is separate from asking, and belongs to the binder.** The browser already knows what is on
+screen — that is `studioContentCardWindow`'s window, from `STUDIO-09016` — so it *reports*
+`visibleAssets` and `StudioShellPanels` hands the set to the cache each poll. Panels report, the
+binder acts (`docs/ARCHITECTURE.md` §10.1); starting and cancelling background work is not something
+a draw path does.
+
+**Cancellation is the feature, not tidiness.** Scrolling past an asset before its thumbnail is made
+is the common case: a user flicking through two thousand textures wants the forty they stop on, and
+the nineteen hundred they flew past are work nobody will look at. Without cancellation the queue
+becomes a record of everywhere the user has been, and the thumbnails they are actually looking at
+arrive last. An asset leaving the wanted set cancels its job on the next pump, and
+`getCancelledCount()` exists because a number that stays at zero while somebody scrolls would mean
+the cancellation never engaged and nothing else would say so.
+
+**A failure is cached.** A file that is not really a PNG would otherwise be decoded again on every
+pump, for ever — which is the case a cache exists to stop. So is the bound: 256 entries, several
+screenfuls, about sixteen megabytes. A cache that kept every thumbnail it ever made would be a
+memory leak with a justification.
+
+**The extension is checked before anything is queued**, so a folder of audio and scenes does not
+produce a job per file that then fails. A file that lies about its extension still fails at the
+decode, which is where a wrong answer costs one job rather than a queue full of them.
+
+**Budgeted at both ends.** The pump submits at most four jobs a poll and the job system refuses when
+full (`STUDIO-30002`); a refusal is "not now" and the next poll offers the same work again. One poll
+cannot turn a folder into a queue.
+
+**What it does not do: draw them.** That is `STUDIO-35041`, which is a different problem — an
+arbitrary image needs a texture, and the grid draws through the font atlas today. The card layout
+was written for it (`STUDIO-35040` put the icon in the rectangle a thumbnail will use), so the
+drawing drops in without moving anything. Splitting it that way is what let this task be finished
+rather than half-finished.
+
+**Measured**: `--ui-benchmark=content` is unchanged and inside budget — reporting the visible window
+costs nothing a benchmark can see. Green under AddressSanitizer and ThreadSanitizer, which is where
+a feature that decodes untrusted files on worker threads has to be checked.
+
+### Superseded reasoning, kept because the blockage was the interesting part
 
 **Blocked, and on the half nobody expected.** `STUDIO-30001`'s job system is done, so the
 *cancellable background job* part is available. What is not is the decoding: the only thing in the

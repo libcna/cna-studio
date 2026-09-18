@@ -1468,6 +1468,12 @@ namespace CNA::Studio
             assets, state.folder, context.getSelectedAsset(), state.query, state.shortcuts,
             window.firstRow, window.rowCount, &result.rowsBuilt);
 
+        result.visibleAssets.reserve(cards.size());
+        for (const StudioContentCard& card : cards)
+        {
+            if (!card.isFolder()) { result.visibleAssets.push_back(card.assetId); }
+        }
+
         std::vector<StudioTreeRow> rows;
         rows.reserve(cards.size());
         for (const StudioContentCard& card : cards)
@@ -1642,6 +1648,12 @@ namespace CNA::Studio
         const std::vector<StudioContentCard> cards = studioContentCardWindow(
             assets, state.folder, context.getSelectedAsset(), state.query, state.shortcuts,
             firstVisible, lastVisible - firstVisible, &result.rowsBuilt);
+
+        result.visibleAssets.reserve(cards.size());
+        for (const StudioContentCard& card : cards)
+        {
+            if (!card.isFolder()) { result.visibleAssets.push_back(card.assetId); }
+        }
 
         frame.ids().push("cards");
         for (std::size_t offset = 0; offset < cards.size(); ++offset)
