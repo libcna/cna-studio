@@ -6,7 +6,7 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 14 of 17 complete `█████████░░░`
+**Progress:** 15 of 17 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,7 @@
 | `STUDIO-30022` | Stress benchmark: 100,000 assets | ✅ | `STUDIO-09016` |
 | `STUDIO-30023` | Stress benchmark: very large logs | ⬜ | `STUDIO-27021` |
 | `STUDIO-30024` | Stress benchmark: large property lists and large imported models | ⬜ | `STUDIO-14018` |
-| `STUDIO-30025` | Stress benchmark: many thumbnails and many concurrent import jobs | ⬜ | `STUDIO-09003` |
+| `STUDIO-30025` | Stress benchmark: many thumbnails and many concurrent import jobs | ✅ | `STUDIO-09003` |
 | `STUDIO-30026` | Attribute and remove the cost of a very large multi-selection | ✅ | `STUDIO-30021` |
 | `STUDIO-30030` | Establish the interactive frame-rate target and measure against it | ✅ | `STUDIO-30020` |
 
@@ -499,8 +499,16 @@ and it is written down as one. `STUDIO-30030` is where an interactive target wou
 
 **`content-scrolling-100k` is there because a standing window is the easy case.** A view whose
 first row never changes can be answered by any cache keyed on it; one that moves has to build a
-fresh slice every frame, which is what a user scrolling actually does. It costs the same as the
-standing list, which is the answer that was wanted.
+fresh slice every frame, which is what a user scrolling actually does.
+
+> **Correction (`STUDIO-30025`).** When this was written the scenario was not scrolling at all. It
+> aimed the wheel at a hard-coded (640, 620), which is inside the Content Browser at 1280×720 and
+> over a different panel at the 1920×1080 the benchmark runs at — so the row measured a standing
+> window and the sentence that followed it ("it costs the same as the standing list") was drawing a
+> conclusion from a scenario that was not doing the thing it was named for. Scenarios now receive
+> their own panel's rectangle and aim at its centre. Re-measured with the wheel actually landing:
+> 222 µs against 179 µs standing. The conclusion survives — the difference is small — but it was
+> not evidence until now.
 
 **The fixture is reused rather than rebuilt.** Writing a hundred thousand files costs more than
 every timed frame of every scenario put together, so `fillAssets` keeps its scratch directory
@@ -736,3 +744,64 @@ ThreadSanitizer, which is where a new field behind an existing mutex has to be c
 **No production caller yet**, and none was invented. The job system is infrastructure that
 `STUDIO-09003`'s thumbnails and the importer will use; the shape above is what those callers need,
 and the tests stand in for them until they exist.
+
+### `STUDIO-30025` — Stress benchmark: many thumbnails and many concurrent import jobs
+
+**Done.** `thumbnails-2000` and `thumbnails-2000-scrolling`: two thousand real images in one folder,
+with the thumbnail pump and the job system running while the frame is timed.
+
+**Which needed the benchmark to start measuring a whole frame.** `runUiBenchmark` timed
+`renderFrame` and nothing else, so `StudioShellPanels::poll` — where background work is started,
+cancelled and handed back — was outside the measurement. A thumbnail scenario could not have
+measured anything at all: without the poll, nothing is ever generated. The poll is inside the timed
+region now, which is what a frame is. Every absolute figure recorded earlier in this phase was taken
+without it and is therefore of a slightly smaller frame; the comparisons in those entries hold, and
+the table below supersedes their absolutes.
+
+**And it caught a scenario that was not doing its job.** `content-scrolling-100k` aimed its wheel at
+a hard-coded (640, 620) — inside the Content Browser at 1280×720, over a different panel at the
+1920×1080 the benchmark actually runs at. It had never scrolled, and `STUDIO-30022`'s entry drew a
+conclusion from it; that entry now carries the correction. Scenarios receive their own panel's
+rectangle and aim at its centre, so a scenario cannot silently stop exercising the thing it is named
+for when a window size changes.
+
+**Real images, not placeholder bytes.** `fillImageAssets` writes actual 64×64 BMPs — a header and
+rows of pixels, no deflate stream to get wrong — because a folder of undecodable files measures a
+folder of *failures*, and a cached failure is cheap. The benchmark would have reported the opposite
+of the truth. Each file gets a different colour, so no two share bytes: the cache shares a decode
+between identical files (`STUDIO-09004`), and a scenario made of one image copied two thousand times
+would measure the sharing rather than the decoding.
+
+**The rows report what the background actually managed**, because a thumbnail scenario whose frame
+cost looks perfectly normal is either working exactly as intended or doing nothing at all, and the
+frame time cannot tell those apart.
+
+**Measured**, Release, 120 frames at 1920×1080, median µs/frame, poll included:
+
+| scenario | µs (med) | ×base | budget | thumbnails over the run |
+|---|---:|---:|---:|---|
+| `baseline` | 126 | 1.0× | 4167 | — |
+| `outliner-2000` | 480 | 3.8× | 4167 | — |
+| `outliner-20000-deep` | 5632 | 44.8× | 8333 | — |
+| `outliner-20000-all-selected` | 5642 | 44.9× | 8333 | — |
+| `thumbnails-2000` | 339 | 2.7× | 8333 | 130 generated, 6 shared |
+| `thumbnails-2000-scrolling` | 403 | 3.2× | 8333 | 290 generated, 34 shared |
+| `content-grid` | 412 | 3.3× | 4167 | — |
+| `content-grid-100k` | 577 | 4.6× | 8333 | — |
+| `content-scrolling-100k` | 222 | 1.8× | 8333 | — |
+| `details-components` | 190 | 1.5× | 4167 | — |
+| `keystrokes` | 84 | 0.7× | 4167 | — |
+| `atlas-growth` | 247 | 2.0× | 4167 | — |
+| `resize` | 193 | 1.5× | 4167 | — |
+
+Everything is inside budget. A folder of two thousand images generating thumbnails in the background
+costs 339 µs a frame — under a tenth of the interactive budget — which is the answer the feature was
+built for: the editor does not slow down while it fills in.
+
+**One number is zero, and it is worth saying why.** No thumbnail job was ever *cancelled*, in either
+scenario. At 64×64 a decode finishes well inside one poll, so by the time scrolling changes what is
+wanted there is rarely anything still pending to cancel — generation is keeping up, which is the
+good outcome rather than a gap in the scenario. The cancellation path itself is held by
+`ScrollingPastAnAssetStopsItsThumbnailBeingMade` in the unit tests, where it can be provoked
+deliberately; inflating the fixture until the benchmark could provoke it too would be distorting the
+product to make a number move.

@@ -218,9 +218,18 @@ namespace
 
         /**
          * @brief Adjusts the input for frame @p index, so a scenario can type, scroll or resize.
+         *
+         * The second argument is the centre of the scenario's own panel, resolved from the shell
+         * after the layout exists. A scenario that guessed a coordinate would work at one window
+         * size and silently stop scrolling at another -- which is exactly what happened here:
+         * `thumbnails-2000-scrolling` reported identical numbers to the standing folder because
+         * the wheel was landing on a different panel (`plan.md` STUDIO-30025).
+         *
          * @return The input for that frame.
          */
-        std::function<CNA::Studio::UiInputState(CNA::Studio::UiInputState, int)> driveFrame;
+        std::function<CNA::Studio::UiInputState(CNA::Studio::UiInputState, int,
+                                                CNA::Studio::UiRect)>
+            driveFrame;
 
         /**
          * @brief What this shape of frame is allowed to cost, in microseconds.
@@ -252,6 +261,17 @@ namespace
          * something that never happened.
          */
         double baselineMultiple = 0.0;
+
+        /**
+         * @brief What the background work managed over the run (`plan.md` STUDIO-30025).
+         *
+         * Reported because a thumbnail scenario whose frame cost looks perfectly normal is either
+         * working exactly as intended or doing nothing at all, and the frame time cannot tell the
+         * two apart. These are the numbers that say which.
+         */
+        std::uint64_t thumbnailsGenerated = 0;
+        std::uint64_t thumbnailsShared = 0;
+        std::uint64_t thumbnailsCancelled = 0;
 
         /** @brief Whether the median went over what this scenario is allowed. */
         [[nodiscard]] bool isOverBudget() const
@@ -307,6 +327,115 @@ namespace
             scene.addEntity(std::move(entity));
             parent = id;
         }
+    }
+
+    /**
+     * @brief Writes a @p size by @p size 24-bit BMP of one colour to @p path.
+     *
+     * `plan.md` STUDIO-30025. A real image, because a thumbnail scenario over files that are not
+     * decodable measures a folder of failures rather than a folder of pictures -- and a cached
+     * failure is cheap, which would make the benchmark report the opposite of the truth.
+     *
+     * BMP rather than PNG because it is a header and rows of pixels: writing a PNG here would mean
+     * a deflate stream and a CRC in a file whose subject is neither, and the decoder reads both.
+     */
+    void writeBmp(const std::filesystem::path& path, int size, unsigned char red,
+                  unsigned char green, unsigned char blue)
+    {
+        // Each row padded to a multiple of four bytes, which is the one rule about BMP that is
+        // easy to get wrong and produces an image sheared by a pixel a row.
+        const int stride = ((size * 3 + 3) / 4) * 4;
+        const std::uint32_t pixelBytes = static_cast<std::uint32_t>(stride * size);
+        const std::uint32_t offset = 14 + 40;
+        const std::uint32_t fileBytes = offset + pixelBytes;
+
+        std::string bytes;
+        const auto put16 = [&bytes](std::uint16_t value) {
+            bytes.push_back(static_cast<char>(value & 0xFFu));
+            bytes.push_back(static_cast<char>((value >> 8) & 0xFFu));
+        };
+        const auto put32 = [&bytes](std::uint32_t value) {
+            bytes.push_back(static_cast<char>(value & 0xFFu));
+            bytes.push_back(static_cast<char>((value >> 8) & 0xFFu));
+            bytes.push_back(static_cast<char>((value >> 16) & 0xFFu));
+            bytes.push_back(static_cast<char>((value >> 24) & 0xFFu));
+        };
+
+        bytes.push_back('B');
+        bytes.push_back('M');
+        put32(fileBytes);
+        put32(0);
+        put32(offset);
+
+        put32(40);                                   // header size
+        put32(static_cast<std::uint32_t>(size));      // width
+        put32(static_cast<std::uint32_t>(size));      // height
+        put16(1);                                     // planes
+        put16(24);                                    // bits per pixel
+        put32(0);                                     // no compression
+        put32(pixelBytes);
+        put32(2835);
+        put32(2835);
+        put32(0);
+        put32(0);
+
+        for (int y = 0; y < size; ++y)
+        {
+            for (int x = 0; x < size; ++x)
+            {
+                // Blue, green, red -- the order BMP stores them in, and a scenario that wrote them
+                // the other way round would still decode and would quietly be testing nothing
+                // about colour.
+                bytes.push_back(static_cast<char>(blue));
+                bytes.push_back(static_cast<char>(green));
+                bytes.push_back(static_cast<char>(static_cast<unsigned char>(red + x + y)));
+            }
+            for (int pad = size * 3; pad < stride; ++pad) { bytes.push_back('\0'); }
+        }
+
+        std::ofstream{path, std::ios::binary} << bytes;
+    }
+
+    /**
+     * @brief Fills @p assets with @p count real images under one folder, and returns that folder.
+     *
+     * Distinct colours per file, so no two are the same bytes: the thumbnail cache shares a decode
+     * between identical files (`STUDIO-09004`), and a scenario made of one image copied a thousand
+     * times would measure the sharing rather than the decoding.
+     */
+    std::string fillImageAssets(CNA::Studio::AssetDatabase& assets, int count)
+    {
+        std::error_code code;
+        const std::filesystem::path root =
+            std::filesystem::temp_directory_path()
+            / ("cna-studio-benchmark-images-" + std::to_string(count));
+
+        const bool exists = std::filesystem::exists(root / "Content", code);
+        if (!exists)
+        {
+            std::filesystem::remove_all(root, code);
+            std::filesystem::create_directories(root / "Content", code);
+        }
+
+        assets.setProjectRoot(root.generic_string());
+
+        for (int i = 0; i < count; ++i)
+        {
+            CNA::Studio::AssetRecord record;
+            record.id = CNA::Studio::Uuid::generate();
+            record.sourcePath = "Content/image" + std::to_string(i) + ".bmp";
+            record.type = CNA::Studio::AssetType::Texture2D;
+
+            if (!exists)
+            {
+                writeBmp(root / record.sourcePath, 64, static_cast<unsigned char>(i * 7),
+                         static_cast<unsigned char>(i * 13), static_cast<unsigned char>(i * 29));
+            }
+
+            (void)assets.add(std::move(record));
+        }
+
+        return "Content";
     }
 
     /** @brief Adds @p count assets to @p assets, spread across the kinds the grid has icons for. */
@@ -381,6 +510,7 @@ namespace
         using CNA::Studio::StudioContext;
         using CNA::Studio::StudioShell;
         using CNA::Studio::UiInputState;
+        using CNA::Studio::UiRect;
         using Panels = CNA::Studio::StudioShellPanels;
 
         std::vector<UiBenchmarkScenario> scenarios;
@@ -398,10 +528,10 @@ namespace
             "outliner-scrolling", "the same scene, scrolled a notch every frame",
             "outliner",
             [](StudioShell&, StudioContext& context, Panels&) { fillScene(context.getScene(), 2000); },
-            [](UiInputState input, int frame) {
-                // Over the outliner, which is where the wheel has to be for the scroll to land.
-                input.mouseX = 160.0f;
-                input.mouseY = 300.0f;
+            [](UiInputState input, int frame, UiRect panel) {
+                // Over the panel this scenario named, wherever the layout put it.
+                input.mouseX = panel.centerX();
+                input.mouseY = panel.centerY();
                 input.mouseInWindow = true;
                 input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
                 return input;
@@ -434,9 +564,9 @@ namespace
             [](StudioShell&, StudioContext& context, Panels&) {
                 fillDeepScene(context.getScene(), 20000, 50);
             },
-            [](UiInputState input, int frame) {
-                input.mouseX = 160.0f;
-                input.mouseY = 300.0f;
+            [](UiInputState input, int frame, UiRect panel) {
+                input.mouseX = panel.centerX();
+                input.mouseY = panel.centerY();
                 input.mouseInWindow = true;
                 input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
                 return input;
@@ -462,6 +592,41 @@ namespace
                 context.setSelection(std::move(everything));
             },
             {}});
+
+        // `STUDIO-30025`. Thumbnails and the jobs that make them, under load. This is the only
+        // scenario where the panels' poll has anything to do -- which is why the poll is inside the
+        // timed region at all -- and it measures the case that matters: a user opening a folder of
+        // two thousand textures and the editor staying responsive while it fills in.
+        scenarios.push_back(UiBenchmarkScenario{
+            "thumbnails-2000", "2000 real images, thumbnails generating in the background",
+            "content",
+            [](StudioShell&, StudioContext& context, Panels& panels) {
+                panels.contentBrowserState().folder =
+                    fillImageAssets(context.getAssets(), 2000);
+                panels.contentBrowserState().view = CNA::Studio::StudioContentView::Grid;
+            },
+            {}});
+
+        scenarios.push_back(UiBenchmarkScenario{
+            "thumbnails-2000-scrolling",
+            "the same folder, scrolled every frame -- generation racing cancellation",
+            "content",
+            [](StudioShell&, StudioContext& context, Panels& panels) {
+                panels.contentBrowserState().folder =
+                    fillImageAssets(context.getAssets(), 2000);
+                panels.contentBrowserState().view = CNA::Studio::StudioContentView::Grid;
+            },
+            [](UiInputState input, int frame, UiRect panel) {
+                // Scrolling while thumbnails are being made is the hard case and the common one:
+                // every notch changes what is wanted, which cancels jobs that were queued for the
+                // rows just left and queues jobs for the rows just arrived. A benchmark of a
+                // standing folder would never exercise it.
+                input.mouseX = panel.centerX();
+                input.mouseY = panel.centerY();
+                input.mouseInWindow = true;
+                input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
+                return input;
+            }});
 
         scenarios.push_back(UiBenchmarkScenario{
             "content-grid", "1500 assets in the Content Browser's card grid",
@@ -506,13 +671,13 @@ namespace
                 panels.contentBrowserState().folder = fillAssets(context.getAssets(), 100000);
                 panels.contentBrowserState().view = CNA::Studio::StudioContentView::List;
             },
-            [](UiInputState input, int frame) {
+            [](UiInputState input, int frame, UiRect panel) {
                 // Over the listing, which is where the wheel has to be for the scroll to land.
                 // A standing window can be answered by any cache keyed on the first row; a moving
                 // one has to build a fresh slice every frame, which is the cost this scenario is
                 // for.
-                input.mouseX = 640.0f;
-                input.mouseY = 620.0f;
+                input.mouseX = panel.centerX();
+                input.mouseY = panel.centerY();
                 input.mouseInWindow = true;
                 input.wheelY = (frame % 40 < 20) ? -1.0f : 1.0f;
                 return input;
@@ -542,7 +707,7 @@ namespace
             "keystrokes", "a character a frame with the Output Log raised and nothing focused "
                           "-- the routing cost, which every frame of real typing also pays",
             "output", [](StudioShell&, StudioContext&, Panels&) {},
-            [](UiInputState input, int frame) {
+            [](UiInputState input, int frame, UiRect) {
                 input.characters.push_back(
                     static_cast<char16_t>(u'a' + static_cast<char16_t>(frame % 26)));
                 return input;
@@ -573,7 +738,7 @@ namespace
             "resize", "the window changing size every frame, which relayouts everything",
             "outliner",
             [](StudioShell&, StudioContext& context, Panels&) { fillScene(context.getScene(), 300); },
-            [](UiInputState input, int frame) {
+            [](UiInputState input, int frame, UiRect) {
                 // A sweep rather than an alternation between two sizes, which any cache keyed on
                 // the last size would answer for free.
                 input.displayWidth = 1280.0f + static_cast<float>(frame % 64) * 10.0f;
@@ -587,7 +752,7 @@ namespace
         static const char* const kStressScenarios[] = {
             "outliner-20000", "outliner-20000-deep", "outliner-20000-scrolling",
             "outliner-20000-all-selected", "content-grid-100k", "content-list-100k",
-            "content-scrolling-100k"};
+            "content-scrolling-100k", "thumbnails-2000", "thumbnails-2000-scrolling"};
 
         for (UiBenchmarkScenario& scenario : scenarios)
         {
@@ -690,6 +855,12 @@ namespace
             // report it as the steady-state cost of drawing a panel.
             shell.renderFrame(base);
 
+            // Where the scenario's panel actually is, now that a frame has laid it out. Handed to
+            // `driveFrame` so a scrolling scenario points at its own panel rather than at a
+            // coordinate that happened to work at one window size.
+            const CNA::Studio::UiRect panelArea =
+                scenario.panel.empty() ? CNA::Studio::UiRect{} : shell.panelBounds(scenario.panel);
+
             UiBenchmarkRow row;
             row.name = scenario.name;
             row.what = scenario.what;
@@ -704,10 +875,21 @@ namespace
             for (int frame = 0; frame < options.uiBenchmarkFrames; ++frame)
             {
                 CNA::Studio::UiInputState input = base;
-                if (scenario.driveFrame) { input = scenario.driveFrame(input, frame); }
+                if (scenario.driveFrame) { input = scenario.driveFrame(input, frame, panelArea); }
 
+                // The poll is inside the timed region because it is part of a frame
+                // (`plan.md` STUDIO-30025). A running Studio polls its panels every frame -- that
+                // is where background work is started, cancelled and handed back -- and a
+                // benchmark that timed only `renderFrame` was measuring the half of a frame that
+                // has no background work in it. It is also the only way a thumbnail scenario can
+                // measure anything: nothing is generated without it.
+                //
+                // Every earlier row in this phase's plan entries was taken without it, so those
+                // numbers are a slightly smaller frame than this reports. Their *comparisons*
+                // hold; their absolutes are superseded by the table in STUDIO-30025.
                 const auto start = std::chrono::steady_clock::now();
                 shell.renderFrame(input);
+                panels.poll(static_cast<double>(frame) / 60.0);
                 const auto finish = std::chrono::steady_clock::now();
 
                 samples.push_back(
@@ -719,6 +901,10 @@ namespace
             // Median rather than mean, and the minimum beside it. A scheduler preemption in one
             // frame moves a mean and cannot move a median, and the minimum is the closest thing to
             // "what this costs when nothing else is happening" that a shared machine can report.
+            row.thumbnailsGenerated = panels.thumbnails().getGeneratedCount();
+            row.thumbnailsShared = panels.thumbnails().getSharedCount();
+            row.thumbnailsCancelled = panels.thumbnails().getCancelledCount();
+
             std::sort(samples.begin(), samples.end());
             row.medianMicroseconds = samples[samples.size() / 2];
             row.minMicroseconds = samples.front();
@@ -811,6 +997,13 @@ namespace
             // Studio pays for is more than twice what the GPU sees. Both backends pay it and the
             // ratio between them is the same, which is why the table reports the bus figure and
             // this reports the other one rather than the table carrying four columns.
+            if (row.thumbnailsGenerated + row.thumbnailsShared + row.thumbnailsCancelled > 0)
+            {
+                std::cout << "      thumbnails: " << row.thumbnailsGenerated << " generated, "
+                          << row.thumbnailsShared << " shared, " << row.thumbnailsCancelled
+                          << " cancelled over the run\n";
+            }
+
             const double perFrame = static_cast<double>(row.frames);
             std::cout << "      handed to CNA: "
                       << static_cast<double>(row.total.classicSubmittedBytes) / perFrame / 1024.0
