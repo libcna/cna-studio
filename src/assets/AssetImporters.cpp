@@ -279,8 +279,8 @@ namespace CNA::Studio
 
             return {
                 fact("sourceFormat", "Source Format", PropertyType::String, PropertyValue{std::string{}},
-                     "Read from the file's magic bytes rather than its name. Empty means a format "
-                     "Studio cannot measure yet -- MP3 and FLAC, today."),
+                     "Read from the file's magic bytes rather than its name: WAV, FLAC, MP3 or "
+                     "Ogg Vorbis."),
                 fact("duration", "Duration", PropertyType::String, PropertyValue{std::string{}}, ""),
                 fact("sampleRate", "Sample Rate", PropertyType::Integer, PropertyValue{0}, "In hertz."),
                 fact("channels", "Channels", PropertyType::Integer, PropertyValue{0},

@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 10 of 15 complete `████████░░░░`
+**Progress:** 11 of 15 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,7 @@
 | `STUDIO-10012` | Provenance record for every third-party dependency | ✅ | — |
 | `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ✅ | `STUDIO-10011` |
 | `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | ✅ | `STUDIO-10012` |
-| `STUDIO-10015` | Measure an MP3 and a FLAC as exactly as a WAV and an Ogg | ⬜ | `STUDIO-10005` |
+| `STUDIO-10015` | Measure an MP3 and a FLAC as exactly as a WAV and an Ogg | ✅ | `STUDIO-10005` |
 
 ## Acceptance and verification
 
@@ -313,23 +313,62 @@ declared setting nothing reads, and the preview put back to 1.0 each fail by nam
 
 ### `STUDIO-10015` — Measure an MP3 and a FLAC as exactly as a WAV and an Ogg
 
-**Found while doing `STUDIO-10005`**, filed rather than half-done. Both are `AssetType::Song`, both
-are formats a project really holds, and both are reported as unmeasured today — which is honest and
-is not the same as answered.
+**Acceptance.** Both report a duration that is right, or no duration at all. Nothing estimates.
 
-**FLAC is the easy half and was still left out**, deliberately: its `STREAMINFO` block states the
-sample rate, the channel count and the total sample count outright, so it is a bit-unpacking
-exercise and nothing more. It was not folded into `STUDIO-10005` because that task's shape was "read
-the two formats the two asset types are actually made of", and a third parser added on momentum is
-how a task stops having an edge.
+**FLAC was the easy half, as filed.** `STREAMINFO` states the sample rate, the channel count, the
+bit depth and the total sample count outright, and the format requires it to be the first metadata
+block. The only work is that the four fields are bit-packed rather than byte-aligned. A file whose
+first block is something else is declined rather than searched for a later one, because guessing
+which block to trust instead would be reading a format that does not exist. A total sample count of
+zero is legal and means the encoder did not know; it stays a zero duration rather than becoming an
+invented one.
 
-**MP3 is the hard half and is where the design question is.** A constant-bitrate MP3's length is
-arithmetic on the file size; a variable-bitrate one's is in a `Xing` or `VBRI` header *if the
-encoder wrote one*, and is otherwise only knowable by walking every frame — which for a long track
-is the whole file. So the task has to decide what to do when the header is absent: walk it (exact,
-slow, and on the scan path), estimate from the first frame (fast and wrong for exactly the files
-VBR is used for), or report it unmeasured (what happens now). A guess stated as a fact is the one
-option ruled out.
+**FLAC is also the only format here that reports a real `bitsPerSample`**, because it is lossless:
+its samples are samples, where a Vorbis or MP3 stream holds frequency coefficients and has no such
+number. That is still not what it costs in memory — a 24-bit FLAC is held as sixteen-bit PCM like
+everything else — which is why `decodedBytes` is worked out from the duration rather than from the
+depth.
+
+**MP3 was the design question, and the answer is that the question had three cases, not one.** The
+options this task was filed with were: walk every frame, estimate from the first, or keep reporting
+it unmeasured. The fourth option is better than all of them — *find out which case the file is in*:
+
+- **A Xing or Info tag** states the frame count outright, and the duration is exact. Every encoder
+  that produces variable-bitrate audio writes one; that is what the tag is for.
+- **No tag and an unchanging bitrate** is constant-bitrate audio, where the length is arithmetic on
+  the file size and is likewise exact. This is *checked*, not assumed: a run of consecutive frame
+  headers has to agree about the bitrate before the arithmetic is trusted.
+- **No tag and a bitrate that does change** has no cheap exact answer, and is declined with a reason
+  naming the missing header. An estimate from the first frame is wrong by whatever the file's
+  dynamics are, and walking every frame costs the whole file on a pass that runs over every asset in
+  a project — a trade not worth making for a case encoders do not produce.
+
+**The details that are easy to get silently wrong are the ones with cases of their own.** A Xing tag
+sits after the frame's side information, which is 32 bytes for a stereo MPEG1 frame and 17 for a
+mono one — a reader using one offset for both misses every mono file's tag and falls through to the
+constant-bitrate path, which for a variable-bitrate file is a *wrong answer* rather than no answer.
+An ID3v2 tag in front of the audio is skipped by its declared size and then the first frame is
+*scanned for* anyway, bounded, because a slightly wrong tag size is common enough that every player
+does. An ID3v1 tag is exactly 128 bytes at the end and is subtracted, so a short clip's length is
+not wrong by the fraction of a second it represents.
+
+**Layer III only, and declined rather than half-read otherwise.** A Layer I or II file in a game is
+rare enough that reading it would be code with no user, and reading its header as though the layer
+field meant nothing would be worse than declining it.
+
+**Ogg-FLAC is still declined**, with the reason the Ogg path already gives: the container opens and
+the codec in it is not Vorbis. Native FLAC is what a project holds; FLAC inside Ogg is a third
+combination with no user here.
+
+**Verification.** `tests/AudioImportTests.cpp` builds real files rather than committing fixtures: a
+FLAC's rate, channels, depth and length, a 24-bit one reporting 24 while costing 16, a zero sample
+count left at zero, and a first block that is not `STREAMINFO` refused; an MP3 measured exactly from
+a Xing tag whatever its bitrates do, measured by arithmetic when the bitrate holds steady, measured
+correctly through ID3v2 and ID3v1 tags, and *declined* when the bitrate varies with no header; and a
+mono file finding its tag at the mono offset. Both formats go through the same importer and the same
+facts pass as WAV and Ogg, with no branch of their own above the reader. Checked by causing each:
+one side-info offset for both channel counts, trusting an untagged file to be constant-bitrate, and
+a misread FLAC channel field each fail by name.
 
 ### `STUDIO-10013` — A failed import reports why, and does not leave a half-imported asset
 

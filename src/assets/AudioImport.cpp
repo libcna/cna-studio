@@ -221,6 +221,284 @@ namespace CNA::Studio
             }
             return description;
         }
+
+        /**
+         * @brief Reads a FLAC's `STREAMINFO`, which states everything outright.
+         *
+         * The easiest of the four formats and the one that needs no arithmetic at all: the rate,
+         * the channel count, the bit depth and the *total sample count* are all in the first
+         * metadata block, which the format requires to come first. The only work is that they are
+         * bit-packed rather than byte-aligned.
+         */
+        std::optional<StudioAudioDescription> readFlac(std::istream& stream, std::uint64_t fileSize)
+        {
+            // "fLaC", then a metadata block header of one type byte and three length bytes, then
+            // the 34-byte STREAMINFO itself.
+            if (fileSize < 42) { return std::nullopt; }
+
+            std::array<unsigned char, 42> block{};
+            stream.clear();
+            stream.seekg(0, std::ios::beg);
+            stream.read(reinterpret_cast<char*>(block.data()),
+                        static_cast<std::streamsize>(block.size()));
+            if (stream.gcount() < static_cast<std::streamsize>(block.size())) { return std::nullopt; }
+
+            // Block type 0 is STREAMINFO, and the spec requires it to be the first block. A file
+            // whose first block is something else is not a FLAC this can read, and guessing which
+            // of the later blocks to trust instead would be reading a format that does not exist.
+            if ((block[4] & 0x7Fu) != 0) { return std::nullopt; }
+
+            const unsigned char* at = block.data() + 8;
+
+            // 20 bits of sample rate, 3 of channels-1, 5 of bits-per-sample-1, 36 of total samples:
+            // 64 bits starting at byte 10 of STREAMINFO, which is byte 18 of the file.
+            const unsigned char* packed = at + 10;
+            const std::uint32_t sampleRate = (static_cast<std::uint32_t>(packed[0]) << 12)
+                                             | (static_cast<std::uint32_t>(packed[1]) << 4)
+                                             | (static_cast<std::uint32_t>(packed[2]) >> 4);
+            const std::uint32_t channels = ((packed[2] >> 1) & 0x07u) + 1u;
+            const std::uint32_t bitsPerSample =
+                ((static_cast<std::uint32_t>(packed[2] & 0x01u) << 4)
+                 | (static_cast<std::uint32_t>(packed[3]) >> 4))
+                + 1u;
+
+            std::uint64_t totalSamples = static_cast<std::uint64_t>(packed[3] & 0x0Fu) << 32;
+            for (int index = 0; index < 4; ++index)
+            {
+                totalSamples |= static_cast<std::uint64_t>(packed[4 + index])
+                                << (8 * (3 - index));
+            }
+
+            StudioAudioDescription description;
+            description.format = "FLAC";
+            description.sampleRate = sampleRate;
+            description.channels = channels;
+
+            // Reported as the file stores it, which for FLAC is a real number rather than the zero
+            // a Vorbis stream gets: FLAC is lossless, so its samples are samples. A 24-bit file
+            // still costs 16-bit PCM in memory, because that is what the runtime holds it as --
+            // which is why `decodedBytes` is worked out from the duration rather than from this.
+            description.bitsPerSample = bitsPerSample;
+
+            if (!description.isMeasured()) { return std::nullopt; }
+
+            // Zero is legal and means "unknown", which is what a stream written before its length
+            // was known says. Left as a zero duration rather than invented.
+            if (totalSamples > 0)
+            {
+                description.durationSeconds =
+                    static_cast<double>(totalSamples) / static_cast<double>(sampleRate);
+            }
+            return description;
+        }
+
+        /** @brief MPEG audio frame header fields, as far as a duration needs them. */
+        struct MpegFrame
+        {
+            std::uint32_t sampleRate = 0;
+            std::uint32_t channels = 0;
+            std::uint32_t bitrateBitsPerSecond = 0;
+            std::uint32_t samplesPerFrame = 0;
+            std::uint32_t frameBytes = 0;
+
+            /** @brief Where the side information ends and a Xing or Info tag would begin. */
+            std::uint32_t sideInfoBytes = 0;
+
+            [[nodiscard]] bool isValid() const { return sampleRate > 0 && frameBytes > 0; }
+        };
+
+        /** @brief Decodes a four-byte MPEG audio frame header, or reports it unusable. */
+        MpegFrame readMpegFrame(const unsigned char* at)
+        {
+            MpegFrame frame;
+            if (at[0] != 0xFFu || (at[1] & 0xE0u) != 0xE0u) { return frame; }
+
+            const std::uint32_t versionId = (at[1] >> 3) & 0x03u;   // 0=2.5, 2=2, 3=1
+            const std::uint32_t layer = (at[1] >> 1) & 0x03u;       // 1=III, 2=II, 3=I
+            const std::uint32_t bitrateIndex = (at[2] >> 4) & 0x0Fu;
+            const std::uint32_t rateIndex = (at[2] >> 2) & 0x03u;
+            const std::uint32_t padding = (at[2] >> 1) & 0x01u;
+            const std::uint32_t channelMode = (at[3] >> 6) & 0x03u;
+
+            // Layer III only. Studio reads what a project holds, and a Layer I or II file in a
+            // game is rare enough that supporting it would be code with no user -- and getting it
+            // wrong silently is worse than declining it.
+            if (versionId == 1 || layer != 1) { return frame; }
+            if (bitrateIndex == 0 || bitrateIndex == 15 || rateIndex == 3) { return frame; }
+
+            static constexpr std::array<std::uint32_t, 3> kSampleRates{44100, 48000, 32000};
+            const std::uint32_t base = kSampleRates[rateIndex];
+            frame.sampleRate = versionId == 3 ? base : (versionId == 2 ? base / 2u : base / 4u);
+
+            static constexpr std::array<std::uint32_t, 15> kMpeg1Bitrates{
+                0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320};
+            static constexpr std::array<std::uint32_t, 15> kMpeg2Bitrates{
+                0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160};
+            frame.bitrateBitsPerSecond =
+                (versionId == 3 ? kMpeg1Bitrates[bitrateIndex] : kMpeg2Bitrates[bitrateIndex]) * 1000u;
+
+            frame.channels = channelMode == 3 ? 1u : 2u;
+            frame.samplesPerFrame = versionId == 3 ? 1152u : 576u;
+            frame.frameBytes = (frame.samplesPerFrame / 8u) * frame.bitrateBitsPerSecond
+                                   / frame.sampleRate
+                               + padding;
+
+            // Where a Xing or Info tag sits, which depends on the version and whether the frame is
+            // mono. These are the four sizes the format defines; nothing is being estimated.
+            if (versionId == 3) { frame.sideInfoBytes = frame.channels == 1 ? 17u : 32u; }
+            else { frame.sideInfoBytes = frame.channels == 1 ? 9u : 17u; }
+
+            return frame;
+        }
+
+        /**
+         * @brief Reads an MP3's rate, channels and length.
+         *
+         * The length is the part `STUDIO-10015` was filed to decide, and the answer is that there
+         * are three cases rather than one, and Studio can tell which it is in:
+         *
+         * - **A Xing or Info tag** states the frame count outright, which is exact. Every encoder
+         *   that produces variable-bitrate audio writes one -- that is what the tag is for.
+         * - **No tag, and the bitrate does not change** is constant-bitrate audio, where the length
+         *   is arithmetic on the file size and is likewise exact. Checked rather than assumed: a
+         *   run of consecutive frame headers has to agree about the bitrate.
+         * - **No tag and a bitrate that does change** is the one case with no cheap answer. It is
+         *   *declined* rather than estimated, because an estimate from the first frame is wrong by
+         *   whatever the file's dynamics are, and a duration wrong by a factor of two is worse than
+         *   one that is absent.
+         *
+         * Walking every frame would answer the third case exactly and costs the whole file, on a
+         * pass that runs over every asset in a project. That trade is not worth making for a case
+         * encoders do not produce.
+         */
+        std::optional<StudioAudioDescription> readMp3(std::istream& stream, std::uint64_t fileSize,
+                                                      const std::vector<unsigned char>& front)
+        {
+            // An ID3v2 tag sits in front of the audio and says how long it is, in a "synchsafe"
+            // integer: seven bits per byte, because a set top bit would look like a frame sync.
+            std::uint64_t audioAt = 0;
+            if (front.size() >= 10 && front[0] == 'I' && front[1] == 'D' && front[2] == '3')
+            {
+                const std::uint64_t tagSize = (static_cast<std::uint64_t>(front[6] & 0x7Fu) << 21)
+                                              | (static_cast<std::uint64_t>(front[7] & 0x7Fu) << 14)
+                                              | (static_cast<std::uint64_t>(front[8] & 0x7Fu) << 7)
+                                              | static_cast<std::uint64_t>(front[9] & 0x7Fu);
+                audioAt = 10 + tagSize;
+                if ((front[5] & 0x10u) != 0) { audioAt += 10; }  // a footer, when the flag says so
+            }
+
+            if (audioAt >= fileSize) { return std::nullopt; }
+
+            // The first frame is looked for rather than assumed to be at `audioAt`: a tag whose
+            // declared size is slightly off is common enough that every player scans, and the scan
+            // is bounded so a file of noise cannot turn it into a walk of the whole thing.
+            constexpr std::uint64_t kScanBytes = 8192;
+            const std::uint64_t scanLength = std::min(kScanBytes, fileSize - audioAt);
+            std::vector<unsigned char> scan(static_cast<std::size_t>(scanLength));
+            stream.clear();
+            stream.seekg(static_cast<std::streamoff>(audioAt), std::ios::beg);
+            stream.read(reinterpret_cast<char*>(scan.data()),
+                        static_cast<std::streamsize>(scan.size()));
+            scan.resize(static_cast<std::size_t>(stream.gcount()));
+
+            MpegFrame first;
+            std::size_t firstAt = 0;
+            for (std::size_t index = 0; index + 4 <= scan.size(); ++index)
+            {
+                const MpegFrame candidate = readMpegFrame(scan.data() + index);
+                if (candidate.isValid())
+                {
+                    first = candidate;
+                    firstAt = index;
+                    break;
+                }
+            }
+            if (!first.isValid()) { return std::nullopt; }
+
+            StudioAudioDescription description;
+            description.format = "MP3";
+            description.sampleRate = first.sampleRate;
+            description.channels = first.channels;
+
+            // Zero, like Vorbis: an MP3 stores frequency coefficients rather than samples, so it
+            // has no bits-per-sample to report and sixteen would answer a question nobody asked.
+            description.bitsPerSample = 0;
+
+            // A Xing or Info tag lives inside the first frame, after its side information. "Xing"
+            // is written by variable-bitrate encoders and "Info" by constant-bitrate ones; both
+            // carry the frame count in the same place.
+            const std::size_t tagAt = firstAt + 4 + first.sideInfoBytes;
+            if (tagAt + 12 <= scan.size()
+                && (matches(scan.data() + tagAt, "Xing") || matches(scan.data() + tagAt, "Info")))
+            {
+                const std::uint32_t flags = static_cast<std::uint32_t>(
+                    (scan[tagAt + 4] << 24) | (scan[tagAt + 5] << 16) | (scan[tagAt + 6] << 8)
+                    | scan[tagAt + 7]);
+                if ((flags & 0x01u) != 0)
+                {
+                    const std::uint64_t frames = (static_cast<std::uint64_t>(scan[tagAt + 8]) << 24)
+                                                 | (static_cast<std::uint64_t>(scan[tagAt + 9]) << 16)
+                                                 | (static_cast<std::uint64_t>(scan[tagAt + 10]) << 8)
+                                                 | static_cast<std::uint64_t>(scan[tagAt + 11]);
+                    if (frames > 0)
+                    {
+                        description.durationSeconds =
+                            static_cast<double>(frames * first.samplesPerFrame)
+                            / static_cast<double>(first.sampleRate);
+                        return description;
+                    }
+                }
+            }
+
+            // No tag. The file is constant-bitrate or it is not, and which of those it is decides
+            // whether the arithmetic below is exact -- so it is checked rather than assumed. A run
+            // of consecutive frames that all declare the same bitrate is what constant means.
+            std::uint64_t at = audioAt + firstAt;
+            for (int checked = 0; checked < 8; ++checked)
+            {
+                std::array<unsigned char, 4> header{};
+                stream.clear();
+                stream.seekg(static_cast<std::streamoff>(at), std::ios::beg);
+                stream.read(reinterpret_cast<char*>(header.data()),
+                            static_cast<std::streamsize>(header.size()));
+                if (stream.gcount() < static_cast<std::streamsize>(header.size())) { break; }
+
+                const MpegFrame frame = readMpegFrame(header.data());
+                if (!frame.isValid()) { break; }
+                if (frame.bitrateBitsPerSecond != first.bitrateBitsPerSecond)
+                {
+                    // Variable bitrate with no header to say so. Declined rather than estimated:
+                    // an estimate from the first frame is wrong by whatever the file's dynamics
+                    // are, and a duration wrong by a factor of two is worse than one that is
+                    // absent. Walking every frame would answer it and costs the whole file on a
+                    // pass that runs over every asset in a project.
+                    return std::nullopt;
+                }
+                at += frame.frameBytes;
+            }
+
+            // An ID3v1 tag is exactly 128 bytes at the end and is not audio. Subtracted so the
+            // length of a short clip is not wrong by the fraction of a second it represents.
+            std::uint64_t audioBytes = fileSize - (audioAt + firstAt);
+            if (fileSize >= 128)
+            {
+                std::array<unsigned char, 3> tail{};
+                stream.clear();
+                stream.seekg(static_cast<std::streamoff>(fileSize - 128), std::ios::beg);
+                stream.read(reinterpret_cast<char*>(tail.data()),
+                            static_cast<std::streamsize>(tail.size()));
+                if (stream.gcount() == 3 && tail[0] == 'T' && tail[1] == 'A' && tail[2] == 'G'
+                    && audioBytes >= 128)
+                {
+                    audioBytes -= 128;
+                }
+            }
+
+            if (first.bitrateBitsPerSecond == 0) { return std::nullopt; }
+            description.durationSeconds = static_cast<double>(audioBytes * 8u)
+                                          / static_cast<double>(first.bitrateBitsPerSecond);
+            return description;
+        }
     }
 
     StudioAudioImportSettings StudioAudioImportSettings::fromJson(const JsonValue& importerSettings)
@@ -251,11 +529,17 @@ namespace CNA::Studio
         front.resize(static_cast<std::size_t>(stream.gcount()));
         if (front.size() < 16) { return std::nullopt; }
 
+        stream.clear();
+        stream.seekg(0, std::ios::end);
+        const std::streamoff end = stream.tellg();
+        if (end <= 0) { return std::nullopt; }
+        const auto fileSize = static_cast<std::uint64_t>(end);
+
         std::optional<StudioAudioDescription> description;
 
         // The reason is set only when the file *announced itself* as one of these and then could
-        // not be read anyway. A format Studio does not measure -- an MP3, a FLAC -- is declined in
-        // silence, because that is not a problem with the file (`plan.md` STUDIO-10013).
+        // not be read anyway. A file that is not audio Studio reads at all is declined in silence,
+        // because that is not a problem with the file (`plan.md` STUDIO-10013).
         const char* claimed = nullptr;
 
         if (matches(front.data(), "RIFF") && front.size() >= 12 && matches(front.data() + 8, "WAVE"))
@@ -263,6 +547,24 @@ namespace CNA::Studio
             claimed = "it starts as a WAV but no readable format and data chunk could be found in "
                       "it, so the file is truncated or corrupt";
             description = readWave(stream);
+        }
+        else if (matches(front.data(), "fLaC"))
+        {
+            claimed = "it starts as a FLAC but its STREAMINFO block could not be read, so the file "
+                      "is truncated or corrupt";
+            description = readFlac(stream, fileSize);
+        }
+        else if (front[0] == 'I' && front[1] == 'D' && front[2] == '3')
+        {
+            claimed = "it carries an ID3 tag but no readable MPEG audio after it, or its bitrate "
+                      "varies with no Xing or Info header to say by how much";
+            description = readMp3(stream, fileSize, front);
+        }
+        else if (front[0] == 0xFFu && (front[1] & 0xE0u) == 0xE0u)
+        {
+            claimed = "it starts as MPEG audio but is not Layer III, or its bitrate varies with no "
+                      "Xing or Info header to say by how much";
+            description = readMp3(stream, fileSize, front);
         }
         else if (matches(front.data(), "OggS"))
         {

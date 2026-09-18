@@ -18,10 +18,22 @@
  *
  * ### What it reads, and what it admits it cannot
  *
- * WAV and Ogg Vorbis, which between them are `AssetType::SoundEffect` and most of
- * `AssetType::Song`. MP3 and FLAC are reported as unmeasured rather than guessed at: MP3's length
- * is genuinely not in its header when it is variable-bitrate, and a duration that is wrong by a
- * factor of two is worse than one that is absent. `STUDIO-10015` is the rest.
+ * WAV, FLAC, MP3 and Ogg Vorbis, which between them are `AssetType::SoundEffect` and
+ * `AssetType::Song`. Each is read exactly or not at all -- nothing here estimates:
+ *
+ * - **WAV** states its format and data size in chunks, which are walked because they are not at
+ *   fixed offsets.
+ * - **FLAC** states the rate, the channels, the depth and the total sample count outright in
+ *   `STREAMINFO`. The easiest of the four.
+ * - **Ogg Vorbis** states the rate and channels in its identification header and its *length*
+ *   nowhere -- that is the granule position of the last page, found by reading the end of the file.
+ * - **MP3** has three cases and Studio can tell which it is in: a Xing or Info tag states the frame
+ *   count exactly; no tag with an unchanging bitrate is constant-bitrate, where the length is
+ *   arithmetic on the file size and likewise exact; and no tag with a bitrate that *does* change is
+ *   declined, because the only exact answer costs a walk of the whole file. See `readMp3`.
+ *
+ * `STUDIO-10015`. An Ogg holding something other than Vorbis -- Opus, Theora, FLAC-in-Ogg -- is
+ * still declined, with a reason that says so.
  */
 
 #include <cstdint>
@@ -47,11 +59,13 @@ namespace CNA::Studio
         std::uint32_t channels = 0;
 
         /**
-         * @brief Bits a sample in the file. Zero for a compressed format, which has no such number.
+         * @brief Bits a sample in the file. Zero for a lossy format, which has no such number.
          *
-         * Zero is not "unknown" here: a Vorbis stream stores coefficients rather than samples, and
-         * reporting "16" for one because that is what it decodes to would be an answer to a
-         * question nobody asked.
+         * Zero is not "unknown" here: a Vorbis or MP3 stream stores frequency coefficients rather
+         * than samples, and reporting "16" for one because that is what it decodes to would be an
+         * answer to a question nobody asked. FLAC is lossless, so its samples are samples and it
+         * reports a real depth -- which is still not what it costs in memory, because the runtime
+         * holds sixteen-bit PCM whatever the file had.
          */
         std::uint32_t bitsPerSample = 0;
 
@@ -74,10 +88,10 @@ namespace CNA::Studio
      * @brief Reads @p absolutePath's audio header.
      *
      * @param absolutePath The file.
-     * @param outProblem When set, receives a reason *only* when the file announces itself as a WAV
-     *        or an Ogg and then cannot be read anyway. A file that is simply not audio Studio reads
-     *        -- an MP3, a text file -- leaves it empty, because that is not a problem
-     *        (`plan.md` STUDIO-10013).
+     * @param outProblem When set, receives a reason *only* when the file announces itself as one of
+     *        the four formats and then cannot be read anyway -- including the variable-bitrate MP3
+     *        with no header, whose reason says exactly that. A file that is not audio at all leaves
+     *        it empty, because that is not a problem (`plan.md` STUDIO-10013).
      * @return The description, or std::nullopt when the file cannot be read or is not a format
      *         this reads. A caller must treat "unknown" as unknown rather than as silence.
      */
