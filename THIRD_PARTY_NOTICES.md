@@ -54,6 +54,49 @@ changed.
 Atlas packing, glyph caching, metrics, kerning lookup, UTF-8 decoding and text layout are Studio's
 own code. stb_truetype is used for outline rasterization and table lookup only.
 
+## stb_image
+
+`third_party/stb/stb_image.h` contains stb_image version 2.30, by Sean Barrett, dual licensed under
+the MIT License and the Unlicense (public domain). Same collection, same author and same licence as
+stb_truetype above; see `third_party/stb/LICENSE`.
+
+Fetched verbatim from <https://raw.githubusercontent.com/nothings/stb/master/stb_image.h>; the hash
+is in `third_party/PROVENANCE.tsv` and is checked by the test suite.
+
+It is behind `CNA/Studio/Assets/ImageDecode.hpp`, included by **exactly one** translation unit,
+`src/assets/ImageDecode.cpp`, with `STB_IMAGE_STATIC` so its symbols have internal linkage — the
+same arrangement stb_truetype has, for the same reason.
+
+### Why a CPU decoder is here at all
+
+`plan.md` `STUDIO-10014`. The only thing in Studio that turned an image into pixels went through
+CNA's `Texture2D`, and therefore through the graphics device — which is not thread-safe and belongs
+to the main thread. So nothing could decode an image off the frame, and thumbnail generation as a
+background job (`STUDIO-09003`) had no work to put in a job: reading the bytes on a worker and
+decoding them on the main thread moves the cheap half and leaves the expensive half.
+
+The alternatives were writing a PNG decoder — a week of work and a larger security surface than the
+one being avoided — or accepting that thumbnails are a main-thread budget rather than a background
+job, which is a smaller product. Vendoring the same author's decoder that this repository already
+vendors a rasterizer from is the smallest of the three, and the precedent is exact.
+
+### What it is allowed to read
+
+PNG, JPEG and BMP only, enabled one format at a time with `STBI_ONLY_*` rather than by taking
+everything the decoder offers. Each format is a parser reading files Studio did not write, and one
+nobody imports is attack surface with no user. The three are exactly what `readImageSize` already
+reads headers for, which they have to be: an asset that reported a size the editor could not then
+draw would be a worse bug than not reading the format at all.
+
+`STBI_NO_STDIO` as well, so the decoder has no file access of its own — Studio reads the bytes and
+hands over a buffer. A decoder that cannot open a file cannot be talked into opening one.
+
+Dimensions are bounded at 16 384 pixels an edge before any memory is asked for. A header claiming
+two billion pixels a side is a few bytes to write and an allocation nobody survives, and refusing it
+by arithmetic is more reliable than hoping an allocator fails politely. Failure is always
+*reported*: the input is a file somebody put in a project folder, and a decoder that aborted the
+editor on a bad one would make a single broken asset cost a session.
+
 ## IBM Plex
 
 `third_party/fonts/` contains three faces of the IBM Plex family, © 2017 IBM Corp. with Reserved

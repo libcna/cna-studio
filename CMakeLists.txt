@@ -182,11 +182,20 @@ add_library(cna-studio-assets STATIC
     src/assets/AssetRelink.cpp
     src/assets/AssetWatcher.cpp
     src/assets/AssetImporters.cpp
+    src/assets/ImageDecode.cpp
     src/assets/ModelImport.cpp
     src/assets/MaterialDocument.cpp
     src/assets/MeshCache.cpp
     src/assets/AssetTree.cpp)
 target_link_libraries(cna-studio-assets PUBLIC cna-studio-core PRIVATE cna-studio-cgltf-vendor)
+
+# stb_image, vendored, included by exactly one translation unit (src/assets/ImageDecode.cpp) with
+# STB_IMAGE_STATIC so its symbols have internal linkage -- the same arrangement StudioFontAtlas.cpp
+# has with stb_truetype, for the same reason. SYSTEM so that a third-party header's warnings are not
+# this project's warnings: the Release build treats warnings as errors and a vendored file is not
+# ours to fix. See THIRD_PARTY_NOTICES.md and third_party/PROVENANCE.tsv.
+target_include_directories(cna-studio-assets SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 
 # cna-studio-project -- the .cnaproject format and the backend capability table.
 # The C++ language adapter lives under src/project/cpp/, and STUDIO-02085's guard test refuses a

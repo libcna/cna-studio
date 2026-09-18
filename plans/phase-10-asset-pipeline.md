@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 2 of 14 complete `█░░░░░░░░░░░`
+**Progress:** 3 of 14 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -23,7 +23,7 @@
 | `STUDIO-10011` | Import jobs are cancellable and report progress accurately | ⬜ | `STUDIO-30001` |
 | `STUDIO-10012` | Provenance record for every third-party dependency | ✅ | — |
 | `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ⬜ | `STUDIO-10011` |
-| `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | 🔬 | `STUDIO-10012` |
+| `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | ✅ | `STUDIO-10012` |
 
 ## Acceptance and verification
 
@@ -108,6 +108,54 @@ should be chosen deliberately if it is chosen.
 
 **Acceptance.** Studio can turn a PNG on disk into pixels with no graphics device, from a worker
 thread, or the alternative has been chosen and `STUDIO-09003` has been rewritten to match.
+
+**Decided: vendor a CPU decoder.** `third_party/stb/stb_image.h` v2.30, behind
+`CNA/Studio/Assets/ImageDecode.hpp`, in `cna-studio-assets` — one of the CNA-free modules — so a
+worker thread can call it in a build with no CNA at all.
+
+**Why that one, over the two alternatives this task was filed to weigh.** Writing a PNG decoder is
+about a week of work and a *larger* security surface than the one it avoids: a parser nobody else
+reads, against a battle-tested one. Accepting thumbnails as a main-thread budget is a smaller
+product, and the task said it should be chosen deliberately if it is chosen — it was considered and
+not chosen, because the whole of `STUDIO-09003` is "as cancellable background jobs" and a budget is
+a different feature wearing the same name.
+
+Vendoring is the smallest of the three here specifically because the precedent is exact rather than
+merely similar: this repository already vendors stb_truetype, same author, same collection, same
+dual MIT/Unlicense terms, same single-translation-unit-with-internal-linkage arrangement. The rule
+that made this a decision rather than a commit — a dependency arrives with its provenance, licence,
+version and reason recorded — is now *enforced* by `STUDIO-10012`, and the new dependency went in
+through that gate rather than around it.
+
+**The security surface is real and is narrowed rather than waved at.** This is a parser reading
+files Studio did not write, which is the one genuinely uncomfortable thing about the decision.
+
+- **Three formats, enabled one at a time** with `STBI_ONLY_PNG`, `STBI_ONLY_JPEG`, `STBI_ONLY_BMP`,
+  rather than taking everything the decoder offers. A format nobody imports is attack surface with
+  no user. The three are exactly the set `readImageSize` reads headers for, and a test asserts that
+  the two agree — an asset that reported a size the editor could not then draw would be a worse bug
+  than not reading the format.
+- **No file access of its own** (`STBI_NO_STDIO`). Studio reads the bytes and hands over a buffer; a
+  decoder that cannot open a file cannot be talked into opening one.
+- **Dimensions bounded at 16 384 an edge, before any allocation.** A header claiming two billion
+  pixels a side is a few bytes to write and an allocation nobody survives, and arithmetic is a more
+  reliable refusal than hoping an allocator fails politely.
+- **Failure is always reported.** Empty, truncated, mislabelled, absurd and not-an-image-at-all are
+  each a message naming the file. A decoder that aborted the editor on a bad asset would make one
+  broken file cost a session.
+- **Internal linkage**, so nothing outside the one translation unit can reach the decoder, and a
+  second copy linked later cannot collide with it.
+
+Green under AddressSanitizer, which is the configuration that has something to say about a parser,
+and under ThreadSanitizer, which is the one that has something to say about the concurrency claim.
+
+**Asserted, not assumed.** `tests/ImageDecodeTests.cpp` builds real PNGs in the test rather than
+committing binary fixtures — a fixture is a file nobody can read in a review — decodes one from
+eight threads at once, and holds the format policy so that turning the rest of the decoder on is a
+test failure rather than a quiet widening.
+
+**What this unblocks.** `STUDIO-09003` (thumbnails as cancellable background jobs), and behind it
+`STUDIO-09004`, `STUDIO-09015` and `STUDIO-30025`.
 
 ### `STUDIO-10012` — Provenance record for every third-party dependency
 
