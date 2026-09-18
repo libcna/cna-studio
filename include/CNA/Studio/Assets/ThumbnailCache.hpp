@@ -26,12 +26,25 @@
  * the wanted set cancels its job, and the cancellation is the point of the feature rather than
  * tidiness — without it the queue is a record of everywhere the user has been.
  *
- * ### What invalidates an entry, which is `STUDIO-30012`'s question again
+ * ### Two keys, because they answer different questions (`STUDIO-09004`)
  *
- * The record's stamp — size and modification time as the last scan or watcher poll saw them — and
- * the source path, compared without asking the filesystem anything. Same rule as
- * `StudioAssetDocumentCache`, for the same reason: it is free on the frames where nothing changed,
- * and the watcher is what makes an external edit visible.
+ * **The stamp decides whether to look**: size, modification time, source path, and a fingerprint of
+ * the importer settings, all read from the record without asking the filesystem anything. It is
+ * free on the frames where nothing changed, which is what lets `pump` run every poll. Same rule as
+ * `StudioAssetDocumentCache`, plus the settings — because a reimport changes what a thumbnail
+ * should look like without touching the file, and a cache keyed only on the file would go on
+ * showing the old picture.
+ *
+ * **The content decides whether to decode**: a SHA-256 of the file's bytes, computed on the worker
+ * because reading a file is exactly what a poll must not do. Two consequences, and the second is
+ * the one that made this worth a task of its own:
+ *
+ * - Two assets holding identical bytes share one decode and one thumbnail. A project with a
+ *   texture copied into three folders pays once.
+ * - A file rewritten to the same length within the same second is *noticed*. The stamp cannot see
+ *   that — size and modification time are all it has — and the content key can. The stamp still
+ *   decides when to look, so the hole is narrowed to "a rewrite the watcher did not notice at all",
+ *   which is the watcher's problem rather than the cache's.
  *
  * A *failure* is cached too. A file that is not really a PNG would otherwise be decoded again on
  * every pump, for ever, which is the case a cache exists to stop.
@@ -41,10 +54,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "CNA/Studio/Core/Json.hpp"
 #include "CNA/Studio/Core/StudioJobs.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 
@@ -170,6 +186,24 @@ namespace CNA::Studio
         /** @brief How many entries were dropped to stay inside @ref kMaximumEntries. */
         [[nodiscard]] std::uint64_t getEvictedCount() const { return evicted_; }
 
+        /**
+         * @brief How many thumbnails were answered from another asset's identical bytes.
+         *
+         * `STUDIO-09004`. Counted because a number that stays at zero in a project with duplicated
+         * textures means the content key is not doing the one thing it was added for, and nothing
+         * else would say so.
+         */
+        [[nodiscard]] std::uint64_t getSharedCount() const { return sharedHits_; }
+
+        /**
+         * @brief A fingerprint of @p settings, for the stamp that decides whether to look again.
+         *
+         * The serialised form rather than a structural comparison: importer settings are arbitrary
+         * JSON, the cache has no business knowing what any particular importer's fields mean, and
+         * "the text differs" is exactly the question being asked.
+         */
+        [[nodiscard]] static std::string settingsFingerprint(const JsonValue& settings);
+
     private:
         /** @brief One entry, with the stamp it was made at. */
         struct Entry
@@ -177,6 +211,12 @@ namespace CNA::Studio
             std::uint64_t size = 0;
             std::int64_t modifiedTime = 0;
             std::string sourcePath;
+
+            /** @brief The importer settings this thumbnail was made under. See `STUDIO-09004`. */
+            std::string settings;
+
+            /** @brief SHA-256 of the source bytes, for sharing between identical files. */
+            std::string content;
 
             /**
              * @brief Whether the decode succeeded.
@@ -199,11 +239,13 @@ namespace CNA::Studio
             std::uint64_t size = 0;
             std::int64_t modifiedTime = 0;
             std::string sourcePath;
+            std::string settings;
         };
 
         /** @brief Whether @p entry still describes the record as the database sees it. */
         [[nodiscard]] static bool matches(const Entry& entry, std::uint64_t size,
-                                          std::int64_t modifiedTime, const std::string& path);
+                                          std::int64_t modifiedTime, const std::string& path,
+                                          const std::string& settings);
 
         /** @brief Drops the least recently wanted entries until the count is inside the bound. */
         void evict();
@@ -215,7 +257,35 @@ namespace CNA::Studio
         /** @brief Increments on every setWanted, so "least recently wanted" has an order. */
         std::uint64_t clock_ = 0;
 
+        /**
+         * @brief Thumbnails by what they were made from, readable from a worker.
+         *
+         * Keyed on the source bytes' hash *and* the importer settings, because the same file under
+         * different settings is a different picture — sharing on content alone would hand one
+         * asset another's answer, which is the sort of wrong that looks right.
+         *
+         * Behind a mutex and held by `shared_ptr` because a job body consults it: that is what lets
+         * a duplicate skip the decode entirely rather than decoding and then discovering it need
+         * not have. The `shared_ptr` is the lifetime answer — a job in flight outliving the cache
+         * is not a case anybody should have to reason about at a teardown.
+         *
+         * It holds pixels rather than pointing at an entry: entries are evicted, and a shared
+         * thumbnail whose owner was dropped would leave every other copy blank.
+         */
+        struct SharedThumbnails
+        {
+            std::mutex mutex;
+            std::unordered_map<std::string, StudioThumbnail> byKey;
+        };
+
+        /** @brief The key a thumbnail is shared under: what it was made from. */
+        [[nodiscard]] static std::string sharingKey(const std::string& contentHash,
+                                                    const std::string& settings);
+
+        std::shared_ptr<SharedThumbnails> shared_ = std::make_shared<SharedThumbnails>();
+
         std::uint64_t cancelled_ = 0;
+        std::uint64_t sharedHits_ = 0;
         std::uint64_t failed_ = 0;
         std::uint64_t generated_ = 0;
         std::uint64_t evicted_ = 0;

@@ -12,6 +12,7 @@
 
 #include "CNA/Studio/Assets/AssetDatabase.hpp"
 #include "CNA/Studio/Assets/ImageDecode.hpp"
+#include "CNA/Studio/Core/Sha256.hpp"
 
 namespace CNA::Studio
 {
@@ -106,15 +107,38 @@ namespace CNA::Studio
         return out;
     }
 
+    std::string StudioThumbnailCache::sharingKey(const std::string& contentHash,
+                                                 const std::string& settings)
+    {
+        // Bytes *and* settings. The same file under different importer settings is a different
+        // picture, and sharing on content alone would hand one asset another's answer -- the sort
+        // of wrong that looks right. The separator is a null byte because neither half can contain
+        // one, so no pair of inputs can be spelled two ways.
+        return contentHash + std::string(1, '\0') + settings;
+    }
+
+    std::string StudioThumbnailCache::settingsFingerprint(const JsonValue& settings)
+    {
+        // The serialised form rather than a structural comparison: importer settings are arbitrary
+        // JSON, the cache has no business knowing what any particular importer's fields mean, and
+        // "the text differs" is exactly the question being asked.
+        return Json::write(settings, false);
+    }
+
     bool StudioThumbnailCache::matches(const Entry& entry, std::uint64_t size,
-                                       std::int64_t modifiedTime, const std::string& path)
+                                       std::int64_t modifiedTime, const std::string& path,
+                                       const std::string& settings)
     {
         // The stamp the last scan or watcher poll saw, compared without asking the filesystem
         // anything -- which is what makes a frame where nothing changed free. The path too: an
         // asset that moved is the same picture, but an entry keyed only on the stamp would survive
         // a move to a file that happens to be the same size.
+        //
+        // And the importer settings (STUDIO-09004): a reimport changes what a thumbnail should
+        // look like without touching the file, so a cache keyed only on the file would go on
+        // showing the old picture -- which is the one failure a user reads as the editor lying.
         return entry.size == size && entry.modifiedTime == modifiedTime
-            && entry.sourcePath == path;
+            && entry.sourcePath == path && entry.settings == settings;
     }
 
     const StudioThumbnail* StudioThumbnailCache::find(const Uuid& id) const
@@ -173,10 +197,12 @@ namespace CNA::Studio
             if (record == nullptr || record->sourcePath.empty()) { continue; }
             if (!studioCanDecodeImageExtension(record->sourcePath)) { continue; }
 
+            const std::string settings = settingsFingerprint(record->importerSettings);
+
             const auto existing = entries_.find(id);
             if (existing != entries_.end()
                 && matches(existing->second, record->sourceSize, record->sourceModifiedTime,
-                           record->sourcePath))
+                           record->sourcePath, settings))
             {
                 // Including a cached *failure*: a file that is not really a PNG would otherwise be
                 // decoded again on every pump, for ever.
@@ -198,11 +224,41 @@ namespace CNA::Studio
             // them touches may be owned by a frame that has moved on.
             auto produced = std::make_shared<StudioThumbnail>();
             auto ok = std::make_shared<bool>(false);
+            auto content = std::make_shared<std::string>();
+            auto reused = std::make_shared<bool>(false);
+            auto registry = shared_;
 
             const StudioJobId job = jobs.submit(
                 "Thumbnail " + relative,
-                [absolute, produced, ok](StudioJobContext& context) {
+                [absolute, settings, produced, ok, content, reused,
+                 registry](StudioJobContext& context) {
                     if (context.isCancelled()) { return; }
+
+                    // Hashed on the worker, because reading a file is exactly what a poll must not
+                    // do (STUDIO-09004). It costs a read of a file that is about to be read again
+                    // -- taken deliberately rather than plumbing bytes through the decoder's
+                    // interface, which would couple two things that have no other reason to know
+                    // about each other, and which buys nothing when the hash turns out to hit.
+                    *content = studioSha256HexOfFile(absolute);
+                    if (context.isCancelled()) { return; }
+
+                    // Asked *before* decoding, which is the whole saving: a texture copied into
+                    // three folders is read three times and decoded once. Consulted from the
+                    // worker under the registry's own lock, so the answer is current rather than a
+                    // snapshot taken when the job was queued.
+                    if (!content->empty())
+                    {
+                        const std::string key = sharingKey(*content, settings);
+                        const std::lock_guard<std::mutex> lock{registry->mutex};
+                        const auto found = registry->byKey.find(key);
+                        if (found != registry->byKey.end())
+                        {
+                            *produced = found->second;
+                            *ok = !produced->isEmpty();
+                            *reused = *ok;
+                            return;
+                        }
+                    }
 
                     const StudioImageDecodeResult decoded = studioDecodeImageFile(absolute);
                     if (!decoded.succeeded())
@@ -218,9 +274,15 @@ namespace CNA::Studio
                     *produced = studioDownscaleRgba(decoded.image.pixels, decoded.image.width,
                                                     decoded.image.height, kThumbnailEdge);
                     *ok = !produced->isEmpty();
+
+                    if (*ok && !content->empty())
+                    {
+                        const std::lock_guard<std::mutex> lock{registry->mutex};
+                        registry->byKey[sharingKey(*content, settings)] = *produced;
+                    }
                 },
-                [this, id, size, modifiedTime, relative, produced,
-                 ok](const StudioJobStatus& status) {
+                [this, id, size, modifiedTime, relative, settings, produced, ok, content,
+                 reused](const StudioJobStatus& status) {
                     // Main thread, from drain(). The entry is filed here and nowhere else, which is
                     // what keeps the handoff a single crossing.
                     pending_.erase(id);
@@ -231,11 +293,19 @@ namespace CNA::Studio
                     entry.size = size;
                     entry.modifiedTime = modifiedTime;
                     entry.sourcePath = relative;
+                    entry.settings = settings;
+                    entry.content = *content;
                     entry.lastWanted = clock_;
                     entry.decoded = *ok;
                     entry.thumbnail = *ok ? std::move(*produced) : StudioThumbnail{};
 
-                    if (*ok) { ++generated_; }
+                    if (*ok)
+                    {
+                        // Told apart, because "made" and "already had these bytes" are different
+                        // facts and a single counter would hide whichever mattered.
+                        if (*reused) { ++sharedHits_; }
+                        else { ++generated_; }
+                    }
                     else { ++failed_; }
 
                     evict();
@@ -243,7 +313,7 @@ namespace CNA::Studio
 
             if (job == 0) { break; }
 
-            pending_[id] = Pending{job, size, modifiedTime, relative};
+            pending_[id] = Pending{job, size, modifiedTime, relative, settings};
             ++submitted;
         }
 
@@ -255,8 +325,13 @@ namespace CNA::Studio
         if (!id.isValid())
         {
             entries_.clear();
+            const std::lock_guard<std::mutex> lock{shared_->mutex};
+            shared_->byKey.clear();
             return;
         }
+
+        // The shared thumbnail stays: another asset may hold the same bytes, and dropping it here
+        // would make invalidating one copy cost every other copy a decode.
         entries_.erase(id);
     }
 

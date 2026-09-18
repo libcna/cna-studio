@@ -545,3 +545,129 @@ CNA_STUDIO_TEST(TheBrowserReportsWhatItIsShowingAndTheBinderMakesTheThumbnails)
     CNA_STUDIO_EXPECT_EQ(context.getAssets().getPresenceProbeCount(), probes);
     CNA_STUDIO_EXPECT_EQ(shell->frame().phaseViolations(), std::size_t{0});
 }
+
+CNA_STUDIO_TEST(TwoAssetsHoldingTheSameBytesShareOneDecode)
+{
+    // What content keying buys, and the reason it is a task rather than a refinement: a texture
+    // copied into three folders is one picture, and a cache that keyed only on the asset id would
+    // decode it three times and hold it three times.
+    ScopedProject project{"shared"};
+    const std::vector<unsigned char> png = makePng(80, 40, 0x70u, 0x10u, 0x50u);
+    project.write("Assets/One/Crate.png", png);
+    project.write("Assets/Two/Crate.png", png);
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid first = assets.findByPath("Assets/One/Crate.png")->id;
+    const Uuid second = assets.findByPath("Assets/Two/Crate.png")->id;
+
+    StudioJobSystem jobs{StudioJobMode::Immediate};
+    StudioThumbnailCache cache;
+
+    // The first one is decoded.
+    cache.setWanted({first});
+    cache.pump(jobs, assets);
+    jobs.waitForIdle();
+    jobs.drain();
+    CNA_STUDIO_EXPECT(cache.find(first) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), std::uint64_t{1});
+
+    // The second is decoded once too -- nothing has told the cache that these are the same bytes
+    // until it has hashed the second file, and hashing means reading it, which is a job.
+    cache.setWanted({first, second});
+    cache.pump(jobs, assets);
+    jobs.waitForIdle();
+    jobs.drain();
+
+    const StudioThumbnail* a = cache.find(first);
+    const StudioThumbnail* b = cache.find(second);
+    CNA_STUDIO_EXPECT(a != nullptr);
+    CNA_STUDIO_EXPECT(b != nullptr);
+    if (a != nullptr && b != nullptr)
+    {
+        // Identical bytes in, identical pixels out, whichever path produced them.
+        CNA_STUDIO_EXPECT_EQ(a->width, b->width);
+        CNA_STUDIO_EXPECT_EQ(a->height, b->height);
+        CNA_STUDIO_EXPECT(a->pixels == b->pixels);
+    }
+
+    // And the second one was *shared* rather than decoded: its job hashed the file, found those
+    // bytes already answered, and never called the decoder. One decode for two assets, which is
+    // the whole of what content keying buys.
+    CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), std::uint64_t{1});
+    CNA_STUDIO_EXPECT_EQ(cache.getSharedCount(), std::uint64_t{1});
+
+    // Dropping one copy does not cost the other a decode: the shared answer outlives the entry
+    // that first produced it, because entries are evicted and bytes are not.
+    cache.invalidate(second);
+    CNA_STUDIO_EXPECT(cache.find(second) == nullptr);
+
+    const std::uint64_t decodes = cache.getGeneratedCount();
+    cache.setWanted({second});
+    cache.pump(jobs, assets);
+    jobs.waitForIdle();
+    jobs.drain();
+
+    CNA_STUDIO_EXPECT(cache.find(second) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), decodes);
+    CNA_STUDIO_EXPECT_EQ(cache.getSharedCount(), std::uint64_t{2});
+}
+
+CNA_STUDIO_TEST(ChangingImporterSettingsRemakesTheThumbnailAlthoughTheFileDidNot)
+{
+    // The other half of STUDIO-09004. A reimport changes what a thumbnail should look like without
+    // touching the source file, so a cache keyed only on the file goes on showing the old picture
+    // -- the one failure a user reads as the editor lying rather than as a cache being stale.
+    ScopedProject project{"reimport"};
+    project.write("Assets/Tile.png", makePng(64, 64, 0x22u, 0x44u, 0x66u));
+
+    AssetDatabase assets;
+    assets.setProjectRoot(project.root());
+    CNA_STUDIO_EXPECT(assets.scan("Assets").succeeded);
+
+    const Uuid id = assets.findByPath("Assets/Tile.png")->id;
+
+    StudioJobSystem jobs{StudioJobMode::Immediate};
+    StudioThumbnailCache cache;
+
+    cache.setWanted({id});
+    cache.pump(jobs, assets);
+    jobs.waitForIdle();
+    jobs.drain();
+    CNA_STUDIO_EXPECT(cache.find(id) != nullptr);
+    CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), std::uint64_t{1});
+
+    // Nothing changed: no work.
+    CNA_STUDIO_EXPECT_EQ(cache.pump(jobs, assets), std::size_t{0});
+
+    // The settings change. The file is untouched -- same size, same modification time, same path --
+    // so the stamp alone says nothing happened.
+    AssetRecord reimported = *assets.find(id);
+    JsonValue settings = JsonValue::makeObject();
+    settings.set("sRGB", JsonValue{false});
+    reimported.importerSettings = settings;
+    CNA_STUDIO_EXPECT(assets.add(std::move(reimported)));
+
+    CNA_STUDIO_EXPECT_EQ(cache.pump(jobs, assets), std::size_t{1});
+    jobs.waitForIdle();
+    jobs.drain();
+    CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), std::uint64_t{2});
+
+    // Decoded again rather than shared, although the *bytes* are identical: the sharing key is
+    // bytes and settings together, because the same file under different settings is a different
+    // picture and sharing on content alone would hand this asset the old answer.
+    CNA_STUDIO_EXPECT_EQ(cache.getSharedCount(), std::uint64_t{0});
+
+    // And settling on the same settings again is not a third decode: the fingerprint is the
+    // serialised form, so identical settings compare identical however they were built.
+    AssetRecord again = *assets.find(id);
+    JsonValue same = JsonValue::makeObject();
+    same.set("sRGB", JsonValue{false});
+    again.importerSettings = same;
+    CNA_STUDIO_EXPECT(assets.add(std::move(again)));
+
+    CNA_STUDIO_EXPECT_EQ(cache.pump(jobs, assets), std::size_t{0});
+    CNA_STUDIO_EXPECT_EQ(cache.getGeneratedCount(), std::uint64_t{2});
+}

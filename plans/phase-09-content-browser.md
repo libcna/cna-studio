@@ -6,14 +6,14 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 15 of 17 complete `██████████░░`
+**Progress:** 16 of 17 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-09001` | Folder tree and breadcrumb navigation | ✅ | `STUDIO-07008` |
 | `STUDIO-09002` | Grid and list views | ✅ | `STUDIO-09001` |
 | `STUDIO-09003` | Thumbnail generation as cancellable background jobs | ✅ | `STUDIO-30001`, `STUDIO-10014` |
-| `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ⬜ | `STUDIO-09003` |
+| `STUDIO-09004` | Thumbnail cache keyed by content, invalidated on reimport | ✅ | `STUDIO-09003` |
 | `STUDIO-09005` | Search across name, type and path | ✅ | `STUDIO-09001` |
 | `STUDIO-09006` | Filter by asset type, and sorting | ✅ | `STUDIO-09005` |
 | `STUDIO-09007` | Favourites and recent assets | ✅ | `STUDIO-09001` |
@@ -174,6 +174,54 @@ task says, so it is recorded as blocked rather than delivered as a smaller thing
 name.
 
 Filed as `STUDIO-10014`, which is a decision about a dependency rather than an implementation.
+
+### `STUDIO-09004` — Thumbnail cache keyed by content, invalidated on reimport
+
+**Done.** Two keys, because they answer different questions.
+
+**The stamp decides whether to look.** Size, modification time, source path — and now the importer
+settings — all read from the record without asking the filesystem anything. That is what lets
+`pump` run every poll. The settings are the "invalidated on reimport" half: a reimport changes what
+a thumbnail should look like *without touching the file*, so a cache keyed only on the file goes on
+showing the old picture, which a user reads as the editor lying rather than as a cache being stale.
+
+**The content decides whether to decode.** A SHA-256 of the source bytes, computed on the worker,
+because reading a file is exactly what a poll must not do. Two assets holding identical bytes share
+one decode: a texture copied into three folders is read three times and decoded once.
+
+**The sharing registry is consulted from the worker, which is the point.** The obvious
+implementation — decode, then notice on the main thread that these pixels were already known —
+saves memory and no work at all. So the job hashes first, asks a small mutex-guarded map held by
+`shared_ptr`, and returns without ever calling the decoder on a hit. The `shared_ptr` is the
+lifetime answer: a job in flight outliving the cache is not something anybody should have to reason
+about at a teardown.
+
+**Keyed on bytes *and* settings together**, which a test failure taught rather than a design
+review. The first version shared on content alone, and the reimport test caught it immediately: the
+same file under different settings is a different picture, and sharing on content alone hands one
+asset another's answer — the sort of wrong that looks right. The separator is a null byte, so no
+pair of inputs can be spelled two ways.
+
+**`getSharedCount()` is separate from `getGeneratedCount()`** because "made" and "already had these
+bytes" are different facts, and a single counter would hide whichever mattered. A sharing count that
+stays at zero in a project with duplicated textures means the content key is doing nothing, and
+nothing else would say so.
+
+**What this narrows, honestly.** The stamp still decides *when* to look, so a file rewritten to the
+same length within the same second — the hole `STUDIO-09003`'s tests documented — is still invisible
+until something else prompts a look. The content key removes the second half of that hole (having
+looked, the cache now notices), and the remaining half is the watcher's rather than the cache's.
+
+**SHA-256 moved into `cna-studio-core`** (`CNA/Studio/Core/Sha256.hpp`) rather than being lifted
+from the provenance test that first needed it. Both callers now use one implementation, and its
+FIPS 180-4 known-answer vectors — including the million-'a' case, which is the one that catches a
+padding length written in bytes where it should be bits — test the shipped code rather than a copy
+of it. The file form hashes in chunks, because a cache key must be computable for a file bigger than
+it is comfortable to hold.
+
+**Not done here: persistence across sessions.** The obvious next want, and where derived data is
+allowed to live on disk is `STUDIO-09015`'s decision, which depends on this one. Keeping them apart
+is what stops a cache directory appearing before anybody has said where such things belong.
 
 ### `STUDIO-09005` — Search across name, type and path
 
