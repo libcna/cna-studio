@@ -6,7 +6,7 @@
 
 **Exit criteria.** A new contributor can build, test and extend Studio from the documentation alone.
 
-**Progress:** 11 of 22 complete `██████░░░░░░`
+**Progress:** 12 of 23 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -31,45 +31,80 @@
 | `STUDIO-33019` | The handoff's own arithmetic is checked against the same phase files | ✅ | `STUDIO-33018` |
 | `STUDIO-33020` | Headless test seams maintained for every core subsystem | ⬜ | — |
 | `STUDIO-33021` | CI matrix: Linux, Windows, macOS as infrastructure allows | ⬜ | — |
-| `STUDIO-33026` | A test waiting on a worker counts completions, not frames | ⬜ | `STUDIO-30001` |
+| `STUDIO-33026` | A test waiting on a worker counts completions, not frames | ✅ | `STUDIO-30001` |
+| `STUDIO-33027` | The benchmark's budget gate is an absolute-time assertion | ⬜ | `STUDIO-04028` |
 
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
 
+### `STUDIO-33027` — The benchmark's budget gate is an absolute-time assertion
+
+**Found while validating `STUDIO-33026`**, and measured rather than assumed. `--ui-benchmark` exits
+non-zero when a scenario's *median frame time in microseconds* exceeds a fixed budget. One scenario,
+`content-grid-100k`, sits close enough to its 8333 µs budget to cross it at random: the same
+binary — unchanged, its mtime twelve minutes older than the commit it was built for — read 7635,
+7893, 8009, 8262 and 8599 µs across five runs. Two of those fail the gate and three pass.
+
+**This is the thing the rest of the suite is written to avoid.** A wall-clock assertion on a shared
+machine fails for reasons that have nothing to do with the code, which is why every other gate here
+counts work done instead. The benchmark already *reports* the machine-independent number — the
+`xbase` column, the cost as a multiple of the idle shell measured in the same process on the same
+machine — and then judges against absolute microseconds anyway. The column was added precisely
+because absolute figures are not comparable between runs, and the gate did not follow it.
+
+**What to change is a real decision, not a rename.** Judging on `xbase` cancels the machine but
+makes the budget a ratio somebody has to pick per scenario. Judging on the *minimum* rather than the
+median is the other candidate and looks better than it sounds: the minimum is the run least
+interrupted by anything else, and it is far steadier here — `content-grid-100k` reports a minimum
+within 5 µs of 1032 across all five runs while its median swings by nearly a thousand. That gap is
+itself worth understanding before choosing, because a median eight times the minimum is not machine
+noise; it says the scenario is doing something expensive on most frames and not all, and whichever
+statistic the gate uses should be chosen knowing what that is.
+
+**Raising the budget is the one option ruled out.** A gate moved until it stops failing is a gate
+that has been switched off with extra steps.
+
+**Not urgent, and worth saying so.** The scenario is within a few percent of a budget that was set
+deliberately; nothing has regressed. What is broken is the gate's ability to tell a regression from
+a busy afternoon, which matters most on the day something really does regress.
+
 ### `STUDIO-33026` — A test waiting on a worker counts completions, not frames
 
-**Found while doing `STUDIO-10003`**, and filed rather than chased: `ThumbnailCacheTests`'
+**Found while doing `STUDIO-10003`**: `ThumbnailCacheTests`'
 `ThumbnailsAreAskedForOnlyForWhatTheBrowserIsShowing` failed once, at the
 `panels.thumbnails().find(shown) != nullptr` line, on a run whose build tree was mid-compile and
-whose cores were all busy. It has not reproduced in any run since, before or after the change.
+whose cores were all busy.
 
-**Why that is a defect and not bad luck.** The loop counts twelve *frames* and then asserts that a
-thumbnail exists. But the thumbnail is produced on a worker thread, and a frame is not a unit of
-that worker's progress — so the test counts on the consumer's side of an asynchronous boundary and
-asserts on the producer's. On an idle machine twelve frames is far more than enough; on a machine
-whose cores are all taken, the worker need not have been scheduled at all. That is the "counted,
-not timed" rule broken in the way that is hardest to see: the number in the loop *is* a count, and
-it is a count of the wrong thing.
+**Why that is a defect and not bad luck.** The loop counted twelve *frames* and then asserted that a
+thumbnail existed. But the thumbnail is produced on a worker thread, and a frame is not a unit of
+that worker's progress — so the test counted on the consumer's side of an asynchronous boundary and
+asserted on the producer's. On an idle machine twelve frames is far more than enough; on a machine
+whose cores are all taken, the worker need not have been scheduled at all. That is the "counted, not
+timed" rule broken in the way that is hardest to see: the number in the loop *is* a count, and it is
+a count of the wrong thing.
 
-**What it should count.** `StudioThumbnailCache` already reports `getGeneratedCount()`,
-`getFailedCount()` and `getPendingCount()`. A loop that runs until nothing is pending — bounded, and
-failing with what it was still waiting for — asserts the same property and cannot lose a race.
-Every test in the suite that drives a background job through a fixed number of frames wants the
-same treatment, so this is a sweep rather than a one-line fix.
+**The sweep turned out to be one test, which is worth recording.** Ten tests in the suite loop over
+a fixed frame count, and nine of them are deterministic: they drive the watcher with explicit deltas,
+or count filesystem probes and file opens across synchronous frames, where a frame really is the
+unit of work. Only this one crossed a thread. The task was filed expecting a sweep and the answer
+was a single case — which is the opposite of the usual surprise and is why the count is written down
+rather than left implied.
 
-**Not weakened in the meantime.** The assertion stays exactly as it is until then: a test that is
-right and occasionally unlucky is worth more than one relaxed into never failing.
+**The fix drives until the cache says so.** The loop now runs until `find(shown)` answers, bounded at
+two hundred iterations, with `waitForIdle` *inside* it so the worker is given its chance on every
+pass. That is what makes the bound a bound rather than a race: the only thing the iteration count has
+to survive is the number of pump-and-drain round trips the pipeline needs, which is fixed. Failing
+reports what the cache was still waiting for — pending and failed counts — instead of an assertion
+that says only that a pointer was null.
 
-**Seen a second time, and the second one is not identified.** During `STUDIO-10006` a TSan run
-reported one failure out of 1522 cases and the name was not captured. Sixteen consecutive TSan runs
-since — four immediately, then a twelve-run loop — have all been clean, so the rate is low enough
-that reproducing it on demand is not practical. It is recorded here rather than rounded off, and it
-is recorded as *unidentified*: the frame-counting pattern above is the obvious suspect and there is
-no evidence it was this one. What both sightings have in common is a loaded machine, which is what
-the pattern is sensitive to and is also what a CI runner is. Whoever does this sweep should start by
-finding every test that drives background work through a fixed number of frames, rather than by
-trying to reproduce either sighting.
+**The unidentified intermittent is *not* closed by this.** A TSan run during `STUDIO-10006` and
+another during `STUDIO-10015` each reported one failure out of about 1520 cases, and neither name was
+captured; twenty-six TSan runs since, across several loops, have all been clean. Fixing the one test
+of this shape does not prove it was the cause, and this entry does not claim it. If it recurs, the
+next step is to capture the failing run's output rather than to assume the pattern — the runs are
+saved now, which is what was missing both times.
+
 
 ### `STUDIO-33013` — Visual tests at multiple resolutions
 

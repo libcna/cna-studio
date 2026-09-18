@@ -536,13 +536,33 @@ CNA_STUDIO_TEST(TheBrowserReportsWhatItIsShowingAndTheBinderMakesTheThumbnails)
     input.mouseY = -1.0f;
 
     // Drawn, then polled, then drained -- which is the order a running Studio does them in.
-    for (int frame = 0; frame < 12; ++frame)
+    //
+    // Driven until the *cache* says the work is done rather than for a fixed number of frames
+    // (`plan.md` STUDIO-33026). A frame is not a unit of a worker thread's progress: twelve of them
+    // are far more than enough on an idle machine and no guarantee at all on one whose cores are
+    // busy, so a count of frames is a count of the wrong side of an asynchronous boundary. The
+    // `waitForIdle` is what makes this a *bound* rather than a race -- the worker is given its
+    // chance inside the loop, so the only thing the iteration count has to survive is the number of
+    // pump-and-drain round trips the pipeline needs, which is fixed.
+    bool generated = false;
+    for (int frame = 0; frame < 200 && !generated; ++frame)
     {
         shell->renderFrame(input);
         panels.poll(static_cast<double>(frame) / 60.0);
+        panels.jobs().waitForIdle();
+        generated = panels.thumbnails().find(shown) != nullptr;
     }
 
-    CNA_STUDIO_EXPECT(panels.thumbnails().find(shown) != nullptr);
+    if (!generated)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "no thumbnail was generated for the asset on screen after 200 "
+                                     "frames; the cache reported "
+                                         + std::to_string(panels.thumbnails().getPendingCount())
+                                         + " pending and "
+                                         + std::to_string(panels.thumbnails().getFailedCount())
+                                         + " failed.");
+    }
 
     // The one in a folder the browser is not showing was never asked for. A cache that generated
     // for the whole project would be one that costs a hundred thousand decodes to show forty.

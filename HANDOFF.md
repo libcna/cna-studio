@@ -341,7 +341,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **310 of 578 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **311 of 579 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -598,7 +598,7 @@ that is legible at 1920×1080. And the acceptance criterion itself replaced: mea
 Dear ImGui prototype had stopped saying anything, so `docs/VISUAL-ACCEPTANCE.md` now asks whether
 Studio reads as a serious professional 3D game-development environment on first launch.
 
-**Phase 33 — Docs and CI** (11 of 22). Golden-image infrastructure, visual tests at every tested
+**Phase 33 — Docs and CI** (12 of 23). Golden-image infrastructure, visual tests at every tested
 resolution and DPI scale, the assertion-macro hardening a sanitizer forced, the plan-arithmetic
 guards, and CI coverage for the sanitizer and CNA-backed configurations with the captures kept as
 artefacts — which are now **eighty-nine times smaller**: adaptive scanline filtering and a real
