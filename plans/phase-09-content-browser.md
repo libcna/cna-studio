@@ -6,7 +6,7 @@
 
 **Exit criteria.** Tens of thousands of assets browse, search and filter responsively, and no file operation can break a scene reference.
 
-**Progress:** 16 of 17 complete `███████████░`
+**Progress:** 17 of 17 complete `████████████`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -24,7 +24,7 @@
 | `STUDIO-09012` | Dependency view: references-to and referenced-by | ✅ | `STUDIO-09001` |
 | `STUDIO-09013` | Missing asset handling with a clear path to relink | ✅ | `STUDIO-09012` |
 | `STUDIO-09014` | Asset metadata and import settings UI | ✅ | `STUDIO-09001` |
-| `STUDIO-09015` | Source file tracking and derived-data cache separation | ⬜ | `STUDIO-09004` |
+| `STUDIO-09015` | Source file tracking and derived-data cache separation | ✅ | `STUDIO-09004` |
 | `STUDIO-09016` | Virtualised browsing for very large asset counts | ✅ | `STUDIO-30010` |
 | `STUDIO-09017` | A reference on a component with no descriptor survives a save and reload | ✅ | — |
 
@@ -643,6 +643,47 @@ control the inspector offers, then undone.
 ### `STUDIO-09015` — Source file tracking and derived-data cache separation
 
 **Acceptance.** Caches and derived content are clearly separated from authoritative source and are not version-controlled
+
+**The rule, decided and enforced: a project directory holds only what a person authored.**
+Everything Studio can make again from that — thumbnails, decoded pixels, scan indexes, logs — lives
+under the user's Studio state directory, keyed by project, and never inside the project at all.
+`studioDerivedDataDirectory` is where; `CNA/Studio/Project/DerivedData.hpp` is why.
+
+**Not a `Library/` folder in the project, which is what Unity does.** That was the alternative and
+it loses on one point: "not version-controlled" would then depend on a `.gitignore` entry, and a
+rule enforced by a file somebody can delete is a rule that will eventually be broken by somebody who
+did not know it existed. A new contributor clones, opens the project, commits a cache directory; the
+diff is enormous, nobody reads it, and from then on the repository carries generated files that
+conflict on every merge.
+
+What the in-project version buys is real — a cache that travels with the project between machines,
+and one that survives a wiped user profile — and neither is worth that. A cache that has to be
+rebuilt costs seconds; a repository full of generated files is a permanent tax on everybody who
+touches it. Keeping derived data out of the tree makes the property true *by construction*: there is
+nothing to ignore.
+
+**The one thing written beside the source, and why it is not derived data.** `.cnaasset` sidecars
+hold an asset's stable id and its import settings — decisions somebody made, not something Studio
+can regenerate — and a scene references assets by that id, so losing a sidecar breaks scenes. They
+are authored data that happens to be written by a tool, they belong beside the file they describe,
+and they belong in version control.
+
+**Deliberately not a predicate.** A function answering "is this project-relative path authored"
+would return true for everything, which is a rule nobody can get wrong and therefore a rule worth no
+code. One was written and deleted rather than shipped saying `return true`.
+
+**What enforces it is a session, not a sentence.** `ASessionLeavesNothingInTheProjectButSidecars`
+drives a real project directory through a scan and a thumbnail pass and fails on any file that
+appears in it other than the ones the test authored and their sidecars — and checks that each
+sidecar describes a file that is actually there. `studioPathIsInsideProject` is compared lexically
+rather than as strings, because `/project-backup` is not inside `/project` and a prefix comparison
+says it is: the kind of bug that passes every test written with tidy paths.
+
+**Source file tracking**, the other half of the title, was already there and is left alone:
+`AssetRecord` carries the source's size and modification time separately from the imported ones, so
+"has the source moved since we last imported it" is answerable without touching the disk. This task
+is about being able to say which of the two kinds a file is, which is what makes the separation
+enforceable.
 
 ### `STUDIO-09016` — Virtualised browsing for very large asset counts
 

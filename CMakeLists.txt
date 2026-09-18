@@ -206,6 +206,7 @@ target_include_directories(cna-studio-assets SYSTEM PRIVATE
 # export command and the packaging workflow reach a project's toolchain through
 # StudioLanguageAdapter and cannot learn from it what a compiler is.
 add_library(cna-studio-project STATIC
+    src/project/DerivedData.cpp
     src/project/RendererCatalog.cpp
     src/project/StudioHostRequirements.cpp
     src/project/TargetProfile.cpp
