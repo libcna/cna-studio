@@ -807,13 +807,51 @@ namespace CNA::Studio
             StudioAction focus = *found;
             focus.isEnabled = [this] { return !context_.getSelection().empty(); };
             focus.run = [this] {
-                if (!studioFrameSelection(context_, *services_.camera, services_.spriteSize))
+                // Whichever camera the user is actually looking through (`plan.md` STUDIO-11003).
+                // This moved the 2D camera in both views, so pressing F in the 3D viewport
+                // rearranged a camera nobody was looking through and appeared to do nothing at all.
+                const bool framed =
+                    viewportState_.view == StudioViewportView::ThreeD
+                        ? (services_.camera3D != nullptr
+                           && studioFrameSelection3D(context_, *services_.camera3D,
+                                                     services_.spriteSize))
+                        : (services_.camera != nullptr
+                           && studioFrameSelection(context_, *services_.camera,
+                                                   services_.spriteSize));
+                if (!framed)
                 {
                     log_.append(LogSeverity::Trace,
                                 "Nothing selected has a position to frame.");
                 }
             };
             shell.actions().add(std::move(focus));
+        }
+
+        // The six axis-aligned views (`plan.md` STUDIO-11004). Enabled only in the 3D view, where
+        // they mean something: the 2D view has one axis to look along and no choice to make about
+        // it. Disabled rather than hidden, for the reason the ground-plane toggle above is -- a
+        // user who went looking for them should find them and see why they are greyed out.
+        for (const auto& [id, standardView] :
+             {std::pair{"studio.view.front", StudioStandardView::Front},
+              std::pair{"studio.view.back", StudioStandardView::Back},
+              std::pair{"studio.view.left", StudioStandardView::Left},
+              std::pair{"studio.view.right", StudioStandardView::Right},
+              std::pair{"studio.view.top", StudioStandardView::Top},
+              std::pair{"studio.view.bottom", StudioStandardView::Bottom}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.isEnabled = [this] {
+                return viewportState_.view == StudioViewportView::ThreeD
+                    && services_.camera3D != nullptr;
+            };
+            action.run = [this, standardView] {
+                if (services_.camera3D == nullptr) { return; }
+                studioApplyStandardView(*services_.camera3D, standardView);
+            };
+            shell.actions().add(std::move(action));
         }
 
         shell.setPanelContent("viewport", [this](StudioFrame& frame, const UiRect& bounds) {

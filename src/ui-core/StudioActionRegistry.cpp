@@ -349,6 +349,25 @@ namespace CNA::Studio
                 "Show the scene in the 3D view.", C::View, chord(UiKey::Digit3),
                 /*checkable=*/true);
 
+        // The six axis-aligned views (`plan.md` STUDIO-11004). Unbound by default, which is a
+        // decision rather than an omission: the keys a user's hands already know for these are the
+        // numpad's 1, 3 and 7, which this build's key vocabulary does not carry, and the plain
+        // digits next to them are already the 2D and 3D toggles above. Inventing a third scheme
+        // nobody knows would be worse than a menu entry somebody can bind for themselves, which
+        // the shortcut editor lets them do.
+        command("studio.view.front", "Front View",
+                "Look at the scene from the front, along -Z.", C::View, StudioShortcut{});
+        command("studio.view.back", "Back View",
+                "Look at the scene from behind, along +Z.", C::View, StudioShortcut{});
+        command("studio.view.left", "Left View",
+                "Look at the scene from the left, along +X.", C::View, StudioShortcut{});
+        command("studio.view.right", "Right View",
+                "Look at the scene from the right, along -X.", C::View, StudioShortcut{});
+        command("studio.view.top", "Top View",
+                "Look straight down at the scene.", C::View, StudioShortcut{});
+        command("studio.view.bottom", "Bottom View",
+                "Look straight up at the scene.", C::View, StudioShortcut{});
+
         // The tilemap tools. Checkable, because a toolbar has to *show* which one is armed: a
         // press means something different under each of them, and a user who cannot see which is
         // active finds out by editing their level.

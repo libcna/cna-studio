@@ -663,6 +663,195 @@ CNA_STUDIO_TEST(AnEntityWithNoGeometryIsStillFramedByItsPosition)
     CNA_STUDIO_EXPECT(std::abs(fixture.camera.getCenter().y - 250.0f) < 1.0f);
 }
 
+CNA_STUDIO_TEST(FocusSelectedMovesTheThreeDCameraOntoWhatIsSelected)
+{
+    // `plan.md` STUDIO-11003. The 3D counterpart of the case above, and the one that did not
+    // exist: Focus Selected moved the 2D camera whichever view was showing.
+    Fixture fixture;
+    fixture.camera3D.setPivot(StudioVector3{5000.0f, 5000.0f, 5000.0f});
+    fixture.camera3D.setDistance(4000.0f);
+    fixture.context.select(fixture.right);
+
+    const float yaw = 0.7f;
+    const float pitch = 0.3f;
+    fixture.camera3D.setYaw(yaw);
+    fixture.camera3D.setPitch(pitch);
+
+    CNA_STUDIO_EXPECT(studioFrameSelection3D(fixture.context, fixture.camera3D, fixture.sizes()));
+
+    // On the sprite's own extent, like the 2D overload: a 64x64 sprite at (100, 0) occupies
+    // (100, 0)..(164, 64), and framing centres on the middle of that.
+    const StudioVector3 pivot = fixture.camera3D.getPivot();
+    CNA_STUDIO_EXPECT(pivot.x >= 100.0f && pivot.x <= 164.0f);
+    CNA_STUDIO_EXPECT(pivot.y >= 0.0f && pivot.y <= 64.0f);
+
+    // Close enough to see it: the distance came down from four thousand to something on the order
+    // of the sprite. Asserting an exact number would be asserting the margin rather than the act.
+    CNA_STUDIO_EXPECT(fixture.camera3D.getDistance() < 1000.0f);
+
+    // And the angle the user set up is untouched, which is what separates "focus" from "reset
+    // view": a key that also levelled the camera would throw away the shot they were composing.
+    CNA_STUDIO_EXPECT(std::abs(fixture.camera3D.getYaw() - yaw) < 1e-4f);
+    CNA_STUDIO_EXPECT(std::abs(fixture.camera3D.getPitch() - pitch) < 1e-4f);
+}
+
+CNA_STUDIO_TEST(FocusSelectedInThreeDWithNothingSelectedLeavesTheCameraAlone)
+{
+    Fixture fixture;
+    fixture.camera3D.setPivot(StudioVector3{7.0f, 9.0f, 11.0f});
+
+    CNA_STUDIO_EXPECT(!studioFrameSelection3D(fixture.context, fixture.camera3D, fixture.sizes()));
+    CNA_STUDIO_EXPECT_EQ(fixture.camera3D.getPivot().x, 7.0f);
+    CNA_STUDIO_EXPECT_EQ(fixture.camera3D.getPivot().z, 11.0f);
+}
+
+CNA_STUDIO_TEST(AnEntityWithNoGeometryIsStillFramedByItsPositionInThreeD)
+{
+    Fixture fixture;
+
+    StudioEntity marker{Uuid::generate(), "Spawn"};
+    StudioComponent transform{BuiltinComponentIds::kTransform};
+    transform.setProperty("position", PropertyValue{StudioVector3{-400.0f, 250.0f, 120.0f}});
+    marker.addComponent(std::move(transform));
+    const Uuid id = fixture.context.getScene().addEntity(std::move(marker));
+
+    fixture.context.select(id);
+    CNA_STUDIO_EXPECT(studioFrameSelection3D(fixture.context, fixture.camera3D, fixture.sizes()));
+
+    const StudioVector3 pivot = fixture.camera3D.getPivot();
+    CNA_STUDIO_EXPECT(std::abs(pivot.x + 400.0f) < 1.0f);
+    CNA_STUDIO_EXPECT(std::abs(pivot.y - 250.0f) < 1.0f);
+    CNA_STUDIO_EXPECT(std::abs(pivot.z - 120.0f) < 1.0f);
+
+    // A point has no extent, so framing one must still leave the camera somewhere it can see from
+    // rather than collapsing the distance to zero and putting the eye inside the subject.
+    CNA_STUDIO_EXPECT(fixture.camera3D.getDistance() >= StudioCamera3D::kMinDistance);
+}
+
+/**
+ * F moves whichever camera the user is looking through (`plan.md` STUDIO-11003).
+ *
+ * This is the defect the task closes, and it is only visible end to end: the action existed, the
+ * key was bound, and both moved the 2D camera -- so in the 3D viewport the key rearranged a camera
+ * nobody was looking through and appeared to do nothing at all.
+ */
+CNA_STUDIO_TEST(TheFocusKeyMovesTheCameraOfTheViewThatIsShowing)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioCamera3D camera3D;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, camera3D, {});
+
+    StudioEntity marker{Uuid::generate(), "Far"};
+    StudioComponent transform{BuiltinComponentIds::kTransform};
+    transform.setProperty("position", PropertyValue{StudioVector3{900.0f, 300.0f, 150.0f}});
+    marker.addComponent(std::move(transform));
+    const Uuid id = context.getScene().addEntity(std::move(marker));
+    context.select(id);
+
+    UiInputState input;
+    input.displayWidth = 1280.0f;
+    input.displayHeight = 720.0f;
+    shell.renderFrame(input);
+
+    const auto press = [&](UiKey key) {
+        UiInputState down = input;
+        down.setKeyDown(key, true);
+        shell.renderFrame(down);
+        shell.renderFrame(input);
+    };
+
+    // In the 2D view, F moves the 2D camera and leaves the 3D one where it was.
+    const StudioVector3 pivotBefore = camera3D.getPivot();
+    press(UiKey::F);
+    CNA_STUDIO_EXPECT(std::abs(camera.getCenter().x - 900.0f) < 1.0f);
+    CNA_STUDIO_EXPECT_EQ(camera3D.getPivot().x, pivotBefore.x);
+
+    // Switch to the 3D view and move the 2D camera somewhere else, so that a focus which moved the
+    // wrong one would be visible as the 2D camera jumping back rather than as nothing happening.
+    const StudioAction* toThreeD = shell.actions().find("studio.view.3d");
+    CNA_STUDIO_EXPECT(toThreeD != nullptr && toThreeD->run != nullptr);
+    if (toThreeD == nullptr || toThreeD->run == nullptr) { return; }
+    toThreeD->run();
+    CNA_STUDIO_EXPECT(panels.viewportView() == StudioViewportView::ThreeD);
+    camera.setCenter(StudioVector2{-5000.0f, -5000.0f});
+
+    press(UiKey::F);
+
+    CNA_STUDIO_EXPECT(std::abs(camera3D.getPivot().x - 900.0f) < 1.0f);
+    CNA_STUDIO_EXPECT(std::abs(camera3D.getPivot().z - 150.0f) < 1.0f);
+    CNA_STUDIO_EXPECT_EQ(camera.getCenter().x, -5000.0f);
+}
+
+/**
+ * The standard views are on the registry and act on the 3D camera (`plan.md` STUDIO-11004).
+ *
+ * Enabled only in the 3D view, where they mean something: the 2D view has one axis to look along
+ * and no choice to make about it. Disabled rather than absent, so a user who went looking finds
+ * them and can see why they are greyed out.
+ */
+CNA_STUDIO_TEST(TheStandardViewCommandsTurnTheThreeDCameraAndOnlyInThreeD)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioCamera3D camera3D;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, camera3D, {});
+
+    UiInputState input;
+    input.displayWidth = 1280.0f;
+    input.displayHeight = 720.0f;
+    shell.renderFrame(input);
+
+    // In the 2D view they exist and refuse, which is the state a greyed-out menu row shows.
+    CNA_STUDIO_EXPECT(shell.actions().find("studio.view.top") != nullptr);
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.top"));
+
+    const StudioAction* toThreeD = shell.actions().find("studio.view.3d");
+    CNA_STUDIO_EXPECT(toThreeD != nullptr && toThreeD->run != nullptr);
+    if (toThreeD == nullptr || toThreeD->run == nullptr) { return; }
+    toThreeD->run();
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT(shell.actions().isEnabled("studio.view.top"));
+
+    camera3D.setPivot(StudioVector3{4.0f, 5.0f, 6.0f});
+    camera3D.setDistance(20.0f);
+    camera3D.setYaw(1.1f);
+    camera3D.setPitch(0.4f);
+
+    const StudioAction* top = shell.actions().find("studio.view.top");
+    CNA_STUDIO_EXPECT(top != nullptr && top->run != nullptr);
+    if (top == nullptr || top->run == nullptr) { return; }
+    top->run();
+
+    // Looking straight down, from above the pivot -- which in this Y-down world is -Y.
+    CNA_STUDIO_EXPECT(std::abs(camera3D.getPitch() - StudioCamera3D::kMaxPitchRadians) < 1e-6f);
+    CNA_STUDIO_EXPECT(camera3D.getEye().y < camera3D.getPivot().y);
+
+    // And it turned the camera without moving it: the framing the user set up survives.
+    CNA_STUDIO_EXPECT(std::abs(camera3D.getPivot().x - 4.0f) < 1e-4f);
+    CNA_STUDIO_EXPECT(std::abs(camera3D.getDistance() - 20.0f) < 1e-3f);
+
+    const StudioAction* right = shell.actions().find("studio.view.right");
+    CNA_STUDIO_EXPECT(right != nullptr && right->run != nullptr);
+    if (right != nullptr && right->run != nullptr)
+    {
+        right->run();
+        CNA_STUDIO_EXPECT(camera3D.getEye().x > camera3D.getPivot().x);
+        CNA_STUDIO_EXPECT(std::abs(camera3D.getPitch()) < 1e-6f);
+    }
+}
+
 CNA_STUDIO_TEST(TheTransformShortcutsReachTheGizmoThroughTheRegistry)
 {
     // W, E and R are declared on the actions and dispatched by the shell; binding the actions is

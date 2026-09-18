@@ -63,6 +63,131 @@ namespace
     }
 }
 
+/**
+ * The six standard views point the camera along the axis they are named for (`plan.md` STUDIO-11004).
+ *
+ * Named for where the camera *is*, which is the opposite of how the view direction reads: the Front
+ * view looks backwards along -Z from in front of the subject. Asserted on the eye rather than on
+ * the yaw, because the yaw is the implementation and where the camera ends up is the promise.
+ */
+CNA_STUDIO_TEST(EachStandardViewPutsTheCameraOnTheAxisItIsNamedFor)
+{
+    StudioCamera3D camera;
+    camera.setPivot(StudioVector3{10.0f, 20.0f, 30.0f});
+    camera.setDistance(100.0f);
+
+    struct Expectation
+    {
+        StudioStandardView view;
+        StudioVector3 offsetFromPivot;
+    };
+
+    // The editor's world is Y-down, so "above" the pivot is -Y and the Top view's eye sits there.
+    const std::vector<Expectation> expectations{
+        {StudioStandardView::Front, StudioVector3{0.0f, 0.0f, 100.0f}},
+        {StudioStandardView::Back, StudioVector3{0.0f, 0.0f, -100.0f}},
+        {StudioStandardView::Right, StudioVector3{100.0f, 0.0f, 0.0f}},
+        {StudioStandardView::Left, StudioVector3{-100.0f, 0.0f, 0.0f}},
+        {StudioStandardView::Top, StudioVector3{0.0f, -100.0f, 0.0f}},
+        {StudioStandardView::Bottom, StudioVector3{0.0f, 100.0f, 0.0f}},
+    };
+
+    for (const Expectation& expectation : expectations)
+    {
+        studioApplyStandardView(camera, expectation.view);
+
+        const StudioVector3 eye = camera.getEye();
+        const StudioVector3 offset = subtract(eye, camera.getPivot());
+
+        if (std::abs(offset.x - expectation.offsetFromPivot.x) > 0.05f
+            || std::abs(offset.y - expectation.offsetFromPivot.y) > 0.05f
+            || std::abs(offset.z - expectation.offsetFromPivot.z) > 0.05f)
+        {
+            CnaStudioTest::reportFailure(
+                __FILE__, __LINE__,
+                std::string{"the "} + toString(expectation.view) + " view put the eye at an offset of ("
+                    + std::to_string(offset.x) + ", " + std::to_string(offset.y) + ", "
+                    + std::to_string(offset.z) + ") from the pivot.");
+        }
+
+        // Orientation only. The pivot and the distance are what the user framed, and a standard
+        // view that also moved them would be a navigation wearing the name of a rotation.
+        CNA_STUDIO_EXPECT(std::abs(camera.getPivot().x - 10.0f) < 1e-4f);
+        CNA_STUDIO_EXPECT(std::abs(camera.getPivot().z - 30.0f) < 1e-4f);
+        CNA_STUDIO_EXPECT(std::abs(camera.getDistance() - 100.0f) < 1e-3f);
+
+        // And the camera really is looking at the pivot from there, which the eye alone does not
+        // say: an eye in the right place looking the wrong way is a view of nothing.
+        const StudioVector3 forward = camera.getForward();
+        const StudioVector3 toPivot = normalize(subtract(camera.getPivot(), eye));
+        CNA_STUDIO_EXPECT(dot(forward, toPivot) > 0.999f);
+    }
+}
+
+CNA_STUDIO_TEST(AStandardViewIsTheSamePictureWhereverTheUserWasOrbiting)
+{
+    // The point of a standard view is that pressing it twice from different places gives one
+    // picture. Top and Bottom are where that could go wrong, because the other four fix the yaw
+    // anyway and these two could have left it wherever the orbit had wandered.
+    StudioCamera3D first;
+    first.setYaw(2.1f);
+    first.setPitch(-0.8f);
+    studioApplyStandardView(first, StudioStandardView::Top);
+
+    StudioCamera3D second;
+    second.setYaw(-0.4f);
+    second.setPitch(1.2f);
+    studioApplyStandardView(second, StudioStandardView::Top);
+
+    CNA_STUDIO_EXPECT(std::abs(first.getYaw() - second.getYaw()) < 1e-5f);
+    CNA_STUDIO_EXPECT(std::abs(first.getPitch() - second.getPitch()) < 1e-5f);
+}
+
+CNA_STUDIO_TEST(LookingStraightDownIsAnOrdinaryPointRatherThanASingularity)
+{
+    // The camera's basis used to be `normalize(cross(forward, Y))`, which is the zero vector when
+    // forward *is* Y -- so the pitch was clamped one degree short of vertical to keep it away from
+    // there, and a Top view was one degree short of a top view. The basis is now written so the
+    // pole is an ordinary point (`plan.md` STUDIO-11004), and these are the assertions that say so.
+    StudioCamera3D camera;
+    camera.setPivot(StudioVector3{1.0f, 2.0f, 3.0f});
+    camera.setDistance(50.0f);
+    studioApplyStandardView(camera, StudioStandardView::Top);
+
+    CNA_STUDIO_EXPECT(std::abs(camera.getPitch() - StudioCamera3D::kMaxPitchRadians) < 1e-6f);
+
+    const StudioVector3 right = camera.getRight();
+    const StudioVector3 up = camera.getUp();
+    const StudioVector3 forward = camera.getForward();
+
+    // Finite, unit-length and mutually perpendicular -- none of which a NaN basis manages.
+    for (const StudioVector3& axis : {right, up, forward})
+    {
+        CNA_STUDIO_EXPECT(std::isfinite(axis.x) && std::isfinite(axis.y) && std::isfinite(axis.z));
+        CNA_STUDIO_EXPECT(std::abs(length(axis) - 1.0f) < 1e-4f);
+    }
+    CNA_STUDIO_EXPECT(std::abs(dot(right, up)) < 1e-4f);
+    CNA_STUDIO_EXPECT(std::abs(dot(right, forward)) < 1e-4f);
+    CNA_STUDIO_EXPECT(std::abs(dot(up, forward)) < 1e-4f);
+
+    // The view matrix is what actually degenerated, and a projection through it has to land
+    // somewhere real: the pivot is dead centre when the camera is pointed at it.
+    camera.setViewportSize(StudioVector2{800.0f, 600.0f});
+    const std::optional<StudioVector2> centre = camera.worldToScreen(camera.getPivot());
+    CNA_STUDIO_EXPECT(centre.has_value());
+    if (centre)
+    {
+        CNA_STUDIO_EXPECT(std::abs(centre->x - 400.0f) < 1.0f);
+        CNA_STUDIO_EXPECT(std::abs(centre->y - 300.0f) < 1.0f);
+    }
+
+    // And the right vector agrees with the limit approached from just below the pole, which is
+    // what makes the pole continuous rather than merely defined.
+    StudioCamera3D nearly;
+    nearly.setPitch(StudioCamera3D::kMaxPitchRadians - 0.0005f);
+    CNA_STUDIO_EXPECT(dot(nearly.getRight(), camera.getRight()) > 0.9999f);
+}
+
 CNA_STUDIO_TEST(BuiltinComponentsAreRegistered)
 {
     const ComponentRegistry registry = makeRegistry();

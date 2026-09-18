@@ -107,8 +107,17 @@ namespace CNA::Studio
     class StudioCamera3D
     {
     public:
-        /** @brief Pitch is clamped just inside vertical, so the view direction never becomes `up`. */
-        static constexpr float kMaxPitchRadians = 1.5533431f;  // 89 degrees.
+        /**
+         * @brief Pitch is clamped to straight up and straight down, which are both representable.
+         *
+         * A right angle exactly, not just inside one. It used to be 89 degrees, to keep the view
+         * direction from becoming parallel to the reference up vector -- which `getRight` and
+         * `getViewMatrix` divided by. Both are now written so that the pole is an ordinary point
+         * rather than a singularity, so the clamp can be where a user expects it: orbiting stops
+         * when you are looking straight down, and a Top view is a top view rather than one degree
+         * short of one (`plan.md` STUDIO-11004).
+         */
+        static constexpr float kMaxPitchRadians = 1.5707964f;  // 90 degrees.
 
         /** @brief Orbit distance limits. Below the first, the near plane eats the pivot. */
         static constexpr float kMinDistance = 0.01f;
@@ -265,6 +274,46 @@ namespace CNA::Studio
         CameraProjection projection_ = CameraProjection::Perspective;
         StudioVector2 viewportSize_{1280.0f, 720.0f};
     };
+
+    /**
+     * @brief One of the six axis-aligned views a 3D editor offers.
+     *
+     * Named for where the camera *is*, which is how every editor names them and the opposite of
+     * how the view direction reads: the Front view looks backwards along -Z from in front of the
+     * subject.
+     */
+    enum class StudioStandardView
+    {
+        Front,
+        Back,
+        Left,
+        Right,
+        Top,
+        Bottom,
+    };
+
+    /** @brief Returns a stable English name for @p view, for menus, logs and tests. */
+    [[nodiscard]] const char* toString(StudioStandardView view);
+
+    /**
+     * @brief Points @p camera along @p view's axis, keeping where it is and how far back.
+     *
+     * `plan.md` STUDIO-11004. Orientation only: the pivot and the distance are what the user
+     * framed and a standard view is a question about *angle*, so changing them would make every
+     * one of these six a navigation as well as a rotation. Focus Selected is the command that
+     * moves the camera, and the two compose — focus, then Top, and the subject is still framed.
+     *
+     * The projection is left alone for the same reason, and that is the less obvious half. Some
+     * editors switch to orthographic here, on the grounds that an axis-aligned view is usually
+     * wanted for measuring; this does not, because the toggle exists separately and a command that
+     * silently did two things would be one a user cannot undo half of.
+     *
+     * Top and Bottom set the yaw to zero rather than keeping it. The other four fix the yaw
+     * anyway, and leaving it alone at the poles would make Top mean six different framings
+     * depending on where the user happened to be orbiting — the point of a standard view is that
+     * pressing it twice from different places gives the same picture.
+     */
+    void studioApplyStandardView(StudioCamera3D& camera, StudioStandardView view);
 
     /**
      * @brief Returns @p entityId's world-space 3D bounds, or std::nullopt when it has none.

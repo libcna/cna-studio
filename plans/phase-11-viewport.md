@@ -6,14 +6,14 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 6 of 15 complete `████░░░░░░░░`
+**Progress:** 8 of 15 complete `██████░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-11001` | Perspective and orthographic cameras | ✅ | `STUDIO-07009` |
 | `STUDIO-11002` | Orbit, fly and pan navigation with configurable speed | ✅ | `STUDIO-11001` |
-| `STUDIO-11003` | Focus selection | ⬜ | `STUDIO-11001` |
-| `STUDIO-11004` | Standard views: front, back, left, right, top, bottom | ⬜ | `STUDIO-11001` |
+| `STUDIO-11003` | Focus selection | ✅ | `STUDIO-11001` |
+| `STUDIO-11004` | Standard views: front, back, left, right, top, bottom | ✅ | `STUDIO-11001` |
 | `STUDIO-11005` | Adaptive grid | ⬜ | `STUDIO-11001` |
 | `STUDIO-11006` | Object picking through the 3D projection | ✅ | `STUDIO-11001` |
 | `STUDIO-11007` | Selection outlines | ⬜ | `STUDIO-11006` |
@@ -29,6 +29,96 @@
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-11003` — Focus selection
+
+**Acceptance.** F frames the selection in whichever view is showing.
+
+**The command already existed and moved the wrong camera.** `studio.view.focusSelected` has been on
+the View menu and bound to F since the shell existed, and its handler called
+`studioFrameSelection`, which takes a `StudioCamera2D&`. In the 3D view that rearranged a camera
+nobody was looking through, so the key appeared to do nothing at all — the worst kind of broken,
+because there is nothing to see and nothing to report.
+
+**`studioFrameSelection3D` is the counterpart, and deliberately a second function rather than a
+template.** The two share a shape and nothing else: one combines `WorldBounds2D` and the other
+`WorldBounds3D`, and the 2D one flattens a transform to a point in the XY plane while the 3D one
+keeps all three components. A single function over both would be one where every reader has to work
+out which half they are in — the same reasoning that keeps `studioViewportPanel` and
+`studioViewportPanel3D` apart.
+
+**Framing moves the camera and leaves its angle alone.** `StudioCamera3D::frame` already worked that
+way; what matters is that it is the right meaning. A focus key that also levelled the view would
+throw away the shot the user was composing, and there is a separate command for choosing an angle —
+`STUDIO-11004`'s six.
+
+**An entity with nothing to draw is framed by its position**, as in 2D and for the same reason: a
+camera or an empty grouping node has a place in the world, and a key that appears not to work is
+worse than one that works modestly.
+
+**Verification.** `tests/StudioViewportPanelTests.cpp`: the pivot landing on the sprite's extent
+rather than its transform origin, the distance coming down, the yaw and pitch untouched, a point
+entity framed by its position without collapsing the distance to zero, and nothing selected leaving
+the camera alone. `TheFocusKeyMovesTheCameraOfTheViewThatIsShowing` is the defect itself, end to end
+through the real shell and the real keystroke: it moves the 2D camera somewhere absurd before
+pressing F in the 3D view, so a focus that moved the wrong one shows up as the 2D camera jumping
+back rather than as nothing happening. Checked by causing it — restoring the old handler fails that
+case by name.
+
+### `STUDIO-11004` — Standard views: front, back, left, right, top, bottom
+
+**Acceptance.** Six commands point the camera along an axis, and a top view is a top view.
+
+**The camera could not represent a top view, and the reason was a magic constant.** Pitch was clamped
+to 89 degrees "so the view direction never becomes `up`", because `getRight` computed
+`normalize(cross(forward, Y))` — the zero vector when `forward` *is* Y — and `getViewMatrix` passed
+`(0, 1, 0)` to a look-at that degenerates when the view direction is parallel to it. The clamp was
+holding two functions away from a singularity rather than the functions being total.
+
+**Both are now written so the pole is an ordinary point.** The cross product works out to
+`(cos yaw · cos pitch, 0, −sin yaw · cos pitch)`, so normalising it gives `(cos yaw, 0, −sin yaw)`
+for any pitch whose cosine is positive — the pitch cancels. Computing that directly is not an
+approximation of the old expression; it is the old expression with a removable singularity removed,
+identical everywhere the old one was defined and defined where it was not. The view matrix takes the
+camera's own up vector, which is `(0, 1, 0)` already orthogonalised, so the matrix is unchanged
+wherever it worked. With those two total, `kMaxPitchRadians` becomes a right angle exactly: orbiting
+stops when you are looking straight down, which is where a user expects it to stop.
+
+**Named for where the camera is, not where it looks.** Front puts the camera in front and looks
+backwards along −Z, which is how every editor names these and the opposite of how the view direction
+reads. The tests assert on the *eye*, because the yaw is the implementation and where the camera
+ends up is the promise.
+
+**Orientation only, and the projection is left alone.** The pivot and the distance are what the user
+framed; a standard view is a question about angle, so changing them would make each of these six a
+navigation as well as a rotation — and they compose with Focus Selected precisely because they do
+not. Some editors also switch to orthographic here, on the grounds that an axis-aligned view is
+usually wanted for measuring. This does not: the projection toggle exists separately, and a command
+that silently did two things is one a user cannot undo half of.
+
+**Top and Bottom zero the yaw rather than keeping it.** The other four fix the yaw anyway. Leaving it
+alone at the poles would make Top mean six different framings depending on where the user happened
+to be orbiting, and the point of a standard view is that pressing it twice from different places
+gives the same picture.
+
+**Unbound by default, which is a decision rather than an omission.** The keys a user's hands already
+know for these are the numpad's 1, 3 and 7; this build's key vocabulary does not carry the numpad,
+and the plain digits beside them are already the 2D and 3D toggles. Inventing a third scheme nobody
+knows would be worse than a menu entry somebody can bind for themselves, which the shortcut editor
+(`StudioShortcutEditor.cpp`) lets them do. They are disabled in the 2D view rather than hidden, like
+the ground-plane toggle: a user who went looking should find them and see why they are greyed out.
+
+**Verification.** `tests/SceneTests.cpp` walks all six and asserts the eye's offset from the pivot,
+that the camera is actually looking *at* the pivot from there — an eye in the right place looking
+the wrong way is a view of nothing — and that the pivot and distance survive. A separate case pins
+that Top from two different orbits gives one orientation.
+`LookingStraightDownIsAnOrdinaryPointRatherThanASingularity` asserts the basis at the pole is finite,
+unit-length and orthogonal, that a projection through the view matrix lands on the pivot at screen
+centre, and that the right vector agrees with the limit approached from just below — which is what
+makes the pole continuous rather than merely defined.
+`tests/StudioViewportPanelTests.cpp` covers the commands through the registry, including their being
+disabled in the 2D view. Checked by causing it: reverting `getRight` to the singular form and
+swapping the Left and Right yaws each fail by name.
 
 ### `STUDIO-11013` — Preserve the existing 2D viewport workflow without regression
 
@@ -87,6 +177,96 @@ alone.
 **An entity with no geometry is still pickable**, because a light or a camera has to be clickable.
 That is deliberate, and it is why "click the corner of the viewport" is not a reliable way to test a
 miss — which is the first thing the test for this caught, about itself.
+
+### `STUDIO-11003` — Focus selection
+
+**Acceptance.** F frames the selection in whichever view is showing.
+
+**The command already existed and moved the wrong camera.** `studio.view.focusSelected` has been on
+the View menu and bound to F since the shell existed, and its handler called
+`studioFrameSelection`, which takes a `StudioCamera2D&`. In the 3D view that rearranged a camera
+nobody was looking through, so the key appeared to do nothing at all — the worst kind of broken,
+because there is nothing to see and nothing to report.
+
+**`studioFrameSelection3D` is the counterpart, and deliberately a second function rather than a
+template.** The two share a shape and nothing else: one combines `WorldBounds2D` and the other
+`WorldBounds3D`, and the 2D one flattens a transform to a point in the XY plane while the 3D one
+keeps all three components. A single function over both would be one where every reader has to work
+out which half they are in — the same reasoning that keeps `studioViewportPanel` and
+`studioViewportPanel3D` apart.
+
+**Framing moves the camera and leaves its angle alone.** `StudioCamera3D::frame` already worked that
+way; what matters is that it is the right meaning. A focus key that also levelled the view would
+throw away the shot the user was composing, and there is a separate command for choosing an angle —
+`STUDIO-11004`'s six.
+
+**An entity with nothing to draw is framed by its position**, as in 2D and for the same reason: a
+camera or an empty grouping node has a place in the world, and a key that appears not to work is
+worse than one that works modestly.
+
+**Verification.** `tests/StudioViewportPanelTests.cpp`: the pivot landing on the sprite's extent
+rather than its transform origin, the distance coming down, the yaw and pitch untouched, a point
+entity framed by its position without collapsing the distance to zero, and nothing selected leaving
+the camera alone. `TheFocusKeyMovesTheCameraOfTheViewThatIsShowing` is the defect itself, end to end
+through the real shell and the real keystroke: it moves the 2D camera somewhere absurd before
+pressing F in the 3D view, so a focus that moved the wrong one shows up as the 2D camera jumping
+back rather than as nothing happening. Checked by causing it — restoring the old handler fails that
+case by name.
+
+### `STUDIO-11004` — Standard views: front, back, left, right, top, bottom
+
+**Acceptance.** Six commands point the camera along an axis, and a top view is a top view.
+
+**The camera could not represent a top view, and the reason was a magic constant.** Pitch was clamped
+to 89 degrees "so the view direction never becomes `up`", because `getRight` computed
+`normalize(cross(forward, Y))` — the zero vector when `forward` *is* Y — and `getViewMatrix` passed
+`(0, 1, 0)` to a look-at that degenerates when the view direction is parallel to it. The clamp was
+holding two functions away from a singularity rather than the functions being total.
+
+**Both are now written so the pole is an ordinary point.** The cross product works out to
+`(cos yaw · cos pitch, 0, −sin yaw · cos pitch)`, so normalising it gives `(cos yaw, 0, −sin yaw)`
+for any pitch whose cosine is positive — the pitch cancels. Computing that directly is not an
+approximation of the old expression; it is the old expression with a removable singularity removed,
+identical everywhere the old one was defined and defined where it was not. The view matrix takes the
+camera's own up vector, which is `(0, 1, 0)` already orthogonalised, so the matrix is unchanged
+wherever it worked. With those two total, `kMaxPitchRadians` becomes a right angle exactly: orbiting
+stops when you are looking straight down, which is where a user expects it to stop.
+
+**Named for where the camera is, not where it looks.** Front puts the camera in front and looks
+backwards along −Z, which is how every editor names these and the opposite of how the view direction
+reads. The tests assert on the *eye*, because the yaw is the implementation and where the camera
+ends up is the promise.
+
+**Orientation only, and the projection is left alone.** The pivot and the distance are what the user
+framed; a standard view is a question about angle, so changing them would make each of these six a
+navigation as well as a rotation — and they compose with Focus Selected precisely because they do
+not. Some editors also switch to orthographic here, on the grounds that an axis-aligned view is
+usually wanted for measuring. This does not: the projection toggle exists separately, and a command
+that silently did two things is one a user cannot undo half of.
+
+**Top and Bottom zero the yaw rather than keeping it.** The other four fix the yaw anyway. Leaving it
+alone at the poles would make Top mean six different framings depending on where the user happened
+to be orbiting, and the point of a standard view is that pressing it twice from different places
+gives the same picture.
+
+**Unbound by default, which is a decision rather than an omission.** The keys a user's hands already
+know for these are the numpad's 1, 3 and 7; this build's key vocabulary does not carry the numpad,
+and the plain digits beside them are already the 2D and 3D toggles. Inventing a third scheme nobody
+knows would be worse than a menu entry somebody can bind for themselves, which the shortcut editor
+(`StudioShortcutEditor.cpp`) lets them do. They are disabled in the 2D view rather than hidden, like
+the ground-plane toggle: a user who went looking should find them and see why they are greyed out.
+
+**Verification.** `tests/SceneTests.cpp` walks all six and asserts the eye's offset from the pivot,
+that the camera is actually looking *at* the pivot from there — an eye in the right place looking
+the wrong way is a view of nothing — and that the pivot and distance survive. A separate case pins
+that Top from two different orbits gives one orientation.
+`LookingStraightDownIsAnOrdinaryPointRatherThanASingularity` asserts the basis at the pole is finite,
+unit-length and orthogonal, that a projection through the view matrix lands on the pivot at screen
+centre, and that the right vector agrees with the limit approached from just below — which is what
+makes the pole continuous rather than merely defined.
+`tests/StudioViewportPanelTests.cpp` covers the commands through the registry, including their being
+disabled in the 2D view. Checked by causing it: reverting `getRight` to the singular form and
+swapping the Left and Right yaws each fail by name.
 
 ### `STUDIO-11013` — Preserve the existing 2D viewport workflow without regression
 

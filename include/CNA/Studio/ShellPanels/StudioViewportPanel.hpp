@@ -503,4 +503,24 @@ namespace CNA::Studio
      */
     bool studioFrameSelection(const StudioContext& context, StudioCamera2D& camera,
                               const SpriteSizeProvider& sizeProvider = {});
+
+    /**
+     * @brief Moves @p camera to frame the current selection, in three dimensions.
+     *
+     * `plan.md` STUDIO-11003. The 3D counterpart of the overload above, and needed rather than
+     * optional: Focus Selected moved the *2D* camera whichever view was showing, so pressing F in
+     * the 3D viewport rearranged a camera nobody was looking through and appeared to do nothing.
+     *
+     * Keeps the camera's orientation and moves only where it is and how far back, which is what
+     * "focus" means in every editor that has it: a key that also levelled the view would take away
+     * the angle the user had just set up.
+     *
+     * @param context The editor, for the scene and the selection.
+     * @param camera The camera to move.
+     * @param sizeProvider Resolves sprite sizes, so a sprite frames to its extent rather than to
+     *        a point.
+     * @return False when nothing is selected, or when nothing selected could be located.
+     */
+    bool studioFrameSelection3D(const StudioContext& context, StudioCamera3D& camera,
+                                const SpriteSizeProvider& sizeProvider = {});
 }

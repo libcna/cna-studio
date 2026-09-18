@@ -104,7 +104,19 @@ namespace CNA::Studio
 
     StudioVector3 StudioCamera3D::getRight() const
     {
-        return normalize(cross(getForward(), StudioVector3{0.0f, 1.0f, 0.0f}));
+        // From the yaw directly rather than through `normalize(cross(forward, Y))`, which is the
+        // same vector everywhere it is defined and is *also* defined at the poles
+        // (`plan.md` STUDIO-11004).
+        //
+        // The cross product works out to (cos yaw * cos pitch, 0, -sin yaw * cos pitch), so
+        // normalising it gives (cos yaw, 0, -sin yaw) for any pitch whose cosine is positive --
+        // the pitch cancels. At exactly straight up or down the cosine is zero, the cross product
+        // collapses to the zero vector, and normalising it yields NaN; the limit approached from
+        // either side is the expression below. Computing that expression directly is not an
+        // approximation of the old one, it is the old one with a removable singularity removed --
+        // which is what lets `kMaxPitchRadians` be a right angle and a Top view be a top view
+        // rather than one degree short of it.
+        return StudioVector3{std::cos(yaw_), 0.0f, -std::sin(yaw_)};
     }
 
     StudioVector3 StudioCamera3D::getUp() const
@@ -127,7 +139,12 @@ namespace CNA::Studio
 
     StudioMatrix StudioCamera3D::getViewMatrix() const
     {
-        return createLookAt(getEye(), pivot_, StudioVector3{0.0f, 1.0f, 0.0f});
+        // The camera's own up vector rather than the world's, negated because `getUp` answers up
+        // *on screen* and this Y-down world's world-up is -Y. Identical to passing (0, 1, 0)
+        // wherever that works -- `createLookAt` orthogonalises whatever it is given, and this is
+        // (0, 1, 0) already orthogonalised -- and defined where that does not: looking straight
+        // down, (0, 1, 0) is parallel to the view direction and the look-at degenerates.
+        return createLookAt(getEye(), pivot_, scale(getUp(), -1.0f));
     }
 
     float StudioCamera3D::getNearClipDistance() const
@@ -281,6 +298,61 @@ namespace CNA::Studio
         }
 
         setDistance(required);
+    }
+
+    const char* toString(StudioStandardView view)
+    {
+        switch (view)
+        {
+            case StudioStandardView::Front:  return "Front";
+            case StudioStandardView::Back:   return "Back";
+            case StudioStandardView::Left:   return "Left";
+            case StudioStandardView::Right:  return "Right";
+            case StudioStandardView::Top:    return "Top";
+            case StudioStandardView::Bottom: return "Bottom";
+        }
+        return "Front";
+    }
+
+    void studioApplyStandardView(StudioCamera3D& camera, StudioStandardView view)
+    {
+        // The yaw that puts the *camera* where the view is named for. `getForward` is
+        // (-sin yaw cos pitch, sin pitch, -cos yaw cos pitch) and the eye is the pivot pulled back
+        // along it, so a Front view -- camera in front, looking backwards along -Z -- is yaw zero.
+        constexpr float kHalfTurn = 3.14159274f;
+        constexpr float kQuarterTurn = 1.5707964f;
+
+        switch (view)
+        {
+            case StudioStandardView::Front:
+                camera.setYaw(0.0f);
+                camera.setPitch(0.0f);
+                break;
+            case StudioStandardView::Back:
+                camera.setYaw(kHalfTurn);
+                camera.setPitch(0.0f);
+                break;
+            case StudioStandardView::Right:
+                // Camera on +X looking towards -X, which needs forward.x = -1: -sin(yaw) = -1.
+                camera.setYaw(kQuarterTurn);
+                camera.setPitch(0.0f);
+                break;
+            case StudioStandardView::Left:
+                camera.setYaw(-kQuarterTurn);
+                camera.setPitch(0.0f);
+                break;
+            case StudioStandardView::Top:
+                // Looking straight down, which in this Y-down world is forward = +Y, so the eye
+                // ends up at -Y -- above. Representable exactly only because `kMaxPitchRadians` is
+                // a right angle and the basis is defined there (STUDIO-11004).
+                camera.setYaw(0.0f);
+                camera.setPitch(kQuarterTurn);
+                break;
+            case StudioStandardView::Bottom:
+                camera.setYaw(0.0f);
+                camera.setPitch(-kQuarterTurn);
+                break;
+        }
     }
 
     std::optional<WorldBounds3D> computeEntityBounds3D(const SceneDocument& scene, const Uuid& entityId,

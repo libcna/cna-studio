@@ -1346,6 +1346,42 @@ namespace CNA::Studio
         return strip;
     }
 
+    bool studioFrameSelection3D(const StudioContext& context, StudioCamera3D& camera,
+                                const SpriteSizeProvider& sizeProvider)
+    {
+        const std::vector<Uuid>& selection = context.getSelection();
+        if (selection.empty()) { return false; }
+
+        std::optional<WorldBounds3D> total;
+        for (const Uuid& entityId : selection)
+        {
+            std::optional<WorldBounds3D> bounds =
+                computeHierarchyBounds3D(context.getScene(), entityId, sizeProvider);
+
+            if (!bounds)
+            {
+                // An entity with no drawable geometry -- a camera, an empty grouping node -- still
+                // has a position, and framing it should centre on it rather than do nothing. The
+                // 2D overload below makes the same bargain for the same reason: a key that appears
+                // not to work is worse than one that works modestly.
+                const std::optional<WorldTransform> world =
+                    computeWorldTransform(context.getScene(), entityId);
+                if (!world) { continue; }
+
+                bounds = WorldBounds3D{world->position, world->position};
+            }
+
+            total = total ? WorldBounds3D::combine(*total, *bounds) : bounds;
+        }
+
+        if (!total) { return false; }
+
+        // `frame` moves the pivot and the distance and leaves yaw and pitch alone, which is what
+        // focus means: the user keeps the angle they set up and gets the subject in front of it.
+        camera.frame(*total);
+        return true;
+    }
+
     bool studioFrameSelection(const StudioContext& context, StudioCamera2D& camera,
                               const SpriteSizeProvider& sizeProvider)
     {
