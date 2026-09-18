@@ -6,14 +6,14 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 5 of 14 complete `████░░░░░░░░`
+**Progress:** 6 of 14 complete `█████░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-10001` | Import settings model, persisted per asset and preserved across reimport | ✅ | `STUDIO-09014` |
 | `STUDIO-10002` | Importer plugin interface | ✅ | `STUDIO-10001` |
 | `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ✅ | `STUDIO-10001` |
-| `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ⬜ | `STUDIO-10002` |
+| `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ✅ | `STUDIO-10002` |
 | `STUDIO-10005` | Audio import | ⬜ | `STUDIO-10002` |
 | `STUDIO-10006` | Font import | ⬜ | `STUDIO-04005` |
 | `STUDIO-10007` | Material assets | ⬜ | `STUDIO-19001` |
@@ -201,6 +201,60 @@ that week.
 ### `STUDIO-10004` — Model import: glTF (carried forward from the prototype)
 
 **Acceptance.** The existing cgltf-based importer keeps working and gains import settings
+
+**One of the settings it already had did nothing, and that is what this task mostly was.**
+`ImporterIds::kModel` declared `importMaterials`, `loadModel` read it, and the two places that
+build a `ModelImportSettings` out of a sidecar — `MeshCache` and `Detail::applyModelFacts` — each
+read `scaleFactor` by hand and neither read `importMaterials`. So the checkbox was editable, was
+persisted, and reached the importer from nowhere. Two hand-rolled readers that each forget a
+different field is the whole argument for `ModelImportSettings::fromJson`, which is now the only
+one and which both call sites use.
+
+**`importAnimations` was removed rather than kept honest.** It was declared, documented as not read
+and read by nothing. A tooltip explaining that a control does nothing is not the same as a user
+finding that out, and a control that does nothing teaches them the editor lies — which is worth
+more than the gap it stands in for. In its place the importer reports `animationCount`: how many
+animations the file carries, which is a true statement, is the number somebody needs before
+deciding whether Studio's lack of skeletal animation (`STUDIO-21001`) matters to them, and costs one
+field read of something cgltf has already parsed. The setting comes back when the code that reads
+it does.
+
+**`skippedPrimitives` stopped being invisible.** `ModelImportResult` has counted primitives left out
+for not being triangles since the importer was written, and `ModelImport.hpp`'s own header comment
+says a model that silently loses a third of itself is the kind of bug found in a shipped game — but
+the count went into a struct nobody read. It is now a fact in the sidecar and a row in the
+inspector, so "0 triangles beside a 4 MB file" has a companion diagnosis for the partial case.
+A *failed* import is still `STUDIO-10013`'s; this is the successful import that quietly dropped
+something.
+
+**The one genuinely new setting is `normals`.** `Import` keeps the file's own, computing flat ones
+only where a part carries none — which is the old behaviour and the right default, since smoothing
+groups and split edges are decisions an artist made. `Calculate` throws them away and computes
+flat ones everywhere, for the file whose normals are *there* and wrong: exported inside-out, or
+left as zeroes by a converter, which is otherwise a trip back through the authoring tool. The
+ordering in `loadModel` matters and is asserted: `Calculate` must not merely act as a fallback for
+a missing `NORMAL` attribute, because the file it exists for is the one that has one.
+
+**The facts are gathered with the settings, and that is deliberate.** A vertex count taken with the
+file's normals beside a `Normals: Calculate` that triples it, or a material count of one beside an
+unticked `Import Materials`, would each be two answers to one question. The facts describe what
+*this asset* imports as, not what the file would yield to somebody else's settings — the same rule
+`scaleFactor` and `modelSize` already followed.
+
+**Verification.** `tests/ModelImportTests.cpp`: the defaults a missing sidecar field reads back as
+(`importMaterials` is `true` when absent, and a reader treating absence as zero would strip the
+materials off every model nobody had touched); `importMaterials` off reaching both the facts and
+the loader; `Calculate` fixing normals that point into the surface while `Import` leaves them
+wrong; the animation and skipped-primitive counts through `readModelDescription` and into a
+sidecar. `EverySettingTheModelImporterDeclaresIsOneTheImporterReads` walks the descriptor, changes
+each editable property away from its default and requires `fromJson` to notice — the policy rather
+than the one instance, so the next dead setting is caught too. Checked by causing it: adding an
+`importAnimations` back fails that case by name.
+
+**The glTF fixture gained animations.** Each is a valid one-channel animation whose sampler reads
+its times out of the positions buffer view, so the fixture's buffer needs nothing added — the count
+is the only thing under test, and an animation that failed `cgltf_validate` would fail the whole
+load instead of testing anything.
 
 ### `STUDIO-10014` — Decide how Studio decodes an image without a graphics device
 

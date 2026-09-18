@@ -31,13 +31,12 @@ namespace CNA::Studio
             // The asset's own settings, so what the 3D view draws is the model at the size the
             // inspector says it is. Reading the file with a default scale while the sidecar says
             // 100 would put the viewport and the inspector into open disagreement about one model.
-            ModelImportSettings settings;
-            const JsonValue& storedScale = record->importerSettings["scaleFactor"];
-            if (!storedScale.isNull())
-            {
-                settings.scaleFactor =
-                    PropertyValue::fromJson(storedScale, PropertyType::Float).get<float>();
-            }
+            //
+            // Through the shared reader rather than field by field: this read `scaleFactor` and
+            // nothing else, so "Import Materials" was a checkbox the inspector offered and the
+            // viewport never saw (`plan.md` STUDIO-10004).
+            const ModelImportSettings settings =
+                ModelImportSettings::fromJson(record->importerSettings);
 
             ModelImportResult imported = loadModel(assets.resolvePath(record->sourcePath), settings);
             if (imported.succeeded && !imported.mesh.isEmpty())

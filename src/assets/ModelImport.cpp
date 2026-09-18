@@ -8,12 +8,37 @@
 #include <string_view>
 #include <unordered_set>
 
+#include "CNA/Studio/Core/Json.hpp"
 #include "CNA/Studio/Core/StudioMatrix.hpp"
 
 #include "cgltf_prefixed.h"
 
 namespace CNA::Studio
 {
+    ModelImportSettings ModelImportSettings::fromJson(const JsonValue& importerSettings)
+    {
+        ModelImportSettings settings;
+
+        const JsonValue& scaleFactor = importerSettings["scaleFactor"];
+        if (!scaleFactor.isNull())
+        {
+            settings.scaleFactor = static_cast<float>(scaleFactor.asNumber(settings.scaleFactor));
+        }
+
+        const JsonValue& importMaterials = importerSettings["importMaterials"];
+        if (!importMaterials.isNull())
+        {
+            settings.importMaterials = importMaterials.asBoolean(settings.importMaterials);
+        }
+
+        if (importerSettings["normals"].asString() == "Calculate")
+        {
+            settings.normals = ModelNormals::Calculate;
+        }
+
+        return settings;
+    }
+
     namespace
     {
         /**
@@ -368,7 +393,11 @@ namespace CNA::Studio
             const std::size_t vertexCount = positions->count;
 
             std::vector<float> normalData;
-            const bool hasNormals = normals != nullptr && normals->count == positions->count
+            // The setting comes first, so that `Calculate` does not merely fall back to flat
+            // normals when the file happens to carry none: it is chosen precisely for the file
+            // whose normals are there and wrong.
+            const bool hasNormals = settings.normals == ModelNormals::Import && normals != nullptr
+                                    && normals->count == positions->count
                                     && readAccessor<3>(normals, normalData);
 
             std::vector<float> texCoordData;
@@ -562,6 +591,8 @@ namespace CNA::Studio
             }
         }
 
+        loader.result.animationCount = static_cast<std::size_t>(handle.data->animations_count);
+
         if (loader.result.skippedPrimitives > 0)
         {
             loader.addWarning(absolutePath,
@@ -585,6 +616,8 @@ namespace CNA::Studio
         description.vertexCount = imported.mesh.getVertexCount();
         description.triangleCount = imported.mesh.getTriangleCount();
         description.materialCount = imported.mesh.materials.size();
+        description.animationCount = imported.animationCount;
+        description.skippedPrimitives = imported.skippedPrimitives;
         if (!imported.mesh.isEmpty())
         {
             description.size = subtract(imported.mesh.boundsMax, imported.mesh.boundsMin);

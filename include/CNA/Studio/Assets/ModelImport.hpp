@@ -35,12 +35,38 @@
 
 namespace CNA::Studio
 {
+    class JsonValue;
+
+    /** @brief Where a mesh's normals come from. */
+    enum class ModelNormals
+    {
+        /**
+         * @brief The file's own, with flat ones computed only for a part that carries none.
+         *
+         * The default, and right for anything exported by a tool that knows what it is doing:
+         * smoothing groups, split edges and averaged normals are decisions the artist made, and
+         * recomputing them throws all of it away.
+         */
+        Import,
+
+        /**
+         * @brief Ignore the file's and compute flat ones for every part.
+         *
+         * For a file whose normals are wrong -- exported inside-out, or left as zeroes by a
+         * converter -- which is otherwise a trip back through the authoring tool. Flat normals
+         * duplicate every vertex per face, so a mesh gets larger, and it will look faceted
+         * because that is what flat means.
+         */
+        Calculate,
+    };
+
     /**
-     * @brief The importer settings that change the geometry, read from an asset's sidecar.
+     * @brief The importer settings that change what comes out of `loadModel`.
      *
-     * A subset of what `ImporterIds::kModel` declares: the fields here are the ones that alter
-     * what comes out of `loadModel`. `importMaterials` and `importAnimations` are declared on the
-     * importer too but are not settings this function reads -- see the notes on each below.
+     * Read from an asset's sidecar with fromJson(). That one reader is the point: these were read
+     * by hand at each call site, each of which honoured `scaleFactor` and quietly ignored
+     * `importMaterials` -- so a setting the inspector offered had no effect anywhere
+     * (`plan.md` STUDIO-10004).
      */
     struct ModelImportSettings
     {
@@ -61,6 +87,18 @@ namespace CNA::Studio
          * flattened into Blinn-Phong approximations that someone then has to delete.
          */
         bool importMaterials = true;
+
+        /** @brief Whether to trust the file's normals. See @ref ModelNormals. */
+        ModelNormals normals = ModelNormals::Import;
+
+        /**
+         * @brief Reads these settings out of an asset's `importerSettings`.
+         *
+         * A field the sidecar does not carry keeps its declared default rather than becoming a
+         * zero -- which is the difference between "the user has not chosen" and "the user chose
+         * no materials".
+         */
+        [[nodiscard]] static ModelImportSettings fromJson(const JsonValue& importerSettings);
     };
 
     /** @brief One thing the importer could not do, in words a person can act on. */
@@ -95,6 +133,15 @@ namespace CNA::Studio
          * primitive would bury everything else. `warnings` gets one entry summarising them.
          */
         std::size_t skippedPrimitives = 0;
+
+        /**
+         * @brief How many animations the file carries. None of them are read.
+         *
+         * On the *result* although nothing was imported, because this is the only place with the
+         * parsed file in hand -- and counting it costs one field read of something already parsed.
+         * What it is for is on `ModelDescription::animationCount`.
+         */
+        std::size_t animationCount = 0;
     };
 
     /**
@@ -109,12 +156,11 @@ namespace CNA::Studio
      * Y-down world, triangle winding reversed to survive that mirror, and `scaleFactor` applied.
      * A consumer draws the result without knowing any of it happened.
      *
-     * Animations are not read. `ImporterIds::kModel` declares an `importAnimations` setting and
-     * this function ignores it, which is the honest state of things rather than an oversight: an
-     * animation needs a skeleton to drive, `MeshData` deliberately has no node hierarchy yet, and
-     * building one against no consumer is the mistake ED-311 is parked to avoid. When skeletal
-     * animation becomes a task, it arrives as fields beside `MeshData::parts` and this signature
-     * does not change.
+     * Animations are not read, and there is no setting pretending otherwise: an animation needs a
+     * skeleton to drive, `MeshData` deliberately has no node hierarchy yet, and building one
+     * against no consumer is the mistake ED-311 is parked to avoid. What a file carries is
+     * *reported* instead, as `ModelDescription::animationCount`. When skeletal animation becomes a
+     * task, it arrives as fields beside `MeshData::parts` and this signature does not change.
      */
     [[nodiscard]] ModelImportResult loadModel(const std::string& absolutePath,
                                               const ModelImportSettings& settings = {});
@@ -132,6 +178,27 @@ namespace CNA::Studio
         std::size_t vertexCount = 0;
         std::size_t triangleCount = 0;
         std::size_t materialCount = 0;
+
+        /**
+         * @brief How many animations the file carries, none of which are imported yet.
+         *
+         * A fact rather than a setting, and it replaces one. `ImporterIds::kModel` used to declare
+         * an `importAnimations` checkbox that nothing read: a control that does nothing teaches a
+         * user that the editor lies, which is worse than the gap it was standing in for. A count
+         * says the same thing truthfully -- "this file has four animations and Studio does not
+         * read them yet" -- and it is the number somebody needs before deciding whether that
+         * matters (`plan.md` STUDIO-10004, `STUDIO-21001`).
+         */
+        std::size_t animationCount = 0;
+
+        /**
+         * @brief Primitives left out because their topology is not triangles.
+         *
+         * Reported so that a model which quietly lost a third of itself stops being quiet. The
+         * importer has counted these since it was written and put the number in a struct nobody
+         * read; this is what carries it to the inspector.
+         */
+        std::size_t skippedPrimitives = 0;
 
         /** @brief The model's extent in editor world units, after `scaleFactor`. */
         StudioVector3 size;

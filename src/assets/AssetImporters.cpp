@@ -290,20 +290,40 @@ namespace CNA::Studio
                 return property;
             };
 
+            PropertyDescriptor normals = makeProperty("normals", "Normals", PropertyType::Enum,
+                                                      PropertyValue{PropertyValue::EnumValue{"Import"}},
+                                                      "Import keeps the file's own, which are "
+                                                      "decisions the artist made. Calculate throws "
+                                                      "them away and computes flat ones, which is "
+                                                      "for a file whose normals are wrong -- it "
+                                                      "duplicates every vertex per face, so the "
+                                                      "mesh gets larger and looks faceted.");
+            normals.enumOptions = {"Import", "Calculate"};
+
             descriptor.properties = {
                 std::move(scale),
                 makeProperty("importMaterials", "Import Materials", PropertyType::Boolean,
-                             PropertyValue{true}),
-                makeProperty("importAnimations", "Import Animations", PropertyType::Boolean,
                              PropertyValue{true},
-                             "Declared but not yet read: animation needs a skeleton to drive, and "
-                             "the imported mesh has no node hierarchy to be one. See ED-405."),
+                             "Off brings the shape in without the file's materials, for a model "
+                             "that is going to be materialled in the editor anyway."),
+                std::move(normals),
                 fact("meshCount", "Meshes", PropertyType::Integer, PropertyValue{0},
                      "Drawable parts -- one per glTF primitive, since a primitive is the largest "
                      "span with a single material."),
                 fact("vertexCount", "Vertices", PropertyType::Integer, PropertyValue{0}, ""),
                 fact("triangleCount", "Triangles", PropertyType::Integer, PropertyValue{0}, ""),
                 fact("materialCount", "Materials", PropertyType::Integer, PropertyValue{0}, ""),
+                // Was an "Import Animations" checkbox that nothing read. A count is the same
+                // information told truthfully: a control that does nothing teaches a user that the
+                // editor lies, which is worse than the gap it stands in for (STUDIO-10004).
+                fact("animationCount", "Animations", PropertyType::Integer, PropertyValue{0},
+                     "How many the file carries. Studio does not import animations yet, so this "
+                     "is what would be lost by baking this model into a build today."),
+                // The number the importer has always counted and never shown. "0 triangles" beside
+                // a 4 MB file diagnoses one kind of silent loss; this diagnoses the other.
+                fact("skippedPrimitives", "Skipped", PropertyType::Integer, PropertyValue{0},
+                     "Primitives left out because they are lines or points rather than triangles. "
+                     "Anything but zero means this model is not all here."),
                 fact("modelSize", "Size", PropertyType::Vector3, PropertyValue{StudioVector3{}},
                      "The model's extent in world units, after Scale Factor. Answers \"why is this "
                      "thing the size of a building\" without placing it in a scene first."),
@@ -584,17 +604,13 @@ namespace CNA::Studio
 
     bool Detail::applyModelFacts(AssetDatabase& assets, const AssetRecord& record)
     {
-        // The model's own `scaleFactor` decides what its size *means*, so the facts are gathered
-        // with the setting the sidecar already holds. Reporting a size measured at 1.0 next to a
-        // scale factor of 100 would be two answers to one question, which is the thing the
-        // fact/setting split exists to prevent.
-        ModelImportSettings settings;
-        const JsonValue& storedScale = record.importerSettings["scaleFactor"];
-        if (!storedScale.isNull())
-        {
-            settings.scaleFactor =
-                PropertyValue::fromJson(storedScale, PropertyType::Float).get<float>();
-        }
+        // Gathered with the settings the sidecar already holds, because every one of them changes
+        // what the answers *are*: a size measured at scale 1.0 beside a scale factor of 100, or a
+        // vertex count taken with the file's normals beside a "Normals: Calculate" that triples
+        // it, would each be two answers to one question -- which is the thing the fact/setting
+        // split exists to prevent. The facts describe what this asset imports as, not what the
+        // file would yield to somebody else's settings.
+        const ModelImportSettings settings = ModelImportSettings::fromJson(record.importerSettings);
 
         const std::optional<ModelDescription> description =
             readModelDescription(assets.resolvePath(record.sourcePath), settings);
@@ -605,6 +621,9 @@ namespace CNA::Studio
         facts.set("vertexCount", JsonValue{static_cast<double>(description->vertexCount)});
         facts.set("triangleCount", JsonValue{static_cast<double>(description->triangleCount)});
         facts.set("materialCount", JsonValue{static_cast<double>(description->materialCount)});
+        facts.set("animationCount", JsonValue{static_cast<double>(description->animationCount)});
+        facts.set("skippedPrimitives",
+                  JsonValue{static_cast<double>(description->skippedPrimitives)});
         facts.set("modelSize", PropertyValue{description->size}.toJson());
 
         return writeFactsIfChanged(assets, record, facts);

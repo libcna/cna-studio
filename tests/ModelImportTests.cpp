@@ -147,6 +147,15 @@ namespace
         /** @brief Write the occlusion map as its own image rather than packed with the ORM one. */
         bool withSeparateOcclusionMap = false;
 
+        /**
+         * @brief How many animations to declare. None of them is ever imported.
+         *
+         * Each is a valid one-channel animation reading its times out of the positions view, so
+         * the buffer needs nothing added to it: the count is the only thing under test, and an
+         * animation that failed `cgltf_validate` would fail the whole load instead.
+         */
+        std::size_t animationCount = 0;
+
         /** @brief Points the buffer at a file beside the `.gltf` instead of embedding it. */
         std::string externalBufferUri;
 
@@ -248,6 +257,16 @@ namespace
                   << R"(,"componentType":5123,"count":)" << fixture.indices.size()
                   << R"(,"type":"SCALAR"})";
 
+        // An animation sampler's input must be SCALAR floats. The positions view already holds
+        // floats, so the times are read out of it rather than added to the buffer -- the numbers
+        // are meaningless and only the animation *count* is under test.
+        const int animationInput = indexAccessor + 1;
+        if (fixture.animationCount > 0)
+        {
+            accessors << R"(,{"bufferView":0,"componentType":5126,"count":)"
+                      << fixture.positions.size() << R"(,"type":"SCALAR","min":[0],"max":[1]})";
+        }
+
         std::ostringstream json;
         json << R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
              << R"("nodes":[{"mesh":0,"translation":)"
@@ -283,6 +302,15 @@ namespace
                  << R"("baseColorTexture":{"index":0}},"emissiveFactor":[0.1,0.2,0.3]}],)"
                  << R"("textures":[{"source":0}],"images":[{"uri":"paint.png"}],)";
         }
+
+        for (std::size_t animation = 0; animation < fixture.animationCount; ++animation)
+        {
+            json << (animation == 0 ? R"("animations":[)" : ",")
+                 << R"({"samplers":[{"input":)" << animationInput
+                 << R"(,"output":0,"interpolation":"LINEAR"}],)"
+                 << R"("channels":[{"sampler":0,"target":{"node":0,"path":"translation"}}]})";
+        }
+        if (fixture.animationCount > 0) { json << R"(],)"; }
 
         const std::size_t bufferLength = buildFixtureBuffer(fixture).size();
         json << R"("buffers":[{"byteLength":)" << bufferLength;
@@ -826,6 +854,248 @@ CNA_STUDIO_TEST(ReadModelDescriptionReportsWhatTheModelContains)
     }
 
     std::filesystem::remove_all(directory);
+}
+
+CNA_STUDIO_TEST(ModelImportSettingsReadBackTheDeclaredDefaultsRatherThanZeroes)
+{
+    // The failure this rules out is not hypothetical: `importMaterials` reads back as *true* when
+    // the sidecar does not carry it, and a reader that treated an absent field as a zero would
+    // strip the materials off every model nobody had ever touched (`plan.md` STUDIO-10004).
+    const ModelImportSettings untouched = ModelImportSettings::fromJson(JsonValue::makeObject());
+    CNA_STUDIO_EXPECT(untouched.importMaterials);
+    CNA_STUDIO_EXPECT(untouched.normals == ModelNormals::Import);
+    CNA_STUDIO_EXPECT(nearlyEqual(untouched.scaleFactor, 1.0f));
+
+    // An asset with no `importerSettings` object at all reads the same way.
+    CNA_STUDIO_EXPECT(ModelImportSettings::fromJson(JsonValue{}).importMaterials);
+
+    JsonValue chosen = JsonValue::makeObject();
+    chosen.set("scaleFactor", JsonValue{0.01});
+    chosen.set("importMaterials", JsonValue{false});
+    chosen.set("normals", JsonValue{std::string{"Calculate"}});
+
+    const ModelImportSettings edited = ModelImportSettings::fromJson(chosen);
+    CNA_STUDIO_EXPECT(nearlyEqual(edited.scaleFactor, 0.01f));
+    CNA_STUDIO_EXPECT(!edited.importMaterials);
+    CNA_STUDIO_EXPECT(edited.normals == ModelNormals::Calculate);
+}
+
+/**
+ * Turning materials off actually reaches the importer. This is the case the shared reader exists
+ * for: both call sites used to read `scaleFactor` out of the sidecar by hand and neither read
+ * `importMaterials`, so the inspector offered a checkbox that changed nothing anywhere.
+ */
+CNA_STUDIO_TEST(ImportMaterialsOffReachesTheImporterFromTheSidecar)
+{
+    const std::filesystem::path directory = makeScratchDirectory("modelnomaterials");
+    GltfFixture fixture = makeTriangleFixture();
+    fixture.withMaterial = true;
+
+    const std::string gltf = buildFixtureJson(
+        fixture, "data:application/octet-stream;base64," + toBase64(buildFixtureBuffer(fixture)));
+    writeBinaryFile(directory / "Assets" / "prop.gltf", gltf);
+
+    AssetDatabase database;
+    database.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(database.scan("Assets").succeeded);
+
+    const AssetRecord* record = database.findByPath("Assets/prop.gltf");
+    CNA_STUDIO_EXPECT(record != nullptr);
+    if (record == nullptr)
+    {
+        std::filesystem::remove_all(directory);
+        return;
+    }
+
+    const Uuid id = record->id;
+    CNA_STUDIO_EXPECT(applyImporterFacts(database, id));
+    CNA_STUDIO_EXPECT(nearlyEqual(
+        static_cast<float>(database.find(id)->importerSettings["materialCount"].asNumber()), 1.0f));
+
+    AssetRecord* mutableRecord = database.findMutable(id);
+    CNA_STUDIO_EXPECT(mutableRecord != nullptr);
+    if (mutableRecord->importerSettings.isNull())
+    {
+        mutableRecord->importerSettings = JsonValue::makeObject();
+    }
+    mutableRecord->importerSettings.set("importMaterials", JsonValue{false});
+
+    // The facts follow the setting, because the facts describe what this asset imports as rather
+    // than what the file would yield to somebody else's settings.
+    CNA_STUDIO_EXPECT(applyImporterFacts(database, id));
+    CNA_STUDIO_EXPECT(nearlyEqual(
+        static_cast<float>(database.find(id)->importerSettings["materialCount"].asNumber()), 0.0f));
+
+    // And the loader itself, which is where the change actually has to land.
+    const ModelImportResult imported =
+        loadModel(database.resolvePath(database.find(id)->sourcePath),
+                  ModelImportSettings::fromJson(database.find(id)->importerSettings));
+    CNA_STUDIO_EXPECT(imported.succeeded);
+    CNA_STUDIO_EXPECT(imported.mesh.materials.empty());
+    CNA_STUDIO_EXPECT(!imported.mesh.parts.empty());
+
+    std::filesystem::remove_all(directory);
+}
+
+/**
+ * `Normals: Calculate` throws the file's normals away rather than merely standing in for missing
+ * ones. The distinction is the whole reason the setting exists: the file it is chosen for is the
+ * one whose normals are *there* and wrong.
+ */
+CNA_STUDIO_TEST(CalculateNormalsIgnoresTheOnesTheFileCarries)
+{
+    const std::filesystem::path directory = makeScratchDirectory("gltfcalcnormals");
+
+    // Normals pointing the wrong way -- into the surface rather than out of it, which is what a
+    // bad export produces and what no amount of re-lighting fixes.
+    GltfFixture fixture = makeTriangleFixture();
+    for (auto& normal : fixture.normals) { normal = {{0.0f, 0.0f, -1.0f}}; }
+    const std::filesystem::path file = writeGltf(directory, fixture);
+
+    const ModelImportResult asImported = loadModel(file.string());
+    CNA_STUDIO_EXPECT(asImported.succeeded);
+    CNA_STUDIO_EXPECT(!meshWindingMatchesNormals(asImported.mesh.parts[0]));
+
+    ModelImportSettings calculated;
+    calculated.normals = ModelNormals::Calculate;
+    const ModelImportResult recomputed = loadModel(file.string(), calculated);
+    CNA_STUDIO_EXPECT(recomputed.succeeded);
+    CNA_STUDIO_EXPECT(meshWindingMatchesNormals(recomputed.mesh.parts[0]));
+
+    for (const MeshVertex& vertex : recomputed.mesh.parts[0].vertices)
+    {
+        CNA_STUDIO_EXPECT(nearlyEqual(length(vertex.normal), 1.0f, 1e-3f));
+    }
+
+    // Flat normals cannot be shared, so the vertices are expanded to three per face. A user needs
+    // to know that from the inspector, which is why the vertex count is a fact gathered with the
+    // settings rather than one measured once and kept.
+    const std::optional<ModelDescription> plain = readModelDescription(file.string());
+    const std::optional<ModelDescription> flat = readModelDescription(file.string(), calculated);
+    CNA_STUDIO_EXPECT(plain.has_value() && flat.has_value());
+    if (plain && flat)
+    {
+        CNA_STUDIO_EXPECT_EQ(flat->vertexCount, flat->triangleCount * 3);
+        CNA_STUDIO_EXPECT_EQ(plain->triangleCount, flat->triangleCount);
+    }
+
+    std::filesystem::remove_all(directory);
+}
+
+/**
+ * What a model carries and loses is reported, where it used to be either invisible or a lie. The
+ * animation count replaces an "Import Animations" checkbox that nothing read; the skipped-primitive
+ * count has been gathered since the importer was written and went into a struct nobody looked at.
+ */
+CNA_STUDIO_TEST(AModelReportsTheAnimationsItCarriesAndThePrimitivesItLost)
+{
+    const std::filesystem::path directory = makeScratchDirectory("modelreports");
+
+    GltfFixture animated = makeTriangleFixture();
+    animated.animationCount = 3;
+    const std::optional<ModelDescription> withAnimations =
+        readModelDescription(writeGltf(directory, animated).string());
+
+    CNA_STUDIO_EXPECT(withAnimations.has_value());
+    if (withAnimations)
+    {
+        // Counted, not imported -- and saying so is the point. A file whose animations are its
+        // reason for existing is one somebody needs to know Studio will not carry into a build.
+        CNA_STUDIO_EXPECT_EQ(withAnimations->animationCount, std::size_t{3});
+        CNA_STUDIO_EXPECT_EQ(withAnimations->triangleCount, std::size_t{1});
+        CNA_STUDIO_EXPECT_EQ(withAnimations->skippedPrimitives, std::size_t{0});
+    }
+
+    GltfFixture lines = makeTriangleFixture();
+    lines.primitiveMode = 1;
+    const std::optional<ModelDescription> lost =
+        readModelDescription(writeGltf(directory, lines).string());
+    CNA_STUDIO_EXPECT(lost.has_value());
+    if (lost)
+    {
+        CNA_STUDIO_EXPECT_EQ(lost->skippedPrimitives, std::size_t{1});
+        CNA_STUDIO_EXPECT_EQ(lost->animationCount, std::size_t{0});
+    }
+
+    // And both reach the sidecar, which is where the inspector reads them from.
+    writeBinaryFile(directory / "Assets" / "dancer.gltf",
+                    buildFixtureJson(animated, "data:application/octet-stream;base64,"
+                                                   + toBase64(buildFixtureBuffer(animated))));
+
+    AssetDatabase database;
+    database.setProjectRoot(directory.generic_string());
+    CNA_STUDIO_EXPECT(database.scan("Assets").succeeded);
+    const AssetRecord* record = database.findByPath("Assets/dancer.gltf");
+    CNA_STUDIO_EXPECT(record != nullptr);
+    if (record != nullptr)
+    {
+        CNA_STUDIO_EXPECT(applyImporterFacts(database, record->id));
+        CNA_STUDIO_EXPECT(nearlyEqual(
+            static_cast<float>(database.find(record->id)->importerSettings["animationCount"].asNumber()),
+            3.0f));
+        CNA_STUDIO_EXPECT(
+            !database.find(record->id)->importerSettings["skippedPrimitives"].isNull());
+    }
+
+    std::filesystem::remove_all(directory);
+}
+
+/**
+ * The importer declares no setting it does not read. An "Import Animations" checkbox sat here for
+ * a while doing nothing, documented as doing nothing -- which is not the same as a user finding
+ * that out. This asserts the policy rather than the absence, so the next one is caught too.
+ */
+CNA_STUDIO_TEST(EverySettingTheModelImporterDeclaresIsOneTheImporterReads)
+{
+    ComponentRegistry importers;
+    registerBuiltinImporters(importers);
+
+    const ComponentDescriptor* model = importers.find(ImporterIds::kModel);
+    CNA_STUDIO_EXPECT(model != nullptr);
+    if (model == nullptr) { return; }
+
+    // Every editable property must appear in the settings `fromJson` reads, which is checked by
+    // setting it to something other than its default and requiring the struct to notice.
+    for (const PropertyDescriptor& property : model->properties)
+    {
+        if (property.readOnly) { continue; }
+
+        JsonValue settings = JsonValue::makeObject();
+        if (property.type == PropertyType::Boolean)
+        {
+            settings.set(property.name, JsonValue{!property.defaultValue.get<bool>()});
+        }
+        else if (property.type == PropertyType::Float)
+        {
+            settings.set(property.name,
+                         JsonValue{static_cast<double>(property.defaultValue.get<float>()) + 1.0});
+        }
+        else if (property.type == PropertyType::Enum)
+        {
+            CNA_STUDIO_EXPECT(property.enumOptions.size() > 1);
+            settings.set(property.name, JsonValue{property.enumOptions.back()});
+        }
+        else
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                         "the model importer declares a setting of a kind this "
+                                         "case does not know how to change: " + property.name);
+            continue;
+        }
+
+        const ModelImportSettings read = ModelImportSettings::fromJson(settings);
+        const ModelImportSettings defaults;
+        const bool noticed = !nearlyEqual(read.scaleFactor, defaults.scaleFactor)
+                             || read.importMaterials != defaults.importMaterials
+                             || read.normals != defaults.normals;
+        if (!noticed)
+        {
+            CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                         "the model importer declares '" + property.name
+                                             + "', and changing it changes nothing the importer "
+                                               "reads.");
+        }
+    }
 }
 
 /**
