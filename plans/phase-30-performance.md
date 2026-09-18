@@ -6,12 +6,12 @@
 
 **Exit criteria.** Benchmarks exist, they run, and regressions are visible.
 
-**Progress:** 13 of 17 complete `█████████░░░`
+**Progress:** 14 of 17 complete `█████████░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
 | `STUDIO-30001` | Background job system: progress, cancellation, errors, clean shutdown | ✅ | `STUDIO-02050` |
-| `STUDIO-30002` | Bounded queues and backpressure for job submission | ⬜ | `STUDIO-30001` |
+| `STUDIO-30002` | Bounded queues and backpressure for job submission | ✅ | `STUDIO-30001` |
 | `STUDIO-30010` | Virtualised list and tree infrastructure | ✅ | `STUDIO-03015` |
 | `STUDIO-30011` | Incremental update rather than per-frame rebuild throughout | ✅ | `STUDIO-30010` |
 | `STUDIO-30012` | Caching strategy with explicit invalidation | ✅ | — |
@@ -691,3 +691,48 @@ that.
 
 The unselected rows are unchanged within run-to-run noise on this machine, which is the point: the
 readers that stopped invalidating were only ever costing anything when something was selected.
+
+### `STUDIO-30002` — Bounded queues and backpressure for job submission
+
+**Done.** `StudioJobSystem` holds at most `kDefaultQueueLimit` (1024) outstanding jobs, refuses the
+next one visibly, and counts the refusals.
+
+**The bound is on *outstanding*, not on *queued*.** Outstanding means submitted and not yet
+drained — queued, running, or finished and waiting for its completion — because that is the number
+that bounds what the system is holding: a body, a completion handler, whatever each of them
+captured, and a row in the progress list. Bounding the queue alone would leave a caller that never
+drains growing without limit, which is the same failure wearing a different name.
+
+**Backpressure has to mean "not now", not "wait".** Submission happens on the main thread. A
+`submit` that blocked until a worker was free would stall the frame, which is the one thing a
+background job system exists to prevent — so the classic producer-consumer answer is the wrong one
+here. Dropping the work silently is worse: that is work lost that nobody knows was lost. So a full
+system refuses, *visibly*: a nil id back and `getRefusedCount()` goes up.
+
+A caller that is a per-frame poll — which is what the watcher and the thumbnail queue will be —
+simply offers the work again next frame. That is backpressure without a queue and without a wait,
+and it puts the coalescing decision where it belongs: a watcher that sees the same file change
+twice should submit once, and only the watcher knows that.
+
+**`canAccept()` tells the two refusals apart.** `submit` already returned zero while shutting down,
+and now returns zero when full; those are different answers to the same signal, and a caller needs
+to know whether trying again next frame is worth anything. One predicate answers both.
+
+**1024 is not a ration.** It is far more outstanding work than any screenful can produce and still a
+progress list a person could scroll. The point is that a watcher noticing a hundred thousand changed
+files cannot turn that into a hundred thousand live jobs before anybody notices. A zero passed to
+the constructor reads as "no opinion" and takes the default, rather than as "refuse everything",
+which is never what a caller passing it meant.
+
+**Counted, not logged.** Backpressure that never engages is a bound nobody has tested; backpressure
+that engages constantly is a caller submitting faster than the work can be done. Both are things a
+test and a diagnostics panel want to see, and neither shows up in a log nobody reads.
+
+**Asserted in both modes**, because the bound is about what the system holds rather than about
+threading — if immediate mode enforced it differently, the mode the tests use would stop being a
+substitute for the one that ships, which is the whole argument for having it. Green under
+ThreadSanitizer, which is where a new field behind an existing mutex has to be checked.
+
+**No production caller yet**, and none was invented. The job system is infrastructure that
+`STUDIO-09003`'s thumbnails and the importer will use; the shape above is what those callers need,
+and the tests stand in for them until they exist.

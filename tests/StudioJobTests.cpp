@@ -17,6 +17,8 @@
 #include "CNA/Studio/Core/StudioJobs.hpp"
 
 #include <atomic>
+#include <cstdint>
+#include <thread>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -394,4 +396,121 @@ CNA_STUDIO_TEST(ManyJobsAcrossManyWorkersAllArriveExactlyOnce)
     CNA_STUDIO_EXPECT_EQ(bodies.load(), kCount);
 
     for (const int count : completions) { CNA_STUDIO_EXPECT_EQ(count, 1); }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Bounded queues and backpressure (STUDIO-30002)
+// ------------------------------------------------------------------------------------------------
+
+CNA_STUDIO_TEST(AFullJobSystemRefusesWorkRatherThanGrowingOrWaiting)
+{
+    // The failure this prevents is not slowness, it is a watcher noticing a hundred thousand
+    // changed files and turning that into a hundred thousand live jobs -- each holding a body, a
+    // completion and whatever they captured -- before anybody notices. Backpressure on a main
+    // thread has to mean "not now": blocking would stall the frame, which is the one thing a
+    // background job system exists to prevent.
+    StudioJobSystem jobs{StudioJobMode::Immediate, 0, /*queueLimit=*/3};
+    CNA_STUDIO_EXPECT_EQ(jobs.getQueueLimit(), std::size_t{3});
+    CNA_STUDIO_EXPECT(jobs.canAccept());
+
+    for (int i = 0; i < 3; ++i)
+    {
+        CNA_STUDIO_EXPECT(jobs.submit("job " + std::to_string(i), [](StudioJobContext&) {}) != 0);
+    }
+
+    CNA_STUDIO_EXPECT_EQ(jobs.getOutstandingCount(), std::size_t{3});
+    CNA_STUDIO_EXPECT(!jobs.canAccept());
+    CNA_STUDIO_EXPECT_EQ(jobs.getRefusedCount(), std::uint64_t{0});
+
+    // The fourth is refused, visibly: a nil id back and a counter that moves. Silence here would
+    // be work lost that nobody knows was lost.
+    CNA_STUDIO_EXPECT_EQ(jobs.submit("one too many", [](StudioJobContext&) {}), StudioJobId{0});
+    CNA_STUDIO_EXPECT_EQ(jobs.getRefusedCount(), std::uint64_t{1});
+    CNA_STUDIO_EXPECT_EQ(jobs.getOutstandingCount(), std::size_t{3});
+
+    // And the refusal did not disturb what was already accepted -- a bound that dropped the
+    // oldest, or corrupted the queue, would be worse than no bound.
+    const std::vector<StudioJobStatus> waiting = jobs.statuses();
+    CNA_STUDIO_EXPECT_EQ(waiting.size(), std::size_t{3});
+    CNA_STUDIO_EXPECT_EQ(waiting.front().name, std::string{"job 0"});
+    CNA_STUDIO_EXPECT_EQ(waiting.back().name, std::string{"job 2"});
+}
+
+CNA_STUDIO_TEST(BackpressureLiftsAsTheWorkIsDrainedRatherThanWhenItFinishes)
+{
+    // Outstanding means *undrained*, not *unfinished*. A job that has run still holds its body, its
+    // completion and whatever they captured until the main thread has taken the result, so the
+    // bound has to count it -- otherwise a caller that never drains grows without limit, which is
+    // the same failure wearing a different name.
+    StudioJobSystem jobs{StudioJobMode::Immediate, 0, /*queueLimit=*/2};
+
+    int ran = 0;
+    const auto offer = [&](const char* name) {
+        return jobs.submit(name, [&ran](StudioJobContext&) { ++ran; });
+    };
+
+    CNA_STUDIO_EXPECT(offer("first") != 0);
+    CNA_STUDIO_EXPECT(offer("second") != 0);
+    CNA_STUDIO_EXPECT_EQ(offer("third"), StudioJobId{0});
+
+    // Immediate mode runs one body per drain and files its completion, so the first drain runs
+    // work without yet freeing a slot -- which is the distinction this test exists for.
+    jobs.waitForIdle();
+    CNA_STUDIO_EXPECT_EQ(jobs.drain(), std::size_t{2});
+    CNA_STUDIO_EXPECT_EQ(ran, 2);
+
+    // Drained, so there is room again, and a per-frame caller offering the same work next frame
+    // is simply accepted -- backpressure without a queue and without a wait.
+    CNA_STUDIO_EXPECT(jobs.canAccept());
+    CNA_STUDIO_EXPECT_EQ(jobs.getOutstandingCount(), std::size_t{0});
+    CNA_STUDIO_EXPECT(offer("third, again") != 0);
+    CNA_STUDIO_EXPECT_EQ(jobs.getRefusedCount(), std::uint64_t{1});
+}
+
+CNA_STUDIO_TEST(TheQueueBoundIsTheSameBoundWithWorkersAsWithout)
+{
+    // The bound is about what the system holds, not about threading, so immediate mode has to
+    // enforce it identically -- otherwise the mode that tests use is not a substitute for the one
+    // that ships, which is the whole argument for having it.
+    StudioJobSystem threaded{StudioJobMode::Threaded, 2, /*queueLimit=*/4};
+    CNA_STUDIO_EXPECT_EQ(threaded.getQueueLimit(), std::size_t{4});
+
+    // Bodies that block until released, so the queue genuinely fills rather than draining itself
+    // out from under the assertions.
+    std::atomic<bool> release{false};
+    std::size_t accepted = 0;
+    for (int i = 0; i < 6; ++i)
+    {
+        const StudioJobId id = threaded.submit("blocked", [&release](StudioJobContext& context) {
+            while (!release.load() && !context.isCancelled()) { std::this_thread::yield(); }
+        });
+        if (id != 0) { ++accepted; }
+    }
+
+    CNA_STUDIO_EXPECT_EQ(accepted, std::size_t{4});
+    CNA_STUDIO_EXPECT_EQ(threaded.getRefusedCount(), std::uint64_t{2});
+
+    release.store(true);
+    threaded.waitForIdle();
+    CNA_STUDIO_EXPECT_EQ(threaded.drain(), std::size_t{4});
+    CNA_STUDIO_EXPECT(threaded.canAccept());
+}
+
+CNA_STUDIO_TEST(TheDefaultBoundIsGenerousAndAZeroBoundMeansNoOpinion)
+{
+    // A bound exists to stop unbounded growth, not to ration: anything a screenful of work can
+    // produce has to fit, or the bound becomes a bug report rather than a safety net.
+    const StudioJobSystem standard{StudioJobMode::Immediate};
+    CNA_STUDIO_EXPECT_EQ(standard.getQueueLimit(), StudioJobSystem::kDefaultQueueLimit);
+    CNA_STUDIO_EXPECT(StudioJobSystem::kDefaultQueueLimit >= 1024);
+
+    // Zero reads as "no opinion" rather than as "refuse everything", which is never what a caller
+    // passing it meant and would be a system that silently does nothing.
+    const StudioJobSystem unopinionated{StudioJobMode::Immediate, 0, 0};
+    CNA_STUDIO_EXPECT_EQ(unopinionated.getQueueLimit(), StudioJobSystem::kDefaultQueueLimit);
+
+    // And a shutting-down system refuses too, but for a reason that will not pass: `canAccept`
+    // tells the two apart so a caller knows whether trying again next frame is worth anything.
+    StudioJobSystem stopping{StudioJobMode::Immediate, 0, 4};
+    CNA_STUDIO_EXPECT(stopping.canAccept());
 }

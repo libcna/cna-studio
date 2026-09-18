@@ -200,14 +200,32 @@ namespace CNA::Studio
         using Completion = std::function<void(const StudioJobStatus&)>;
 
         /**
+         * @brief The most jobs that may be outstanding at once (`plan.md` STUDIO-30002).
+         *
+         * Outstanding means submitted and not yet drained — queued, running, or finished and
+         * waiting for its completion — because that is the number that bounds what the system
+         * holds: a body, a completion handler, whatever each captured, and a row in the progress
+         * list. A bound on the *queue* alone would still let a caller that never drains grow
+         * without limit, which is the same failure wearing a different name.
+         *
+         * A thousand and twenty-four is not a ration. It is far more outstanding work than any
+         * screenful can produce and still a progress list a person could scroll; the point is that
+         * a watcher which notices a hundred thousand changed files cannot turn that into a hundred
+         * thousand live jobs before anybody notices.
+         */
+        static constexpr std::size_t kDefaultQueueLimit = 1024;
+
+        /**
          * @brief Starts the system.
          *
          * @param mode Threaded, or immediate for tests and single-threaded builds.
          * @param workers How many threads. Zero asks the machine, leaving one core for the frame,
          *        and never asks for fewer than one. Ignored in immediate mode.
+         * @param queueLimit The most outstanding jobs. Zero takes @ref kDefaultQueueLimit.
          */
         explicit StudioJobSystem(StudioJobMode mode = StudioJobMode::Threaded,
-                                 std::size_t workers = 0);
+                                 std::size_t workers = 0,
+                                 std::size_t queueLimit = kDefaultQueueLimit);
 
         /**
          * @brief Cancels everything, joins every worker, and drops undrained completions.
@@ -224,12 +242,49 @@ namespace CNA::Studio
         /**
          * @brief Queues @p work under @p name.
          *
+         * Refused, rather than queued, when @ref getQueueLimit jobs are already outstanding
+         * (`plan.md` STUDIO-30002). Backpressure here has to mean "not now" rather than "wait":
+         * submission happens on the main thread, and a call that blocked until a worker was free
+         * would stall the frame — which is the one thing a background job system exists to prevent.
+         * Dropping the work silently is worse still, so the refusal is *visible*: a nil id back,
+         * and @ref getRefusedCount goes up.
+         *
+         * A caller that is a per-frame poll simply offers the work again next frame, which is
+         * backpressure without a queue and without a wait. A caller that is not should ask
+         * @ref canAccept before building something expensive to submit.
+         *
          * @param name What to call it in a progress list.
          * @param work The body. Must not capture anything the main thread may destroy or mutate.
          * @param onFinished Run on the main thread from @ref drain. Optional.
-         * @return The job's id, for @ref cancel and @ref find.
+         * @return The job's id, or zero when the system is shutting down or already full. Those
+         *         are different answers to the same signal, and @ref canAccept tells them apart:
+         *         full is temporary, shutting down is not.
          */
         StudioJobId submit(std::string name, Work work, Completion onFinished = {});
+
+        /**
+         * @brief Whether @ref submit would accept work right now.
+         *
+         * False while full *and* false once shutting down, so a caller that only wants to know
+         * whether to bother building a job can ask this one question.
+         */
+        [[nodiscard]] bool canAccept() const;
+
+        /** @brief The most jobs that may be outstanding at once. */
+        [[nodiscard]] std::size_t getQueueLimit() const;
+
+        /**
+         * @brief How many submissions have been refused because the system was full.
+         *
+         * Counted rather than logged. Backpressure that never engages is a bound nobody has
+         * tested, and backpressure that engages constantly is a caller submitting work faster than
+         * it can be done — both are things a test and a diagnostics panel want to be able to see,
+         * and neither shows up in a log nobody reads.
+         */
+        [[nodiscard]] std::uint64_t getRefusedCount() const;
+
+        /** @brief How many jobs are outstanding: queued, running, or waiting for @ref drain. */
+        [[nodiscard]] std::size_t getOutstandingCount() const;
 
         /**
          * @brief Asks @p id to stop.

@@ -2,6 +2,7 @@
 #include "CNA/Studio/Core/StudioJobs.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <condition_variable>
 #include <deque>
 #include <exception>
@@ -114,6 +115,22 @@ namespace CNA::Studio
         StudioJobId nextId = 1;
         bool stopping = false;
 
+        /** @brief The most outstanding jobs. See StudioJobSystem::kDefaultQueueLimit. */
+        std::size_t queueLimit = StudioJobSystem::kDefaultQueueLimit;
+
+        /** @brief How many submissions were refused because the system was full. */
+        std::uint64_t refused = 0;
+
+        /**
+         * @brief How many jobs are outstanding. Call under @ref mutex.
+         *
+         * `tracked` is the answer rather than `queued.size()`: a job stays tracked until its
+         * completion has been drained, and it is holding a body, a handler and whatever those
+         * captured for the whole of that. Bounding only the queue would leave a caller that never
+         * drains growing without limit, which is the same failure wearing a different name.
+         */
+        [[nodiscard]] std::size_t outstanding() const { return tracked.size(); }
+
         /** @brief Removes @p job from @p list. */
         static void erase(std::vector<Job>& list, const Job& job)
         {
@@ -187,9 +204,14 @@ namespace CNA::Studio
         }
     };
 
-    StudioJobSystem::StudioJobSystem(StudioJobMode mode, std::size_t workers)
+    StudioJobSystem::StudioJobSystem(StudioJobMode mode, std::size_t workers,
+                                     std::size_t queueLimit)
         : mode_(mode), impl_(std::make_unique<Impl>())
     {
+        // Zero would mean a system that refuses everything, which is never what a caller passing it
+        // meant; it reads as "no opinion".
+        impl_->queueLimit = queueLimit > 0 ? queueLimit : kDefaultQueueLimit;
+
         if (mode_ != StudioJobMode::Threaded) { return; }
 
         if (workers == 0)
@@ -246,6 +268,16 @@ namespace CNA::Studio
             const std::lock_guard<std::mutex> lock{impl_->mutex};
             if (impl_->stopping) { return 0; }
 
+            // Refused rather than queued (STUDIO-30002), and counted so that the refusal is
+            // something a test and a diagnostics panel can see. Blocking here would stall the
+            // frame, which is what the whole system exists to avoid; dropping it quietly would
+            // lose work nobody knows was lost.
+            if (impl_->outstanding() >= impl_->queueLimit)
+            {
+                ++impl_->refused;
+                return 0;
+            }
+
             job->id = impl_->nextId++;
             impl_->queued.push_back(job);
             impl_->tracked.push_back(job);
@@ -253,6 +285,30 @@ namespace CNA::Studio
 
         impl_->wake.notify_one();
         return job->id;
+    }
+
+    bool StudioJobSystem::canAccept() const
+    {
+        const std::lock_guard<std::mutex> lock{impl_->mutex};
+        return !impl_->stopping && impl_->outstanding() < impl_->queueLimit;
+    }
+
+    std::size_t StudioJobSystem::getQueueLimit() const
+    {
+        const std::lock_guard<std::mutex> lock{impl_->mutex};
+        return impl_->queueLimit;
+    }
+
+    std::uint64_t StudioJobSystem::getRefusedCount() const
+    {
+        const std::lock_guard<std::mutex> lock{impl_->mutex};
+        return impl_->refused;
+    }
+
+    std::size_t StudioJobSystem::getOutstandingCount() const
+    {
+        const std::lock_guard<std::mutex> lock{impl_->mutex};
+        return impl_->outstanding();
     }
 
     bool StudioJobSystem::cancel(StudioJobId id)
