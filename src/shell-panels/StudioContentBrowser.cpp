@@ -247,7 +247,8 @@ namespace CNA::Studio
             case AssetType::Scene:       return StudioIcon::Scene;
             case AssetType::Prefab:      return StudioIcon::Prefab;
             case AssetType::Effect:      return StudioIcon::Material;
-            case AssetType::SpriteFont:  return StudioIcon::File;
+            case AssetType::SpriteFont:
+            case AssetType::Font:        return StudioIcon::File;
             case AssetType::RawData:
             case AssetType::Unknown:     break;
         }

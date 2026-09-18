@@ -33,7 +33,23 @@ namespace CNA::Studio
         /** @brief A file whose type no importer claims. Tracked, given an id, never imported. */
         Unknown,
         Texture2D,
+
+        /**
+         * @brief A `.spritefont` or `.fnt`: the content pipeline's own *description* of a font.
+         *
+         * Every fact about one is read-only, because the file has already settled all of them.
+         * Distinct from @ref Font, which is the typeface itself and settles none of them.
+         */
         SpriteFont,
+
+        /**
+         * @brief A `.ttf`, `.otf` or `.ttc`: the typeface, with nothing yet decided about it.
+         *
+         * `plan.md` STUDIO-10006. These used to be @ref SpriteFont and were handed the sprite-font
+         * importer, which looked for `<Asset … FontDescription>` in a binary file and found none --
+         * so a font in a project showed five empty fields and imported nothing.
+         */
+        Font,
         SoundEffect,
         Song,
         Effect,

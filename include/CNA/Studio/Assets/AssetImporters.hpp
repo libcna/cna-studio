@@ -31,6 +31,7 @@ namespace CNA::Studio
     {
         inline constexpr const char* kTexture = "CNA.TextureImporter";
         inline constexpr const char* kSpriteFont = "CNA.SpriteFontImporter";
+        inline constexpr const char* kFont = "CNA.FontImporter";
         inline constexpr const char* kSoundEffect = "CNA.SoundEffectImporter";
         inline constexpr const char* kSong = "CNA.SongImporter";
         inline constexpr const char* kModel = "CNA.ModelImporter";

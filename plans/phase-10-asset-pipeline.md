@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 9 of 15 complete `███████░░░░░`
+**Progress:** 10 of 15 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -15,7 +15,7 @@
 | `STUDIO-10003` | Texture import: formats, sRGB, mips, compression settings | ✅ | `STUDIO-10001` |
 | `STUDIO-10004` | Model import: glTF (carried forward from the prototype) | ✅ | `STUDIO-10002` |
 | `STUDIO-10005` | Audio import | ✅ | `STUDIO-10002` |
-| `STUDIO-10006` | Font import | ⬜ | `STUDIO-04005` |
+| `STUDIO-10006` | Font import | ✅ | `STUDIO-04005` |
 | `STUDIO-10007` | Material assets | ⬜ | `STUDIO-19001` |
 | `STUDIO-10008` | Shader and effect assets | ⬜ | `STUDIO-22001` |
 | `STUDIO-10009` | Animation import | ⬜ | `STUDIO-21001` |
@@ -460,6 +460,73 @@ test failure rather than a quiet widening.
 
 **What this unblocks.** `STUDIO-09003` (thumbnails as cancellable background jobs), and behind it
 `STUDIO-09004`, `STUDIO-09015` and `STUDIO-30025`.
+
+### `STUDIO-10006` — Font import
+
+**Acceptance.** A `.ttf` or `.otf` in a project is recognised as a typeface, reports what its own
+tables say, and offers the decisions a build has to make about it.
+
+**What it was doing before is the point.** `.ttf` was `AssetType::SpriteFont`, so a font dropped in a
+project was handed the sprite-font importer — which looks for `<Asset … FontDescription>` in what is
+a binary file, found none, and declined. Nothing failed. Nothing was reported. The inspector showed
+five empty read-only fields, and the font simply did not import.
+
+**A `.spritefont` and a `.ttf` are opposite kinds of thing**, which is why one type could never
+serve both. A `.spritefont` is the content pipeline's own *description*: it already declares the
+font, the size, the spacing and the character range, so every one of its fields is read-only and an
+editable copy would be a second answer to a settled question. A `.ttf` settles none of that — it is
+the typeface, and the size and the range are decisions nobody has made. One is all facts; the other
+is mostly settings. So `AssetType::Font` and `CNA.FontImporter` exist, and `.spritefont` and `.fnt`
+keep theirs.
+
+**The tables are read by hand rather than through stb_truetype.** `StudioFontAtlas.cpp` owns that
+library and is one of four translation units allowed to reach a vendored one at all, which
+`tests/AssetImporterTests.cpp` enforces. Widening that list to read four numbers out of a
+fixed-layout table directory would be the wrong trade: the sfnt directory is as simple as a PNG's
+IHDR, and this sits beside `readImageDescription` and `readAudioDescription` doing exactly what they
+do. Rasterising a glyph is the part that needs a library, and nothing here rasterises.
+
+**`hasKerning` is reported because the setting beside it is otherwise untestable by eye.** A font
+with no `kern` and no `GPOS` kerns identically whichever way the box is ticked, and a user toggling
+it and seeing nothing happen has no way to tell that from a bug.
+
+**Names are decoded, not copied.** The `name` table is UTF-16BE; a reader that took one byte a
+character would turn a family name into interleaved nulls — a silent corruption of somebody's name,
+in the one field of that inspector that is theirs rather than the editor's. Windows entries are
+preferred and Macintosh ones are the fallback, which is the order fonts carry them in.
+
+**An existing project's fonts are retyped on load, and that is not a format migration.** A sidecar
+written by an older build says `"SpriteFont"` for a `.ttf`. Left alone it would keep the wrong
+importer for ever — this task's own bug, preserved by the fix for it. The correction is in
+`recordFromJson` rather than in `getAssetFormatMigrator`, for two reasons: nothing about the *file
+format* changed, so there is no version to bump, and a migration step sees only the parsed JSON —
+the sidecar does not record the path, because it sits beside the file. The id survives, which is the
+thing scenes reference (D-08); the importer id follows only when it is still the old type's default,
+so a project pointing a font at something else on purpose keeps doing so.
+
+**The settings are recorded, not acted on, and the plan says so rather than implying otherwise.**
+Studio rasterises nothing: `pointSize`, the character range, `spacing` and `useKerning` are the
+instruction a content build needs, exactly as a `.spritefont`'s `<Size>` is. `fromJson` is their
+single reader and a policy case holds the importer to declaring nothing it does not read — the same
+bar `STUDIO-10004` set for the model importer.
+
+**Verification.** `tests/FontImportTests.cpp` builds real sfnt files rather than committing binary
+fixtures: the family, style, glyph count and design grid out of the tables; `OTTO` and `ttcf` read as
+OpenType and a collection; a non-ASCII family name surviving the UTF-16 decode; a Macintosh-only
+name table read rather than reported as nameless; a truncated font reported with a reason while a
+readme is declined in silence (`STUDIO-10013`); a `.ttf` typed as `Font` while a `.spritefont` keeps
+its own; an older build's sidecar retyped with its id intact and a deliberate importer choice left
+alone; the settings' defaults and an inverted character range counting zero rather than four
+billion. Checked by causing each: copying name bytes instead of decoding them, and skipping the
+retype, each fail by name.
+
+**One bound is deliberately not covered by a discriminating case**, and pretending otherwise would
+be worse than saying it. Table offsets and lengths are checked against the file's real size before a
+buffer is sized from them, but a font claiming a four-gigabyte table fails the read either way — a
+short read is refused too. What the arithmetic buys is that four gigabytes are never *asked for*,
+and making that observable would mean putting a counter in a file with no other reason for one. The
+case that exists pins the outcome instead: a font whose name table cannot be read is a font with no
+family, not a crash and not a refusal of the whole file.
 
 ### `STUDIO-10011` — Import jobs are cancellable and report progress accurately
 

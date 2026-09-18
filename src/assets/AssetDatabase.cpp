@@ -20,10 +20,11 @@ namespace CNA::Studio
             const char* name;
         };
 
-        constexpr std::array<AssetTypeName, 11> kAssetTypeNames{{
+        constexpr std::array<AssetTypeName, 12> kAssetTypeNames{{
             {AssetType::Unknown, "Unknown"},
             {AssetType::Texture2D, "Texture2D"},
             {AssetType::SpriteFont, "SpriteFont"},
+            {AssetType::Font, "Font"},
             {AssetType::SoundEffect, "SoundEffect"},
             {AssetType::Song, "Song"},
             {AssetType::Effect, "Effect"},
@@ -88,7 +89,8 @@ namespace CNA::Studio
         {
             return AssetType::Texture2D;
         }
-        if (extension == ".spritefont" || extension == ".fnt" || extension == ".ttf") { return AssetType::SpriteFont; }
+        if (extension == ".spritefont" || extension == ".fnt") { return AssetType::SpriteFont; }
+        if (extension == ".ttf" || extension == ".otf" || extension == ".ttc") { return AssetType::Font; }
         if (extension == ".wav" || extension == ".xwb" || extension == ".xsb") { return AssetType::SoundEffect; }
         if (extension == ".ogg" || extension == ".mp3" || extension == ".flac") { return AssetType::Song; }
         if (extension == ".fx" || extension == ".hlsl" || extension == ".glsl") { return AssetType::Effect; }
@@ -113,6 +115,7 @@ namespace CNA::Studio
         {
             case AssetType::Texture2D: return "CNA.TextureImporter";
             case AssetType::SpriteFont: return "CNA.SpriteFontImporter";
+            case AssetType::Font: return "CNA.FontImporter";
             case AssetType::SoundEffect: return "CNA.SoundEffectImporter";
             case AssetType::Song: return "CNA.SongImporter";
             case AssetType::Effect: return "CNA.EffectImporter";
@@ -557,6 +560,27 @@ namespace CNA::Studio
         record.sourcePath = std::move(relativePath);
         record.type = parseAssetType(json["type"].asString());
         record.importerId = json["importer"].asString();
+
+        // A `.ttf` written by an older build says "SpriteFont", because that is what this build
+        // used to derive for the extension (`plan.md` STUDIO-10006). Corrected here rather than
+        // through the format migrator, and the difference matters: nothing about the *file format*
+        // changed, so there is no version to bump. What changed is which type Studio derives from
+        // an extension -- and the type is derived data that the sidecar happens to cache, not a
+        // choice anybody made. A migrator step could not do it anyway: a step sees the parsed JSON
+        // and the sidecar does not record the path, because it sits beside the file.
+        //
+        // The importer id follows only when it is still the old type's default, so a project that
+        // deliberately points a font at something else keeps doing so.
+        const AssetType derived = guessTypeFromExtension(record.sourcePath);
+        if (derived == AssetType::Font && record.type == AssetType::SpriteFont)
+        {
+            record.type = AssetType::Font;
+            if (record.importerId == defaultImporterFor(AssetType::SpriteFont))
+            {
+                record.importerId = defaultImporterFor(AssetType::Font);
+            }
+        }
+
         record.importerSettings = json["settings"];
 
         for (const JsonValue& dependency : json["dependencies"].getElements())

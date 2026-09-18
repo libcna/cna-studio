@@ -4,6 +4,7 @@
 #include "CNA/Studio/Assets/AssetImporter.hpp"
 
 #include "CNA/Studio/Assets/AudioImport.hpp"
+#include "CNA/Studio/Assets/FontImport.hpp"
 #include "CNA/Studio/Assets/ModelImport.hpp"
 
 #include <array>
@@ -92,6 +93,16 @@ namespace CNA::Studio
          */
         StudioImportedFacts gatherSpriteFontFacts(const std::string& absolutePath,
                                                   const JsonValue& settings);
+
+        /**
+         * @brief What a TrueType or OpenType file's tables say about itself.
+         *
+         * See gatherSpriteFontFacts(). Distinct from that one and not a variant of it: a
+         * `.spritefont` is a description whose every field is settled, and a `.ttf` is the typeface
+         * with nothing settled at all (`plan.md` STUDIO-10006).
+         */
+        StudioImportedFacts gatherFontFacts(const std::string& absolutePath,
+                                            const JsonValue& settings);
 
         /** @brief What an image's header says about itself. See gatherSpriteFontFacts(). */
         StudioImportedFacts gatherTextureFacts(const std::string& absolutePath,
@@ -303,6 +314,86 @@ namespace CNA::Studio
                                 "length audio and wrong for a footstep. Recorded for the content "
                                 "build; Studio streams nothing itself. \"In Memory\" below is what "
                                 "the decision costs.");
+        }
+
+        /**
+         * @brief The font importer: a typeface, and the decisions nobody has made about it yet.
+         *
+         * Every editable field here is one a `.spritefont` would have *declared* -- which is the
+         * whole difference between the two importers. The sprite-font importer reports what the
+         * description settled; this one asks, because a `.ttf` settles nothing
+         * (`plan.md` STUDIO-10006).
+         */
+        ComponentDescriptor makeFontImporter()
+        {
+            ComponentDescriptor descriptor;
+            descriptor.typeId = ImporterIds::kFont;
+            descriptor.displayName = "Font Importer";
+            descriptor.category = "Import";
+
+            PropertyDescriptor pointSize = makeProperty("pointSize", "Size", PropertyType::Float,
+                                                        PropertyValue{16.0f},
+                                                        "In points, measured against the font's own "
+                                                        "design grid. A font becomes a bitmap at "
+                                                        "build time, so this is chosen once here "
+                                                        "rather than per draw -- the same bargain "
+                                                        "XNA's .spritefont makes.");
+            pointSize.minimum = 1.0;
+            pointSize.maximum = 512.0;
+
+            PropertyDescriptor first = makeProperty("firstCharacter", "First Character",
+                                                    PropertyType::Integer, PropertyValue{32},
+                                                    "The first character code to rasterise. 32 is "
+                                                    "the space, which is where XNA's usual region "
+                                                    "starts.");
+            first.minimum = 0.0;
+            first.maximum = 0x10FFFF;
+
+            PropertyDescriptor last = makeProperty("lastCharacter", "Last Character",
+                                                   PropertyType::Integer, PropertyValue{126},
+                                                   "Inclusive. 126 is '~', the end of printable "
+                                                   "ASCII. Widening this costs atlas space per "
+                                                   "character, which is why it is a choice.");
+            last.minimum = 0.0;
+            last.maximum = 0x10FFFF;
+
+            const auto fact = [](std::string name, std::string display, PropertyType type,
+                                 PropertyValue defaultValue, std::string tooltip) {
+                PropertyDescriptor property = makeProperty(std::move(name), std::move(display), type,
+                                                           std::move(defaultValue), std::move(tooltip));
+                property.readOnly = true;
+                return property;
+            };
+
+            descriptor.properties = {
+                std::move(pointSize),
+                std::move(first),
+                std::move(last),
+                makeProperty("spacing", "Spacing", PropertyType::Float, PropertyValue{0.0f},
+                             "Extra horizontal space between glyphs, in pixels. Negative tightens."),
+                makeProperty("useKerning", "Kerning", PropertyType::Boolean, PropertyValue{true},
+                             "Applies the font's own kerning pairs. Does nothing at all when the "
+                             "font carries none -- see Has Kerning below."),
+
+                fact("family", "Family", PropertyType::String, PropertyValue{std::string{}},
+                     "The typeface's own name, from its name table rather than from the file name."),
+                fact("style", "Style", PropertyType::String, PropertyValue{std::string{}},
+                     "The style within the family: Regular, Bold Italic, and so on."),
+                fact("sourceFormat", "Source Format", PropertyType::String, PropertyValue{std::string{}},
+                     "TrueType, OpenType (CFF outlines), or a TrueType Collection."),
+                fact("glyphCount", "Glyphs", PropertyType::Integer, PropertyValue{0},
+                     "How many the font holds. Not how many your character range uses."),
+                fact("unitsPerEm", "Units Per Em", PropertyType::Integer, PropertyValue{0},
+                     "The font's design grid, usually 1000 or 2048. It is what Size is measured "
+                     "against, so an unusual grid is what explains a font rendering at a size "
+                     "nobody expected."),
+                fact("hasKerning", "Has Kerning", PropertyType::Boolean, PropertyValue{false},
+                     "Whether the font carries kerning pairs at all. When it does not, the Kerning "
+                     "box above changes nothing, which is otherwise indistinguishable from a bug."),
+            };
+
+            descriptor.unique = true;
+            return descriptor;
         }
 
         ComponentDescriptor makeSoundEffectImporter()
@@ -744,6 +835,23 @@ namespace CNA::Studio
         return StudioImportedFacts{std::move(facts), {}};
     }
 
+    StudioImportedFacts Detail::gatherFontFacts(const std::string& absolutePath, const JsonValue&)
+    {
+        std::string problem;
+        const std::optional<StudioFontDescription> description =
+            readFontDescription(absolutePath, &problem);
+        if (!description) { return StudioImportedFacts{JsonValue{}, std::move(problem)}; }
+
+        JsonValue facts = JsonValue::makeObject();
+        facts.set("family", JsonValue{description->family});
+        facts.set("style", JsonValue{description->style});
+        facts.set("sourceFormat", JsonValue{description->format});
+        facts.set("glyphCount", JsonValue{static_cast<double>(description->glyphCount)});
+        facts.set("unitsPerEm", JsonValue{static_cast<double>(description->unitsPerEm)});
+        facts.set("hasKerning", JsonValue{description->hasKerning});
+        return StudioImportedFacts{std::move(facts), {}};
+    }
+
     StudioImportedFacts Detail::gatherAudioFacts(const std::string& absolutePath, const JsonValue&)
     {
         std::string problem;
@@ -838,6 +946,8 @@ namespace CNA::Studio
             ImporterIds::kTexture, AssetType::Texture2D, &Detail::gatherTextureFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
             ImporterIds::kSpriteFont, AssetType::SpriteFont, &Detail::gatherSpriteFontFacts));
+        (void)registry.add(std::make_unique<BuiltinImporter>(
+            ImporterIds::kFont, AssetType::Font, &Detail::gatherFontFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
             ImporterIds::kModel, AssetType::Model, &Detail::gatherModelFacts));
         (void)registry.add(std::make_unique<BuiltinImporter>(
@@ -941,6 +1051,7 @@ namespace CNA::Studio
     {
         registry.registerComponent(makeTextureImporter());
         registry.registerComponent(makeSpriteFontImporter());
+        registry.registerComponent(makeFontImporter());
         registry.registerComponent(makeSoundEffectImporter());
         registry.registerComponent(makeSongImporter());
         registry.registerComponent(makeModelImporter());
