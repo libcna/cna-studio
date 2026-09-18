@@ -856,6 +856,51 @@ CNA_STUDIO_TEST(ReadModelDescriptionReportsWhatTheModelContains)
     std::filesystem::remove_all(directory);
 }
 
+/**
+ * A glTF that will not load says why, in the loader's own words (`plan.md` STUDIO-10013).
+ *
+ * The reasons already existed -- "a .bin file beside it may be missing" is exactly what somebody
+ * needs to hear -- and went into a struct that `readModelDescription` threw away, so the importer
+ * above it had nothing to report but silence.
+ */
+CNA_STUDIO_TEST(AModelThatWillNotLoadCarriesItsReasonOutToTheImporter)
+{
+    const std::filesystem::path directory = makeScratchDirectory("modelwhy");
+    GltfFixture fixture = makeTriangleFixture();
+
+    // A .gltf naming an external buffer that is not beside it. This parses perfectly and has no
+    // vertices in it, which is the silent loss the importer was written to avoid.
+    fixture.externalBufferUri = "missing.bin";
+    const std::filesystem::path file = directory / "Assets" / "prop.gltf";
+    writeBinaryFile(file, buildFixtureJson(fixture, fixture.externalBufferUri));
+
+    std::string problem;
+    CNA_STUDIO_EXPECT(!readModelDescription(file.string(), {}, &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+    CNA_STUDIO_EXPECT(problem.find(".bin") != std::string::npos);
+
+    // A file that is not glTF at all still gets a reason, because a `.gltf` extension is a claim:
+    // the asset is tracked as a model because somebody put it in the project as one.
+    problem.clear();
+    writeBinaryFile(directory / "Assets" / "notes.gltf", "this is not glTF");
+    CNA_STUDIO_EXPECT(!readModelDescription((directory / "Assets" / "notes.gltf").string(), {},
+                                            &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+
+    // A model that loads but drops some primitives is a *success* with a count, not a failure: the
+    // geometry that did come across is real and worth having.
+    GltfFixture lines = makeTriangleFixture();
+    lines.primitiveMode = 1;
+    problem.clear();
+    const std::optional<ModelDescription> partial =
+        readModelDescription(writeGltf(directory, lines).string(), {}, &problem);
+    CNA_STUDIO_EXPECT(partial.has_value());
+    CNA_STUDIO_EXPECT(problem.empty());
+    if (partial) { CNA_STUDIO_EXPECT_EQ(partial->skippedPrimitives, std::size_t{1}); }
+
+    std::filesystem::remove_all(directory);
+}
+
 CNA_STUDIO_TEST(ModelImportSettingsReadBackTheDeclaredDefaultsRatherThanZeroes)
 {
     // The failure this rules out is not hypothetical: `importMaterials` reads back as *true* when

@@ -87,12 +87,15 @@ namespace CNA::Studio
          * (`plan.md` STUDIO-10011). None of them touches the database, compares against what is on
          * record, or writes anything.
          *
-         * @return A JSON object, or a null value when the file is not one this reads.
+         * @return The facts, the reason there are none, or neither when the file is simply not one
+         *         this reads (`plan.md` STUDIO-10013).
          */
-        JsonValue gatherSpriteFontFacts(const std::string& absolutePath, const JsonValue& settings);
+        StudioImportedFacts gatherSpriteFontFacts(const std::string& absolutePath,
+                                                  const JsonValue& settings);
 
         /** @brief What an image's header says about itself. See gatherSpriteFontFacts(). */
-        JsonValue gatherTextureFacts(const std::string& absolutePath, const JsonValue& settings);
+        StudioImportedFacts gatherTextureFacts(const std::string& absolutePath,
+                                               const JsonValue& settings);
 
         /**
          * @brief What a model file says about itself. See gatherSpriteFontFacts().
@@ -101,7 +104,8 @@ namespace CNA::Studio
          * -- a triangle count is the sum of every primitive's, so the whole file has to be read to
          * find it. That cost is the reason `StudioImportQueue` exists.
          */
-        JsonValue gatherModelFacts(const std::string& absolutePath, const JsonValue& settings);
+        StudioImportedFacts gatherModelFacts(const std::string& absolutePath,
+                                             const JsonValue& settings);
 
         /**
          * @brief What an audio file's header says about itself. See gatherSpriteFontFacts().
@@ -110,7 +114,8 @@ namespace CNA::Studio
          * questions and the split between `SoundEffect` and `Song` is about how a *game* uses
          * them, not about what is in the file.
          */
-        JsonValue gatherAudioFacts(const std::string& absolutePath, const JsonValue& settings);
+        StudioImportedFacts gatherAudioFacts(const std::string& absolutePath,
+                                             const JsonValue& settings);
     }
 
     namespace
@@ -536,8 +541,16 @@ namespace CNA::Studio
         }
     }
 
-    std::optional<ImageDescription> readImageDescription(const std::string& absolutePath)
+    std::optional<ImageDescription> readImageDescription(const std::string& absolutePath,
+                                                         std::string* outProblem)
     {
+        const auto refuse = [&](const char* reason) -> std::optional<ImageDescription> {
+            // Only set when the file *claimed* to be one of the three. A file that is simply not an
+            // image leaves this empty and is declined rather than reported (STUDIO-10013).
+            if (outProblem != nullptr) { *outProblem = reason; }
+            return std::nullopt;
+        };
+
         std::ifstream stream{absolutePath, std::ios::binary};
         if (!stream) { return std::nullopt; }
 
@@ -552,12 +565,21 @@ namespace CNA::Studio
         // PNG: an 8-byte signature, then an IHDR chunk whose first two fields are the width and
         // the height, big-endian. Fixed offsets, so no parsing is needed.
         static const std::array<unsigned char, 8> kPngSignature{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
-        if (read >= 26)
+        if (read >= 8)
         {
             bool isPng = true;
             for (std::size_t index = 0; index < kPngSignature.size(); ++index)
             {
                 if (byteAt(index) != kPngSignature[index]) { isPng = false; break; }
+            }
+
+            if (isPng && read < 26)
+            {
+                // The signature is there and the IHDR is not, which is a PNG somebody truncated --
+                // a copy that stopped, a download that failed -- and is exactly the case that used
+                // to be indistinguishable from "this is not an image".
+                return refuse("it starts as a PNG but its header stops short, so the file is "
+                              "truncated or corrupt");
             }
 
             if (isPng)
@@ -589,12 +611,22 @@ namespace CNA::Studio
         if (read >= 2 && byteAt(0) == 0xFF && byteAt(1) == 0xD8)
         {
             const std::optional<ImageSize> size = readJpegSize(stream);
-            if (!size) { return std::nullopt; }
+            if (!size)
+            {
+                return refuse("it starts as a JPEG but no frame header could be found in it, so "
+                              "the file is truncated or corrupt");
+            }
             return ImageDescription{size->width, size->height, "JPEG", false};
         }
 
         // BMP: "BM", then a DIB header whose width and height are little-endian at fixed offsets.
         // The height is signed and negative for a top-down image, so its magnitude is what counts.
+        if (read >= 2 && byteAt(0) == 'B' && byteAt(1) == 'M' && read < 26)
+        {
+            return refuse("it starts as a BMP but its header stops short, so the file is truncated "
+                          "or corrupt");
+        }
+
         if (read >= 26 && byteAt(0) == 'B' && byteAt(1) == 'M')
         {
             const auto littleEndian = [&](std::size_t at) {
@@ -665,11 +697,16 @@ namespace CNA::Studio
         return true;
     }
 
-    JsonValue Detail::gatherSpriteFontFacts(const std::string& absolutePath, const JsonValue&)
+    StudioImportedFacts Detail::gatherSpriteFontFacts(const std::string& absolutePath,
+                                                      const JsonValue&)
     {
+        // The one importer with no failure mode worth reporting, and saying so is better than
+        // inventing one: a `.spritefont` is XML the content pipeline writes, and a file that does
+        // not carry `<Asset` and `FontDescription` is not a broken sprite font, it is not a sprite
+        // font. Anything past that structural check reads as absent fields rather than as an error.
         const std::optional<SpriteFontDescription> description =
             readSpriteFontDescription(absolutePath);
-        if (!description) { return JsonValue{}; }
+        if (!description) { return {}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("fontName", JsonValue{description->fontName});
@@ -678,10 +715,11 @@ namespace CNA::Studio
         facts.set("useKerning", JsonValue{description->useKerning});
         facts.set("characterRange", JsonValue{std::to_string(description->firstCharacter) + "-"
                                               + std::to_string(description->lastCharacter)});
-        return facts;
+        return StudioImportedFacts{std::move(facts), {}};
     }
 
-    JsonValue Detail::gatherModelFacts(const std::string& absolutePath, const JsonValue& settings)
+    StudioImportedFacts Detail::gatherModelFacts(const std::string& absolutePath,
+                                                 const JsonValue& settings)
     {
         // Gathered with the settings, because every one of them changes what the answers *are*: a
         // size measured at scale 1.0 beside a scale factor of 100, or a vertex count taken with
@@ -689,9 +727,10 @@ namespace CNA::Studio
         // answers to one question -- which is the thing the fact/setting split exists to prevent.
         // The facts describe what this asset imports as, not what the file would yield to somebody
         // else's settings.
+        std::string problem;
         const std::optional<ModelDescription> description =
-            readModelDescription(absolutePath, ModelImportSettings::fromJson(settings));
-        if (!description) { return JsonValue{}; }
+            readModelDescription(absolutePath, ModelImportSettings::fromJson(settings), &problem);
+        if (!description) { return StudioImportedFacts{JsonValue{}, std::move(problem)}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("meshCount", JsonValue{static_cast<double>(description->partCount)});
@@ -702,13 +741,15 @@ namespace CNA::Studio
         facts.set("skippedPrimitives",
                   JsonValue{static_cast<double>(description->skippedPrimitives)});
         facts.set("modelSize", PropertyValue{description->size}.toJson());
-        return facts;
+        return StudioImportedFacts{std::move(facts), {}};
     }
 
-    JsonValue Detail::gatherAudioFacts(const std::string& absolutePath, const JsonValue&)
+    StudioImportedFacts Detail::gatherAudioFacts(const std::string& absolutePath, const JsonValue&)
     {
-        const std::optional<StudioAudioDescription> description = readAudioDescription(absolutePath);
-        if (!description) { return JsonValue{}; }
+        std::string problem;
+        const std::optional<StudioAudioDescription> description =
+            readAudioDescription(absolutePath, &problem);
+        if (!description) { return StudioImportedFacts{JsonValue{}, std::move(problem)}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("sourceFormat", JsonValue{description->format});
@@ -716,7 +757,7 @@ namespace CNA::Studio
         facts.set("sampleRate", JsonValue{static_cast<double>(description->sampleRate)});
         facts.set("channels", JsonValue{static_cast<double>(description->channels)});
         facts.set("decodedBytes", JsonValue{static_cast<double>(description->decodedBytes)});
-        return facts;
+        return StudioImportedFacts{std::move(facts), {}};
     }
 
     std::optional<SpriteFontDescription> readSpriteFontDescription(const std::string& path)
@@ -767,7 +808,7 @@ namespace CNA::Studio
         class BuiltinImporter final : public StudioAssetImporter
         {
         public:
-            using Reader = JsonValue (*)(const std::string&, const JsonValue&);
+            using Reader = StudioImportedFacts (*)(const std::string&, const JsonValue&);
 
             BuiltinImporter(std::string_view importerId, AssetType type, Reader reader)
                 : id_(importerId), type_(type), reader_(reader)
@@ -778,10 +819,10 @@ namespace CNA::Studio
 
             [[nodiscard]] bool handles(AssetType type) const override { return type == type_; }
 
-            [[nodiscard]] JsonValue gatherFacts(const std::string& absolutePath,
-                                                const JsonValue& settings) const override
+            [[nodiscard]] StudioImportedFacts gatherFacts(const std::string& absolutePath,
+                                                          const JsonValue& settings) const override
             {
-                return reader_ != nullptr ? reader_(absolutePath, settings) : JsonValue{};
+                return reader_ != nullptr ? reader_(absolutePath, settings) : StudioImportedFacts{};
             }
 
         private:
@@ -851,10 +892,11 @@ namespace CNA::Studio
         // main thread. Copying the record's path and settings out first also survives the sidecar
         // write reallocating the record store underneath.
         const std::string absolutePath = assets.resolvePath(record->sourcePath);
-        const JsonValue facts = importer->gatherFacts(absolutePath, record->importerSettings);
-        if (facts.isNull()) { return false; }
+        const StudioImportedFacts gathered =
+            importer->gatherFacts(absolutePath, record->importerSettings);
+        if (!gathered.succeeded()) { return false; }
 
-        return Detail::writeFactsIfChanged(assets, *record, facts);
+        return Detail::writeFactsIfChanged(assets, *record, gathered.facts);
     }
 
     std::size_t applyImporterFacts(AssetDatabase& assets)
@@ -879,10 +921,12 @@ namespace CNA::Studio
         return changed;
     }
 
-    JsonValue Detail::gatherTextureFacts(const std::string& absolutePath, const JsonValue&)
+    StudioImportedFacts Detail::gatherTextureFacts(const std::string& absolutePath, const JsonValue&)
     {
-        const std::optional<ImageDescription> description = readImageDescription(absolutePath);
-        if (!description) { return JsonValue{}; }
+        std::string problem;
+        const std::optional<ImageDescription> description =
+            readImageDescription(absolutePath, &problem);
+        if (!description) { return StudioImportedFacts{JsonValue{}, std::move(problem)}; }
 
         JsonValue facts = JsonValue::makeObject();
         facts.set("pixelSize", PropertyValue{StudioVector2{static_cast<float>(description->width),
@@ -890,7 +934,7 @@ namespace CNA::Studio
                                    .toJson());
         facts.set("sourceFormat", JsonValue{description->format});
         facts.set("sourceAlpha", JsonValue{description->hasAlphaChannel});
-        return facts;
+        return StudioImportedFacts{std::move(facts), {}};
     }
 
     void registerBuiltinImporters(ComponentRegistry& registry)

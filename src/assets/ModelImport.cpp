@@ -606,10 +606,22 @@ namespace CNA::Studio
     }
 
     std::optional<ModelDescription> readModelDescription(const std::string& absolutePath,
-                                                         const ModelImportSettings& settings)
+                                                         const ModelImportSettings& settings,
+                                                         std::string* outProblem)
     {
         const ModelImportResult imported = loadModel(absolutePath, settings);
-        if (!imported.succeeded) { return std::nullopt; }
+        if (!imported.succeeded)
+        {
+            // The loader already says why, in words aimed at the person who exported the file --
+            // "a .bin file beside it may be missing" rather than "cgltf_load_buffers returned 3".
+            // Carrying the first one out is what turns a silent nothing into something a user can
+            // act on (`plan.md` STUDIO-10013).
+            if (outProblem != nullptr && !imported.warnings.empty())
+            {
+                *outProblem = imported.warnings.front().reason;
+            }
+            return std::nullopt;
+        }
 
         ModelDescription description;
         description.partCount = imported.mesh.parts.size();

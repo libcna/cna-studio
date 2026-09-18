@@ -26,6 +26,7 @@
 #include "CNA/Studio/Core/Json.hpp"
 #include "CNA/Studio/Core/StudioJobs.hpp"
 #include "CNA/Studio/ShellPanels/StudioShellPanels.hpp"
+#include "CNA/Studio/Ui/StudioLog.hpp"
 #include "CNA/Studio/StudioContext.hpp"
 #include "CNA/Studio/UiCore/StudioShell.hpp"
 
@@ -90,22 +91,30 @@ namespace
             return type == AssetType::Texture2D;
         }
 
-        [[nodiscard]] JsonValue gatherFacts(const std::string& absolutePath,
-                                            const JsonValue& settings) const override
+        [[nodiscard]] StudioImportedFacts gatherFacts(const std::string& absolutePath,
+                                                      const JsonValue& settings) const override
         {
             (void)settings;
             if (reads_ != nullptr) { reads_->fetch_add(1); }
 
             std::ifstream stream{absolutePath, std::ios::binary};
-            if (!stream) { return JsonValue{}; }
+            if (!stream) { return {}; }
 
             std::string contents;
             stream >> contents;
-            if (contents == "unreadable") { return JsonValue{}; }
+
+            // The two ways there are no facts, told apart. "unreadable" is a file this importer
+            // claims and cannot read, which a user has to be told about; "notmine" is a file it
+            // does not claim, which is ordinary and silent.
+            if (contents == "unreadable")
+            {
+                return StudioImportedFacts{JsonValue{}, "it says it is unreadable, and it is"};
+            }
+            if (contents == "notmine") { return {}; }
 
             JsonValue facts = JsonValue::makeObject();
             facts.set("contents", JsonValue{contents});
-            return facts;
+            return StudioImportedFacts{std::move(facts), {}};
         }
 
     private:
@@ -312,7 +321,14 @@ CNA_STUDIO_TEST(CancellingAnImportKeepsWhatWasReadAndAccountsForTheRest)
     }
 }
 
-CNA_STUDIO_TEST(AFileNoImporterCanReadIsCountedRatherThanTreatedAsAFailure)
+/**
+ * A file nobody claims and a file that is broken are different answers (`plan.md` STUDIO-10013).
+ *
+ * They used to be the same one -- both were "the importer returned nothing" -- so a texture
+ * truncated by a failed copy imported as quietly as a readme. One of those a user needs to be told
+ * about; the other is most of the files in their project.
+ */
+CNA_STUDIO_TEST(AFileNobodyClaimsIsSilentAndABrokenOneIsReportedWithAReason)
 {
     const ScopedDirectory directory{"unreadable"};
     AssetDatabase assets;
@@ -323,7 +339,9 @@ CNA_STUDIO_TEST(AFileNoImporterCanReadIsCountedRatherThanTreatedAsAFailure)
     CNA_STUDIO_EXPECT(importers.add(std::make_unique<CountingImporter>(&reads)));
 
     std::vector<Uuid> ids = trackTextures(assets, directory, 5, "ok");
-    const std::vector<Uuid> broken = trackTextures(assets, directory, 3, "unreadable", "broken");
+    const std::vector<Uuid> declined = trackTextures(assets, directory, 3, "notmine", "other");
+    const std::vector<Uuid> broken = trackTextures(assets, directory, 2, "unreadable", "broken");
+    ids.insert(ids.end(), declined.begin(), declined.end());
     ids.insert(ids.end(), broken.begin(), broken.end());
 
     StudioJobSystem jobs{StudioJobMode::Immediate};
@@ -331,13 +349,122 @@ CNA_STUDIO_TEST(AFileNoImporterCanReadIsCountedRatherThanTreatedAsAFailure)
     (void)queue.request(ids);
     (void)settle(queue, jobs, assets, importers);
 
-    // A project holds files Studio does not import, and a run that reported each of them as a
-    // failure would be one nobody reads. Counted separately from cancelled, because "not an asset
-    // Studio reads" and "you stopped me" are different answers to "why is this number not eight".
     CNA_STUDIO_EXPECT_EQ(queue.getReadCount(), std::uint64_t{5});
     CNA_STUDIO_EXPECT_EQ(queue.getChangedCount(), std::uint64_t{5});
+
+    // Not claimed: counted, not complained about. A project holds files Studio does not import, and
+    // a run that flagged each of them would produce a list nobody reads.
     CNA_STUDIO_EXPECT_EQ(queue.getUnreadableCount(), std::uint64_t{3});
+
+    // Claimed and broken: counted *and* explained, with the path so the message names something
+    // findable and the reason so it is worth reading.
+    CNA_STUDIO_EXPECT_EQ(queue.getFailedCount(), std::uint64_t{2});
+    CNA_STUDIO_EXPECT_EQ(queue.getFailures().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(queue.getFailures().front().reason.find("unreadable") != std::string::npos);
+    CNA_STUDIO_EXPECT(queue.getFailures().front().sourcePath.find("broken") != std::string::npos);
+    CNA_STUDIO_EXPECT(queue.getFailures().front().id.isValid());
+
     CNA_STUDIO_EXPECT_EQ(queue.getCancelledCount(), std::uint64_t{0});
+    CNA_STUDIO_EXPECT(queue.getProgress() > 0.999f);
+
+    // Taken rather than read, so each is reported once. A caller that read the list every frame
+    // would write the same broken file to the log sixty times a second.
+    CNA_STUDIO_EXPECT_EQ(queue.takeFailures().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(queue.getFailures().empty());
+    CNA_STUDIO_EXPECT_EQ(queue.getFailedCount(), std::uint64_t{2});
+}
+
+/**
+ * A failed import leaves the asset exactly as it was, never half-written (`plan.md` STUDIO-10013).
+ *
+ * The stale facts stay, and that is the decision rather than an oversight: they describe the file
+ * as it last read, which is more use than nothing, and the failure is *reported* -- which is what
+ * makes keeping them honest rather than misleading.
+ */
+CNA_STUDIO_TEST(AFailedImportLeavesTheAssetExactlyAsItWas)
+{
+    const ScopedDirectory directory{"partial"};
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.path().generic_string());
+
+    std::atomic<int> reads{0};
+    StudioImporterRegistry importers;
+    CNA_STUDIO_EXPECT(importers.add(std::make_unique<CountingImporter>(&reads)));
+
+    const std::vector<Uuid> ids = trackTextures(assets, directory, 1, "good");
+    const Uuid id = ids.front();
+
+    StudioJobSystem jobs{StudioJobMode::Immediate};
+    StudioImportQueue queue;
+    (void)queue.request(ids);
+    (void)settle(queue, jobs, assets, importers);
+    CNA_STUDIO_EXPECT_EQ(assets.find(id)->importerSettings["contents"].asString(),
+                         std::string{"good"});
+
+    // A setting the user chose, which a failed import must not touch either.
+    AssetRecord* record = assets.findMutable(id);
+    CNA_STUDIO_EXPECT(record != nullptr);
+    if (record == nullptr) { return; }
+    record->importerSettings.set("chosen", JsonValue{std::string{"kept"}});
+
+    // The file is replaced with one this importer claims and cannot read.
+    {
+        std::ofstream stream{directory.path() / assets.find(id)->sourcePath, std::ios::binary};
+        stream << "unreadable";
+    }
+
+    (void)queue.request(ids);
+    (void)settle(queue, jobs, assets, importers);
+
+    CNA_STUDIO_EXPECT_EQ(queue.getFailedCount(), std::uint64_t{1});
+
+    // The facts from the last good read are still there, unchanged and whole -- not cleared, not
+    // half-overwritten with whatever the importer managed before giving up.
+    CNA_STUDIO_EXPECT_EQ(assets.find(id)->importerSettings["contents"].asString(),
+                         std::string{"good"});
+    CNA_STUDIO_EXPECT_EQ(assets.find(id)->importerSettings["chosen"].asString(), std::string{"kept"});
+
+    // And the reason names the file, so the stale facts are stale *visibly*.
+    CNA_STUDIO_EXPECT_EQ(queue.getFailures().size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(!queue.getFailures().front().reason.empty());
+}
+
+/**
+ * An asset whose file is not on disk is skipped rather than reported as a failed import.
+ *
+ * "Its file is not there" is a state of its own -- marked on the row, repairable from the
+ * inspector (`STUDIO-09013`) -- and reporting it a second time as an import failure would put two
+ * different-sounding complaints in front of somebody about one problem with one fix.
+ */
+CNA_STUDIO_TEST(AnAssetWithNoFileOnDiskIsSkippedRatherThanFailed)
+{
+    const ScopedDirectory directory{"missing"};
+    AssetDatabase assets;
+    assets.setProjectRoot(directory.path().generic_string());
+
+    std::atomic<int> reads{0};
+    StudioImporterRegistry importers;
+    CNA_STUDIO_EXPECT(importers.add(std::make_unique<CountingImporter>(&reads)));
+
+    const std::vector<Uuid> ids = trackTextures(assets, directory, 4);
+    std::error_code code;
+    std::filesystem::remove(directory.path() / assets.find(ids[1])->sourcePath, code);
+    std::filesystem::remove(directory.path() / assets.find(ids[2])->sourcePath, code);
+    (void)assets.refreshPresence(ids[1]);
+    (void)assets.refreshPresence(ids[2]);
+
+    StudioJobSystem jobs{StudioJobMode::Immediate};
+    StudioImportQueue queue;
+    (void)queue.request(ids);
+    (void)settle(queue, jobs, assets, importers);
+
+    CNA_STUDIO_EXPECT_EQ(queue.getReadCount(), std::uint64_t{2});
+    CNA_STUDIO_EXPECT_EQ(queue.getFailedCount(), std::uint64_t{0});
+    CNA_STUDIO_EXPECT(queue.getFailures().empty());
+    CNA_STUDIO_EXPECT_EQ(queue.getUnreadableCount(), std::uint64_t{0});
+
+    // The run finishes rather than stalling on assets it will never read.
+    CNA_STUDIO_EXPECT(!queue.isRunning());
     CNA_STUDIO_EXPECT(queue.getProgress() > 0.999f);
 }
 
@@ -540,4 +667,82 @@ CNA_STUDIO_TEST(AFileChangedOnDiskHasItsFactsReadAgainOffTheFrame)
     // Proportional to what changed. One file moved, so one asset was read -- not the whole project,
     // which is what the synchronous pass this replaced would have done.
     CNA_STUDIO_EXPECT_EQ(panels.imports().getReadCount(), std::uint64_t{1});
+}
+
+/**
+ * A broken file reaches the user, through the real shell (`plan.md` STUDIO-10013).
+ *
+ * The worker that found it cannot log -- it is handed a job context and nothing else -- so the
+ * reason travels back on the queue and the binder says it. Without this last hop the whole task is
+ * a reason recorded where nobody looks.
+ */
+CNA_STUDIO_TEST(AFailedImportIsReportedToTheUserOnceAndNotEveryFrame)
+{
+    const ScopedDirectory directory{"reported"};
+    std::error_code code;
+    std::filesystem::create_directories(directory.path() / "Assets", code);
+
+    const auto write = [&](const std::string& name, const std::vector<unsigned char>& bytes) {
+        std::ofstream stream{directory.path() / name, std::ios::binary};
+        stream.write(reinterpret_cast<const char*>(bytes.data()),
+                     static_cast<std::streamsize>(bytes.size()));
+    };
+
+    // A whole PNG, so the asset imports cleanly to start with.
+    std::vector<unsigned char> png{0x89u, 'P', 'N', 'G', 0x0Du, 0x0Au, 0x1Au, 0x0Au};
+    png.insert(png.end(), 18, 0);
+    png[16] = 0;  png[17] = 0;  png[18] = 0;  png[19] = 32;   // width
+    png[20] = 0;  png[21] = 0;  png[22] = 0;  png[23] = 16;   // height
+    png[24] = 8;  png[25] = 6;                                // depth, RGBA
+    write("Assets/Hero.png", png);
+
+    StudioContext context;
+    context.getAssets().setProjectRoot(directory.path().generic_string());
+    CNA_STUDIO_EXPECT(context.getAssets().scan("Assets").succeeded);
+
+    StudioLog log;
+    auto shell = std::make_unique<StudioShell>(StudioTheme::dark());
+    shell->resetLayout();
+    StudioShellPanels panels{*shell, context, log};
+
+    // Truncated where a failed copy would leave it: the signature is there and the header is not.
+    write("Assets/Hero.png", std::vector<unsigned char>{0x89u, 'P', 'N', 'G', 0x0Du, 0x0Au, 0x1Au,
+                                                        0x0Au, 0, 0, 0});
+
+    for (int frame = 0; frame < 400 && panels.imports().getFailedCount() == 0; ++frame)
+    {
+        panels.poll(static_cast<double>(frame));
+        panels.jobs().waitForIdle();
+    }
+    panels.poll(1000.0);
+
+    CNA_STUDIO_EXPECT_EQ(panels.imports().getFailedCount(), std::uint64_t{1});
+
+    const auto warningsNaming = [&](const std::string& fragment) {
+        std::size_t found = 0;
+        for (const StudioLogEntry& entry : log.entries())
+        {
+            if (entry.severity == LogSeverity::Warning
+                && entry.message.find(fragment) != std::string::npos)
+            {
+                ++found;
+            }
+        }
+        return found;
+    };
+
+    // The message names the file and says what is wrong with it. "Could not import" on its own is
+    // a line that tells somebody only that they have a problem.
+    CNA_STUDIO_EXPECT_EQ(warningsNaming("Assets/Hero.png"), std::size_t{1});
+    CNA_STUDIO_EXPECT_EQ(warningsNaming("truncated"), std::size_t{1});
+
+    // And once. Fifty more frames of the same broken file produce no more lines, because the
+    // failures are *taken* rather than read -- a list read every frame would fill the log at sixty
+    // lines a second and bury everything else in it.
+    for (int frame = 0; frame < 50; ++frame)
+    {
+        panels.poll(1001.0 + static_cast<double>(frame));
+        panels.jobs().waitForIdle();
+    }
+    CNA_STUDIO_EXPECT_EQ(warningsNaming("Assets/Hero.png"), std::size_t{1});
 }

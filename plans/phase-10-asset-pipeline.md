@@ -6,7 +6,7 @@
 
 **Exit criteria.** Each supported category imports, reimports without losing settings, and reports failure usefully.
 
-**Progress:** 8 of 15 complete `██████░░░░░░`
+**Progress:** 9 of 15 complete `███████░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -22,7 +22,7 @@
 | `STUDIO-10010` | Environment map import and processing | ⬜ | `STUDIO-20001` |
 | `STUDIO-10011` | Import jobs are cancellable and report progress accurately | ✅ | `STUDIO-30001` |
 | `STUDIO-10012` | Provenance record for every third-party dependency | ✅ | — |
-| `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ⬜ | `STUDIO-10011` |
+| `STUDIO-10013` | A failed import reports why, and does not leave a half-imported asset | ✅ | `STUDIO-10011` |
 | `STUDIO-10014` | Decide how Studio decodes an image without a graphics device | ✅ | `STUDIO-10012` |
 | `STUDIO-10015` | Measure an MP3 and a FLAC as exactly as a WAV and an Ogg | ⬜ | `STUDIO-10005` |
 
@@ -330,6 +330,61 @@ is the whole file. So the task has to decide what to do when the header is absen
 slow, and on the scan path), estimate from the first frame (fast and wrong for exactly the files
 VBR is used for), or report it unmeasured (what happens now). A guess stated as a fact is the one
 option ruled out.
+
+### `STUDIO-10013` — A failed import reports why, and does not leave a half-imported asset
+
+**Acceptance.** A file that cannot be read produces a reason a person can act on, in a place they
+will see it, and the asset is left exactly as it was.
+
+**There were two answers where there needed to be three.** `gatherFacts` returned facts or nothing,
+and "nothing" covered both *I do not claim this file* and *I claim it and it is broken*. Those are
+opposite situations: the first is most of the files in a project and reporting each of them makes a
+list nobody reads; the second is a file somebody put there on purpose and needs to hear about. So a
+texture truncated by a failed copy imported as quietly as a readme. `StudioImportedFacts` now says
+which of the three it is — read, declined, or failed with a reason.
+
+**The reasons mostly already existed and were being thrown away.** `loadModel` has said "a .bin file
+beside it may be missing" since it was written, and `readModelDescription` collapsed that to a
+`std::nullopt`. Carrying the first warning out is most of what the model side of this task was.
+The image and audio readers needed the distinction *made*: both now set a reason only when the file
+announced itself as one of their formats and then could not be read — a PNG signature with no IHDR
+behind it, a RIFF/WAVE with no `fmt ` chunk, an Ogg whose stream is Opus rather than Vorbis. A file
+that never claimed to be one of those leaves the reason empty and is declined in silence.
+
+**Three things are deliberately *not* failures.** A format Studio cannot measure yet (MP3, FLAC —
+`STUDIO-10015`) is a gap in the editor, and a warning would blame the file. An asset whose file is
+not on disk is skipped entirely: that is a state of its own, marked on its row and repairable from
+the inspector (`STUDIO-09013`), and saying it again in different words would put two complaints in
+front of somebody about one problem with one fix. And a glTF that loads while dropping some
+primitives is a *success* with a `skippedPrimitives` count — the geometry that did come across is
+real and worth having.
+
+**The sprite-font importer has no failure mode, and that is the honest answer rather than a gap.** A
+`.spritefont` is XML the content pipeline writes; a file without `<Asset` and `FontDescription` is
+not a broken sprite font, it is not a sprite font. Anything past that structural check reads as
+absent fields, not as an error. Inventing a failure for symmetry would add a warning nobody can act
+on.
+
+**A failed import leaves the record untouched, including its stale facts.** Nothing is half-written
+because the smallest thing the queue applies is one asset's whole facts object — the property comes
+from `STUDIO-10011`'s split rather than from care at the call site. Keeping the old facts is a
+decision: they describe the file as it last read, which is more use than nothing, and the failure is
+*reported*, which is what makes keeping them honest rather than misleading. Clearing them would
+answer "how big was this texture" with silence at exactly the moment somebody is trying to work out
+what broke.
+
+**The reason travels rather than being logged where it was found.** A worker is handed a job context
+and nothing else, so it has no log and no business having one. The queue keeps failures and
+`takeFailures` hands them over once — a caller that read the list every frame would write the same
+broken texture to the log sixty times a second.
+
+**Verification.** `tests/ImportJobTests.cpp` covers the declined/failed split through the queue, a
+failed import leaving both the stale facts and the user's own settings exactly as they were, an
+asset with no file being skipped rather than failed, and — end to end through the real shell — a
+truncated PNG producing one warning naming the file and the reason, and still one warning fifty
+frames later. `tests/TextureImportTests.cpp`, `tests/AudioImportTests.cpp` and
+`tests/ModelImportTests.cpp` each cover their own format's broken-versus-not-mine cases. Checked by
+causing it: making the image reader drop its reason again fails eight cases across three files.
 
 ### `STUDIO-10014` — Decide how Studio decodes an image without a graphics device
 

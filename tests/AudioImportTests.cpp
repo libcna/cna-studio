@@ -437,3 +437,47 @@ CNA_STUDIO_TEST(EverySettingAnAudioImporterDeclaresIsOneSomethingReads)
         }
     }
 }
+
+/**
+ * A clip Studio claims and cannot read says why; one it never claimed says nothing.
+ *
+ * `plan.md` STUDIO-10013. An Ogg holding Opus is the interesting case: the container opened, so the
+ * file is not broken and the honest answer is not silence -- it is that Vorbis is the only Ogg
+ * codec Studio reads, which is a gap somebody can look up rather than an import that did nothing.
+ */
+CNA_STUDIO_TEST(AnAudioFileStudioClaimsAndCannotReadSaysWhy)
+{
+    const ScopedDirectory directory{"brokenaudio"};
+
+    std::string problem;
+    const std::string opus =
+        directory.write("voice.ogg", makeOggVorbis(48000, 2, 48000, 2, "OpusHe"));
+    CNA_STUDIO_EXPECT(!readAudioDescription(opus, &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+    CNA_STUDIO_EXPECT(problem.find("Vorbis") != std::string::npos);
+
+    // A RIFF/WAVE header with no `fmt ` chunk after it: the file says it is a WAV and is not one.
+    problem.clear();
+    std::vector<unsigned char> stub;
+    for (const char letter : std::string{"RIFF"}) { stub.push_back(static_cast<unsigned char>(letter)); }
+    append32(stub, 4);
+    for (const char letter : std::string{"WAVE"}) { stub.push_back(static_cast<unsigned char>(letter)); }
+    stub.insert(stub.end(), 8, 0);
+    CNA_STUDIO_EXPECT(!readAudioDescription(directory.write("empty.wav", stub), &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+    CNA_STUDIO_EXPECT(problem.find("WAV") != std::string::npos);
+
+    // An MP3 is declined in silence. Studio cannot measure it yet (STUDIO-10015), which is a gap in
+    // the editor rather than a problem with the file, and a warning would blame the wrong thing.
+    problem.clear();
+    CNA_STUDIO_EXPECT(!readAudioDescription(
+        directory.write("track.mp3", std::vector<unsigned char>{0xFFu, 0xFBu, 0x90u, 0x44u, 0, 0, 0,
+                                                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0}),
+        &problem));
+    CNA_STUDIO_EXPECT(problem.empty());
+
+    problem.clear();
+    CNA_STUDIO_EXPECT(!readAudioDescription(directory.write("notes.txt", {'h', 'i', '!', '!'}),
+                                            &problem));
+    CNA_STUDIO_EXPECT(problem.empty());
+}

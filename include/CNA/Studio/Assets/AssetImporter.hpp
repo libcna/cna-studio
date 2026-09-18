@@ -52,6 +52,42 @@
 namespace CNA::Studio
 {
     /**
+     * @brief What an importer made of a file: its facts, or the reason there are none.
+     *
+     * `plan.md` STUDIO-10013. Three answers, not two, and the third is the one that matters:
+     *
+     * - **Read** — @ref facts is an object. The file was understood.
+     * - **Declined** — both empty. This importer does not claim this file, which is ordinary: a
+     *   project is full of files Studio does not import, and reporting each of them as a problem
+     *   makes a list nobody reads.
+     * - **Failed** — @ref error says why. The file *is* the kind this importer reads and could not
+     *   be read anyway: a truncated PNG, a glTF whose `.bin` is missing. This is the one a user
+     *   has to be told about, because the asset is in their project on purpose.
+     *
+     * Collapsing the last two is how a broken file becomes silent. They looked identical before
+     * this -- both were "returned nothing" -- and a texture truncated by a failed copy therefore
+     * imported as quietly as a readme.
+     */
+    struct StudioImportedFacts
+    {
+        /** @brief The facts, as a JSON object. Null when nothing was read. */
+        JsonValue facts;
+
+        /**
+         * @brief Why the file could not be read, in words a person can act on.
+         *
+         * Empty when the file was read *and* when this importer simply does not claim it. Phrased
+         * as what the editor cannot do rather than as what the file did wrong, because the reader
+         * is usually the person who made the file.
+         */
+        std::string error;
+
+        [[nodiscard]] bool succeeded() const { return !facts.isNull(); }
+        [[nodiscard]] bool failed() const { return facts.isNull() && !error.empty(); }
+        [[nodiscard]] bool declined() const { return facts.isNull() && error.empty(); }
+    };
+
+    /**
      * @brief One kind of asset Studio knows how to read facts out of.
      *
      * Implemented in whichever module owns the library it needs — the glTF importer lives beside
@@ -98,12 +134,11 @@ namespace CNA::Studio
          * @param settings The asset's `importerSettings`, because some facts depend on a choice —
          *        a model's size is measured at its `scaleFactor`, and reporting one taken at 1.0
          *        beside a scale of 100 would be two answers to one question.
-         * @return The facts as a JSON object, or a null value when the file cannot be read. An
-         *         empty object and a null value are different answers: the first says "read, and it
-         *         says nothing", the second says "not read".
+         * @return The facts, or the reason there are none -- and, separately, nothing at all when
+         *         this is simply not a file it claims. See @ref StudioImportedFacts.
          */
-        [[nodiscard]] virtual JsonValue gatherFacts(const std::string& absolutePath,
-                                                    const JsonValue& settings) const = 0;
+        [[nodiscard]] virtual StudioImportedFacts gatherFacts(const std::string& absolutePath,
+                                                              const JsonValue& settings) const = 0;
     };
 
     /**

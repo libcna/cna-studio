@@ -413,6 +413,56 @@ CNA_STUDIO_TEST(AHeaderSaysWhichFormatItIsAndWhetherItCarriesAlpha)
     CNA_STUDIO_EXPECT_EQ(size->height, 32);
 }
 
+/**
+ * A broken image says why; a file that is not an image says nothing (`plan.md` STUDIO-10013).
+ *
+ * The two used to be one answer -- "returned nothing" -- so a PNG truncated by a failed copy
+ * imported as quietly as a readme. Distinguishing them is the whole of what makes a failed import
+ * reportable: the signature is there, so the file *is* meant to be a PNG, and the only honest thing
+ * to say about it is that it is broken.
+ */
+CNA_STUDIO_TEST(AnImageThatStartsRightAndStopsShortSaysWhyItCouldNotBeRead)
+{
+    const ScopedDirectory directory{"broken"};
+
+    std::vector<unsigned char> png = makePngHeader(64, 32, 6, false);
+    png.resize(12);  // the signature and four bytes of the IHDR length
+
+    std::string problem;
+    CNA_STUDIO_EXPECT(!readImageDescription(directory.write("cut.png", png), &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+    CNA_STUDIO_EXPECT(problem.find("PNG") != std::string::npos);
+    CNA_STUDIO_EXPECT(problem.find("truncated") != std::string::npos);
+
+    // A BMP that stops inside its DIB header is the same case in the other format.
+    problem.clear();
+    std::vector<unsigned char> bmp = makeBmpHeader(20, 12, 24);
+    bmp.resize(20);
+    CNA_STUDIO_EXPECT(!readImageDescription(directory.write("cut.bmp", bmp), &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+
+    // And a JPEG whose segments run out before a frame header.
+    problem.clear();
+    CNA_STUDIO_EXPECT(!readImageDescription(
+        directory.write("cut.jpg", {0xFFu, 0xD8u, 0xFFu, 0xE0u, 0x00u, 0x10u}), &problem));
+    CNA_STUDIO_EXPECT(!problem.empty());
+
+    // A file that never claimed to be an image is *silent*. A project is full of these, and a run
+    // that complained about each of them would produce a list nobody reads.
+    problem.clear();
+    CNA_STUDIO_EXPECT(!readImageDescription(
+        directory.write("notes.txt", {'h', 'e', 'l', 'l', 'o', ' ', 't', 'h', 'e', 'r', 'e'}),
+        &problem));
+    CNA_STUDIO_EXPECT(problem.empty());
+
+    // As is one that is not there at all: that is the Content Browser's "missing" state, with its
+    // own marker and its own repair, and saying it twice in two different ways helps nobody.
+    problem.clear();
+    CNA_STUDIO_EXPECT(!readImageDescription((directory.path() / "absent.png").generic_string(),
+                                            &problem));
+    CNA_STUDIO_EXPECT(problem.empty());
+}
+
 CNA_STUDIO_TEST(AReimportRewritesTheTextureFactsAndLeavesEverySettingAlone)
 {
     const ScopedDirectory directory{"reimport"};

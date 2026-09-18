@@ -127,10 +127,17 @@ namespace CNA::Studio
      * over this. Separate because most callers want a size and nothing else, and the texture
      * importer (`plan.md` STUDIO-10003) wants all of it.
      *
+     * @param absolutePath The file.
+     * @param outProblem When set, receives a reason *only* when the file announces itself as one of
+     *        the three formats and then cannot be read anyway -- a truncated PNG, a BMP whose
+     *        header stops short. A file that is simply not an image leaves it empty, because that
+     *        is not a problem: a project is full of files Studio does not import, and reporting
+     *        each of them makes a list nobody reads (`plan.md` STUDIO-10013).
      * @return The description, or std::nullopt when the file cannot be read or is not one of the
      *         three formats.
      */
-    [[nodiscard]] std::optional<ImageDescription> readImageDescription(const std::string& absolutePath);
+    [[nodiscard]] std::optional<ImageDescription> readImageDescription(const std::string& absolutePath,
+                                                                       std::string* outProblem = nullptr);
 
     /**
      * @brief Fills in the facts an importer can determine by reading a file.

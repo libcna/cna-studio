@@ -213,7 +213,13 @@ namespace CNA::Studio
      * the most expensive fact-gathering the editor does, which is why `applyImporterFacts` writes
      * the result to the sidecar and compares before rewriting, as the texture and sprite-font
      * paths already do.
+     *
+     * @param outProblem When set, receives why the load failed -- "the file could not be read as
+     *        glTF or GLB", "a .bin file beside it may be missing". Left empty on success. A glTF
+     *        that loads but drops some primitives is a *success* with a `skippedPrimitives` count,
+     *        not a failure (`plan.md` STUDIO-10013).
      */
     [[nodiscard]] std::optional<ModelDescription> readModelDescription(
-        const std::string& absolutePath, const ModelImportSettings& settings = {});
+        const std::string& absolutePath, const ModelImportSettings& settings = {},
+        std::string* outProblem = nullptr);
 }

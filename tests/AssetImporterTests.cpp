@@ -41,8 +41,8 @@ namespace
         [[nodiscard]] std::string_view id() const override { return id_; }
         [[nodiscard]] bool handles(AssetType type) const override { return type == type_; }
 
-        [[nodiscard]] JsonValue gatherFacts(const std::string& absolutePath,
-                                            const JsonValue& settings) const override
+        [[nodiscard]] StudioImportedFacts gatherFacts(const std::string& absolutePath,
+                                                      const JsonValue& settings) const override
         {
             (void)absolutePath;
             (void)settings;
@@ -53,7 +53,7 @@ namespace
             // return value stay the same assertion.
             JsonValue facts = JsonValue::makeObject();
             facts.set("calls", JsonValue{static_cast<double>(calls_ != nullptr ? *calls_ : 0)});
-            return facts;
+            return StudioImportedFacts{std::move(facts), {}};
         }
 
     private:

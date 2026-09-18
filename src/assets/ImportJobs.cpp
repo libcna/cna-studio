@@ -28,11 +28,12 @@ namespace CNA::Studio
             const StudioAssetImporter* importer = nullptr;
         };
 
-        /** @brief What a worker read, handed back through a shared_ptr rather than a reference. */
+        /** @brief What a worker made of one file, handed back through a shared_ptr. */
         struct Outcome
         {
             Uuid id;
-            JsonValue facts;
+            std::string sourcePath;
+            StudioImportedFacts result;
         };
 
         struct Payload
@@ -118,8 +119,26 @@ namespace CNA::Studio
             while (chunk.applied < chunk.payload->outcomes.size() && applied < kChunkSize)
             {
                 const Outcome& outcome = chunk.payload->outcomes[chunk.applied];
-                ++read_;
-                if (studioApplyImporterFacts(assets, outcome.id, outcome.facts)) { ++changed_; }
+
+                if (outcome.result.failed())
+                {
+                    // The record is left exactly as it was. Stale facts describing the last good
+                    // read are worth more than none -- they still say what the asset was when it
+                    // last worked -- and the failure is reported rather than hidden, which is what
+                    // makes leaving them honest. Nothing is half-written either way: the smallest
+                    // thing applied is one asset's whole facts object (`plan.md` STUDIO-10013).
+                    ++failed_;
+                    failures_.push_back(
+                        StudioImportFailure{outcome.id, outcome.sourcePath, outcome.result.error});
+                }
+                else
+                {
+                    ++read_;
+                    if (studioApplyImporterFacts(assets, outcome.id, outcome.result.facts))
+                    {
+                        ++changed_;
+                    }
+                }
                 ++chunk.applied;
                 ++applied;
                 ++done_;
@@ -160,10 +179,17 @@ namespace CNA::Studio
                 taken.push_back(id);
 
                 const AssetRecord* record = assets.find(id);
-                if (record == nullptr)
+                if (record == nullptr || assets.isMissing(id))
                 {
-                    // Deleted between being asked for and being read. Not an error and not work:
-                    // it stops being part of the run rather than counting as read or unreadable.
+                    // Deleted between being asked for and being read, or tracked with no file on
+                    // disk. Neither is an error and neither is work: they stop being part of the
+                    // run rather than counting as read, unreadable or failed.
+                    //
+                    // The missing case matters for what a user sees. "Its file is not there" is
+                    // already a state of its own, marked on the row and repairable from the
+                    // inspector (`STUDIO-09013`); reporting it a second time as an import failure
+                    // would put two different-sounding complaints in front of somebody about one
+                    // problem with one fix.
                     --total_;
                     taken.pop_back();
                     continue;
@@ -210,11 +236,18 @@ namespace CNA::Studio
 
                         // The one line that reads a file. Everything around it exists so that this
                         // happens here instead of on the frame.
-                        JsonValue facts =
+                        StudioImportedFacts result =
                             request.importer->gatherFacts(request.absolutePath, request.settings);
-                        if (facts.isNull()) { continue; }
 
-                        payload->outcomes.push_back(Outcome{request.id, std::move(facts)});
+                        // A declined file produces no outcome at all and is counted as one nothing
+                        // claimed. A *failed* one produces an outcome carrying its reason, because
+                        // the reason is the whole point (`plan.md` STUDIO-10013) -- and because a
+                        // failure that produced nothing would be indistinguishable from a file the
+                        // run was cancelled before reaching.
+                        if (result.declined()) { continue; }
+
+                        payload->outcomes.push_back(
+                            Outcome{request.id, request.sourcePath, std::move(result)});
                     }
                 },
                 [this, payload, chunkSize](const StudioJobStatus& status) {
@@ -266,6 +299,11 @@ namespace CNA::Studio
         for (const StudioJobId id : running_) { (void)jobs.cancel(id); }
 
         return givenUp;
+    }
+
+    std::vector<StudioImportFailure> StudioImportQueue::takeFailures()
+    {
+        return std::exchange(failures_, {});
     }
 
     std::size_t StudioImportQueue::getLandedCount() const { return landed_.size(); }

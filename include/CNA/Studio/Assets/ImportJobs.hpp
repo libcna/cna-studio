@@ -48,6 +48,18 @@
 
 namespace CNA::Studio
 {
+    /** @brief One asset an import could not read, and why (`plan.md` STUDIO-10013). */
+    struct StudioImportFailure
+    {
+        Uuid id;
+
+        /** @brief The asset's project-relative path, so the message names something findable. */
+        std::string sourcePath;
+
+        /** @brief Phrased as what the editor cannot do rather than what the file did wrong. */
+        std::string reason;
+    };
+
     /**
      * @brief A run of imports: queued on the main thread, read on workers, applied on drain.
      *
@@ -161,13 +173,34 @@ namespace CNA::Studio
         [[nodiscard]] std::uint64_t getChangedCount() const { return changed_; }
 
         /**
-         * @brief How many files could not be read at all.
+         * @brief How many files no importer claimed.
          *
-         * A file an importer declines is counted here rather than treated as a failure: a project
-         * holds files Studio does not import, and an import that reported each of them as a problem
-         * would be one nobody reads.
+         * Not a failure and not reported as one: a project holds files Studio does not import, and
+         * a run that flagged each of them would produce a list nobody reads. A file that *is* the
+         * kind an importer reads and could not be read anyway is @ref getFailedCount instead
+         * (`plan.md` STUDIO-10013).
          */
         [[nodiscard]] std::uint64_t getUnreadableCount() const { return unreadable_; }
+
+        /** @brief How many files an importer claimed and then could not read. */
+        [[nodiscard]] std::uint64_t getFailedCount() const { return failed_; }
+
+        /**
+         * @brief What failed and why, oldest first, since the last @ref takeFailures.
+         *
+         * Kept rather than logged from the worker, for the reason everything else here is kept: a
+         * job body has no log to write to and no business having one. The owner drains these into
+         * whatever a user actually reads.
+         */
+        [[nodiscard]] const std::vector<StudioImportFailure>& getFailures() const { return failures_; }
+
+        /**
+         * @brief Hands the failures over and forgets them, so each is reported once.
+         *
+         * A caller that read @ref getFailures every frame and logged what it found would log the
+         * same broken texture sixty times a second.
+         */
+        [[nodiscard]] std::vector<StudioImportFailure> takeFailures();
 
         /** @brief How many assets were given up on because the run was cancelled. */
         [[nodiscard]] std::uint64_t getCancelledCount() const { return cancelled_; }
@@ -188,6 +221,8 @@ namespace CNA::Studio
         std::uint64_t read_ = 0;
         std::uint64_t changed_ = 0;
         std::uint64_t unreadable_ = 0;
+        std::uint64_t failed_ = 0;
+        std::vector<StudioImportFailure> failures_;
         std::uint64_t cancelled_ = 0;
     };
 }

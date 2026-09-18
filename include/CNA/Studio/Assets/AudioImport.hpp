@@ -73,11 +73,16 @@ namespace CNA::Studio
     /**
      * @brief Reads @p absolutePath's audio header.
      *
+     * @param absolutePath The file.
+     * @param outProblem When set, receives a reason *only* when the file announces itself as a WAV
+     *        or an Ogg and then cannot be read anyway. A file that is simply not audio Studio reads
+     *        -- an MP3, a text file -- leaves it empty, because that is not a problem
+     *        (`plan.md` STUDIO-10013).
      * @return The description, or std::nullopt when the file cannot be read or is not a format
      *         this reads. A caller must treat "unknown" as unknown rather than as silence.
      */
     [[nodiscard]] std::optional<StudioAudioDescription> readAudioDescription(
-        const std::string& absolutePath);
+        const std::string& absolutePath, std::string* outProblem = nullptr);
 
     /** @brief What the user chose about an audio asset. */
     struct StudioAudioImportSettings

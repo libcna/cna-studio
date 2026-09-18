@@ -239,7 +239,8 @@ namespace CNA::Studio
         return settings;
     }
 
-    std::optional<StudioAudioDescription> readAudioDescription(const std::string& absolutePath)
+    std::optional<StudioAudioDescription> readAudioDescription(const std::string& absolutePath,
+                                                               std::string* outProblem)
     {
         std::ifstream stream{absolutePath, std::ios::binary};
         if (!stream) { return std::nullopt; }
@@ -252,16 +253,31 @@ namespace CNA::Studio
 
         std::optional<StudioAudioDescription> description;
 
+        // The reason is set only when the file *announced itself* as one of these and then could
+        // not be read anyway. A format Studio does not measure -- an MP3, a FLAC -- is declined in
+        // silence, because that is not a problem with the file (`plan.md` STUDIO-10013).
+        const char* claimed = nullptr;
+
         if (matches(front.data(), "RIFF") && front.size() >= 12 && matches(front.data() + 8, "WAVE"))
         {
+            claimed = "it starts as a WAV but no readable format and data chunk could be found in "
+                      "it, so the file is truncated or corrupt";
             description = readWave(stream);
         }
         else if (matches(front.data(), "OggS"))
         {
+            // An Ogg that is not Vorbis -- Opus, Theora, FLAC-in-Ogg -- is a container Studio can
+            // open and a codec it cannot read, which is a gap rather than a broken file.
+            claimed = "it is an Ogg file, but the stream in it is not Vorbis, which is the only "
+                      "Ogg codec Studio reads";
             description = readOggVorbis(stream, front);
         }
 
-        if (!description) { return std::nullopt; }
+        if (!description)
+        {
+            if (outProblem != nullptr && claimed != nullptr) { *outProblem = claimed; }
+            return std::nullopt;
+        }
 
         // Sixteen-bit PCM, because that is what a decoded clip is held as whatever it arrived as.
         // Computed here rather than in each reader: it is the same arithmetic for every format,

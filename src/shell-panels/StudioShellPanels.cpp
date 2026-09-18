@@ -243,6 +243,16 @@ namespace CNA::Studio
         // waiting for the next one.
         (void)imports_.pump(jobs_, context_.getAssets());
 
+        // Taken rather than read, so each failure is reported once: a loop that read the list every
+        // frame would write the same broken texture to the log sixty times a second
+        // (`plan.md` STUDIO-10013). A worker cannot log -- it is given a job context and nothing
+        // else -- so the reason travels back on the queue and is said here.
+        for (const StudioImportFailure& failure : imports_.takeFailures())
+        {
+            log_.append(LogSeverity::Warning,
+                        "Could not import '" + failure.sourcePath + "': " + failure.reason + ".");
+        }
+
         // The one crossing background work makes into the document (STUDIO-30001). Budgeted, so a
         // burst of jobs finishing together is spread over frames rather than producing one long
         // one -- the last step of background work staying background.
