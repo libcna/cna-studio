@@ -933,6 +933,125 @@ CNA_STUDIO_TEST(TheShadingCommandsAreExclusiveAndOnlyMeanSomethingInThreeD)
     CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.shading.shadedWireframe"));
 }
 
+/**
+ * Every option the 3D wireframe is built with is decided by a CNA-free function (STUDIO-11008).
+ *
+ * This exists because the host was getting it wrong and nothing could see it. `buildSceneWireframe`
+ * was called with no mesh provider at all, so every option that needs geometry quietly did nothing
+ * in the real editor: the Wireframe shading mode drew no model edges (STUDIO-11010) and a selected
+ * model got no outline (STUDIO-11007). Both were implemented, both were tested, and neither reached
+ * the screen, because the one line that hands the meshes over was never written. The options are
+ * assembled here now so that a test can say so.
+ */
+CNA_STUDIO_TEST(TheThreeDimensionalViewsOptionsCarryTheMeshesTheyNeed)
+{
+    const MeshData mesh;
+    const MeshProvider provider = [&](const Uuid&) -> const MeshData* { return &mesh; };
+
+    const WireframeOptions wireframe = studioViewportWireframeOptions(
+        StudioViewportShading::Wireframe, /*gridOnGroundPlane=*/false, BoundsDisplay::None,
+        /*boundingSpheres=*/false, provider);
+
+    // The assertion the defect was invisible without: asking for mesh edges and handing over no
+    // meshes is asking for nothing.
+    CNA_STUDIO_EXPECT(wireframe.drawMeshEdges);
+    CNA_STUDIO_EXPECT(static_cast<bool>(wireframe.meshProvider));
+    CNA_STUDIO_EXPECT(wireframe.meshProvider(Uuid::generate()) == &mesh);
+
+    // Shaded asks for no edges, and the grid follows the preference rather than a constant.
+    const WireframeOptions shaded = studioViewportWireframeOptions(
+        StudioViewportShading::Shaded, /*gridOnGroundPlane=*/true, BoundsDisplay::All,
+        /*boundingSpheres=*/true, provider);
+    CNA_STUDIO_EXPECT(!shaded.drawMeshEdges);
+    CNA_STUDIO_EXPECT(shaded.gridPlane == GridPlane::Ground);
+    CNA_STUDIO_EXPECT(wireframe.gridPlane == GridPlane::SceneXY);
+
+    // And the overlay is carried rather than re-decided, which is what keeps the two commands and
+    // the picture in agreement.
+    CNA_STUDIO_EXPECT(shaded.boundsOverlay == BoundsDisplay::All);
+    CNA_STUDIO_EXPECT(shaded.drawBoundingSpheres);
+    CNA_STUDIO_EXPECT(wireframe.boundsOverlay == BoundsDisplay::None);
+    CNA_STUDIO_EXPECT(!wireframe.drawBoundingSpheres);
+
+    // A caller with no mesh cache -- a headless tool, a test -- gets the old behaviour rather than
+    // a crash, which is why the provider is a default argument and not a required one.
+    const WireframeOptions bare = studioViewportWireframeOptions(
+        StudioViewportShading::Shaded, false, BoundsDisplay::None, false);
+    CNA_STUDIO_EXPECT(!static_cast<bool>(bare.meshProvider));
+
+    CNA_STUDIO_EXPECT_EQ(std::string{toString(BoundsDisplay::Selected)}, std::string{"Selected"});
+}
+
+CNA_STUDIO_TEST(TheBoundsOverlayCommandsAreExclusiveAndTheSphereRidesOnThem)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioCamera3D camera3D;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, camera3D, {});
+
+    UiInputState input;
+    input.displayWidth = 1280.0f;
+    input.displayHeight = 720.0f;
+    shell.renderFrame(input);
+
+    // Off by default and shown as off: the overlay answers a question, and an answer permanently on
+    // screen is noise.
+    CNA_STUDIO_EXPECT(panels.viewportBoundsOverlay() == BoundsDisplay::None);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.bounds.off"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.bounds.all"));
+
+    // 2D has no meshes and no badges standing in for volumes, so there is nothing to overlay.
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.bounds.all"));
+
+    const StudioAction* toThreeD = shell.actions().find("studio.view.3d");
+    CNA_STUDIO_EXPECT(toThreeD != nullptr && toThreeD->run != nullptr);
+    if (toThreeD == nullptr || toThreeD->run == nullptr) { return; }
+    toThreeD->run();
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT(shell.actions().isEnabled("studio.view.bounds.all"));
+
+    // The sphere refuses while nothing is being overlaid: a switch that does nothing visible is one
+    // a user presses twice and then stops trusting.
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.bounds.spheres"));
+
+    const StudioAction* all = shell.actions().find("studio.view.bounds.all");
+    CNA_STUDIO_EXPECT(all != nullptr && all->run != nullptr);
+    if (all == nullptr || all->run == nullptr) { return; }
+    all->run();
+
+    CNA_STUDIO_EXPECT(panels.viewportBoundsOverlay() == BoundsDisplay::All);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.bounds.all"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.bounds.off"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.bounds.selected"));
+
+    shell.renderFrame(input);
+    CNA_STUDIO_EXPECT(shell.actions().isEnabled("studio.view.bounds.spheres"));
+
+    const StudioAction* spheres = shell.actions().find("studio.view.bounds.spheres");
+    CNA_STUDIO_EXPECT(spheres != nullptr && spheres->run != nullptr);
+    if (spheres == nullptr || spheres->run == nullptr) { return; }
+    spheres->run();
+
+    // A toggle rather than a fourth mode, so it survives changing which entities are overlaid --
+    // "how much bigger is the sphere" and "which entities" are different questions.
+    CNA_STUDIO_EXPECT(panels.viewportBoundingSpheres());
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.bounds.spheres"));
+
+    const StudioAction* selected = shell.actions().find("studio.view.bounds.selected");
+    CNA_STUDIO_EXPECT(selected != nullptr && selected->run != nullptr);
+    if (selected == nullptr || selected->run == nullptr) { return; }
+    selected->run();
+
+    CNA_STUDIO_EXPECT(panels.viewportBoundsOverlay() == BoundsDisplay::Selected);
+    CNA_STUDIO_EXPECT(panels.viewportBoundingSpheres());
+}
+
 CNA_STUDIO_TEST(TheTransformShortcutsReachTheGizmoThroughTheRegistry)
 {
     // W, E and R are declared on the actions and dispatched by the shell; binding the actions is

@@ -382,6 +382,22 @@ namespace CNA::Studio
                 "Draw solid geometry with its edges over it.", C::View, StudioShortcut{},
                 /*checkable=*/true);
 
+        // The bounds overlay (`plan.md` STUDIO-11008). Three exclusive checkable entries for the
+        // *which entities* question and one plain toggle for the sphere, because the two are
+        // independent: a user asking "how big is the volume I am clicking" and one asking "how
+        // much bigger is the sphere than the box" are asking different things, and folding the
+        // sphere into a fourth mode would make one of them unreachable.
+        command("studio.view.bounds.off", "No Bounds",
+                "Draw no bounding volumes.", C::View, StudioShortcut{}, /*checkable=*/true);
+        command("studio.view.bounds.selected", "Bounds: Selected",
+                "Draw the bounding box of the selected entities.", C::View, StudioShortcut{},
+                /*checkable=*/true);
+        command("studio.view.bounds.all", "Bounds: All",
+                "Draw every entity's bounding box.", C::View, StudioShortcut{}, /*checkable=*/true);
+        command("studio.view.bounds.spheres", "Bounding Spheres",
+                "Also draw the sphere a BoundingSphere collision test would use.", C::View,
+                StudioShortcut{}, /*checkable=*/true);
+
         // The tilemap tools. Checkable, because a toolbar has to *show* which one is armed: a
         // press means something different under each of them, and a user who cannot see which is
         // active finds out by editing their level.

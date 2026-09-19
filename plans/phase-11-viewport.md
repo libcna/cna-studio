@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 12 of 15 complete `█████████░░░`
+**Progress:** 13 of 15 complete `██████████░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -17,7 +17,7 @@
 | `STUDIO-11005` | Adaptive grid | ✅ | `STUDIO-11001` |
 | `STUDIO-11006` | Object picking through the 3D projection | ✅ | `STUDIO-11001` |
 | `STUDIO-11007` | Selection outlines | ✅ | `STUDIO-11006` |
-| `STUDIO-11008` | Bounds and collision debug visualisation | ⬜ | `STUDIO-11006` |
+| `STUDIO-11008` | Bounds and collision debug visualisation | ✅ | `STUDIO-11006` |
 | `STUDIO-11009` | Icons and billboards for entities with no geometry | ✅ | `STUDIO-11006` |
 | `STUDIO-11010` | Wireframe mode | ✅ | `STUDIO-11001` |
 | `STUDIO-11011` | Lighting modes, unlit mode, normal and material debug views | ⬜ | `STUDIO-19001` |
@@ -299,6 +299,74 @@ choice to make. `tests/ModelImportTests.cpp` pins that `drawMeshEdges = false` r
 to the box — the same segment count as an entity with no mesh at all. Checked by causing both: a
 Wireframe plan that keeps textured sprites, and a wireframe that ignores `drawMeshEdges`, each fail
 by name.
+
+### `STUDIO-11008` — Bounds and collision debug visualisation
+
+**Acceptance.** A user can see the volumes the editor measures with and a CNA game collides with,
+and those volumes are the truth about the object.
+
+**Two real defects, found by asking what the overlay would be drawing.**
+
+**One: an imported model was measured as an eight-unit box at its origin.**
+`computeEntityBounds3D` had no way to ask for a model's geometry, so a `ModelRenderer` fell through
+to the box every icon-drawn entity gets. The model was *drawn* at whatever size its mesh is. So a
+click landed on a large model only near its middle, Focus Selected framed eight units and put the
+camera inside the thing it had been asked to look at, and the first switch into 3D framed a scene of
+models as a cluster of specks. The bounds now come from the mesh, and the picker, both framing paths
+and the wireframe all pass a `MeshProvider`.
+
+**Two: the shell built the 3D wireframe with no mesh provider at all.** So every option that needs
+geometry silently did nothing in the real editor — `STUDIO-11010`'s Wireframe mode drew no model
+edges, and `STUDIO-11007`'s selection outline never appeared. Both were implemented, both were
+tested, and neither reached the screen, because the one line handing the meshes over was never
+written. That is a defect a test could not have caught where the options were being assembled, which
+is why they are not assembled there any more: `studioViewportWireframeOptions` is a CNA-free
+function, the host calls it, and a case asserts the provider is carried.
+
+**A rotated box is not a box.** The mesh's extent is in model space, so placing it means
+transforming all eight corners and re-bounding. Transforming `min` and `max` alone is the fast wrong
+answer — under any rotation those two corners no longer span the shape — and it is invisible until
+something is rotated, which is why the case rotates an eighth of a turn and checks every vertex
+lands inside.
+
+**The overlay is the box, drawn over whatever the entity is otherwise drawn as.** `None`,
+`Selected`, `All`; off by default, because it answers a question — why did my click miss, why did
+Focus fly me in there — and an answer permanently on screen is noise. An entity already drawn as
+exactly that box gets no second copy of it in a second colour, which is the part of the rule worth a
+test rather than a comment.
+
+**The collision half is the bounding sphere, and that is not a workaround.** CNA's collision, like
+XNA's, *is* `BoundingBox`, `BoundingSphere` and the intersection tests on them; there is no collider
+component, and `plans/phase-26-physics-nav.md` already says Studio integrates with a physics system
+rather than implementing one. Inventing a `CNA.BoxCollider` built-in here would be Studio deciding
+the runtime's physics schema — exactly what that phase exists to prevent. So what an editor can
+honestly show is the volume a CNA game actually tests, and the sphere is the half a user cannot
+guess from the box: `BoundingSphere::CreateFromBoundingBox` centres on the box and reaches its
+furthest corner, so around anything long and thin it swallows the empty space beside the object. The
+plank in the test is twenty times taller as a sphere than as a box. `STUDIO-26001` builds on this.
+
+**Three rings, where the light gizmo draws one and says why.** A light's ring is a boundary the user
+aims, and two of three collapsing edge-on would leave two lines through the middle of its badge. A
+sphere is a volume being inspected, and its collapsed rings are its silhouette from that angle —
+which is the truth about a sphere and reads as one.
+
+**Three copies of `toWorldMatrix` became one.** The wireframe, the model batch and now the bounds
+all compose scale-rotate-translate, and three private copies of an order-dependent product is three
+chances for one to be written in a different order. The same for `findEntityMesh`, which three
+modules were asking; `buildSceneModelBatch` keeps its own two-step form because it alone has to tell
+"no `ModelRenderer`" from "a `ModelRenderer` whose mesh has not landed", and that is the distinction
+the shared function collapses.
+
+**Verification.** `tests/SceneTests.cpp`: a model measures as its mesh and not as the fallback box,
+and a ray at its edge hits the first and misses the second; a rotated model's box contains every one
+of its vertices and grows on the two axes it should and not on the third; the overlay is off by
+default, adds twelve edges to a model and none to a sprite, and adds rather than replaces; the
+sphere is three rings of twenty-four and is many times the box's extent on a plank.
+`tests/StudioViewportPanelTests.cpp`: the options carry the mesh provider — the assertion the
+second defect was invisible without — and the commands are exclusive, checkable, 3D-only, with the
+sphere toggle refusing while nothing is overlaid. Checked by causing all five: two-corner bounds, a
+model whose mesh is ignored, options with the provider dropped, a second box on the path that is
+already the bounds, and a sphere sized from the smallest half-extent. Each fails by name.
 
 ### `STUDIO-11009` — Icons and billboards for entities with no geometry
 

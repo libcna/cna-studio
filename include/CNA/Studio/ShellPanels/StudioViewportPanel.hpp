@@ -28,6 +28,7 @@
 #include "CNA/Studio/Scene/Tilemap.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/Scene/TransformGizmos3D.hpp"
+#include "CNA/Studio/Scene/SceneWireframe.hpp"
 #include "CNA/Studio/UiCore/StudioActionRegistry.hpp"
 #include "CNA/Studio/UiCore/StudioPreferences.hpp"
 #include "CNA/Studio/UiCore/StudioIcons.hpp"
@@ -134,6 +135,29 @@ namespace CNA::Studio
     /** @brief Returns what @p shading asks the 3D view to draw. */
     [[nodiscard]] StudioShadingPlan studioShadingPlan(StudioViewportShading shading);
 
+    /**
+     * @brief Returns the wireframe options the 3D view should be built with.
+     *
+     * The whole of the host's decision, in a CNA-free function, for the reason `studioShadingPlan`
+     * is one: what the host is left with is a call, and a call is not a thing that can be wrong in
+     * a way a test would catch.
+     *
+     * It exists because the host *was* getting it wrong. `buildSceneWireframe` was called with no
+     * mesh provider at all, so every option that needs geometry silently did nothing in the real
+     * editor: the Wireframe shading mode (STUDIO-11010) drew no model edges, and a selected model
+     * got no outline (STUDIO-11007) -- both tested, both correct, and neither reaching the screen
+     * because the one line that hands the meshes over was missing. Assembling the options here
+     * means a test can assert that it is not missing.
+     *
+     * @param meshProvider Passed by value and moved in: the caller builds one per frame, and a
+     *        reference would invite holding one that outlives the frame it was made for.
+     */
+    [[nodiscard]] WireframeOptions studioViewportWireframeOptions(StudioViewportShading shading,
+                                                                  bool gridOnGroundPlane,
+                                                                  BoundsDisplay boundsOverlay,
+                                                                  bool boundingSpheres,
+                                                                  MeshProvider meshProvider = {});
+
     enum class StudioViewportTool
     {
         /** @brief Pick entities and drag the gizmo. The default. */
@@ -234,6 +258,19 @@ namespace CNA::Studio
          * toggle beside them.
          */
         StudioViewportShading shading = StudioViewportShading::Shaded;
+
+        /**
+         * @brief Which entities get their bounding volume drawn over them (`plan.md` STUDIO-11008).
+         *
+         * Off by default: the overlay answers a question -- why did my click miss, why did Focus
+         * fly me inside that -- and an answer permanently on screen is noise. 3D only, like the
+         * shading above; the 2D viewport draws every sprite at its extent already, so its box and
+         * its bounds are the same rectangle.
+         */
+        BoundsDisplay boundsOverlay = BoundsDisplay::None;
+
+        /** @brief Whether the overlay also draws the bounding sphere (`plan.md` STUDIO-11008). */
+        bool boundingSpheres = false;
 
         /**
          * @brief Multiplier on pan, orbit and fly speed, from the user's preferences.
@@ -580,8 +617,13 @@ namespace CNA::Studio
      * @param camera The camera to move.
      * @param sizeProvider Resolves sprite sizes, so a sprite frames to its extent rather than to
      *        a point.
+     * @param meshProvider Resolves a model's geometry, so a model frames to the size it is drawn
+     *        at. Without one it frames to the icon-sized box `computeEntityBounds3D` falls back
+     *        to, which put the camera *inside* any model bigger than eight units (`plan.md`
+     *        STUDIO-11008). A caller with no mesh cache passes nothing and gets the old answer.
      * @return False when nothing is selected, or when nothing selected could be located.
      */
     bool studioFrameSelection3D(const StudioContext& context, StudioCamera3D& camera,
-                                const SpriteSizeProvider& sizeProvider = {});
+                                const SpriteSizeProvider& sizeProvider = {},
+                                const MeshProvider& meshProvider = {});
 }

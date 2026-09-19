@@ -33,6 +33,7 @@
 
 #include <optional>
 
+#include "CNA/Studio/Core/MeshData.hpp"
 #include "CNA/Studio/Core/StudioMatrix.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
 
@@ -318,20 +319,46 @@ namespace CNA::Studio
     /**
      * @brief Returns @p entityId's world-space 3D bounds, or std::nullopt when it has none.
      *
-     * The 3D counterpart of `computeEntityBounds2D`, and until ED-402 lands a model renderer it
-     * answers the same question in three dimensions: a sprite is a flat box in the XY plane, and
-     * anything else with a transform is the small box that makes an icon clickable.
+     * The 3D counterpart of `computeEntityBounds2D`. An imported model is measured by its mesh, a
+     * sprite is a flat box in the XY plane, and anything else with a transform is the small box
+     * that makes an icon clickable -- in that order, matching the order the viewport draws them
+     * in, so what is clicked is what is seen.
+     *
+     * @param meshProvider Where an imported model's geometry comes from. Empty is the behaviour
+     *        before `plan.md` STUDIO-11008: a model then measures as the icon-sized box, which is
+     *        the same answer it gets when its mesh has not landed yet and is why this is a default
+     *        rather than a required argument -- every existing caller keeps meaning what it meant.
+     *
+     *        Passing one is what a *viewport* should do, and the reason is that not passing one
+     *        was a real defect: a model is drawn at whatever size its mesh is and was picked and
+     *        framed against an eight-unit box at its origin, so clicking a large model missed it
+     *        everywhere but the middle and Focus Selected flew the camera inside it.
      */
     [[nodiscard]] std::optional<WorldBounds3D> computeEntityBounds3D(const SceneDocument& scene,
                                                                       const Uuid& entityId,
-                                                                      const SpriteSizeProvider& sizeProvider);
+                                                                      const SpriteSizeProvider& sizeProvider,
+                                                                      const MeshProvider& meshProvider = {});
 
     /** @brief Returns bounds covering @p entityId and all of its descendants. */
     [[nodiscard]] std::optional<WorldBounds3D> computeHierarchyBounds3D(const SceneDocument& scene,
                                                                          const Uuid& entityId,
-                                                                         const SpriteSizeProvider& sizeProvider);
+                                                                         const SpriteSizeProvider& sizeProvider,
+                                                                         const MeshProvider& meshProvider = {});
 
     /** @brief Returns bounds covering every entity in @p scene, or std::nullopt when it has none. */
     [[nodiscard]] std::optional<WorldBounds3D> computeSceneBounds3D(const SceneDocument& scene,
-                                                                     const SpriteSizeProvider& sizeProvider);
+                                                                     const SpriteSizeProvider& sizeProvider,
+                                                                     const MeshProvider& meshProvider = {});
+
+    /**
+     * @brief Returns @p bounds transformed by @p matrix and re-bounded about the result.
+     *
+     * A rotated box is not a box, so the answer is the axis-aligned extent of the eight
+     * transformed corners -- larger than the original whenever the rotation is not a multiple of a
+     * quarter turn, which is correct and is the price of an axis-aligned bound. Transforming only
+     * `min` and `max` would be the fast wrong answer: under any rotation those two corners no
+     * longer span the shape, and the box comes out too small and off-centre.
+     */
+    [[nodiscard]] WorldBounds3D transformBounds3D(const WorldBounds3D& bounds,
+                                                  const StudioMatrix& matrix);
 }

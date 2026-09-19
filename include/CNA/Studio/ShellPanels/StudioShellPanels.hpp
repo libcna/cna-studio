@@ -474,6 +474,18 @@ namespace CNA::Studio
             return viewportState_.shading;
         }
 
+        /** @brief Which entities get their bounding volume drawn (`plan.md` STUDIO-11008). */
+        [[nodiscard]] BoundsDisplay viewportBoundsOverlay() const
+        {
+            return viewportState_.boundsOverlay;
+        }
+
+        /** @brief Whether the bounds overlay also draws bounding spheres (STUDIO-11008). */
+        [[nodiscard]] bool viewportBoundingSpheres() const
+        {
+            return viewportState_.boundingSpheres;
+        }
+
         /**
          * @brief Whether the 3D grid lies on the ground plane rather than the scene's own.
          *

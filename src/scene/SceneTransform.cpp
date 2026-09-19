@@ -191,6 +191,13 @@ namespace CNA::Studio
         return world;
     }
 
+    StudioMatrix toWorldMatrix(const WorldTransform& transform)
+    {
+        return multiply(multiply(createScale(transform.scale),
+                                 createFromQuaternion(transform.rotation)),
+                        createTranslation(transform.position));
+    }
+
     std::optional<WorldBounds2D> computeEntityBounds2D(const SceneDocument& scene,
                                                        const Uuid& entityId,
                                                        const SpriteSizeProvider& sizeProvider)

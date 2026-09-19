@@ -41,6 +41,7 @@
 namespace CNA::Studio
 {
     class SceneDocument;
+    class StudioEntity;
 
     /**
      * @brief Supplies an authored material by asset id, or nothing when it is not available.
@@ -175,4 +176,21 @@ namespace CNA::Studio
                                                        const MeshProvider& meshProvider,
                                                        const std::vector<Uuid>& selection = {},
                                                        const MaterialProvider& materialProvider = {});
+
+    /**
+     * @brief Returns the mesh @p entity's `ModelRenderer` names, or nullptr when there is none.
+     *
+     * Every step is a real "no": no component, no asset reference, no provider, nothing imported
+     * yet. All four mean the same thing to a caller that draws or measures -- there is no geometry
+     * here -- so they are one return value rather than four.
+     *
+     * Public, and here rather than in each caller, because three modules now ask the same question
+     * and a scene where the wireframe, the bounds and the model batch disagreed about which mesh an
+     * entity has would be a scene drawn in one place and clicked in another. `buildSceneModelBatch`
+     * keeps its own two-step form: it has to tell "no `ModelRenderer` at all" from "a
+     * `ModelRenderer` whose mesh has not landed yet" so it can report the second as pending, and
+     * that is the one distinction this function deliberately collapses.
+     */
+    [[nodiscard]] const MeshData* findEntityMesh(const StudioEntity& entity,
+                                                 const MeshProvider& meshProvider);
 }

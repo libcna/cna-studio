@@ -1130,7 +1130,11 @@ namespace CNA::Studio
 
         if (!result.clicked3D) { return result; }
 
-        const Uuid picked = pickEntityAt3D(context.getScene(), camera, pointer, sizeProvider);
+        // The mesh provider is what makes a click land on a model where the model is drawn rather
+        // than on the eight-unit box at its origin (`plan.md` STUDIO-11008). Made here rather than
+        // once per frame because this line is only reached on a click.
+        const Uuid picked = pickEntityAt3D(context.getScene(), camera, pointer, sizeProvider,
+                                           context.makeMeshProvider());
         result.picked = picked;
 
         // The same two selection rules the 2D viewport has, because they are rules about selecting
@@ -1374,8 +1378,33 @@ namespace CNA::Studio
         return StudioShadingPlan{};
     }
 
+    WireframeOptions studioViewportWireframeOptions(StudioViewportShading shading,
+                                                    bool gridOnGroundPlane,
+                                                    BoundsDisplay boundsOverlay,
+                                                    bool boundingSpheres,
+                                                    MeshProvider meshProvider)
+    {
+        WireframeOptions options;
+
+        // The grid's plane is the user's (STUDIO-07056). The preference is a boolean because
+        // `cna-studio-ui-core` does not link the scene module, and the mapping onto `GridPlane`
+        // belongs on this side, where both halves are in scope.
+        options.gridPlane = gridOnGroundPlane ? GridPlane::Ground : GridPlane::SceneXY;
+
+        options.drawMeshEdges = studioShadingPlan(shading).meshEdges;
+        options.boundsOverlay = boundsOverlay;
+        options.drawBoundingSpheres = boundingSpheres;
+
+        // Without this the wireframe has no geometry to work from and every mesh-dependent option
+        // above is a no-op -- which is exactly what the shell shipped before STUDIO-11008.
+        options.meshProvider = std::move(meshProvider);
+
+        return options;
+    }
+
     bool studioFrameSelection3D(const StudioContext& context, StudioCamera3D& camera,
-                                const SpriteSizeProvider& sizeProvider)
+                                const SpriteSizeProvider& sizeProvider,
+                                const MeshProvider& meshProvider)
     {
         const std::vector<Uuid>& selection = context.getSelection();
         if (selection.empty()) { return false; }
@@ -1384,7 +1413,7 @@ namespace CNA::Studio
         for (const Uuid& entityId : selection)
         {
             std::optional<WorldBounds3D> bounds =
-                computeHierarchyBounds3D(context.getScene(), entityId, sizeProvider);
+                computeHierarchyBounds3D(context.getScene(), entityId, sizeProvider, meshProvider);
 
             if (!bounds)
             {

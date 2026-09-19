@@ -887,20 +887,16 @@ namespace CNA::Studio
                 const StudioCamera3D& camera = sceneViewport_->getCamera3D();
                 const SpriteSizeProvider sizes = sceneViewport_->makeSizeProvider();
 
-                // The grid's plane is the user's (STUDIO-07056). The preference is a boolean
-                // because `cna-studio-ui-core` does not link the scene module; the mapping onto
-                // `GridPlane` belongs here, where both halves are in scope.
-                WireframeOptions wireframeOptions;
-                wireframeOptions.gridPlane = panels_->viewportGridOnGroundPlane()
-                    ? GridPlane::Ground
-                    : GridPlane::SceneXY;
+                // Every decision about what the 3D view draws, worked out by a CNA-free function
+                // so it is testable without a device -- the grid's plane (STUDIO-07056), what the
+                // shading mode asks for (STUDIO-11010), the bounds overlay (STUDIO-11008), and the
+                // mesh provider all three of the last need. What is left here is a call.
+                const WireframeOptions wireframeOptions = studioViewportWireframeOptions(
+                    panels_->viewportShading(), panels_->viewportGridOnGroundPlane(),
+                    panels_->viewportBoundsOverlay(), panels_->viewportBoundingSpheres(),
+                    context_->makeMeshProvider());
 
-                // What the shading mode asks for (`plan.md` STUDIO-11010). Worked out by a
-                // CNA-free function so the decision is testable without a device; all that is left
-                // here is turning three booleans into calls, and there is nothing in that to get
-                // wrong.
                 const StudioShadingPlan shading = studioShadingPlan(panels_->viewportShading());
-                wireframeOptions.drawMeshEdges = shading.meshEdges;
 
                 const WireframeResult wireframe = buildSceneWireframe(
                     context_->getScene(), camera, context_->getSelection(), sizes,

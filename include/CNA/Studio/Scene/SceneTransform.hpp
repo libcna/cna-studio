@@ -19,6 +19,7 @@
 #include <optional>
 
 #include "CNA/Studio/Core/StudioMath.hpp"
+#include "CNA/Studio/Core/StudioMatrix.hpp"
 #include "CNA/Studio/Core/Uuid.hpp"
 
 namespace CNA::Studio
@@ -100,6 +101,20 @@ namespace CNA::Studio
      */
     [[nodiscard]] std::optional<WorldTransform> computeWorldTransform(const SceneDocument& scene,
                                                                       const Uuid& entityId);
+
+    /**
+     * @brief Returns the matrix that takes model space to world space for @p transform.
+     *
+     * Scale, then rotate, then translate -- the order every transform in this editor composes in,
+     * and the one `computeWorldTransform` itself assumes when it accumulates a hierarchy. Any
+     * other order places a rotated child somewhere the gizmo that moved it does not agree with.
+     *
+     * Here, beside `WorldTransform`, because three modules need it -- the wireframe places a
+     * mesh's edges with it, the model batch places the mesh, and `computeEntityBounds3D` measures
+     * one with it -- and three private copies of an order-dependent product is three chances for
+     * one of them to be written in a different order.
+     */
+    [[nodiscard]] StudioMatrix toWorldMatrix(const WorldTransform& transform);
 
     /**
      * @brief Returns the texel size of the asset @p assetId, or (0, 0) when unknown.

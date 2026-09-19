@@ -2148,6 +2148,260 @@ namespace
 }
 
 /**
+ * An imported model is measured by its mesh, and was measured by an eight-unit box (STUDIO-11008).
+ *
+ * The defect this fixes is not subtle once it is named: `computeEntityBounds3D` had no way to ask
+ * for a model's geometry, so a model fell through to the box every icon-drawn entity gets -- eight
+ * units around its origin. The model was *drawn* at whatever size its mesh is. So a click landed on
+ * a large model only near its middle, and Focus Selected framed the eight-unit box and put the
+ * camera inside the thing it was asked to look at.
+ */
+CNA_STUDIO_TEST(AModelIsMeasuredByItsMeshRatherThanByTheBoxAnIconGets)
+{
+    SceneDocument scene;
+    const Uuid modelId = Uuid::generate();
+    const Uuid id = addModelEntity(scene, modelId);
+
+    const MeshData cube = makeCubeMesh(100.0f);
+    const MeshProvider meshes = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &cube : nullptr;
+    };
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{0.0f, 0.0f}; };
+
+    // Without a provider: the fallback box, eight units each way. Unchanged, deliberately -- it is
+    // also the honest answer for a model whose mesh has not finished importing.
+    const std::optional<WorldBounds3D> unmeasured = computeEntityBounds3D(scene, id, sizes);
+    CNA_STUDIO_EXPECT(unmeasured.has_value());
+    if (unmeasured)
+    {
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(unmeasured->min.x, -8.0f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(unmeasured->max.x, 8.0f));
+    }
+
+    // With one: the mesh, which is a hundred units across and therefore more than six times what
+    // the fallback claimed in each direction.
+    const std::optional<WorldBounds3D> measured = computeEntityBounds3D(scene, id, sizes, meshes);
+    CNA_STUDIO_EXPECT(measured.has_value());
+    if (measured)
+    {
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(measured->min.x, -50.0f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(measured->max.y, 50.0f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(measured->max.z, 50.0f));
+    }
+
+    // The scene's bounds and the hierarchy's follow from the same answer, which is what makes Focus
+    // Selected and the first switch into 3D frame the model rather than a speck at its origin.
+    const std::optional<WorldBounds3D> whole = computeSceneBounds3D(scene, sizes, meshes);
+    CNA_STUDIO_EXPECT(whole.has_value());
+    if (whole) { CNA_STUDIO_EXPECT(cameraNearlyEqual(whole->max.x, 50.0f)); }
+
+    // A click at the model's edge. Along -Z towards the cube's +Z face, offset to x = 40 -- inside
+    // the mesh, well outside the eight-unit box. The ray is built directly rather than through the
+    // camera so the case is about the bounds and not about a projection.
+    const WorldRay edge{StudioVector3{40.0f, 0.0f, 200.0f}, StudioVector3{0.0f, 0.0f, -1.0f}};
+    CNA_STUDIO_EXPECT(intersectRayWithBounds(edge, *measured).has_value());
+    CNA_STUDIO_EXPECT(!intersectRayWithBounds(edge, *unmeasured).has_value());
+}
+
+/**
+ * A rotated model's box is re-bounded about its corners rather than about two of them.
+ *
+ * The mistake worth catching: transforming only `min` and `max` and calling the result a box. Under
+ * any rotation those two corners no longer span the shape, so the box comes out too small and
+ * off-centre -- and it is *invisible* until something is rotated, because an unrotated box
+ * transforms correctly either way.
+ */
+CNA_STUDIO_TEST(ARotatedModelsBoxContainsTheWholeModel)
+{
+    SceneDocument scene;
+    const Uuid modelId = Uuid::generate();
+    const Uuid id = addModelEntity(scene, modelId);
+
+    const MeshData cube = makeCubeMesh(100.0f);
+    const MeshProvider meshes = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &cube : nullptr;
+    };
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{0.0f, 0.0f}; };
+
+    // An eighth of a turn about Z: the worst case for an axis-aligned bound of a square, which
+    // grows from 100 across to 100 * sqrt(2).
+    constexpr float kEighthTurn = 0.39269908f;  // pi / 8 -- half the angle, as a quaternion takes it
+    StudioComponent* transform =
+        scene.findEntityForEdit(id)->findComponent(BuiltinComponentIds::kTransform);
+    CNA_STUDIO_EXPECT(transform != nullptr);
+    if (transform == nullptr) { return; }
+    transform->setProperty("rotation", PropertyValue{StudioQuaternion{0.0f, 0.0f,
+                                                                      std::sin(kEighthTurn),
+                                                                      std::cos(kEighthTurn)}});
+
+    const std::optional<WorldBounds3D> rotated = computeEntityBounds3D(scene, id, sizes, meshes);
+    CNA_STUDIO_EXPECT(rotated.has_value());
+    if (!rotated) { return; }
+
+    constexpr float kHalfDiagonal = 70.71068f;  // 50 * sqrt(2)
+    CNA_STUDIO_EXPECT(cameraNearlyEqual(rotated->max.x, kHalfDiagonal, 0.05f));
+    CNA_STUDIO_EXPECT(cameraNearlyEqual(rotated->min.x, -kHalfDiagonal, 0.05f));
+
+    // Z is the rotation axis, so it does not grow. Asserted because a re-bound that grew every
+    // axis equally would pass the two above and still be wrong.
+    CNA_STUDIO_EXPECT(cameraNearlyEqual(rotated->max.z, 50.0f, 0.05f));
+
+    // Every corner of the mesh, placed by the same transform, is inside. The property rather than
+    // the eight numbers: that is what a bounding box promises.
+    const StudioMatrix matrix = toWorldMatrix(*computeWorldTransform(scene, id));
+    for (const MeshVertex& vertex : cube.parts.front().vertices)
+    {
+        const StudioVector3 world = transformPosition(matrix, vertex.position);
+        CNA_STUDIO_EXPECT(world.x >= rotated->min.x - 0.05f && world.x <= rotated->max.x + 0.05f);
+        CNA_STUDIO_EXPECT(world.y >= rotated->min.y - 0.05f && world.y <= rotated->max.y + 0.05f);
+        CNA_STUDIO_EXPECT(world.z >= rotated->min.z - 0.05f && world.z <= rotated->max.z + 0.05f);
+    }
+}
+
+/**
+ * The bounds overlay draws the volume the editor measures with (STUDIO-11008).
+ *
+ * A model is drawn as its mesh and a badge is drawn at a fixed pixel size, so in both cases the box
+ * that a click is tested against and that Focus frames is invisible. The overlay is that box. An
+ * entity already drawn as exactly that box gets no second copy of it, which is the part of the rule
+ * that is worth a test rather than a comment.
+ */
+CNA_STUDIO_TEST(TheBoundsOverlayDrawsWhatTheEditorMeasuresWith)
+{
+    ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+
+    const Uuid modelId = Uuid::generate();
+    const Uuid model = addModelEntity(scene, modelId);
+    const Uuid sprite = scene.addEntity(makeSpriteEntity(registry, "Backdrop", 300.0f, 0.0f));
+
+    const MeshData cube = makeCubeMesh(40.0f);
+
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{150.0f, 0.0f, 0.0f});
+    camera.setDistance(900.0f);
+
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{64.0f, 64.0f}; };
+
+    WireframeOptions options;
+    options.drawGrid = false;
+    options.meshProvider = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &cube : nullptr;
+    };
+
+    const auto countBounds = [](const WireframeResult& result) {
+        return static_cast<std::size_t>(
+            std::count_if(result.segments.begin(), result.segments.end(),
+                          [](const WireSegment& segment) {
+                              return segment.color.r == WireColors::kBounds.r
+                                  && segment.color.g == WireColors::kBounds.g
+                                  && segment.color.b == WireColors::kBounds.b;
+                          }));
+    };
+
+    // Off by default, and off is off: not one segment wears the overlay colour.
+    const WireframeResult none = buildSceneWireframe(scene, camera, {}, sizes, options);
+    CNA_STUDIO_EXPECT_EQ(countBounds(none), std::size_t{0});
+
+    // All: the model gets a box, because a mesh is not a box. The sprite gets none, because the box
+    // it is already drawn as *is* its bounds -- twelve edges, not twenty-four.
+    options.boundsOverlay = BoundsDisplay::All;
+    const WireframeResult all = buildSceneWireframe(scene, camera, {}, sizes, options);
+    CNA_STUDIO_EXPECT_EQ(countBounds(all), std::size_t{12});
+
+    // Selected: the same box, and only when the model is the thing selected.
+    options.boundsOverlay = BoundsDisplay::Selected;
+    const WireframeResult selectedSprite = buildSceneWireframe(scene, camera, {sprite}, sizes, options);
+    CNA_STUDIO_EXPECT_EQ(countBounds(selectedSprite), std::size_t{0});
+
+    const WireframeResult selectedModel = buildSceneWireframe(scene, camera, {model}, sizes, options);
+    CNA_STUDIO_EXPECT_EQ(countBounds(selectedModel), std::size_t{12});
+
+    // The overlay adds to what was there rather than replacing it: the model is still drawn as a
+    // model. Compared against the same scene with the overlay off, so this cannot pass by the mesh
+    // having quietly stopped being drawn.
+    options.boundsOverlay = BoundsDisplay::None;
+    const WireframeResult plain = buildSceneWireframe(scene, camera, {model}, sizes, options);
+    CNA_STUDIO_EXPECT_EQ(selectedModel.segments.size(), plain.segments.size() + 12);
+}
+
+/**
+ * The bounding sphere is the one `BoundingSphere::CreateFromBoundingBox` builds (STUDIO-11008).
+ *
+ * CNA's collision, like XNA's, is `BoundingBox` and `BoundingSphere` and the tests on them -- there
+ * is no collider component, and Phase 26 owns integrating a physics system rather than Studio
+ * inventing one. So the collision volume a CNA game actually tests *is* the bounding sphere, and
+ * the thing a user cannot guess from the box is how much bigger it is: around anything long and
+ * thin the sphere reaches the far corner and swallows the empty space beside the object.
+ */
+CNA_STUDIO_TEST(TheBoundingSphereIsTheOneACollisionTestWouldUse)
+{
+    SceneDocument scene;
+    const Uuid modelId = Uuid::generate();
+    addModelEntity(scene, modelId);
+
+    // Long in X, thin in Y and Z: the shape whose sphere is nothing like its box.
+    MeshData plank = makeCubeMesh(200.0f);
+    for (MeshVertex& vertex : plank.parts.front().vertices)
+    {
+        vertex.position.y *= 0.05f;
+        vertex.position.z *= 0.05f;
+    }
+    recomputeMeshBounds(plank);
+
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+    camera.setDistance(1200.0f);
+
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{0.0f, 0.0f}; };
+
+    WireframeOptions options;
+    options.drawGrid = false;
+    options.drawMeshEdges = false;
+    options.meshProvider = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &plank : nullptr;
+    };
+    options.boundsOverlay = BoundsDisplay::All;
+
+    const WireframeResult boxOnly = buildSceneWireframe(scene, camera, {}, sizes, options);
+
+    options.drawBoundingSpheres = true;
+    const WireframeResult withSphere = buildSceneWireframe(scene, camera, {}, sizes, options);
+
+    // Three rings of twenty-four segments each. Three rather than the light gizmo's one: a light's
+    // ring is a boundary being aimed and two of three would collapse edge-on into lines through
+    // its badge, while a sphere's collapsed rings are its silhouette, which is the truth about it.
+    CNA_STUDIO_EXPECT_EQ(withSphere.segments.size(), boxOnly.segments.size() + 72);
+
+    // And it is *much* bigger than the box in the thin direction. The camera looks down -Z with the
+    // plank lying across the screen, so the box is a sliver ten units tall and the sphere is a
+    // circle reaching the plank's far corner, a hundred units away. Measured over the overlay's own
+    // segments, because the claim is about the two volumes and not about the badge drawn with them.
+    const auto overlaySpan = [](const WireframeResult& result) {
+        float low = std::numeric_limits<float>::max();
+        float high = -std::numeric_limits<float>::max();
+        for (const WireSegment& segment : result.segments)
+        {
+            if (segment.color.r != WireColors::kBounds.r
+                || segment.color.g != WireColors::kBounds.g
+                || segment.color.b != WireColors::kBounds.b)
+            {
+                continue;
+            }
+            low = std::min({low, segment.from.y, segment.to.y});
+            high = std::max({high, segment.from.y, segment.to.y});
+        }
+        return high - low;
+    };
+
+    // Eight times is a floor rather than the figure: the true ratio here is nearer twenty, and the
+    // margin is what stops the plausible wrong answer -- a sphere sized from the box's *smallest*
+    // dimension, a tenth of the right radius -- from passing.
+    CNA_STUDIO_EXPECT(overlaySpan(boxOnly) > 0.0f);
+    CNA_STUDIO_EXPECT(overlaySpan(withSphere) > overlaySpan(boxOnly) * 8.0f);
+}
+
+/**
  * A selected model is outlined rather than filled in with the selection colour (STUDIO-11007).
  *
  * The selection used to recolour *every* edge of the mesh, which on anything denser than a crate

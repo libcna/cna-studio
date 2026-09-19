@@ -70,6 +70,16 @@ namespace CNA::Studio
         inline constexpr StudioColor kSelected{255, 190, 60, 255};
 
         /**
+         * @brief The bounding volumes the bounds overlay draws (`plan.md` STUDIO-11008).
+         *
+         * A cool blue-green, deliberately not on the grey-to-amber axis the boxes and the
+         * selection already use: the overlay is drawn *over* whatever an entity is otherwise drawn
+         * as, and a debug volume that could be mistaken for the object's own outline would be
+         * worse than none.
+         */
+        inline constexpr StudioColor kBounds{92, 176, 168, 255};
+
+        /**
          * @brief A light's direction arrow and range ring (ED-404).
          *
          * The same yellow the 2D viewport's light icon uses, so the arrow reads as belonging to the
@@ -110,6 +120,29 @@ namespace CNA::Studio
 
     /** @brief Returns the display name of @p plane. */
     [[nodiscard]] const char* toString(GridPlane plane);
+
+    /**
+     * @brief Which entities get the bounds overlay (`plan.md` STUDIO-11008).
+     *
+     * The overlay is the box the editor *measures* with -- what a click is tested against and what
+     * Focus Selected frames -- drawn over whatever the entity is otherwise drawn as. An entity
+     * already drawn as exactly that box gets nothing added, because a second box in a second
+     * colour on top of the first says nothing the first did not.
+     */
+    enum class BoundsDisplay
+    {
+        /** @brief No overlay. The default: a bounding box on every entity is noise once it agrees. */
+        None,
+
+        /** @brief Only the selected entities, which is the usual reason to want one. */
+        Selected,
+
+        /** @brief Every drawn entity, for looking at how a whole scene measures at once. */
+        All
+    };
+
+    /** @brief Returns the display name of @p display. */
+    [[nodiscard]] const char* toString(BoundsDisplay display);
 
     /** @brief What to include in a wireframe. */
     struct WireframeOptions
@@ -153,6 +186,29 @@ namespace CNA::Studio
          * aimed.
          */
         bool drawLightGizmos = true;
+
+        /**
+         * @brief Which entities get their bounding box drawn over them (`plan.md` STUDIO-11008).
+         *
+         * `None` by default, because the overlay's job is to answer a question -- why did my click
+         * miss, why did Focus fly me in there -- and an answer permanently on screen is noise.
+         */
+        BoundsDisplay boundsOverlay = BoundsDisplay::None;
+
+        /**
+         * @brief Also draw the bounding *sphere*, for the entities the overlay covers.
+         *
+         * CNA's collision, like XNA's, is `BoundingBox` and `BoundingSphere` and the intersection
+         * tests on them; there is no collider component and Studio is not entitled to invent one
+         * (`plans/phase-26-physics-nav.md` owns that, and says Studio integrates with a physics
+         * system rather than implementing one). So the collision a CNA game actually tests is the
+         * bounding volumes, and the sphere is the half a user cannot guess from the box: the
+         * smallest sphere containing a box is the one `BoundingSphere::CreateFromBoundingBox`
+         * builds, and around anything long and thin it is enormously bigger than the box it came
+         * from. Seeing that is the difference between a sphere test that works and one that
+         * collides with the air beside the object.
+         */
+        bool drawBoundingSpheres = false;
 
         /**
          * @brief World units between grid lines, or 0 to choose one from the camera's distance.
@@ -325,11 +381,18 @@ namespace CNA::Studio
      * GPU picking, so it needs no render target, no read-back, and works headless. "Nearest"
      * rather than "topmost", because depth is a real quantity here and layer order is not.
      *
+     * @param meshProvider Where an imported model's geometry comes from, so a model is clicked
+     *        where it is drawn. Without one it is picked against the icon-sized box at its origin
+     *        that `computeEntityBounds3D` falls back to -- which is what a viewport did before
+     *        `plan.md` STUDIO-11008, and meant a click landed on a large model only near its
+     *        middle.
+     *
      * @return The entity hit, or the nil Uuid when the ray missed everything.
      */
     [[nodiscard]] Uuid pickEntityAt3D(const SceneDocument& scene, const StudioCamera3D& camera,
                                       const StudioVector2& screenPoint,
-                                      const SpriteSizeProvider& sizeProvider);
+                                      const SpriteSizeProvider& sizeProvider,
+                                      const MeshProvider& meshProvider = {});
 
     /**
      * @brief Returns the distance along @p ray at which it enters @p bounds, if it does.

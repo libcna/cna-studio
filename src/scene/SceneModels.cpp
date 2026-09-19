@@ -9,29 +9,6 @@
 
 namespace CNA::Studio
 {
-    namespace
-    {
-        /**
-         * @brief Composes @p transform into the matrix that takes model space to world space.
-         *
-         * The same scale-rotate-translate order `SceneWireframe` composes in, and the same order
-         * `computeWorldTransform` assumes when it accumulates a hierarchy. If it ever differed, a
-         * model would be drawn solid in one place and wire-outlined in another.
-         *
-         * `AModelDrawsWhereTheSceneTransformSaysItIs` pins the property rather than the sixteen
-         * numbers: a local point pushed through this matrix must land where composing the entity's
-         * own scale, rotation and position puts it. That is what catches the mistake worth
-         * catching -- rotate-then-scale instead of scale-then-rotate, which is invisible until an
-         * entity is both rotated and non-uniformly scaled.
-         */
-        StudioMatrix toWorldMatrix(const WorldTransform& transform)
-        {
-            return multiply(multiply(createScale(transform.scale),
-                                     createFromQuaternion(transform.rotation)),
-                            createTranslation(transform.position));
-        }
-    }
-
     SceneModelBatch buildSceneModelBatch(const SceneDocument& scene, const StudioCamera3D& camera,
                                          const MeshProvider& meshProvider,
                                          const std::vector<Uuid>& selection,
@@ -135,5 +112,18 @@ namespace CNA::Studio
         }
 
         return batch;
+    }
+
+    const MeshData* findEntityMesh(const StudioEntity& entity, const MeshProvider& meshProvider)
+    {
+        if (!meshProvider) { return nullptr; }
+
+        const StudioComponent* renderer = entity.findComponent(BuiltinComponentIds::kModelRenderer);
+        if (renderer == nullptr) { return nullptr; }
+
+        const Uuid modelId = renderer->getProperty("model").get<PropertyValue::AssetReference>().id;
+        if (!modelId.isValid()) { return nullptr; }
+
+        return meshProvider(modelId);
     }
 }

@@ -7,6 +7,7 @@
 
 #include "CNA/Studio/Scene/BuiltinComponents.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
+#include "CNA/Studio/Scene/SceneModels.hpp"
 
 namespace CNA::Studio
 {
@@ -355,11 +356,44 @@ namespace CNA::Studio
         }
     }
 
+    WorldBounds3D transformBounds3D(const WorldBounds3D& bounds, const StudioMatrix& matrix)
+    {
+        const StudioVector3 corners[8] = {
+            {bounds.min.x, bounds.min.y, bounds.min.z}, {bounds.max.x, bounds.min.y, bounds.min.z},
+            {bounds.min.x, bounds.max.y, bounds.min.z}, {bounds.max.x, bounds.max.y, bounds.min.z},
+            {bounds.min.x, bounds.min.y, bounds.max.z}, {bounds.max.x, bounds.min.y, bounds.max.z},
+            {bounds.min.x, bounds.max.y, bounds.max.z}, {bounds.max.x, bounds.max.y, bounds.max.z}};
+
+        WorldBounds3D result = WorldBounds3D::makeEmpty();
+        for (const StudioVector3& corner : corners)
+        {
+            result.encapsulate(transformPosition(matrix, corner));
+        }
+        return result;
+    }
+
     std::optional<WorldBounds3D> computeEntityBounds3D(const SceneDocument& scene, const Uuid& entityId,
-                                                       const SpriteSizeProvider& sizeProvider)
+                                                       const SpriteSizeProvider& sizeProvider,
+                                                       const MeshProvider& meshProvider)
     {
         const std::optional<WorldTransform> world = computeWorldTransform(scene, entityId);
         if (!world) { return std::nullopt; }
+
+        // An imported model is measured by the geometry that is actually drawn (`plan.md`
+        // STUDIO-11008). Before this it fell through to the icon box below, so a model was drawn
+        // at its real size and picked and framed against eight units at its origin -- a click
+        // anywhere but the middle of a large model missed it, and Focus Selected put the camera
+        // inside it. First, ahead of the sprite case, because the model is what the viewport draws
+        // for an entity carrying both and the box has to agree with the picture.
+        if (const StudioEntity* entity = scene.findEntity(entityId); entity != nullptr)
+        {
+            if (const MeshData* mesh = findEntityMesh(*entity, meshProvider);
+                mesh != nullptr && !mesh->isEmpty())
+            {
+                return transformBounds3D(WorldBounds3D{mesh->boundsMin, mesh->boundsMax},
+                                         toWorldMatrix(*world));
+            }
+        }
 
         // A sprite is a flat box in the XY plane, so its 2D bounds are already the answer for two
         // of the three axes -- and are computed by the one function that knows about source
@@ -372,25 +406,27 @@ namespace CNA::Studio
                                  StudioVector3{flat->max.x, flat->max.y, world->position.z}};
         }
 
-        // Everything else -- a camera, a light, a bare Transform -- is a box around its position.
-        // The 2D viewport leaves these out of framing because it draws them as fixed-size icons;
-        // in a 3D view they are the only thing many scenes contain until ED-402 lands, and framing
-        // a scene of them must not return "nothing to look at".
+        // Everything else -- a camera, a light, a bare Transform, a model whose mesh has not landed
+        // yet -- is a box around its position. The 2D viewport leaves these out of framing because
+        // it draws them as fixed-size icons; in a 3D view they are the only thing many scenes
+        // contain, and framing a scene of them must not return "nothing to look at".
         const StudioVector3 extent{kIconWorldExtent, kIconWorldExtent, kIconWorldExtent};
         return WorldBounds3D{subtract(world->position, extent), add(world->position, extent)};
     }
 
     std::optional<WorldBounds3D> computeHierarchyBounds3D(const SceneDocument& scene, const Uuid& entityId,
-                                                          const SpriteSizeProvider& sizeProvider)
+                                                          const SpriteSizeProvider& sizeProvider,
+                                                          const MeshProvider& meshProvider)
     {
         if (scene.findEntity(entityId) == nullptr) { return std::nullopt; }
 
-        std::optional<WorldBounds3D> result = computeEntityBounds3D(scene, entityId, sizeProvider);
+        std::optional<WorldBounds3D> result =
+            computeEntityBounds3D(scene, entityId, sizeProvider, meshProvider);
 
         for (const Uuid& childId : scene.getChildren(entityId))
         {
             const std::optional<WorldBounds3D> childBounds =
-                computeHierarchyBounds3D(scene, childId, sizeProvider);
+                computeHierarchyBounds3D(scene, childId, sizeProvider, meshProvider);
             if (!childBounds) { continue; }
             result = result ? WorldBounds3D::combine(*result, *childBounds) : childBounds;
         }
@@ -399,14 +435,15 @@ namespace CNA::Studio
     }
 
     std::optional<WorldBounds3D> computeSceneBounds3D(const SceneDocument& scene,
-                                                      const SpriteSizeProvider& sizeProvider)
+                                                      const SpriteSizeProvider& sizeProvider,
+                                                      const MeshProvider& meshProvider)
     {
         std::optional<WorldBounds3D> result;
 
         for (const StudioEntity& entity : scene.getEntities())
         {
             const std::optional<WorldBounds3D> bounds =
-                computeEntityBounds3D(scene, entity.getId(), sizeProvider);
+                computeEntityBounds3D(scene, entity.getId(), sizeProvider, meshProvider);
             if (!bounds) { continue; }
             result = result ? WorldBounds3D::combine(*result, *bounds) : bounds;
         }

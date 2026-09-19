@@ -733,7 +733,8 @@ namespace CNA::Studio
                     && services_.camera3D != nullptr)
                 {
                     if (const std::optional<WorldBounds3D> bounds = computeSceneBounds3D(
-                            context_.getScene(), services_.spriteSize))
+                            context_.getScene(), services_.spriteSize,
+                            context_.makeMeshProvider()))
                     {
                         services_.camera3D->frame(*bounds);
                         framedIn3D_ = true;
@@ -814,7 +815,8 @@ namespace CNA::Studio
                     viewportState_.view == StudioViewportView::ThreeD
                         ? (services_.camera3D != nullptr
                            && studioFrameSelection3D(context_, *services_.camera3D,
-                                                     services_.spriteSize))
+                                                     services_.spriteSize,
+                                                     context_.makeMeshProvider()))
                         : (services_.camera != nullptr
                            && studioFrameSelection(context_, *services_.camera,
                                                    services_.spriteSize));
@@ -845,6 +847,44 @@ namespace CNA::Studio
                 return viewportState_.view == StudioViewportView::ThreeD;
             };
             action.run = [this, shading] { viewportState_.shading = shading; };
+            shell.actions().add(std::move(action));
+        }
+
+        // The bounds overlay (`plan.md` STUDIO-11008). Exclusive and checkable, exactly as the
+        // shading modes above: three answers to one question, and the toolbar has to show which.
+        for (const auto& [id, display] :
+             {std::pair{"studio.view.bounds.off", BoundsDisplay::None},
+              std::pair{"studio.view.bounds.selected", BoundsDisplay::Selected},
+              std::pair{"studio.view.bounds.all", BoundsDisplay::All}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this, display] { return viewportState_.boundsOverlay == display; };
+            action.isEnabled = [this] {
+                return viewportState_.view == StudioViewportView::ThreeD;
+            };
+            action.run = [this, display] { viewportState_.boundsOverlay = display; };
+            shell.actions().add(std::move(action));
+        }
+
+        // The sphere is its own toggle rather than a fourth mode, because it answers a different
+        // question from "which entities": how much bigger than the box is the sphere a
+        // `BoundingSphere` test would use. Enabled only when something is being overlaid at all --
+        // a switch that does nothing visible is a switch a user presses twice and distrusts.
+        if (const StudioAction* existing = shell.actions().find("studio.view.bounds.spheres");
+            existing != nullptr)
+        {
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this] { return viewportState_.boundingSpheres; };
+            action.isEnabled = [this] {
+                return viewportState_.view == StudioViewportView::ThreeD
+                    && viewportState_.boundsOverlay != BoundsDisplay::None;
+            };
+            action.run = [this] { viewportState_.boundingSpheres = !viewportState_.boundingSpheres; };
             shell.actions().add(std::move(action));
         }
 

@@ -12,6 +12,7 @@
 #include "CNA/Studio/Scene/StudioCamera2D.hpp"
 #include "CNA/Studio/Scene/SceneDocument.hpp"
 #include "CNA/Studio/Scene/SceneLighting.hpp"
+#include "CNA/Studio/Scene/SceneModels.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
 
 namespace CNA::Studio
@@ -57,24 +58,67 @@ namespace CNA::Studio
         }
 
         /**
-         * @brief Returns the mesh a @p entity's `ModelRenderer` names, or nullptr.
+         * @brief Appends three rings describing the smallest sphere that contains @p bounds.
          *
-         * Every step is a real "no": no component, no asset reference, no provider, nothing
-         * imported yet. All of them mean the same thing to the caller -- draw the badge instead --
-         * so they are one return value rather than four.
+         * The sphere `BoundingSphere::CreateFromBoundingBox` builds -- centred on the box and
+         * reaching its furthest corner -- because that is the sphere a CNA game gets when it turns
+         * a bounding box into a bounding sphere, and drawing any other one would be showing the
+         * user a volume their collision test does not use.
+         *
+         * Three rings, about the three world axes, and this is the one place the reasoning differs
+         * from `appendLightVisualisation`, which draws exactly one and says why. A light's ring is
+         * a *boundary the user aims*, and two of three rings collapsing edge-on in the editor's
+         * opening view would leave two lines through the middle of the badge. A sphere is a volume
+         * being inspected: the collapsed rings are its silhouette from that angle, which is the
+         * truth about a sphere and is legible rather than confusing.
+         *
+         * @return How many segments were appended, at most @p budget.
          */
-        const MeshData* findEntityMesh(const StudioEntity& entity, const MeshProvider& provider)
+        std::size_t appendBoundingSphere(std::vector<WireSegment>& out, const StudioCamera3D& camera,
+                                         const WorldBounds3D& bounds, const StudioColor& color,
+                                         float thickness, std::size_t budget)
         {
-            if (!provider) { return nullptr; }
+            if (budget == 0) { return 0; }
 
-            const StudioComponent* renderer = entity.findComponent(BuiltinComponentIds::kModelRenderer);
-            if (renderer == nullptr) { return nullptr; }
+            const StudioVector3 center = bounds.getCenter();
+            const float radius = length(subtract(bounds.max, center));
+            if (!(radius > 0.0f)) { return 0; }
 
-            const Uuid modelId =
-                renderer->getProperty("model").get<PropertyValue::AssetReference>().id;
-            if (!modelId.isValid()) { return nullptr; }
+            // Twenty-four a ring rather than the light's thirty-two: three rings at that rate is
+            // ninety-six segments for one entity, and the overlay can be on for a whole scene.
+            constexpr std::size_t kRingSamples = 24;
+            constexpr float kTwoPi = 6.28318530717958647692f;
 
-            return provider(modelId);
+            std::size_t drawn = 0;
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                StudioVector3 previous;
+                for (std::size_t i = 0; i <= kRingSamples; ++i)
+                {
+                    const float angle = kTwoPi * static_cast<float>(i) / static_cast<float>(kRingSamples);
+                    const float u = std::cos(angle) * radius;
+                    const float v = std::sin(angle) * radius;
+
+                    StudioVector3 point = center;
+                    if (axis == 0) { point.x += u; point.y += v; }
+                    else if (axis == 1) { point.x += u; point.z += v; }
+                    else { point.y += u; point.z += v; }
+
+                    if (i > 0)
+                    {
+                        if (drawn >= budget) { return drawn; }
+                        if (const auto projected = projectSegment(camera, previous, point))
+                        {
+                            out.push_back(
+                                WireSegment{projected->first, projected->second, color, thickness});
+                            ++drawn;
+                        }
+                    }
+                    previous = point;
+                }
+            }
+
+            return drawn;
         }
 
         /**
@@ -108,17 +152,6 @@ namespace CNA::Studio
             return {planeX, normalize(cross(normal, planeX))};
         }
 
-        /** @brief Composes @p transform into the matrix that takes model space to world space. */
-        StudioMatrix toWorldMatrix(const WorldTransform& transform)
-        {
-            // Scale, then rotate, then translate -- the order every transform in this editor
-            // composes in, and the one `computeWorldTransform` itself assumes when it accumulates
-            // a hierarchy. Any other order here would place a rotated child somewhere the gizmo
-            // that moved it does not agree with.
-            return multiply(multiply(createScale(transform.scale),
-                                     createFromQuaternion(transform.rotation)),
-                            createTranslation(transform.position));
-        }
     }
 
     std::size_t appendLightVisualisation(std::vector<WireSegment>& segments,
@@ -489,6 +522,17 @@ namespace CNA::Studio
         return segments;
     }
 
+    const char* toString(BoundsDisplay display)
+    {
+        switch (display)
+        {
+            case BoundsDisplay::None: return "Off";
+            case BoundsDisplay::Selected: return "Selected";
+            case BoundsDisplay::All: return "All";
+        }
+        return "Off";
+    }
+
     const char* toString(GridPlane plane)
     {
         switch (plane)
@@ -665,12 +709,39 @@ namespace CNA::Studio
             if (!entity.isEnabled()) { continue; }
 
             const std::optional<WorldBounds3D> bounds =
-                computeEntityBounds3D(scene, entity.getId(), sizeProvider);
+                computeEntityBounds3D(scene, entity.getId(), sizeProvider, options.meshProvider);
             if (!bounds) { continue; }
 
             const bool selected =
                 std::find(selection.begin(), selection.end(), entity.getId()) != selection.end();
             const StudioColor color = selected ? WireColors::kSelected : WireColors::kEntity;
+
+            const auto remaining = [&] {
+                return options.maxSegments > result.segments.size()
+                           ? options.maxSegments - result.segments.size()
+                           : std::size_t{0};
+            };
+
+            // The bounds overlay: the volume the editor measures with, over whatever the entity is
+            // otherwise drawn as (`plan.md` STUDIO-11008). `drawBox` is false on the path that
+            // already draws exactly this box in the entity's own colour -- a second box on top of
+            // the first in a second colour says nothing the first did not.
+            const bool overlay = options.boundsOverlay == BoundsDisplay::All
+                                 || (options.boundsOverlay == BoundsDisplay::Selected && selected);
+            const auto appendOverlay = [&](bool drawBox) {
+                if (!overlay) { return std::size_t{0}; }
+                std::size_t drawn = 0;
+                if (drawBox)
+                {
+                    drawn += appendBox(result.segments, camera, *bounds, WireColors::kBounds, 1.0f);
+                }
+                if (options.drawBoundingSpheres)
+                {
+                    drawn += appendBoundingSphere(result.segments, camera, *bounds,
+                                                  WireColors::kBounds, 1.0f, remaining());
+                }
+                return drawn;
+            };
 
             // A model that has actually been imported is drawn as itself. This is the first thing
             // in the 3D view that is neither a box nor a badge, and the whole point of ED-405
@@ -692,12 +763,6 @@ namespace CNA::Studio
                     const StudioMatrix matrix = toWorldMatrix(*world);
                     std::size_t drawn = 0;
 
-                    const auto remaining = [&] {
-                        return options.maxSegments > result.segments.size()
-                                   ? options.maxSegments - result.segments.size()
-                                   : std::size_t{0};
-                    };
-
                     // The mesh's own edges first, so the outline goes over them rather than under.
                     if (options.drawMeshEdges)
                     {
@@ -712,6 +777,11 @@ namespace CNA::Studio
                                                       WireColors::kSelected, 2.0f, remaining(),
                                                       result.truncated);
                     }
+
+                    // A model is the case the overlay exists for: it is drawn at whatever size its
+                    // mesh is, and until STUDIO-11008 it was measured as an eight-unit box at its
+                    // origin. The box is drawn here because the mesh is not a box.
+                    drawn += appendOverlay(true);
 
                     if (drawn > 0) { ++result.entitiesDrawn; }
                     continue;
@@ -743,12 +813,20 @@ namespace CNA::Studio
 
                 const std::vector<WireSegment> badge = buildIconBadge(icon, *screenPoint, color);
                 result.segments.insert(result.segments.end(), badge.begin(), badge.end());
-                if (!badge.empty()) { ++result.entitiesDrawn; }
+
+                // A badge is a fixed size in pixels and the box behind it is not, so the overlay
+                // here answers the question a badge cannot: how big is the thing I am clicking.
+                const std::size_t overlaid = appendOverlay(true);
+
+                if (!badge.empty() || overlaid > 0) { ++result.entitiesDrawn; }
                 continue;
             }
 
-            const std::size_t drawn = appendBox(result.segments, camera, *bounds, color,
-                                                selected ? 2.0f : 1.0f);
+            // The box drawn here *is* the bounds, so the overlay adds no second copy of it -- only
+            // the sphere, which is information the box does not carry.
+            std::size_t drawn = appendBox(result.segments, camera, *bounds, color,
+                                          selected ? 2.0f : 1.0f);
+            drawn += appendOverlay(false);
             if (drawn > 0) { ++result.entitiesDrawn; }
         }
 
@@ -794,7 +872,8 @@ namespace CNA::Studio
     }
 
     Uuid pickEntityAt3D(const SceneDocument& scene, const StudioCamera3D& camera,
-                        const StudioVector2& screenPoint, const SpriteSizeProvider& sizeProvider)
+                        const StudioVector2& screenPoint, const SpriteSizeProvider& sizeProvider,
+                        const MeshProvider& meshProvider)
     {
         const WorldRay ray = camera.screenToRay(screenPoint);
 
@@ -806,7 +885,7 @@ namespace CNA::Studio
             if (!entity.isEnabled()) { continue; }
 
             const std::optional<WorldBounds3D> bounds =
-                computeEntityBounds3D(scene, entity.getId(), sizeProvider);
+                computeEntityBounds3D(scene, entity.getId(), sizeProvider, meshProvider);
             if (!bounds) { continue; }
 
             const std::optional<float> distance = intersectRayWithBounds(ray, *bounds);
