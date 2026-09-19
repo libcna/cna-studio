@@ -471,6 +471,18 @@ namespace CNA::Studio
                 line(at(extent, extent * 0.35f), at(extent * 0.75f, extent * 0.75f));
                 break;
 
+            case StudioIconKind::Empty:
+            {
+                // A cross rather than an outline: a marker is a *place*, and a shape with an
+                // interior reads as an object occupying space. The diagonals make it legible
+                // against the grid, whose lines are axis-aligned -- an upright cross on a grid
+                // line disappears into it.
+                const float arm = extent * 0.8f;
+                line(at(-arm, -arm), at(arm, arm));
+                line(at(-arm, arm), at(arm, -arm));
+                break;
+            }
+
             case StudioIconKind::None: break;
         }
 

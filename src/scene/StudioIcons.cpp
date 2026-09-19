@@ -35,7 +35,22 @@ namespace CNA::Studio
             return StudioIconKind::Model;
         }
 
-        return StudioIconKind::None;
+        // Nothing that draws, so nothing would show this entity but the small bounds box every
+        // entity gets -- which reads as a tiny object rather than as a marker
+        // (`plan.md` STUDIO-11009). A sprite, an animated sprite or a tilemap *is* geometry and is
+        // left alone: giving those a marker badge as well would put a second mark on something the
+        // viewport already draws.
+        static constexpr const char* kDrawing[] = {
+            BuiltinComponentIds::kSpriteRenderer,
+            BuiltinComponentIds::kSpriteAnimation,
+            BuiltinComponentIds::kTilemap,
+        };
+        for (const char* component : kDrawing)
+        {
+            if (entity.findComponent(component) != nullptr) { return StudioIconKind::None; }
+        }
+
+        return StudioIconKind::Empty;
     }
 
     std::vector<StudioIconPlacement> collectStudioIcons(const SceneDocument& scene,

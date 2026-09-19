@@ -53,6 +53,22 @@ namespace
         return entity;
     }
 
+    /**
+     * @brief `makeEntity` plus a sprite, so the entity has geometry the wireframe can box.
+     *
+     * Needed once `STUDIO-11009` gave a transform-only entity a marker badge instead of a box: a
+     * case about *boxes* has to be built out of entities that actually have something to box.
+     */
+    StudioEntity makeSpriteEntity(const ComponentRegistry& registry, std::string name, float x,
+                                  float y)
+    {
+        StudioEntity entity = makeEntity(registry, std::move(name), x, y);
+        StudioComponent renderer{BuiltinComponentIds::kSpriteRenderer};
+        renderer.applyDefaults(*registry.find(BuiltinComponentIds::kSpriteRenderer));
+        entity.addComponent(std::move(renderer));
+        return entity;
+    }
+
     /** @brief Returns a unique scratch directory for a test that touches the filesystem. */
     std::filesystem::path makeScratchDirectory(const std::string& name)
     {
@@ -2247,9 +2263,9 @@ CNA_STUDIO_TEST(TheWireframeBoxesEveryEntityAndMarksTheSelection)
     ComponentRegistry registry = makeRegistry();
     SceneDocument scene;
 
-    const Uuid firstId = scene.addEntity(makeEntity(registry, "First", 0.0f, 0.0f));
-    const Uuid secondId = scene.addEntity(makeEntity(registry, "Second", 60.0f, 0.0f));
-    const Uuid disabledId = scene.addEntity(makeEntity(registry, "Disabled", -60.0f, 0.0f));
+    const Uuid firstId = scene.addEntity(makeSpriteEntity(registry, "First", 0.0f, 0.0f));
+    const Uuid secondId = scene.addEntity(makeSpriteEntity(registry, "Second", 60.0f, 0.0f));
+    const Uuid disabledId = scene.addEntity(makeSpriteEntity(registry, "Disabled", -60.0f, 0.0f));
     scene.findEntityForEdit(disabledId)->setEnabled(false);
 
     StudioCamera3D camera = makeCamera();
@@ -2558,18 +2574,24 @@ CNA_STUDIO_TEST(EntitiesThatDrawNothingGetABadgeRatherThanACube)
     const WireframeResult result = buildSceneWireframe(scene, camera, {}, sizes, options);
     CNA_STUDIO_EXPECT_EQ(result.entitiesDrawn, std::size_t{2});
 
-    // The camera is a badge and the bare Transform is still a box: twelve edges for one, the
-    // camera's silhouette for the other, so the two cannot be confused for each other. Ten
-    // entities that draw nothing were ten identical cubes before this.
+    // Both are badges, and different ones: the camera's silhouette against the marker's cross, so
+    // the two cannot be confused for each other. The bare Transform was a box until `STUDIO-11009`
+    // -- which meant a spawn point read as a tiny piece of geometry rather than as a place, and a
+    // scene of ten of them was ten identical cubes.
     const std::size_t cameraSegments =
         buildIconBadge(StudioIconKind::Camera, StudioVector2{}, WireColors::kEntity).size();
+    const std::size_t markerSegments =
+        buildIconBadge(StudioIconKind::Empty, StudioVector2{}, WireColors::kEntity).size();
     CNA_STUDIO_EXPECT(cameraSegments > 0);
-    CNA_STUDIO_EXPECT_EQ(result.segments.size(), cameraSegments + std::size_t{12});
+    CNA_STUDIO_EXPECT(markerSegments > 0);
+    CNA_STUDIO_EXPECT(cameraSegments != markerSegments);
+    CNA_STUDIO_EXPECT_EQ(result.segments.size(), cameraSegments + markerSegments);
 
     // Every icon kind draws something, and None draws nothing at all -- a badge for "this entity
     // has no icon" would be a badge on every entity in the scene.
     for (const StudioIconKind kind : {StudioIconKind::Camera, StudioIconKind::Light,
-                                      StudioIconKind::AudioSource, StudioIconKind::Model})
+                                      StudioIconKind::AudioSource, StudioIconKind::Model,
+                                      StudioIconKind::Empty})
     {
         CNA_STUDIO_EXPECT(!buildIconBadge(kind, StudioVector2{400.0f, 300.0f}, WireColors::kEntity).empty());
     }

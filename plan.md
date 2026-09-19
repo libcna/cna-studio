@@ -59,13 +59,13 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 
 ## Global progress
 
-**316 of 579 tasks complete** `█████████████░░░░░░░░░░░░`  54.6%
+**317 of 579 tasks complete** `█████████████░░░░░░░░░░░░`  54.7%
 
 | Status | Count |
 |--------|------:|
-| ✅ Complete | 316 |
+| ✅ Complete | 317 |
 | 🔄 In progress | 8 |
-| ⬜ Not started | 247 |
+| ⬜ Not started | 246 |
 | ⛔ Deferred | 3 |
 | 🔬 Blocked | 4 |
 | ⊘ Superseded | 1 |
@@ -92,7 +92,7 @@ mapping is in [`docs/LEGACY-EDITOR-TASK-MAP.md`](docs/LEGACY-EDITOR-TASK-MAP.md)
 | 8 | [Project Hub](plans/phase-08-project-hub.md) | `STUDIO-08NNN` | ✅ | 12 | 12 | `██████████` |
 | 9 | [Content Browser 2](plans/phase-09-content-browser.md) | `STUDIO-09NNN` | ⬜ | 17 | 17 | `██████████` |
 | 10 | [Asset pipeline and importing](plans/phase-10-asset-pipeline.md) | `STUDIO-10NNN` | ⬜ | 15 | 11 | `███████░░░` |
-| 11 | [3D viewport 2](plans/phase-11-viewport.md) | `STUDIO-11NNN` | 🔄 | 15 | 11 | `███████░░░` |
+| 11 | [3D viewport 2](plans/phase-11-viewport.md) | `STUDIO-11NNN` | 🔄 | 15 | 12 | `████████░░` |
 | 12 | [Selection and gizmos 2](plans/phase-12-gizmos.md) | `STUDIO-12NNN` | ⬜ | 11 | 0 | `░░░░░░░░░░` |
 | 13 | [World Outliner 2](plans/phase-13-outliner.md) | `STUDIO-13NNN` | ⬜ | 12 | 1 | `░░░░░░░░░░` |
 | 14 | [Details Inspector 2](plans/phase-14-inspector.md) | `STUDIO-14NNN` | ⬜ | 18 | 0 | `░░░░░░░░░░` |

@@ -1184,6 +1184,53 @@ CNA_STUDIO_TEST(CamerasAndLightsGetIconsAndSpritesDoNot)
     CNA_STUDIO_EXPECT(getStudioIconKind(*scene.findEntity(spriteId)) == StudioIconKind::None);
 }
 
+/**
+ * An entity that draws nothing is a place, and gets a marker (`plan.md` STUDIO-11009).
+ *
+ * A spawn point, a trigger volume or a grouping node has a transform and nothing else. Before this
+ * it classified as `None`, so the only thing that showed it was the small bounds box every entity
+ * gets -- which reads as a tiny piece of geometry rather than as a position, and a level with ten
+ * spawn points read as ten identical cubes. Asserted on the classification rather than on the
+ * drawing because the same answer feeds both the 2D icon pass and the 3D badge.
+ */
+CNA_STUDIO_TEST(AnEntityThatDrawsNothingIsMarkedAsAPlace)
+{
+    const ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+
+    const Uuid spawnId = addEntity(scene, registry, "Spawn Point", 0.0f, 0.0f);
+    CNA_STUDIO_EXPECT(getStudioIconKind(*scene.findEntity(spawnId)) == StudioIconKind::Empty);
+
+    // Everything that puts pixels on the screen keeps its `None`: a marker on top of something the
+    // viewport already draws is a second mark on one object, not a way to find an invisible one.
+    const Uuid spriteId = addEntity(scene, registry, "Sprite", 50.0f, 0.0f);
+    addSprite(scene, registry, spriteId, 32, 32);
+    const Uuid animatedId = addEntity(scene, registry, "Animated", 100.0f, 0.0f);
+    addComponent(scene, registry, animatedId, BuiltinComponentIds::kSpriteAnimation);
+    const Uuid tilemapId = addEntity(scene, registry, "Tilemap", 150.0f, 0.0f);
+    addComponent(scene, registry, tilemapId, BuiltinComponentIds::kTilemap);
+
+    CNA_STUDIO_EXPECT(getStudioIconKind(*scene.findEntity(spriteId)) == StudioIconKind::None);
+    CNA_STUDIO_EXPECT(getStudioIconKind(*scene.findEntity(animatedId)) == StudioIconKind::None);
+    CNA_STUDIO_EXPECT(getStudioIconKind(*scene.findEntity(tilemapId)) == StudioIconKind::None);
+
+    // A camera still reads as a camera: the marker is the fallback for what is left over, so it
+    // must not have swallowed the kinds that were already answered above it.
+    const Uuid cameraId = addEntity(scene, registry, "Main Camera", 200.0f, 0.0f);
+    addComponent(scene, registry, cameraId, BuiltinComponentIds::kCamera);
+    CNA_STUDIO_EXPECT(getStudioIconKind(*scene.findEntity(cameraId)) == StudioIconKind::Camera);
+
+    // And the marker is collected, so it is drawn in the 2D view and can be clicked there. Only
+    // the spawn point and the camera: an icon for each of the three drawing entities would be
+    // three icons over three visible objects.
+    StudioCamera2D view;
+    view.setViewportSize(StudioVector2{800.0f, 600.0f});
+    const std::vector<StudioIconPlacement> icons = collectStudioIcons(scene, view);
+    CNA_STUDIO_EXPECT_EQ(icons.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(icons.front().entityId == spawnId);
+    CNA_STUDIO_EXPECT(icons.front().kind == StudioIconKind::Empty);
+}
+
 CNA_STUDIO_TEST(AnEntityWithNoTransformGetsNoIcon)
 {
     const ComponentRegistry registry = makeRegistry();

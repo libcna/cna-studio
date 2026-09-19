@@ -39,7 +39,20 @@ namespace CNA::Studio
         Light,
         AudioSource,
         /** @brief A model the 2D viewport cannot draw yet. */
-        Model
+        Model,
+
+        /**
+         * @brief An entity with a place in the world and nothing that draws: a marker.
+         *
+         * `plan.md` STUDIO-11009. A spawn point, a trigger, an empty grouping node. These used to
+         * get no icon at all, so the only thing showing them was the small bounds box every
+         * entity gets -- which reads as a tiny object rather than as a marker, and which a user
+         * cannot tell from a piece of geometry too small to see.
+         *
+         * Last in the enumeration because the order is the match order, and this is the case that
+         * applies when none of the others do.
+         */
+        Empty
     };
 
     /** @brief Half-extent of an icon badge, in screen pixels. */
