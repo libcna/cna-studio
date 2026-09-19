@@ -341,7 +341,7 @@ Baseline at import, for comparison: 442 test cases, 12 CTest suites.
 
 ## What was completed
 
-Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **318 of 579 tasks are complete.**
+Task ids are `STUDIO-PPNNN`; see `plan.md` for the full list. **319 of 579 tasks are complete.**
 Per-phase counts and the headline are checked by the test suite — `STUDIO-33018` for `plan.md` and
 `STUDIO-33019` for this file — so neither can drift from the phase files again. The second was added
 after this file had drifted by nineteen tasks and a hundred and fifty-eight test cases, which is
@@ -543,7 +543,7 @@ not close by itself is the classic UI render backend `STUDIO-04027` is after: `C
 consumer of it, but `CnaStudioShellHost` — the native host — turned out to have a `CnaUiRenderer` of
 its own, a compatibility fallback that `STUDIO-07030` never touched.
 
-**Phase 11 — Viewport** (13 of 15). Perspective and orthographic cameras, orbit/fly/pan navigation,
+**Phase 11 — Viewport** (14 of 15). Perspective and orthographic cameras, orbit/fly/pan navigation,
 picking through the 3D projection, and the 2D workflow preserved beside it rather than replaced.
 **The navigation preference is read now** (`STUDIO-11015`): Studio's own scheme, Maya's and
 Blender's are three different answers to "what does the left button dragging mean", resolved once

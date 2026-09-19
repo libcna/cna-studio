@@ -55,4 +55,24 @@ namespace CNA::Studio
      * the player has to choose.
      */
     [[nodiscard]] GameView computeGameView(const SceneDocument& scene, const StudioVector2& viewportSize);
+
+    /**
+     * @brief Returns the view @p cameraId describes, whether or not it is the scene's primary one.
+     *
+     * `plan.md` STUDIO-11012. What the editor's camera preview needs: a user who selects the second
+     * of three cameras wants to see through *that* one, and "primary" is a property of the scene
+     * rather than a question about the camera in front of them.
+     *
+     * Falls back to the same origin-at-1:1 view when @p cameraId is not an entity, or is an entity
+     * with no `CNA.Camera` on it -- the preview then shows a view that is wrong in a way the user
+     * can see, which is what `computeGameView` does with a scene that has no camera and for the
+     * same reason.
+     *
+     * A *disabled* camera is still answered for, deliberately, and this is where the two functions
+     * differ on purpose. `computeGameView` skips disabled entities because a disabled camera is not
+     * in the game. A preview is a question about the entity the user has selected, and refusing to
+     * show one because it is switched off would leave them aiming it blind.
+     */
+    [[nodiscard]] GameView computeGameViewFor(const SceneDocument& scene, const Uuid& cameraId,
+                                              const StudioVector2& viewportSize);
 }

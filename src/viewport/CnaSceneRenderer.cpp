@@ -637,6 +637,60 @@ namespace CNA::Studio
                             GizmoSpace::World, AnimationPreview{}, false, false);
     }
 
+    SceneRenderStats CnaSceneRenderer::renderGameViewOffscreen(const SceneDocument& scene,
+                                                               const StudioCamera2D& camera,
+                                                               const StudioColor& clearColor,
+                                                               int width,
+                                                               int height)
+    {
+        static const std::vector<Uuid> kNothingSelected;
+        return renderPasses(scene, camera, width, height, kNothingSelected, GizmoMode::None,
+                            GizmoSpace::World, AnimationPreview{}, false, true, &clearColor);
+    }
+
+    SceneRenderStats CnaSceneRenderer::renderCameraPreview(const SceneDocument& scene,
+                                                           const StudioCamera2D& camera,
+                                                           const StudioColor& clearColor,
+                                                           int x, int y, int width, int height)
+    {
+        SceneRenderStats stats;
+        if (impl_->device == nullptr || impl_->spriteBatch == nullptr) { return stats; }
+        if (width <= 0 || height <= 0) { return stats; }
+
+        XnaGraphics::GraphicsDevice& device = *impl_->device;
+        const XnaGraphics::Viewport saved = device.getViewportProperty();
+
+        // The frame first, in the full viewport, because it is *outside* the picture: a border
+        // drawn inside the sub-viewport would be clipped by it and would eat a row of the preview.
+        // The fill is the camera's own clear colour, so a scene with nothing in front of the
+        // camera still shows what a player would see rather than a hole in the panel.
+        impl_->spriteBatch->Begin(XnaGraphics::SpriteSortMode::Deferred,
+                                  XnaGraphics::BlendState::AlphaBlend);
+        const Xna::Rectangle frame{x, y, width, height};
+        impl_->drawRect(frame, Xna::Color{clearColor.r, clearColor.g, clearColor.b, clearColor.a});
+        impl_->drawOutline(frame, kIconFrame, 1);
+        impl_->spriteBatch->End();
+
+        // Inside a render target the viewport is in that target's own pixels, which is exactly the
+        // rectangle the caller worked out -- so no mapping, and the sprite pass's
+        // `camera.worldToScreen` coordinates land where they are meant to and are clipped to the
+        // preview rather than spilling over the scene behind it.
+        device.setViewportProperty(XnaGraphics::Viewport{x, y, width, height});
+
+        // `offscreen` false: the target is already bound and must not be re-bound or re-cleared,
+        // which would throw away the editor's view this is drawn on top of.
+        static const std::vector<Uuid> kNothingSelected;
+        stats = renderPasses(scene, camera, width, height, kNothingSelected, GizmoMode::None,
+                             GizmoSpace::World, AnimationPreview{}, false, false);
+
+        // Put back, always. Left set, every later pass in the frame -- and the next frame's whole
+        // scene -- would draw into the corner this preview occupies.
+        device.setViewportProperty(saved);
+
+        lastStats_ = stats;
+        return stats;
+    }
+
     void CnaSceneRenderer::renderWireframe(const std::vector<WireSegment>& segments, int width, int height)
     {
         lastStats_ = SceneRenderStats{};
@@ -796,7 +850,8 @@ namespace CNA::Studio
                                                     GizmoSpace gizmoSpace,
                                                     const AnimationPreview& preview,
                                                     bool editorOverlays,
-                                                    bool offscreen)
+                                                    bool offscreen,
+                                                    const StudioColor* clearColor)
     {
         SceneRenderStats stats;
         lastStats_ = stats;
@@ -810,7 +865,14 @@ namespace CNA::Studio
         {
             impl_->ensureTarget(width, height);
             device.SetRenderTarget(impl_->target.get());
-            device.Clear(kBackground);
+
+            // The game camera's colour when there is one, and the editor's background otherwise. A
+            // game view cleared to the editor's grey would be showing a picture the game will never
+            // produce, and the background is part of what a player sees.
+            device.Clear(clearColor == nullptr
+                             ? kBackground
+                             : Xna::Color{clearColor->r, clearColor->g, clearColor->b,
+                                          clearColor->a});
         }
 
         // Pass 1: the grid, beneath everything. An editor artefact, so the game view has none --

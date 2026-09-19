@@ -17,6 +17,7 @@
 #include "CNA/Studio/Project/ProjectValidation.hpp"
 #include "CNA/Studio/Project/StudioReveal.hpp"
 #include "CNA/Studio/Project/RecentProjects.hpp"
+#include "CNA/Studio/Scene/GameCamera.hpp"
 #include "CNA/Studio/Scene/AssetDrop.hpp"
 #include "CNA/Studio/Scene/PrefabCommands.hpp"
 #include "CNA/Studio/Scene/SceneCommands.hpp"
@@ -705,7 +706,8 @@ namespace CNA::Studio
         // only be showing one of them, and a menu that cannot say which is one a user tests by
         // pressing it.
         for (const auto& [id, view] : {std::pair{"studio.view.2d", StudioViewportView::TwoD},
-                                       std::pair{"studio.view.3d", StudioViewportView::ThreeD}})
+                                       std::pair{"studio.view.3d", StudioViewportView::ThreeD},
+                                       std::pair{"studio.view.game", StudioViewportView::Game}})
         {
             const StudioAction* existing = shell.actions().find(id);
             if (existing == nullptr) { continue; }
@@ -741,14 +743,31 @@ namespace CNA::Studio
                     }
                 }
 
-                // Said out loud, because the two views share a panel and the change is dramatic
-                // enough that a user who pressed 3 by accident deserves to be told what they
+                // Said out loud, because the views share a panel and the change is dramatic
+                // enough that a user who pressed 3 or 4 by accident deserves to be told what they
                 // pressed -- and told how to get back.
-                log_.append(LogSeverity::Info,
-                            view == StudioViewportView::ThreeD
-                                ? "Viewport: 3D. Drag to orbit, Shift-drag to pan, wheel to zoom. "
-                                  "Press 2 for the 2D view."
-                                : "Viewport: 2D.");
+                if (view == StudioViewportView::ThreeD)
+                {
+                    log_.append(LogSeverity::Info,
+                                "Viewport: 3D. Drag to orbit, Shift-drag to pan, wheel to zoom. "
+                                "Press 2 for the 2D view.");
+                }
+                else if (view == StudioViewportView::Game)
+                {
+                    // The "nothing responds" is the part worth saying. A game view that ignored a
+                    // click without explanation reads as a viewport that has stopped working.
+                    const GameView game = computeGameView(context_.getScene(), StudioVector2{});
+                    log_.append(LogSeverity::Info,
+                                game.hasCamera()
+                                    ? "Viewport: Game. Nothing here responds to the mouse. "
+                                      "Press 2 for the 2D view."
+                                    : "Viewport: Game. This scene has no enabled camera, so the "
+                                      "view is from the origin at 1:1. Press 2 for the 2D view.");
+                }
+                else
+                {
+                    log_.append(LogSeverity::Info, "Viewport: 2D.");
+                }
             };
             shell.actions().add(std::move(action));
         }
@@ -954,7 +973,23 @@ namespace CNA::Studio
             viewportState_.navigation = settings.navigation;
             viewportState_.gridOnGroundPlane = settings.gridOnGroundPlane;
 
-            // The two views branch here, at the top, rather than inside one function that would
+            // The game view first, because it is the one that does *nothing*: no picking, no
+            // gizmo, no drop, no navigation (`plan.md` STUDIO-11012). Reached before the other two
+            // so that none of their input paths runs at all, rather than running and having its
+            // result discarded -- a gizmo that grabbed and then was ignored would still have
+            // consumed the press from everything underneath.
+            if (viewportState_.view == StudioViewportView::Game)
+            {
+                const StudioViewportResult game = studioViewportPanelGame(frame, bounds);
+                studioViewportToolbar(frame, bounds, shell_->actions());
+
+                // Play mode still gets the mouse, and this is the one view where that is the whole
+                // point: a running game in the panel is a game a user should be able to play.
+                forwardToPlayer(game.pointerInside);
+                return;
+            }
+
+            // The other two branch here, at the top, rather than inside one function that would
             // then be about both. They share the document and nothing below it: a press in 3D
             // orbits rather than pans, picks along a ray rather than against a layer order, and
             // has no tile under it at all.

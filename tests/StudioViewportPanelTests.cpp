@@ -1052,6 +1052,161 @@ CNA_STUDIO_TEST(TheBoundsOverlayCommandsAreExclusiveAndTheSphereRidesOnThem)
     CNA_STUDIO_EXPECT(panels.viewportBoundingSpheres());
 }
 
+/**
+ * The game view is a third view that accepts nothing (`plan.md` STUDIO-11012).
+ *
+ * Its whole value is that it is not editable: it answers "what will a player see", and a view a
+ * user could click in is one where the thing they were checking moves while they check it. So the
+ * assertions are about what does *not* happen -- the selection is untouched by a press that would
+ * have picked in either other view.
+ */
+/**
+ * The camera preview appears for one selected camera and nowhere else (`plan.md` STUDIO-11012).
+ *
+ * A camera has no size and nothing to look at from outside it: aiming one meant pressing play,
+ * looking, stopping, adjusting and pressing play again. The preview is the answer in the corner of
+ * the view the user is already in -- so where it goes, and when it is worth the room, is a decision
+ * and gets a case rather than a comment.
+ */
+CNA_STUDIO_TEST(TheCameraPreviewAppearsForOneSelectedCameraAndFitsInTheCorner)
+{
+    ComponentRegistry registry;
+    registerBuiltinComponents(registry);
+    SceneDocument scene;
+
+    const auto addWith = [&](std::string name, const char* component) {
+        StudioEntity entity{Uuid::generate(), std::move(name)};
+        StudioComponent transform{BuiltinComponentIds::kTransform};
+        transform.applyDefaults(*registry.find(BuiltinComponentIds::kTransform));
+        entity.addComponent(std::move(transform));
+        if (component != nullptr)
+        {
+            StudioComponent extra{component};
+            extra.applyDefaults(*registry.find(component));
+            entity.addComponent(std::move(extra));
+        }
+        return scene.addEntity(std::move(entity));
+    };
+
+    const Uuid cameraA = addWith("Main Camera", BuiltinComponentIds::kCamera);
+    const Uuid cameraB = addWith("Cutscene Camera", BuiltinComponentIds::kCamera);
+    const Uuid crate = addWith("Crate", BuiltinComponentIds::kSpriteRenderer);
+
+    const UiRect body{40.0f, 60.0f, 1200.0f, 800.0f};
+
+    // Nothing selected, and something that is not a camera: no preview either way. A preview for a
+    // crate would be a picture of nothing, taking a corner of the viewport to show it.
+    CNA_STUDIO_EXPECT(!studioCameraPreview(body, scene, {}).isVisible());
+    CNA_STUDIO_EXPECT(!studioCameraPreview(body, scene, {crate}).isVisible());
+
+    // Two cameras is a question with no answer, so it gets none rather than an arbitrary first.
+    CNA_STUDIO_EXPECT(!studioCameraPreview(body, scene, {cameraA, cameraB}).isVisible());
+
+    const StudioCameraPreview preview = studioCameraPreview(body, scene, {cameraB});
+    CNA_STUDIO_EXPECT(preview.isVisible());
+    CNA_STUDIO_EXPECT(preview.cameraId == cameraB);
+
+    // Bottom right, inside the viewport with a margin on both edges it touches.
+    CNA_STUDIO_EXPECT(preview.bounds.right() < body.right());
+    CNA_STUDIO_EXPECT(preview.bounds.bottom() < body.bottom());
+    CNA_STUDIO_EXPECT(preview.bounds.left() > body.centerX());
+    CNA_STUDIO_EXPECT(preview.bounds.top() > body.centerY());
+
+    // Sixteen by nine rather than the panel's own aspect: this is a picture of a camera's output,
+    // and a game's window is far more often widescreen than a docked editor panel is.
+    CNA_STUDIO_EXPECT(std::fabs(preview.bounds.width / preview.bounds.height - 16.0f / 9.0f) < 0.01f);
+
+    // Sized from the viewport and then clamped, because neither alone works. A huge panel does not
+    // get a huge preview...
+    const StudioCameraPreview huge =
+        studioCameraPreview(UiRect{0.0f, 0.0f, 6000.0f, 4000.0f}, scene, {cameraB});
+    CNA_STUDIO_EXPECT(huge.isVisible());
+    CNA_STUDIO_EXPECT(huge.bounds.width <= 480.0f);
+    CNA_STUDIO_EXPECT(huge.bounds.width > preview.bounds.width);
+
+    // ...and a panel with no room to spare gets none at all, which is the rule worth pinning: a
+    // preview covering the thing being aimed is worse than no preview, because the user would be
+    // moving a camera by watching the one view that has stopped showing where it is.
+    CNA_STUDIO_EXPECT(!studioCameraPreview(UiRect{0.0f, 0.0f, 320.0f, 240.0f}, scene, {cameraB})
+                           .isVisible());
+    CNA_STUDIO_EXPECT(!studioCameraPreview(UiRect{}, scene, {cameraB}).isVisible());
+
+    // A short, wide panel fails on the height rather than the width, which is the case a rule
+    // written against one dimension would let through.
+    CNA_STUDIO_EXPECT(!studioCameraPreview(UiRect{0.0f, 0.0f, 1600.0f, 160.0f}, scene, {cameraB})
+                           .isVisible());
+}
+
+CNA_STUDIO_TEST(TheGameViewShowsTheSceneAndAcceptsNoEditing)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioCamera3D camera3D;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, camera3D, {});
+
+    UiInputState input;
+    input.displayWidth = 1280.0f;
+    input.displayHeight = 720.0f;
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT(panels.viewportView() == StudioViewportView::TwoD);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.2d"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.game"));
+
+    // An entity to try to pick, placed at the origin where the 2D camera starts.
+    StudioEntity entity{Uuid::generate(), "Crate"};
+    StudioComponent transform{BuiltinComponentIds::kTransform};
+    entity.addComponent(std::move(transform));
+    StudioComponent sprite{BuiltinComponentIds::kSpriteRenderer};
+    sprite.setProperty("sourceRectangle", PropertyValue{StudioRectangle{0, 0, 400, 400}});
+    entity.addComponent(std::move(sprite));
+    context.getScene().addEntity(std::move(entity));
+
+    const StudioAction* toGame = shell.actions().find("studio.view.game");
+    CNA_STUDIO_EXPECT(toGame != nullptr && toGame->run != nullptr);
+    if (toGame == nullptr || toGame->run == nullptr) { return; }
+    toGame->run();
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT(panels.viewportView() == StudioViewportView::Game);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.game"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.2d"));
+
+    // The 3D-only commands stay refused, because the game view is not the 3D view either -- and a
+    // shading mode or a standard view means nothing when the camera is the scene's.
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.shading.wireframe"));
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.bounds.all"));
+
+    // A press over the middle of the panel. In either editing view this selects the crate.
+    const UiRect body = shell.panelBounds("viewport");
+    CNA_STUDIO_EXPECT(!body.isEmpty());
+    input.mouseX = body.left() + body.width * 0.5f;
+    input.mouseY = body.top() + body.height * 0.5f;
+    input.setMouseDown(UiMouseButton::Left, true);
+    shell.renderFrame(input);
+    input.setMouseDown(UiMouseButton::Left, false);
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT(context.getSelection().empty());
+
+    // And back: the editor's own cameras were never touched, so 2 returns the user to the framing
+    // they left rather than to a reset one.
+    const StudioAction* toTwoD = shell.actions().find("studio.view.2d");
+    CNA_STUDIO_EXPECT(toTwoD != nullptr && toTwoD->run != nullptr);
+    if (toTwoD == nullptr || toTwoD->run == nullptr) { return; }
+    toTwoD->run();
+    shell.renderFrame(input);
+    CNA_STUDIO_EXPECT(panels.viewportView() == StudioViewportView::TwoD);
+
+    CNA_STUDIO_EXPECT_EQ(std::string{studioViewportViewName(StudioViewportView::Game)},
+                         std::string{"Game"});
+}
+
 CNA_STUDIO_TEST(TheTransformShortcutsReachTheGizmoThroughTheRegistry)
 {
     // W, E and R are declared on the actions and dispatched by the shell; binding the actions is

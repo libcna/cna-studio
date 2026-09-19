@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 13 of 15 complete `██████████░░`
+**Progress:** 14 of 15 complete `███████████░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -21,7 +21,7 @@
 | `STUDIO-11009` | Icons and billboards for entities with no geometry | ✅ | `STUDIO-11006` |
 | `STUDIO-11010` | Wireframe mode | ✅ | `STUDIO-11001` |
 | `STUDIO-11011` | Lighting modes, unlit mode, normal and material debug views | ⬜ | `STUDIO-19001` |
-| `STUDIO-11012` | Camera preview and game view | ⬜ | `STUDIO-11001` |
+| `STUDIO-11012` | Camera preview and game view | ✅ | `STUDIO-11001` |
 | `STUDIO-11013` | Preserve the existing 2D viewport workflow without regression | ✅ | `STUDIO-07009` |
 | `STUDIO-11014` | A new CNA-native project opens directly into a 3D world viewport | ✅ | `STUDIO-11001`, `STUDIO-08006` |
 | `STUDIO-11015` | Maya and Blender navigation schemes, not only Studio's own | ✅ | `STUDIO-11002` |
@@ -367,6 +367,74 @@ second defect was invisible without — and the commands are exclusive, checkabl
 sphere toggle refusing while nothing is overlaid. Checked by causing all five: two-corner bounds, a
 model whose mesh is ignored, options with the provider dropped, a second box on the path that is
 already the bounds, and a sphere sized from the smallest half-extent. Each fails by name.
+
+### `STUDIO-11012` — Camera preview and game view
+
+**Acceptance.** A user can see what the game will show without pressing play, and can see what the
+camera they are aiming sees while they aim it.
+
+**Both halves answer the same question and neither could be answered in the editor.** `cna-player`
+has had `computeGameView` since it existed, so "what will the player see" was answerable by building
+and running. Inside Studio it was not answerable at all: a camera is an icon with no size, and
+finding out what its position, its rotation and its `orthographicSize` add up to meant press play,
+look, stop, adjust, press play again.
+
+**The game view is a third viewport view, and its value is that it is not editable.** No grid, no
+gizmo, no selection marking, no picking, no drop. A game view a user could click in would be one
+where the thing they were checking moves while they check it. It is reached before the other two in
+the panel dispatch, so their input paths do not run at all rather than running and having their
+results discarded — a gizmo that grabbed and was then ignored would still have taken the press from
+everything underneath. Play mode still gets the mouse, and that is the one thing a game view
+*should* accept: it is the game's input, not the editor's.
+
+**The editor's own cameras are untouched by it**, so pressing 2 comes back to the framing the user
+left. That is the same promise the 2D and 3D cameras already make to each other and for the same
+reason.
+
+**`computeGameViewFor` is `computeGameView` asked about a named camera**, and the two differ
+deliberately in one place: a *disabled* camera is still previewed. `computeGameView` skips it
+because a disabled camera is not in the game; a preview is a question about the entity the user has
+selected, and a user who has switched a camera off is usually about to aim it. Refusing would leave
+them doing it blind.
+
+**Where the preview goes is a decision and gets a function.** Exactly one selected camera, or
+nothing — two is a question with no answer, and showing the first would be arbitrary. Sized from the
+viewport and then clamped, because neither alone works: a fraction puts a postage stamp in a small
+panel and half a screen in a large one, a fixed size covers a small panel entirely. Sixteen by nine
+rather than the panel's aspect, because this is a picture of a camera's output and a game's window
+is far more often widescreen than a docked editor panel. And nothing at all when the viewport cannot
+spare the room, on *either* dimension — a short wide panel is the case a rule written against width
+alone lets through, and a preview covering the thing being aimed is worse than none.
+
+**The preview composes onto the picture already rendered rather than into a second texture.** The
+viewport panel shows one image, so an inset needs either a second surface the UI places or a pass
+into a corner of the first. The second is what the device already supports: inside a render target
+the viewport property is in that target's own pixels, so the rectangle the CNA-free function worked
+out needs no mapping, and the sprite pass's `worldToScreen` coordinates land in the inset and are
+clipped to it. The frame is drawn in the *full* viewport, before the sub-viewport is set, because a
+border drawn inside would be clipped by it and eat a row of the preview. The viewport is restored
+unconditionally: left set, the next frame's whole scene would draw into the corner.
+
+**`Digit4` had to be added to three places**, and the suite already had the case that catches
+missing one — `EveryKeyStudioCanAskAboutIsOneTheHostCanReport`, written when `Digit2` and `Digit3`
+were in the enumeration and not in the platform's map. A key Studio can ask about that the host never
+reports is a shortcut that does nothing, with nothing on screen to see.
+
+**Verification.** `tests/ViewportTests.cpp`: a preview looks through the camera it is asked about
+rather than the primary one, still answers for a disabled camera where `computeGameView` does not,
+and falls back to the origin at 1:1 for an entity that is not a camera or not an entity at all.
+`tests/StudioViewportPanelTests.cpp`: the game view is checked, exclusive, leaves the 3D-only
+commands refused, and a press that selects in either other view selects nothing there; and the
+preview appears for one camera, refuses for none, two or a crate, sits bottom-right at sixteen by
+nine, clamps rather than growing without limit, and disappears in a viewport too small either way.
+Checked by causing four: the game view falling through to the 2D path, the preview reading the
+primary camera, the room check dropped on one dimension, and a multiple selection taking its first
+entry. Each fails by name.
+
+**Not covered by a test, and stated rather than glossed:** the sub-viewport pass itself is in the
+CNA-linking module, where a headless build has no device to draw with. Everything that decides
+*what* and *where* is CNA-free and pinned; the call that turns it into pixels is wiring, and that
+division is the same one `STUDIO-11010` and `STUDIO-11008` use.
 
 ### `STUDIO-11009` — Icons and billboards for entities with no geometry
 

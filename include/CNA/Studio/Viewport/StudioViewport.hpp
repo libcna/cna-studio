@@ -36,6 +36,7 @@
 #include "CNA/Studio/Scene/SpriteAnimation.hpp"
 #include "CNA/Studio/Scene/TransformGizmos.hpp"
 #include "CNA/Studio/Ui/UiDrawData.hpp"
+#include "CNA/Studio/UiCore/UiRect.hpp"
 
 namespace CNA::Studio
 {
@@ -179,6 +180,61 @@ namespace CNA::Studio
             (void)models;
             (void)sprites;
             return renderWireframe(segments, width, height);
+        }
+
+        /**
+         * @brief Draws @p scene through the *game's* camera, with no editor chrome (STUDIO-11012).
+         *
+         * The same passes `cna-player` runs, into an offscreen surface rather than the back buffer,
+         * so the editor can show what a player will see in a docked panel. No grid, no gizmo, no
+         * selection marking -- and that is structural rather than a filter: the editor passes are
+         * simply not run, which is the same guarantee that keeps Studio chrome out of a shipped
+         * game.
+         *
+         * @param camera The game camera, from `computeGameView`. Passed in rather than derived here
+         *        because deciding it is arithmetic over a document and belongs where it can be
+         *        tested with no device.
+         * @param clearColor The camera's own `clearColor`. The game clears to it, so a preview that
+         *        used the editor's background would be showing a picture the game never produces.
+         * @return A UI texture id, or zero in a build with no device -- which the panel treats
+         *         exactly as it treats a viewport that drew nothing.
+         */
+        virtual UiTextureId renderGame(const SceneDocument& scene, const StudioCamera2D& camera,
+                                       const StudioColor& clearColor, int width, int height)
+        {
+            (void)scene;
+            (void)camera;
+            (void)clearColor;
+            (void)width;
+            (void)height;
+            return 0;
+        }
+
+        /**
+         * @brief Draws @p scene through @p camera into a corner of what was just rendered.
+         *
+         * `plan.md` STUDIO-11012's camera preview, called after `render` or `renderScene3D` and
+         * before the texture is handed to the UI -- so it composes onto the editor's own picture
+         * rather than needing a second texture the panel would have to place.
+         *
+         * A default of nothing, like `renderGame`: a viewport with no device has no picture to draw
+         * into a corner of, and where the preview *goes* is decided by `studioCameraPreview`, which
+         * is CNA-free and tested.
+         *
+         * @param bounds The preview rectangle, in the rendered surface's own pixels.
+         * @return The same texture id, so a caller can write `texture = renderPreview(...)` and not
+         *         have to know whether anything was drawn.
+         */
+        virtual UiTextureId renderCameraPreviewOver(UiTextureId texture, const SceneDocument& scene,
+                                                    const StudioCamera2D& camera,
+                                                    const StudioColor& clearColor,
+                                                    const UiRect& bounds)
+        {
+            (void)scene;
+            (void)camera;
+            (void)clearColor;
+            (void)bounds;
+            return texture;
         }
 
         /**

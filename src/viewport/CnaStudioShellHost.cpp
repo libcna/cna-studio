@@ -28,6 +28,7 @@
 #include "Microsoft/Xna/Framework/Graphics/VertexPositionColorTexture.hpp"
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
 
+#include "CNA/Studio/Scene/GameCamera.hpp"
 #include "CNA/Studio/Scene/SceneModels.hpp"
 #include "CNA/Studio/Scene/SceneSprites3D.hpp"
 #include "CNA/Studio/Scene/SceneWireframe.hpp"
@@ -860,18 +861,88 @@ namespace CNA::Studio
                     return;
                 }
 
-                const UiTextureId texture = panels_->viewportView() == StudioViewportView::ThreeD
-                    ? renderSceneIn3D(width, height)
-                    // The mode the toolbar chose, so the manipulator drawn is the one a drag will
-                    // grab. Two sources of truth here would show a rotate ring and move the entity.
-                    : sceneViewport_->render(context_->getScene(), width, height,
-                                             context_->getSelection(), panels_->viewportMode(),
-                                             panels_->viewportSpace(),
-                                             panels_->animationPreview());
+                UiTextureId texture = kUiTextureNone;
+                switch (panels_->viewportView())
+                {
+                    case StudioViewportView::ThreeD:
+                        texture = renderSceneIn3D(width, height);
+                        break;
+
+                    case StudioViewportView::Game:
+                        texture = renderGameView(width, height);
+                        break;
+
+                    case StudioViewportView::TwoD:
+                        // The mode the toolbar chose, so the manipulator drawn is the one a drag
+                        // will grab. Two sources of truth here would show a rotate ring and move
+                        // the entity.
+                        texture = sceneViewport_->render(context_->getScene(), width, height,
+                                                         context_->getSelection(),
+                                                         panels_->viewportMode(),
+                                                         panels_->viewportSpace(),
+                                                         panels_->animationPreview());
+                        break;
+                }
+
+                // The camera preview, over whatever was just drawn (`plan.md` STUDIO-11012). Not
+                // in the game view, which is already a picture through a camera -- an inset there
+                // would be the same view twice, or two cameras arguing for the same panel.
+                if (panels_->viewportView() != StudioViewportView::Game)
+                {
+                    texture = renderCameraPreviewInto(texture, width, height);
+                }
 
                 shell_->setViewportImage(texture,
                                          sceneViewport_->isRenderTextureFlippedVertically());
                 viewportComposited_ = texture != kUiTextureNone;
+            }
+
+            /**
+             * @brief Draws the selected camera's view into a corner of @p texture (STUDIO-11012).
+             *
+             * A camera has no size and nothing to look at from outside, so aiming one meant
+             * pressing play, looking, stopping, adjusting and pressing play again. Where the
+             * preview goes and whether there is one at all is `studioCameraPreview`, CNA-free and
+             * tested; this turns the answer into a pass.
+             *
+             * The rectangle is asked for in the *surface's* coordinates -- a body at the origin --
+             * because the render target is the panel body and nothing else, so the panel's position
+             * in the window is not something this pass has to know.
+             */
+            UiTextureId renderCameraPreviewInto(UiTextureId texture, int width, int height)
+            {
+                if (texture == kUiTextureNone) { return texture; }
+
+                const UiRect surface{0.0f, 0.0f, static_cast<float>(width),
+                                     static_cast<float>(height)};
+                const StudioCameraPreview preview =
+                    studioCameraPreview(surface, context_->getScene(), context_->getSelection());
+                if (!preview.isVisible()) { return texture; }
+
+                const GameView view = computeGameViewFor(
+                    context_->getScene(), preview.cameraId,
+                    StudioVector2{preview.bounds.width, preview.bounds.height});
+
+                return sceneViewport_->renderCameraPreviewOver(texture, context_->getScene(),
+                                                               view.camera, view.clearColor,
+                                                               preview.bounds);
+            }
+
+            /**
+             * @brief Renders the game view: the scene through its own camera, no editor chrome.
+             *
+             * `plan.md` STUDIO-11012. Which camera and how far it sees is decided by
+             * `computeGameView`, CNA-free and tested against a document rather than a screenshot;
+             * this is the call that turns the answer into a texture.
+             */
+            UiTextureId renderGameView(int width, int height)
+            {
+                const GameView view = computeGameView(
+                    context_->getScene(),
+                    StudioVector2{static_cast<float>(width), static_cast<float>(height)});
+
+                return sceneViewport_->renderGame(context_->getScene(), view.camera,
+                                                  view.clearColor, width, height);
             }
 
             /**

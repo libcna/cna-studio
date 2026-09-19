@@ -64,6 +64,7 @@ namespace CNA::Studio
                 case UiKey::F5: return "F5";
                 case UiKey::Digit2: return "2";
                 case UiKey::Digit3: return "3";
+                case UiKey::Digit4: return "4";
                 case UiKey::None:
                 case UiKey::Count: break;
             }
@@ -348,6 +349,14 @@ namespace CNA::Studio
         command("studio.view.3d", "3D View",
                 "Show the scene in the 3D view.", C::View, chord(UiKey::Digit3),
                 /*checkable=*/true);
+
+        // The game view (`plan.md` STUDIO-11012). Digit4 because it carries on the row the other
+        // two started and is what a user who has pressed 2 and 3 will try next -- the digits there
+        // name a dimension and this one does not, which is a small inconsistency against a shortcut
+        // nobody has to be told.
+        command("studio.view.game", "Game View",
+                "Show the scene through its own camera, as the game will.", C::View,
+                chord(UiKey::Digit4), /*checkable=*/true);
 
         // The six axis-aligned views (`plan.md` STUDIO-11004). Unbound by default, which is a
         // decision rather than an omission: the keys a user's hands already know for these are the

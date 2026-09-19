@@ -1163,6 +1163,60 @@ CNA_STUDIO_TEST(TheGameViewFollowsACameraParentedToSomethingElse)
     CNA_STUDIO_EXPECT(nearlyEqual(view.camera.getCenter().y, 30.0f));
 }
 
+/**
+ * A preview asks a named camera what it sees, not the scene which one is primary (STUDIO-11012).
+ *
+ * `computeGameView` answers "what will the player see", which means the primary camera and only an
+ * enabled one. A camera *preview* is a different question: a user who selected the second of three
+ * cameras wants to look through that one, and one who switched a camera off is very often about to
+ * aim it. So the two differ deliberately, and the difference is what this pins.
+ */
+CNA_STUDIO_TEST(APreviewLooksThroughTheCameraItIsAskedAboutRatherThanThePrimaryOne)
+{
+    const ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+
+    const Uuid primary = addEntity(scene, registry, "Main Camera", 0.0f, 0.0f);
+    addComponent(scene, registry, primary, BuiltinComponentIds::kCamera);
+
+    const Uuid secondary = addEntity(scene, registry, "Cutscene Camera", 400.0f, 250.0f);
+    addComponent(scene, registry, secondary, BuiltinComponentIds::kCamera);
+    scene.findEntityForEdit(secondary)
+        ->findComponent(BuiltinComponentIds::kCamera)
+        ->setProperty("isPrimary", PropertyValue{false});
+
+    const StudioVector2 size{800.0f, 600.0f};
+
+    // The scene's answer is the primary one, unchanged.
+    CNA_STUDIO_EXPECT(computeGameView(scene, size).cameraId == primary);
+
+    // The preview's answer is whichever was asked for.
+    const GameView through = computeGameViewFor(scene, secondary, size);
+    CNA_STUDIO_EXPECT(through.cameraId == secondary);
+    CNA_STUDIO_EXPECT(nearlyEqual(through.camera.getCenter().x, 400.0f));
+    CNA_STUDIO_EXPECT(nearlyEqual(through.camera.getCenter().y, 250.0f));
+
+    // A disabled camera is still previewed, and this is the half worth stating: it is out of the
+    // game, so `computeGameView` passes it over, but a user who has switched one off is usually
+    // about to aim it and a preview that refused would leave them doing it blind.
+    scene.findEntityForEdit(secondary)->setEnabled(false);
+    CNA_STUDIO_EXPECT(computeGameView(scene, size).cameraId == primary);
+    CNA_STUDIO_EXPECT(computeGameViewFor(scene, secondary, size).cameraId == secondary);
+
+    // Asked about something that is not a camera -- or not an entity -- it falls back exactly as
+    // `computeGameView` does for a scene with no camera: the origin at 1:1, wrong in a way the user
+    // can see rather than a blank panel they cannot act on.
+    const Uuid prop = addEntity(scene, registry, "Crate", 900.0f, 900.0f);
+    const GameView notACamera = computeGameViewFor(scene, prop, size);
+    CNA_STUDIO_EXPECT(!notACamera.hasCamera());
+    CNA_STUDIO_EXPECT(nearlyEqual(notACamera.camera.getCenter().x, 0.0f));
+    CNA_STUDIO_EXPECT(nearlyEqual(notACamera.camera.getZoom(), 1.0f));
+
+    const GameView missing = computeGameViewFor(scene, Uuid::generate(), size);
+    CNA_STUDIO_EXPECT(!missing.hasCamera());
+    CNA_STUDIO_EXPECT(nearlyEqual(missing.camera.getViewportSize().x, 800.0f));
+}
+
 CNA_STUDIO_TEST(CamerasAndLightsGetIconsAndSpritesDoNot)
 {
     const ComponentRegistry registry = makeRegistry();

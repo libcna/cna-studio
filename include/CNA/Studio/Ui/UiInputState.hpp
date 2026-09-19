@@ -55,7 +55,7 @@ namespace CNA::Studio
 
         // Digits, named rather than spelt, because an enumerator cannot begin with one. Appended
         // rather than inserted, like every other addition to a list something else counts through.
-        Digit2, Digit3,
+        Digit2, Digit3, Digit4,
         Count
     };
 

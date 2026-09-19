@@ -729,6 +729,67 @@ namespace CNA::Studio
         }
     }
 
+    StudioCameraPreview studioCameraPreview(const UiRect& viewportBounds, const SceneDocument& scene,
+                                            const std::vector<Uuid>& selection)
+    {
+        StudioCameraPreview preview;
+
+        // Exactly one, and a camera. Two selected cameras is a question with no answer, and a
+        // selection of one crate is not a question at all.
+        if (selection.size() != 1) { return preview; }
+
+        const StudioEntity* entity = scene.findEntity(selection.front());
+        if (entity == nullptr) { return preview; }
+        if (entity->findComponent(BuiltinComponentIds::kCamera) == nullptr) { return preview; }
+
+        if (viewportBounds.isEmpty()) { return preview; }
+
+        // Sized from the viewport and then clamped, because neither alone works: a fraction puts a
+        // postage stamp in a small panel and half a screen in a large one, and a fixed size covers
+        // a small panel completely.
+        constexpr float kFraction = 0.28f;
+        constexpr float kMinimumWidth = 160.0f;
+        constexpr float kMaximumWidth = 480.0f;
+        constexpr float kMargin = 12.0f;
+
+        const float width =
+            std::clamp(viewportBounds.width * kFraction, kMinimumWidth, kMaximumWidth);
+
+        // Sixteen by nine rather than the viewport's own aspect. The preview is a picture of a
+        // camera's output, and a game's window is far more often widescreen than a docked editor
+        // panel is -- matching the panel would show a shape no player will ever see.
+        const float height = width * 9.0f / 16.0f;
+
+        // And nothing at all when there is no room to spare it. A preview covering the thing being
+        // aimed is worse than none: the user would be moving a camera by watching the one view that
+        // has stopped showing where it is.
+        if (width + kMargin * 2.0f > viewportBounds.width * 0.5f) { return preview; }
+        if (height + kMargin * 2.0f > viewportBounds.height * 0.5f) { return preview; }
+
+        preview.cameraId = entity->getId();
+        preview.bounds = UiRect{viewportBounds.right() - kMargin - width,
+                                viewportBounds.bottom() - kMargin - height, width, height};
+        return preview;
+    }
+
+    StudioViewportResult studioViewportPanelGame(StudioFrame& frame, const UiRect& bounds)
+    {
+        StudioViewportResult result;
+        if (bounds.isEmpty()) { return result; }
+
+        // The same widget id the other two views use, so that a drag begun in the 2D view and
+        // still held when the user presses 4 ends where it began rather than being inherited here
+        // as a drag of nothing.
+        const WidgetId id = frame.ids().make("viewport.surface");
+        const StudioInteraction surface = frame.interact(id, bounds, /*enabled=*/true);
+
+        StudioInputRouter& router = frame.router();
+        result.pointerInside = bounds.contains(router.mouseX(), router.mouseY());
+        static_cast<void>(surface);
+
+        return result;
+    }
+
     StudioViewportResult studioViewportPanel(StudioFrame& frame, const UiRect& bounds,
                                              StudioContext& context, StudioCamera2D& camera,
                                              StudioViewportState& state,
@@ -909,6 +970,7 @@ namespace CNA::Studio
         {
             case StudioViewportView::TwoD: return "2D";
             case StudioViewportView::ThreeD: return "3D";
+            case StudioViewportView::Game: return "Game";
         }
         return "2D";
     }

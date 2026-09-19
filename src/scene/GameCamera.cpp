@@ -37,13 +37,29 @@ namespace CNA::Studio
 
     GameView computeGameView(const SceneDocument& scene, const StudioVector2& viewportSize)
     {
+        const StudioEntity* entity = findPrimaryCamera(scene);
+        if (entity == nullptr)
+        {
+            GameView fallback;
+            fallback.camera.setViewportSize(viewportSize);
+            return fallback;
+        }
+
+        return computeGameViewFor(scene, entity->getId(), viewportSize);
+    }
+
+    GameView computeGameViewFor(const SceneDocument& scene, const Uuid& cameraId,
+                                const StudioVector2& viewportSize)
+    {
         GameView view;
         view.camera.setViewportSize(viewportSize);
 
-        const StudioEntity* entity = findPrimaryCamera(scene);
+        const StudioEntity* entity = scene.findEntity(cameraId);
         if (entity == nullptr) { return view; }
 
         const StudioComponent* camera = entity->findComponent(BuiltinComponentIds::kCamera);
+        if (camera == nullptr) { return view; }
+
         view.cameraId = entity->getId();
         view.clearColor = camera->getProperty("clearColor").get<StudioColor>(view.clearColor);
 

@@ -77,7 +77,20 @@ namespace CNA::Studio
         /** @brief The orthographic 2D scene: sprites, tilemaps, the grid. */
         TwoD,
         /** @brief The perspective or orthographic 3D scene: meshes, sprites as quads, wireframe. */
-        ThreeD
+        ThreeD,
+
+        /**
+         * @brief What the game will show: the scene through its own camera, with no editor chrome.
+         *
+         * `plan.md` STUDIO-11012. Not a third editing view -- it is the *answer* to "what will a
+         * player see", and the whole value of it is that it is not editable: no grid, no gizmo, no
+         * selection marking, no picking. A game view a user could click in would be one where the
+         * thing they were checking moved while they checked it.
+         *
+         * The camera is the scene's, chosen by `computeGameView`, so the editor's own 2D and 3D
+         * cameras are untouched and are exactly where they were left on the way back.
+         */
+        Game
     };
 
     /** @brief The name of @p view, for a menu row or an overlay. */
@@ -585,6 +598,63 @@ namespace CNA::Studio
                                                StudioContext& context, StudioCamera3D& camera,
                                                StudioViewportState& state,
                                                const SpriteSizeProvider& sizeProvider = {});
+
+    /**
+     * @brief Where the camera preview goes, and which camera it looks through (STUDIO-11012).
+     *
+     * A camera has no size and nothing to look at from the outside: a user aiming one is working
+     * from a position, a rotation and a number, and finding out what those add up to means pressing
+     * play. The preview is the answer in the corner of the viewport they are already in.
+     */
+    struct StudioCameraPreview
+    {
+        /** @brief The camera to look through, or a nil id when there is nothing to preview. */
+        Uuid cameraId;
+
+        /** @brief Where the picture goes, in the same coordinates the viewport bounds came in. */
+        UiRect bounds;
+
+        /** @brief True when there is both a camera and room for it. */
+        [[nodiscard]] bool isVisible() const { return cameraId.isValid() && !bounds.isEmpty(); }
+    };
+
+    /**
+     * @brief Returns the preview for @p selection over a viewport of @p viewportBounds.
+     *
+     * **Exactly one selected camera, or nothing.** Two cameras selected is a question with no
+     * answer -- showing the first would be arbitrary, and two insets would take a quarter of the
+     * viewport to say something about a selection the user is in the middle of making.
+     *
+     * **Bottom right, at a sixteen-by-nine, sized from the viewport and clamped.** A fraction alone
+     * puts a postage stamp in a small panel and half a screen in a large one; a fixed size covers a
+     * small panel entirely. Bottom right rather than bottom left because the manipulator sits on
+     * the selection, which is usually where the user has centred the view.
+     *
+     * **Nothing at all when the viewport is too small to spare the room.** A preview that covers
+     * the thing being aimed is worse than none: the user would be moving a camera by watching the
+     * one view that no longer shows where it is.
+     */
+    [[nodiscard]] StudioCameraPreview studioCameraPreview(const UiRect& viewportBounds,
+                                                          const SceneDocument& scene,
+                                                          const std::vector<Uuid>& selection);
+
+    /**
+     * @brief Occupies @p bounds with the game view, which accepts no editing input.
+     *
+     * `plan.md` STUDIO-11012. The same one-widget surface the other two views open with, and then
+     * nothing: no picking, no gizmo, no navigation, no asset drop. That is the whole point of it --
+     * the game view answers "what will a player see", and a view a user could edit in is one where
+     * the thing they were checking moves while they check it.
+     *
+     * The surface is still described, rather than the panel being left empty, because a click in an
+     * unclaimed area falls through to whatever is docked beneath and a viewport that quietly passes
+     * presses on is worse than one that ignores them.
+     *
+     * @return Only `pointerInside`, so play mode can still route the mouse into a running game --
+     *         which is the one thing a game view *should* accept, and is the game's input rather
+     *         than the editor's.
+     */
+    StudioViewportResult studioViewportPanelGame(StudioFrame& frame, const UiRect& bounds);
 
     /**
      * @brief Moves @p camera to frame the current selection.

@@ -132,6 +132,44 @@ namespace CNA::Studio
                                         int height);
 
         /**
+         * @brief The same picture as `renderGameView`, into the offscreen target (STUDIO-11012).
+         *
+         * What the editor's game view needs and the player does not: the player owns its window and
+         * draws straight to the back buffer, while a docked panel is a texture composed with the
+         * rest of the UI. One extra function rather than a flag on the one above, so the player's
+         * call site keeps saying what it means.
+         *
+         * @param clearColor The game camera's own. The target is cleared to it rather than to the
+         *        editor's background, because the background *is* part of what a player will see.
+         */
+        SceneRenderStats renderGameViewOffscreen(const SceneDocument& scene,
+                                                 const StudioCamera2D& camera,
+                                                 const StudioColor& clearColor,
+                                                 int width,
+                                                 int height);
+
+        /**
+         * @brief Draws @p scene through @p camera into a sub-rectangle of the bound target.
+         *
+         * `plan.md` STUDIO-11012's camera preview. Called *after* one of the render entry points
+         * above, while their offscreen target is still bound, so the picture lands on top of the
+         * editor's view rather than in a second texture the UI would have to compose.
+         *
+         * The rectangle is in the bound target's own pixels, which is what the viewport property
+         * means inside a render target. The device's viewport is set to it for the sprite pass and
+         * put back afterwards: unrestored, every later frame would draw the whole scene into the
+         * corner.
+         *
+         * @param camera Already sized to the rectangle by the caller, since its viewport size is
+         *        what places world coordinates and this function is not the one that decides how
+         *        big the preview is.
+         */
+        SceneRenderStats renderCameraPreview(const SceneDocument& scene,
+                                             const StudioCamera2D& camera,
+                                             const StudioColor& clearColor,
+                                             int x, int y, int width, int height);
+
+        /**
          * @brief Draws @p segments into the offscreen target, over the same background (ED-400).
          *
          * The whole of the 3D viewport's drawing. Everything it shows is a line, and which lines
@@ -227,7 +265,8 @@ namespace CNA::Studio
                                       GizmoSpace gizmoSpace,
                                       const AnimationPreview& preview,
                                       bool editorOverlays,
-                                      bool offscreen);
+                                      bool offscreen,
+                                      const StudioColor* clearColor = nullptr);
 
         struct Impl;
         std::unique_ptr<Impl> impl_;

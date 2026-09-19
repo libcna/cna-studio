@@ -82,6 +82,7 @@ namespace CNA::Studio
                 // reported -- a shortcut that simply does not fire, with nothing to see.
                 {UiKey::Digit2, static_cast<int>(XnaInput::Keys::D2)},
                 {UiKey::Digit3, static_cast<int>(XnaInput::Keys::D3)},
+                {UiKey::Digit4, static_cast<int>(XnaInput::Keys::D4)},
             };
             return bindings;
         }

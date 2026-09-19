@@ -77,6 +77,37 @@ namespace CNA::Studio
             return renderer_.shareWithUi(*uiRenderer_);
         }
 
+        UiTextureId renderGame(const SceneDocument& scene, const StudioCamera2D& camera,
+                               const StudioColor& clearColor, int width, int height) override
+        {
+            if (width <= 0 || height <= 0) { return kUiTextureNone; }
+
+            const SceneRenderStats stats =
+                renderer_.renderGameViewOffscreen(scene, camera, clearColor, width, height);
+            lastStats_ = ViewportStats{stats.spritesDrawn, stats.spritesSkipped, stats.gridLines,
+                                       stats.missingTextures};
+
+            return renderer_.shareWithUi(*uiRenderer_);
+        }
+
+        UiTextureId renderCameraPreviewOver(UiTextureId texture, const SceneDocument& scene,
+                                            const StudioCamera2D& camera,
+                                            const StudioColor& clearColor,
+                                            const UiRect& bounds) override
+        {
+            if (texture == kUiTextureNone || bounds.isEmpty()) { return texture; }
+
+            renderer_.renderCameraPreview(scene, camera, clearColor,
+                                          static_cast<int>(bounds.left()),
+                                          static_cast<int>(bounds.top()),
+                                          static_cast<int>(bounds.width),
+                                          static_cast<int>(bounds.height));
+
+            // The same texture: `shareWithUi` hands over the one target both passes drew into, and
+            // asking for it twice in a frame would be a second share of the same surface.
+            return texture;
+        }
+
         UiTextureId renderScene3D(const SceneModelBatch& models, const SceneSpriteBatch3D& sprites,
                                   const std::vector<WireSegment>& segments, int width,
                                   int height) override
