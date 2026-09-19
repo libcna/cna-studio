@@ -135,6 +135,17 @@ namespace CNA::Studio
         bool drawMeshEdges = true;
 
         /**
+         * @brief Outline a selected model's silhouette rather than recolouring all of its edges.
+         *
+         * `plan.md` STUDIO-11007. Recolouring every edge is what this replaces, and on anything
+         * denser than a crate it does not read as a selection -- it reads as the object turning
+         * into a solid block of the selection colour. An outline stays an outline however many
+         * triangles are behind it, and it is the only thing that marks a selected model at all in
+         * the shaded mode, where no edges are drawn otherwise.
+         */
+        bool drawSelectionOutline = true;
+
+        /**
          * @brief Draw each light's direction and range (ED-404).
          *
          * On by default, and worth a switch because a scene lit by a dozen lamps is a dozen rings

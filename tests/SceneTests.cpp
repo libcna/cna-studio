@@ -2074,6 +2074,174 @@ CNA_STUDIO_TEST(TheGridsSegmentCountIsWhatTheSubdivisionSaysItIs)
     CNA_STUDIO_EXPECT(rounded < lines * 6u);
 }
 
+namespace
+{
+    /** @brief A closed cube of twelve triangles, centred on the origin with edge length @p size. */
+    MeshData makeCubeMesh(float size)
+    {
+        const float h = size * 0.5f;
+        const StudioVector3 corners[8] = {
+            {-h, -h, -h}, {h, -h, -h}, {h, h, -h}, {-h, h, -h},
+            {-h, -h, h},  {h, -h, h},  {h, h, h},  {-h, h, h},
+        };
+
+        // Wound counter-clockwise seen from outside, which is what the importer guarantees and what
+        // the silhouette's facing test reads.
+        const std::uint32_t faces[12][3] = {
+            {0, 2, 1}, {0, 3, 2},  // -Z
+            {4, 5, 6}, {4, 6, 7},  // +Z
+            {0, 1, 5}, {0, 5, 4},  // -Y
+            {3, 7, 6}, {3, 6, 2},  // +Y
+            {0, 4, 7}, {0, 7, 3},  // -X
+            {1, 2, 6}, {1, 6, 5},  // +X
+        };
+
+        MeshPart part;
+        part.name = "Cube";
+        for (const StudioVector3& corner : corners)
+        {
+            MeshVertex vertex;
+            vertex.position = corner;
+            part.vertices.push_back(vertex);
+        }
+        for (const auto& face : faces)
+        {
+            part.indices.push_back(face[0]);
+            part.indices.push_back(face[1]);
+            part.indices.push_back(face[2]);
+        }
+
+        MeshData mesh;
+        mesh.parts.push_back(std::move(part));
+        recomputeMeshBounds(mesh);
+        return mesh;
+    }
+
+    /** @brief An entity a `MeshProvider` will answer for: a transform and a model reference. */
+    Uuid addModelEntity(SceneDocument& scene, const Uuid& modelId)
+    {
+        StudioEntity prop{Uuid::generate(), "Crate"};
+        prop.addComponent(StudioComponent{BuiltinComponentIds::kTransform});
+
+        StudioComponent renderer{BuiltinComponentIds::kModelRenderer};
+        renderer.setProperty("model", PropertyValue{PropertyValue::AssetReference{modelId}});
+        prop.addComponent(std::move(renderer));
+
+        return scene.addEntity(std::move(prop));
+    }
+}
+
+/**
+ * A selected model is outlined rather than filled in with the selection colour (STUDIO-11007).
+ *
+ * The selection used to recolour *every* edge of the mesh, which on anything denser than a crate
+ * does not read as a selection at all -- it reads as the object turning into a solid block of the
+ * selection colour. The outline is the silhouette: edges where the two triangles sharing them face
+ * opposite ways, plus the rim of an open shell.
+ */
+CNA_STUDIO_TEST(ASelectedModelIsOutlinedRatherThanFilledWithTheSelectionColour)
+{
+    SceneDocument scene;
+    const Uuid modelId = Uuid::generate();
+    const Uuid id = addModelEntity(scene, modelId);
+
+    const MeshData cube = makeCubeMesh(10.0f);
+
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+    camera.setDistance(60.0f);
+
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{0.0f, 0.0f}; };
+
+    WireframeOptions options;
+    options.drawGrid = false;
+    options.meshProvider = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &cube : nullptr;
+    };
+
+    // The shaded mode: no mesh edges at all. An unselected cube is its box and nothing more.
+    options.drawMeshEdges = false;
+    const WireframeResult unselected = buildSceneWireframe(scene, camera, {}, sizes, options);
+
+    const auto countSelected = [](const WireframeResult& result) {
+        return static_cast<std::size_t>(
+            std::count_if(result.segments.begin(), result.segments.end(),
+                          [](const WireSegment& segment) {
+                              return segment.color == WireColors::kSelected;
+                          }));
+    };
+
+    const WireframeResult selected = buildSceneWireframe(scene, camera, {id}, sizes, options);
+
+    // Nothing wears the selection colour until something is selected.
+    CNA_STUDIO_EXPECT_EQ(countSelected(unselected), std::size_t{0});
+    CNA_STUDIO_EXPECT(countSelected(selected) > 0);
+
+    // Selecting *replaces* the bounds box with the outline rather than adding to it, so the count
+    // goes down. That is the right trade and it is worth pinning: a box and an outline together
+    // would be two marks for one selection, and the outline traces the object where the box only
+    // says roughly where it is.
+    CNA_STUDIO_EXPECT(selected.segments.size() < unselected.segments.size());
+
+    // A cube square on to a face shows four of its twelve edges on the silhouette, and from a
+    // corner six. Either way it is fewer than the twelve a full wireframe draws: an outline is a
+    // subset of the edges, and one that grows with the shape rather than with the triangle count.
+    const std::size_t outlineEdges = countSelected(selected);
+    CNA_STUDIO_EXPECT(outlineEdges >= 4);
+    CNA_STUDIO_EXPECT(outlineEdges < 12);
+
+    // And turning the outline off leaves the shaded mode with no mesh marking at all, which is what
+    // makes this an option rather than a behaviour nobody can decline.
+    WireframeOptions noOutline = options;
+    noOutline.drawSelectionOutline = false;
+    const WireframeResult plain = buildSceneWireframe(scene, camera, {id}, sizes, noOutline);
+    CNA_STUDIO_EXPECT_EQ(plain.segments.size(), unselected.segments.size());
+}
+
+CNA_STUDIO_TEST(TheOutlineFollowsTheCameraRatherThanBeingFixedToTheMesh)
+{
+    // A silhouette is a function of where you are looking from -- that is what separates it from a
+    // list of edges somebody marked once. Orbiting to a corner shows more of a cube's edges than
+    // facing it square on, and the outline has to change with it.
+    SceneDocument scene;
+    const Uuid modelId = Uuid::generate();
+    const Uuid id = addModelEntity(scene, modelId);
+
+    const MeshData cube = makeCubeMesh(10.0f);
+
+    WireframeOptions options;
+    options.drawGrid = false;
+    options.drawMeshEdges = false;
+    options.meshProvider = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &cube : nullptr;
+    };
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{0.0f, 0.0f}; };
+
+    StudioCamera3D square = makeCamera();
+    square.setPivot(StudioVector3{});
+    square.setDistance(60.0f);
+
+    StudioCamera3D corner = square;
+    corner.setYaw(0.785398f);   // 45 degrees
+    corner.setPitch(0.615479f); // atan(1/sqrt(2)), which looks down a body diagonal
+
+    const std::size_t squareOn =
+        buildSceneWireframe(scene, square, {id}, sizes, options).segments.size();
+    const std::size_t fromCorner =
+        buildSceneWireframe(scene, corner, {id}, sizes, options).segments.size();
+
+    if (squareOn == fromCorner)
+    {
+        CnaStudioTest::reportFailure(__FILE__, __LINE__,
+                                     "the outline is the same from square on and from a corner, so "
+                                     "it is a fixed set of edges rather than a silhouette.");
+    }
+
+    // Square on to a face, exactly four edges of a cube are on the silhouette: the square you see.
+    CNA_STUDIO_EXPECT(squareOn >= 4);
+    CNA_STUDIO_EXPECT(fromCorner > squareOn);
+}
+
 CNA_STUDIO_TEST(TheWireframeBoxesEveryEntityAndMarksTheSelection)
 {
     ComponentRegistry registry = makeRegistry();

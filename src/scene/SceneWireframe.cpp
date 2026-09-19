@@ -183,6 +183,131 @@ namespace CNA::Studio
         return drawn;
     }
 
+    /**
+     * @brief Draws @p mesh's silhouette as seen from @p camera: its outline, not its wireframe.
+     *
+     * `plan.md` STUDIO-11007. An edge is on the silhouette when the two triangles sharing it face
+     * opposite ways -- one towards the camera and one away -- or when only one triangle claims it
+     * at all, which is the rim of an open shell. Everything else is interior detail that an
+     * outline is not about.
+     *
+     * The distinction matters because recolouring every edge is what this replaces, and on
+     * anything denser than a crate that does not read as a selection: it reads as the object
+     * turning into a solid block of the selection colour. An outline stays an outline however many
+     * triangles are behind it, and it costs *fewer* segments the denser the mesh gets relative to
+     * drawing all of them.
+     *
+     * @return How many segments were appended.
+     */
+    std::size_t appendMeshSilhouette(std::vector<WireSegment>& segments, const StudioCamera3D& camera,
+                                     const MeshData& mesh, const StudioMatrix& world,
+                                     const StudioColor& color, float thickness, std::size_t budget,
+                                     bool& outTruncated)
+    {
+        if (budget == 0)
+        {
+            outTruncated = true;
+            return 0;
+        }
+
+        // Under an orthographic projection every triangle is seen along the same direction; under
+        // a perspective one it is seen from a point. Using the eye for both would put the
+        // silhouette in the wrong place on an orthographic view, which is the view somebody lining
+        // geometry up is most likely to be in.
+        const bool orthographic = camera.getProjection() == CameraProjection::Orthographic;
+        const StudioVector3 eye = camera.getEye();
+        const StudioVector3 forward = camera.getForward();
+
+        /** @brief How the two triangles sharing one edge face, as far as we have seen. */
+        struct EdgeFacing
+        {
+            std::uint32_t from = 0;
+            std::uint32_t to = 0;
+            int faces = 0;
+            int frontFaces = 0;
+        };
+
+        std::size_t drawn = 0;
+        for (const MeshPart& part : mesh.parts)
+        {
+            // Per part, for the reason `appendMeshEdges` clears its set per part: indices are
+            // part-local, so a key built from them is only unique within one.
+            std::unordered_map<std::uint64_t, EdgeFacing> edges;
+
+            for (std::size_t triangle = 0; triangle + 2 < part.indices.size(); triangle += 3)
+            {
+                const std::uint32_t corner[3] = {part.indices[triangle], part.indices[triangle + 1],
+                                                 part.indices[triangle + 2]};
+                if (corner[0] >= part.vertices.size() || corner[1] >= part.vertices.size()
+                    || corner[2] >= part.vertices.size())
+                {
+                    continue;
+                }
+
+                const StudioVector3 a = transformPosition(world, part.vertices[corner[0]].position);
+                const StudioVector3 b = transformPosition(world, part.vertices[corner[1]].position);
+                const StudioVector3 c = transformPosition(world, part.vertices[corner[2]].position);
+
+                // The importer guarantees counter-clockwise seen from outside, and reverses the
+                // winding to keep that through its Y mirror -- so this cross product points out of
+                // the surface and `dot` against the view direction says which way the face turns.
+                const StudioVector3 normal = cross(subtract(b, a), subtract(c, a));
+                const StudioVector3 view =
+                    orthographic
+                        ? forward
+                        : subtract(StudioVector3{(a.x + b.x + c.x) / 3.0f, (a.y + b.y + c.y) / 3.0f,
+                                                 (a.z + b.z + c.z) / 3.0f},
+                                   eye);
+                const bool front = dot(normal, view) < 0.0f;
+
+                for (int edge = 0; edge < 3; ++edge)
+                {
+                    const std::uint32_t from = corner[edge];
+                    const std::uint32_t to = corner[(edge + 1) % 3];
+                    const std::uint64_t key = (static_cast<std::uint64_t>(std::min(from, to)) << 32)
+                                              | static_cast<std::uint64_t>(std::max(from, to));
+
+                    EdgeFacing& facing = edges[key];
+                    if (facing.faces == 0)
+                    {
+                        facing.from = from;
+                        facing.to = to;
+                    }
+                    ++facing.faces;
+                    facing.frontFaces += front ? 1 : 0;
+                }
+            }
+
+            for (const auto& [key, facing] : edges)
+            {
+                (void)key;
+
+                // One triangle means an open rim, which is part of the outline. Two that disagree
+                // is the silhouette proper. Two that agree is interior detail, and three or more
+                // is a mesh whose topology is not a surface -- left out rather than guessed at.
+                const bool boundary = facing.faces == 1;
+                const bool crossing = facing.faces == 2 && facing.frontFaces == 1;
+                if (!boundary && !crossing) { continue; }
+
+                if (drawn >= budget)
+                {
+                    outTruncated = true;
+                    return drawn;
+                }
+
+                const std::optional<std::pair<StudioVector2, StudioVector2>> projected =
+                    projectSegment(camera, transformPosition(world, part.vertices[facing.from].position),
+                                   transformPosition(world, part.vertices[facing.to].position));
+                if (!projected) { continue; }
+
+                segments.push_back(WireSegment{projected->first, projected->second, color, thickness});
+                ++drawn;
+            }
+        }
+
+        return drawn;
+    }
+
     std::size_t appendMeshEdges(std::vector<WireSegment>& segments, const StudioCamera3D& camera,
                                 const MeshData& mesh, const StudioMatrix& world,
                                 const StudioColor& color, float thickness, std::size_t budget,
@@ -539,20 +664,43 @@ namespace CNA::Studio
             // in the 3D view that is neither a box nor a badge, and the whole point of ED-405
             // coming before ED-402: until there was a mesh to draw, every entity here was a
             // rectangle with a label on it.
+            // A selected model is outlined even when nothing else draws edges: in the shaded mode
+            // the outline is the *only* thing marking it, and a selection a user cannot see is one
+            // they lose track of (`plan.md` STUDIO-11007).
+            const bool wantsEdges = options.drawMeshEdges || (selected && options.drawSelectionOutline);
+
             if (const MeshData* mesh =
-                    options.drawMeshEdges ? findEntityMesh(entity, options.meshProvider) : nullptr;
+                    wantsEdges ? findEntityMesh(entity, options.meshProvider) : nullptr;
                 mesh != nullptr && !mesh->isEmpty())
             {
                 const std::optional<WorldTransform> world =
                     computeWorldTransform(scene, entity.getId());
                 if (world)
                 {
-                    const std::size_t budget = options.maxSegments > result.segments.size()
-                                                   ? options.maxSegments - result.segments.size()
-                                                   : 0;
-                    const std::size_t drawn =
-                        appendMeshEdges(result.segments, camera, *mesh, toWorldMatrix(*world), color,
-                                        selected ? 2.0f : 1.0f, budget, result.truncated);
+                    const StudioMatrix matrix = toWorldMatrix(*world);
+                    std::size_t drawn = 0;
+
+                    const auto remaining = [&] {
+                        return options.maxSegments > result.segments.size()
+                                   ? options.maxSegments - result.segments.size()
+                                   : std::size_t{0};
+                    };
+
+                    // The mesh's own edges first, so the outline goes over them rather than under.
+                    if (options.drawMeshEdges)
+                    {
+                        drawn += appendMeshEdges(result.segments, camera, *mesh, matrix, color,
+                                                 selected ? 2.0f : 1.0f, remaining(),
+                                                 result.truncated);
+                    }
+
+                    if (selected && options.drawSelectionOutline)
+                    {
+                        drawn += appendMeshSilhouette(result.segments, camera, *mesh, matrix,
+                                                      WireColors::kSelected, 2.0f, remaining(),
+                                                      result.truncated);
+                    }
+
                     if (drawn > 0) { ++result.entitiesDrawn; }
                     continue;
                 }

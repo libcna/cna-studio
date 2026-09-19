@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 10 of 15 complete `████████░░░░`
+**Progress:** 11 of 15 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -16,7 +16,7 @@
 | `STUDIO-11004` | Standard views: front, back, left, right, top, bottom | ✅ | `STUDIO-11001` |
 | `STUDIO-11005` | Adaptive grid | ✅ | `STUDIO-11001` |
 | `STUDIO-11006` | Object picking through the 3D projection | ✅ | `STUDIO-11001` |
-| `STUDIO-11007` | Selection outlines | ⬜ | `STUDIO-11006` |
+| `STUDIO-11007` | Selection outlines | ✅ | `STUDIO-11006` |
 | `STUDIO-11008` | Bounds and collision debug visualisation | ⬜ | `STUDIO-11006` |
 | `STUDIO-11009` | Icons and billboards for entities with no geometry | ⬜ | `STUDIO-11006` |
 | `STUDIO-11010` | Wireframe mode | ✅ | `STUDIO-11001` |
@@ -160,6 +160,49 @@ test passed against a wrong implementation: a fade measured from each *line* to 
 than from each *piece* of it, leaves the axis — which passes through the centre — at full strength
 end to end, and every other assertion still held. Checked by causing exactly that: the corrected
 case fails by name, the earlier one did not.
+
+### `STUDIO-11007` — Selection outlines
+
+**Acceptance.** A selected model reads as an outline, at any triangle count.
+
+**What it replaces was not an outline.** A selected entity had every one of its edges recoloured and
+thickened. On a crate that looks like a selection; on anything denser it looks like the object has
+turned into a solid block of the selection colour, because at a few hundred triangles the edges
+cover the silhouette they were meant to trace. The denser the mesh, the worse the mark.
+
+**An outline is the silhouette, and the silhouette is a function of where you are looking from.** An
+edge is on it when the two triangles sharing it face opposite ways — one towards the camera, one
+away — or when only one triangle claims it at all, which is the rim of an open shell. Everything
+else is interior detail an outline is not about. That is why the test that matters compares a cube
+square on to a face against the same cube from a corner: four edges against six. A fixed set of
+edges marked once would give the same answer to both, and the case says so in those words.
+
+**Orthographic and perspective see different silhouettes**, and using the eye for both would be
+wrong on the projection somebody lining geometry up is most likely to be in. Under orthographic
+every triangle is seen along one direction; under perspective each is seen from a point. Both are
+handled, because the alternative is an outline that drifts off the shape in exactly the view where
+precision is the reason you chose it.
+
+**The outline is what makes the shaded mode usable.** `STUDIO-11010` gave the viewport a mode that
+draws no mesh edges at all, and in that mode a selected model would otherwise be marked by nothing
+but its bounds box. So the outline is drawn even when `drawMeshEdges` is off — it is the selection
+marker, not a variety of wireframe.
+
+**Selecting replaces the bounds box rather than adding to it.** A box and an outline together would
+be two marks for one selection, and the outline traces the object where the box only says roughly
+where it is. The test pins that the segment count goes *down* on selection, which is the surprising
+direction and therefore the one worth asserting.
+
+**Fewer segments, not more.** An outline is a subset of the edges and it grows with the shape rather
+than with the triangle count — so the marking of a selected model now costs less on exactly the
+dense meshes where the old behaviour cost most and read worst.
+
+**Verification.** `tests/SceneTests.cpp` builds a real twelve-triangle cube wound the way the
+importer guarantees, and asserts: nothing wears the selection colour until something is selected;
+the outline is between four and eleven of the cube's twelve edges; selection replaces the box; the
+outline changes when the camera moves to a corner; and turning `drawSelectionOutline` off gives the
+box back. Checked by causing it — emitting every edge instead of the silhouette fails four
+assertions across both cases, including the one that names the mistake.
 
 ### `STUDIO-11010` — Wireframe mode
 
@@ -387,6 +430,49 @@ test passed against a wrong implementation: a fade measured from each *line* to 
 than from each *piece* of it, leaves the axis — which passes through the centre — at full strength
 end to end, and every other assertion still held. Checked by causing exactly that: the corrected
 case fails by name, the earlier one did not.
+
+### `STUDIO-11007` — Selection outlines
+
+**Acceptance.** A selected model reads as an outline, at any triangle count.
+
+**What it replaces was not an outline.** A selected entity had every one of its edges recoloured and
+thickened. On a crate that looks like a selection; on anything denser it looks like the object has
+turned into a solid block of the selection colour, because at a few hundred triangles the edges
+cover the silhouette they were meant to trace. The denser the mesh, the worse the mark.
+
+**An outline is the silhouette, and the silhouette is a function of where you are looking from.** An
+edge is on it when the two triangles sharing it face opposite ways — one towards the camera, one
+away — or when only one triangle claims it at all, which is the rim of an open shell. Everything
+else is interior detail an outline is not about. That is why the test that matters compares a cube
+square on to a face against the same cube from a corner: four edges against six. A fixed set of
+edges marked once would give the same answer to both, and the case says so in those words.
+
+**Orthographic and perspective see different silhouettes**, and using the eye for both would be
+wrong on the projection somebody lining geometry up is most likely to be in. Under orthographic
+every triangle is seen along one direction; under perspective each is seen from a point. Both are
+handled, because the alternative is an outline that drifts off the shape in exactly the view where
+precision is the reason you chose it.
+
+**The outline is what makes the shaded mode usable.** `STUDIO-11010` gave the viewport a mode that
+draws no mesh edges at all, and in that mode a selected model would otherwise be marked by nothing
+but its bounds box. So the outline is drawn even when `drawMeshEdges` is off — it is the selection
+marker, not a variety of wireframe.
+
+**Selecting replaces the bounds box rather than adding to it.** A box and an outline together would
+be two marks for one selection, and the outline traces the object where the box only says roughly
+where it is. The test pins that the segment count goes *down* on selection, which is the surprising
+direction and therefore the one worth asserting.
+
+**Fewer segments, not more.** An outline is a subset of the edges and it grows with the shape rather
+than with the triangle count — so the marking of a selected model now costs less on exactly the
+dense meshes where the old behaviour cost most and read worst.
+
+**Verification.** `tests/SceneTests.cpp` builds a real twelve-triangle cube wound the way the
+importer guarantees, and asserts: nothing wears the selection colour until something is selected;
+the outline is between four and eleven of the cube's twelve edges; selection replaces the box; the
+outline changes when the camera moves to a corner; and turning `drawSelectionOutline` off gives the
+box back. Checked by causing it — emitting every edge instead of the silhouette fails four
+assertions across both cases, including the one that names the mistake.
 
 ### `STUDIO-11010` — Wireframe mode
 
