@@ -164,6 +164,9 @@ namespace CNA::Studio
             case GizmoAxis3D::Y: return "Y";
             case GizmoAxis3D::Z: return "Z";
             case GizmoAxis3D::All: return "All";
+            case GizmoAxis3D::XY: return "XY";
+            case GizmoAxis3D::YZ: return "YZ";
+            case GizmoAxis3D::ZX: return "ZX";
         }
         return "None";
     }
@@ -211,7 +214,80 @@ namespace CNA::Studio
             layout.screenTips[index] = screenTip.value_or(layout.screenOrigin);
         }
 
+        // The three plane handles (`plan.md` STUDIO-12001). XY, YZ and ZX, in that order, so the
+        // handle at index `i` is the one whose normal is arm `(i + 2) % 3` -- XY's normal is Z.
+        const float inner = layout.armLength * kGizmo3DPlaneInner;
+        const float outer = layout.armLength * kGizmo3DPlaneOuter;
+
+        for (std::size_t index = 0; index < 3; ++index)
+        {
+            const StudioVector3& u = layout.axes[index];
+            const StudioVector3& v = layout.axes[(index + 1) % 3];
+
+            TranslateGizmo3DLayout::Plane& plane = layout.planes[index];
+            plane.normal = layout.axes[(index + 2) % 3];
+            plane.u = u;
+            plane.v = v;
+            plane.corners = {add(layout.origin, add(scale(u, inner), scale(v, inner))),
+                             add(layout.origin, add(scale(u, outer), scale(v, inner))),
+                             add(layout.origin, add(scale(u, outer), scale(v, outer))),
+                             add(layout.origin, add(scale(u, inner), scale(v, outer)))};
+
+            plane.visible = true;
+            for (std::size_t corner = 0; corner < 4; ++corner)
+            {
+                const std::optional<StudioVector2> projected =
+                    camera.worldToScreen(plane.corners[corner]);
+
+                // All four or none: a quad with one corner behind the eye projects to a shape that
+                // is not the quad, and both drawing it and hit-testing it would be about a square
+                // that is not there.
+                if (!projected) { plane.visible = false; break; }
+                plane.screenCorners[corner] = *projected;
+            }
+        }
+
         return layout;
+    }
+
+    namespace
+    {
+        /** @brief The plane enumerator for handle @p index: 0 is XY, 1 is YZ, 2 is ZX. */
+        GizmoAxis3D planeAt(std::size_t index)
+        {
+            if (index == 0) { return GizmoAxis3D::XY; }
+            if (index == 1) { return GizmoAxis3D::YZ; }
+            return GizmoAxis3D::ZX;
+        }
+
+        /**
+         * @brief Returns true when @p point is inside the screen-space quad @p corners.
+         *
+         * The cross product of each edge with the vector to the point, checked for a consistent
+         * sign. A planar convex quad stays convex under projection while every corner is in front
+         * of the eye, which is exactly the case the layout's `visible` flag guarantees -- so this
+         * is the whole test rather than the fast half of one.
+         */
+        bool containsPoint(const std::array<StudioVector2, 4>& corners, const StudioVector2& point)
+        {
+            bool anyPositive = false;
+            bool anyNegative = false;
+
+            for (std::size_t index = 0; index < 4; ++index)
+            {
+                const StudioVector2& from = corners[index];
+                const StudioVector2& to = corners[(index + 1) % 4];
+
+                const float cross = (to.x - from.x) * (point.y - from.y)
+                                  - (to.y - from.y) * (point.x - from.x);
+
+                if (cross > 0.0f) { anyPositive = true; }
+                if (cross < 0.0f) { anyNegative = true; }
+                if (anyPositive && anyNegative) { return false; }
+            }
+
+            return true;
+        }
     }
 
     GizmoAxis3D hitTestTranslateGizmo3D(const TranslateGizmo3DLayout& layout,
@@ -237,6 +313,24 @@ namespace CNA::Studio
             }
         }
 
+        // The arms first, and the planes only where no arm was close (`plan.md` STUDIO-12001). An
+        // arm is a line and a plane is an area, so a press within a few pixels of an arm is far more
+        // likely to be aimed at it -- and the squares start a quarter of the way out precisely so
+        // that the two rarely have to be told apart at all.
+        if (best != GizmoAxis3D::None) { return best; }
+
+        for (std::size_t index = 0; index < 3; ++index)
+        {
+            const TranslateGizmo3DLayout::Plane& plane = layout.planes[index];
+            if (!plane.visible) { continue; }
+            if (!containsPoint(plane.screenCorners, screenPoint)) { continue; }
+
+            // First match wins rather than nearest. Two plane handles overlap on screen only when
+            // the view is nearly along one of their shared arms, where both are edge-on slivers and
+            // neither is what the user was aiming at -- so a stable answer beats a clever one.
+            return planeAt(index);
+        }
+
         return best;
     }
 
@@ -244,7 +338,7 @@ namespace CNA::Studio
                                                            GizmoAxis3D active)
     {
         std::vector<WireSegment> segments;
-        segments.reserve(3);
+        segments.reserve(15);
 
         for (std::size_t index = 0; index < 3; ++index)
         {
@@ -254,6 +348,26 @@ namespace CNA::Studio
             segments.push_back(WireSegment{layout.screenOrigin, layout.screenTips[index],
                                            highlighted ? kActiveColor : kAxisColors[index],
                                            highlighted ? 3.0f : 2.0f});
+        }
+
+        // The plane handles, outlined (`plan.md` STUDIO-12001). Drawn in the colour of the arm that
+        // is *not* in them -- the XY square is blue, for Z -- which is what every 3D editor does and
+        // is the only labelling a square between two arms can carry: it says which axis the drag
+        // will leave alone, and that is the thing a user is choosing between the three of them.
+        for (std::size_t index = 0; index < 3; ++index)
+        {
+            const TranslateGizmo3DLayout::Plane& plane = layout.planes[index];
+            if (!plane.visible) { continue; }
+
+            const bool highlighted = active == planeAt(index);
+            const StudioColor color = highlighted ? kActiveColor : kAxisColors[(index + 2) % 3];
+
+            for (std::size_t corner = 0; corner < 4; ++corner)
+            {
+                segments.push_back(WireSegment{plane.screenCorners[corner],
+                                               plane.screenCorners[(corner + 1) % 4], color,
+                                               highlighted ? 2.0f : 1.0f});
+            }
         }
 
         return segments;
@@ -693,6 +807,13 @@ namespace CNA::Studio
                                        keepScalable(startLocalScale_.y * factor),
                                        keepScalable(startLocalScale_.z * factor)};
                 break;
+
+            // A scale gizmo has no plane handles -- scaling "in a plane" is two independent factors
+            // and the two arms already say so -- so these cannot be grabbed here and mean nothing
+            // if they somehow arrive (`plan.md` STUDIO-12001).
+            case GizmoAxis3D::XY:
+            case GizmoAxis3D::YZ:
+            case GizmoAxis3D::ZX:
             case GizmoAxis3D::None: return std::nullopt;
         }
 
@@ -744,6 +865,26 @@ namespace CNA::Studio
         return (axisDotRay * e - d) / denominator;
     }
 
+    std::optional<StudioVector3> intersectRayWithPlane(const WorldRay& ray,
+                                                       const StudioVector3& origin,
+                                                       const StudioVector3& normal)
+    {
+        const float denominator = dot(ray.direction, normal);
+
+        // Parallel: an edge-on plane, where a pixel of cursor movement would otherwise send the
+        // entity to infinity. The same refusal `closestPointOnAxis` makes for an arm pointing at
+        // the camera, and for the same reason.
+        if (std::abs(denominator) < 1e-6f) { return std::nullopt; }
+
+        const float distance = dot(subtract(origin, ray.origin), normal) / denominator;
+
+        // Behind the eye. A ray pointed away from a plane still meets it at a negative distance,
+        // and taking that answer drags the object to a mirror image of where the cursor is.
+        if (distance < 0.0f) { return std::nullopt; }
+
+        return add(ray.origin, scale(ray.direction, distance));
+    }
+
     bool TranslateGizmo3DDrag::begin(const SceneDocument& scene, const StudioCamera3D& camera,
                                      const TranslateGizmo3DLayout& layout, const Uuid& entityId,
                                      const StudioVector2& cursor)
@@ -758,6 +899,29 @@ namespace CNA::Studio
 
         const StudioComponent* transform = entity->findComponent(BuiltinComponentIds::kTransform);
         if (transform == nullptr) { return false; }
+
+        if (isGizmoPlane(grabbed))
+        {
+            const std::size_t planeIndex =
+                grabbed == GizmoAxis3D::XY ? 0 : (grabbed == GizmoAxis3D::YZ ? 1 : 2);
+            const TranslateGizmo3DLayout::Plane& plane = layout.planes[planeIndex];
+
+            // Where the press pointed, so the entity slides with the cursor rather than jumping so
+            // its origin sits under it -- the same promise `startParameter_` makes for an arm.
+            const std::optional<StudioVector3> hit =
+                intersectRayWithPlane(camera.screenToRay(cursor), layout.origin, plane.normal);
+            if (!hit) { return false; }
+
+            axis_ = grabbed;
+            entityId_ = entityId;
+            normal_ = plane.normal;
+            planeU_ = plane.u;
+            planeV_ = plane.v;
+            startWorld_ = layout.origin;
+            startLocal_ = transform->getProperty("position").get<StudioVector3>();
+            startHit_ = *hit;
+            return true;
+        }
 
         const std::size_t index = grabbed == GizmoAxis3D::X ? 0 : (grabbed == GizmoAxis3D::Y ? 1 : 2);
         const StudioVector3 direction = layout.axes[index];
@@ -929,6 +1093,33 @@ namespace CNA::Studio
                                                                      const GizmoSnap& snap) const
     {
         if (!isActive()) { return std::nullopt; }
+
+        if (isGizmoPlane(axis_))
+        {
+            const std::optional<StudioVector3> hit =
+                intersectRayWithPlane(camera.screenToRay(cursor), startWorld_, normal_);
+            if (!hit) { return std::nullopt; }
+
+            StudioVector3 world = add(startWorld_, subtract(*hit, startHit_));
+
+            if (snap.translate > 0.0f)
+            {
+                // Both in-plane axes, and neither the third: the *result* is snapped rather than
+                // the movement, so the entity lands on the grid rather than a grid-sized distance
+                // from wherever it started, and the axis the plane leaves out is left exactly
+                // where the entity already had it.
+                for (const StudioVector3& axis : {planeU_, planeV_})
+                {
+                    const float along = dot(world, axis);
+                    const float rounded = std::round(along / snap.translate) * snap.translate;
+                    world = add(world, scale(axis, rounded - along));
+                }
+            }
+
+            const StudioVector3 planeDelta = subtract(world, startWorld_);
+            if (planeDelta == StudioVector3{}) { return std::nullopt; }
+            return planeDelta;
+        }
 
         const std::optional<float> parameter =
             closestPointOnAxis(camera.screenToRay(cursor), startWorld_, direction_);

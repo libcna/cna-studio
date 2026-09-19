@@ -2771,6 +2771,169 @@ CNA_STUDIO_TEST(TheThreeDimensionalGizmoIsSizedInPixelsAndGrabbedInPixels)
     CNA_STUDIO_EXPECT(!computeTranslateGizmo3DLayout(scene, camera, entityId).has_value());
 }
 
+/**
+ * The translate gizmo has plane handles, and did not (`plan.md` STUDIO-12001).
+ *
+ * Three bare lines was the whole of it, so sliding an object across a floor took two drags along
+ * two arms and landed wherever the second one stopped. The 2D gizmo has had its `Both` centre
+ * handle since ED-401 for exactly this; in three dimensions there are three planes to choose, and
+ * which one the user wants is the question they answer by reaching for a square.
+ */
+CNA_STUDIO_TEST(TheTranslateGizmoHasAPlaneHandleForEachPairOfArms)
+{
+    ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+    const Uuid entityId = scene.addEntity(makeEntity(registry, "Crate", 0.0f, 0.0f));
+
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+    camera.setYaw(0.6f);
+    camera.setPitch(0.4f);
+    camera.setDistance(100.0f);
+
+    const std::optional<TranslateGizmo3DLayout> layout =
+        computeTranslateGizmo3DLayout(scene, camera, entityId);
+    CNA_STUDIO_EXPECT(layout.has_value());
+    if (!layout) { return; }
+
+    // Three squares, each with the normal of the arm it leaves out: XY's normal is Z.
+    for (std::size_t index = 0; index < 3; ++index)
+    {
+        CNA_STUDIO_EXPECT(layout->planes[index].visible);
+        const StudioVector3 expected = layout->axes[(index + 2) % 3];
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(layout->planes[index].normal.x, expected.x, 0.001f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(layout->planes[index].normal.y, expected.y, 0.001f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(layout->planes[index].normal.z, expected.z, 0.001f));
+    }
+
+    // The middle of the XY square is a grab on that plane.
+    const auto centreOf = [](const TranslateGizmo3DLayout::Plane& plane) {
+        StudioVector2 total;
+        for (const StudioVector2& corner : plane.screenCorners)
+        {
+            total.x += corner.x * 0.25f;
+            total.y += corner.y * 0.25f;
+        }
+        return total;
+    };
+
+    CNA_STUDIO_EXPECT(hitTestTranslateGizmo3D(*layout, centreOf(layout->planes[0]))
+                      == GizmoAxis3D::XY);
+    CNA_STUDIO_EXPECT(hitTestTranslateGizmo3D(*layout, centreOf(layout->planes[1]))
+                      == GizmoAxis3D::YZ);
+    CNA_STUDIO_EXPECT(hitTestTranslateGizmo3D(*layout, centreOf(layout->planes[2]))
+                      == GizmoAxis3D::ZX);
+
+    // **The arms still win where they overlap.** The squares start a quarter of the way out, so a
+    // press along an arm's own length is still the arm's -- which is what stops the planes making
+    // an axis drag unreachable, and is the failure this would have if the two were tested the other
+    // way round.
+    const StudioVector2 alongX{(layout->screenOrigin.x + layout->screenTips[0].x) * 0.5f,
+                               (layout->screenOrigin.y + layout->screenTips[0].y) * 0.5f};
+    CNA_STUDIO_EXPECT(hitTestTranslateGizmo3D(*layout, alongX) == GizmoAxis3D::X);
+
+    // The origin itself is not in any square: they are offset, so the point where the three arms
+    // meet still belongs to whichever arm is nearest rather than to a plane.
+    CNA_STUDIO_EXPECT(!isGizmoPlane(hitTestTranslateGizmo3D(*layout, layout->screenOrigin)));
+
+    // Well away from everything is still nothing at all.
+    CNA_STUDIO_EXPECT(hitTestTranslateGizmo3D(*layout, StudioVector2{5.0f, 5.0f})
+                      == GizmoAxis3D::None);
+
+    // Drawn as well as grabbed, and where they are drawn is where they are grabbed: three arms of
+    // one segment and three squares of four.
+    const std::vector<WireSegment> segments = buildTranslateGizmo3DSegments(*layout);
+    CNA_STUDIO_EXPECT_EQ(segments.size(), std::size_t{15});
+}
+
+/**
+ * A plane drag moves on two axes at once and leaves the third exactly alone (STUDIO-12001).
+ *
+ * The third axis is the assertion that matters. A plane drag solved as "wherever the ray happens to
+ * be" moves the entity off the plane as soon as the cursor leaves the square, which is the failure
+ * that makes a plane handle worse than two axis drags rather than better.
+ */
+CNA_STUDIO_TEST(APlaneDragMovesOnTwoAxesAndLeavesTheThirdAlone)
+{
+    ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+    const Uuid entityId = scene.addEntity(makeEntity(registry, "Crate", 0.0f, 0.0f));
+
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+    camera.setYaw(0.6f);
+    camera.setPitch(0.4f);
+    camera.setDistance(100.0f);
+
+    const std::optional<TranslateGizmo3DLayout> layout =
+        computeTranslateGizmo3DLayout(scene, camera, entityId);
+    CNA_STUDIO_EXPECT(layout.has_value());
+    if (!layout) { return; }
+
+    StudioVector2 grab;
+    for (const StudioVector2& corner : layout->planes[0].screenCorners)
+    {
+        grab.x += corner.x * 0.25f;
+        grab.y += corner.y * 0.25f;
+    }
+
+    TranslateGizmo3DDrag drag;
+    CNA_STUDIO_EXPECT(drag.begin(scene, camera, *layout, entityId, grab));
+    CNA_STUDIO_EXPECT(drag.getAxis() == GizmoAxis3D::XY);
+
+    // Not moved yet is not an edit, exactly as an axis drag promises.
+    CNA_STUDIO_EXPECT(!drag.update(scene, camera, grab, GizmoSnap{}).has_value());
+
+    const std::optional<StudioVector3> moved =
+        drag.update(scene, camera, StudioVector2{grab.x + 50.0f, grab.y + 30.0f}, GizmoSnap{});
+    CNA_STUDIO_EXPECT(moved.has_value());
+    if (!moved) { return; }
+
+    // Z untouched, X and Y both changed: the plane's own two axes, and nothing else.
+    CNA_STUDIO_EXPECT(cameraNearlyEqual(moved->z, 0.0f, 0.001f));
+    CNA_STUDIO_EXPECT(std::fabs(moved->x) > 0.5f);
+    CNA_STUDIO_EXPECT(std::fabs(moved->y) > 0.5f);
+
+    // Snapping rounds both in-plane axes and still leaves the third where it was.
+    GizmoSnap snap;
+    snap.translate = 10.0f;
+    const std::optional<StudioVector3> snapped =
+        drag.update(scene, camera, StudioVector2{grab.x + 50.0f, grab.y + 30.0f}, snap);
+    CNA_STUDIO_EXPECT(snapped.has_value());
+    if (snapped)
+    {
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(std::fmod(snapped->x, 10.0f), 0.0f, 0.001f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(std::fmod(snapped->y, 10.0f), 0.0f, 0.001f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(snapped->z, 0.0f, 0.001f));
+    }
+
+    // A plane seen exactly edge-on has no answer, and the drag refuses rather than inventing one --
+    // the same refusal `closestPointOnAxis` makes for an arm pointing at the camera.
+    const WorldRay acrossZ{StudioVector3{0.0f, 0.0f, 100.0f}, StudioVector3{1.0f, 0.0f, 0.0f}};
+    CNA_STUDIO_EXPECT(
+        !intersectRayWithPlane(acrossZ, StudioVector3{}, StudioVector3{0.0f, 0.0f, 1.0f})
+             .has_value());
+
+    // A ray pointed away from the plane meets it behind the eye, which is not an answer either: an
+    // entity dragged to that point would jump to a mirror image of where the cursor is.
+    const WorldRay away{StudioVector3{0.0f, 0.0f, 100.0f}, StudioVector3{0.0f, 0.0f, 1.0f}};
+    CNA_STUDIO_EXPECT(
+        !intersectRayWithPlane(away, StudioVector3{}, StudioVector3{0.0f, 0.0f, 1.0f}).has_value());
+
+    // And the ordinary case is where the geometry says: straight down at (30, 40) meets the XY
+    // plane at exactly that point.
+    const WorldRay downZ{StudioVector3{30.0f, 40.0f, 100.0f}, StudioVector3{0.0f, 0.0f, -1.0f}};
+    const std::optional<StudioVector3> hit =
+        intersectRayWithPlane(downZ, StudioVector3{}, StudioVector3{0.0f, 0.0f, 1.0f});
+    CNA_STUDIO_EXPECT(hit.has_value());
+    if (hit)
+    {
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(hit->x, 30.0f, 0.001f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(hit->y, 40.0f, 0.001f));
+        CNA_STUDIO_EXPECT(cameraNearlyEqual(hit->z, 0.0f, 0.001f));
+    }
+}
+
 CNA_STUDIO_TEST(AThreeDimensionalDragFollowsTheCursorAlongTheGrabbedAxis)
 {
     ComponentRegistry registry = makeRegistry();

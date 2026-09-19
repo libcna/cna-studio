@@ -22,6 +22,7 @@
  * nothing but contrast.
  */
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -47,8 +48,31 @@ namespace CNA::Studio
          * plane -- but scaling by one factor on all three axes is the commonest scale of all, and
          * the 2D gizmo has had the same handle since ED-401.
          */
-        All
+        All,
+
+        /**
+         * @brief The plane spanned by the X and Y arms. Only the translate gizmo has such handles.
+         *
+         * `plan.md` STUDIO-12001. A rotation is about an axis and a scale is along one, so neither
+         * has a plane to offer; a *translation* in a plane is the commonest 3D move there is, and
+         * without it sliding an object across a floor takes two drags along two arms and lands
+         * wherever the second one stopped. The 2D gizmo has had its `Both` centre handle for the
+         * same reason since ED-401 -- this is that handle, once there are three planes to choose.
+         */
+        XY,
+
+        /** @brief The plane spanned by the Y and Z arms. Translate only. */
+        YZ,
+
+        /** @brief The plane spanned by the Z and X arms. Translate only. */
+        ZX
     };
+
+    /** @brief Returns true when @p axis names a plane rather than a single arm. */
+    [[nodiscard]] constexpr bool isGizmoPlane(GizmoAxis3D axis)
+    {
+        return axis == GizmoAxis3D::XY || axis == GizmoAxis3D::YZ || axis == GizmoAxis3D::ZX;
+    }
 
     /** @brief Returns the stable name of @p axis, for logs and tests. */
     [[nodiscard]] const char* toString(GizmoAxis3D axis);
@@ -83,7 +107,49 @@ namespace CNA::Studio
 
         /** @brief How far from an arm, in pixels, still counts as grabbing it. */
         float grabTolerance = 8.0f;
+
+        /**
+         * @brief One plane handle: a square offset from the origin along two of the three arms.
+         *
+         * Offset rather than cornered at the origin, and that is the whole of why the arms and the
+         * planes do not fight each other for a press: the square starts a quarter of the way out,
+         * so every pixel of an arm's own length is still the arm's.
+         */
+        struct Plane
+        {
+            /** @brief The axis *not* in the plane, which is the plane's normal. */
+            StudioVector3 normal;
+
+            /** @brief The two in-plane arm directions, for constraining and snapping a drag. */
+            StudioVector3 u;
+            StudioVector3 v;
+
+            /** @brief The square's four world corners, in order round it. */
+            std::array<StudioVector3, 4> corners{};
+
+            /** @brief The same four in viewport pixels. */
+            std::array<StudioVector2, 4> screenCorners{};
+
+            /** @brief False when any corner is behind the eye: a half-projected quad is not a quad. */
+            bool visible = false;
+        };
+
+        /**
+         * @brief The XY, YZ and ZX handles, in that order.
+         *
+         * `plan.md` STUDIO-12001. Three rather than one, because which plane a user wants is the
+         * question they are answering by reaching for one -- a single "screen plane" handle would
+         * slide an object along whatever the camera happened to be looking at, which is not a
+         * direction anything in the scene is laid out along.
+         */
+        std::array<Plane, 3> planes{};
     };
+
+    /** @brief How far along an arm the plane handles begin, as a fraction of its length. */
+    inline constexpr float kGizmo3DPlaneInner = 0.28f;
+
+    /** @brief How far along an arm the plane handles end, as a fraction of its length. */
+    inline constexpr float kGizmo3DPlaneOuter = 0.58f;
 
     /** @brief The on-screen length the arms are sized to. Matches the 2D gizmo's, so both feel alike. */
     inline constexpr float kGizmo3DScreenLength = 90.0f;
@@ -141,6 +207,23 @@ namespace CNA::Studio
      */
     [[nodiscard]] std::optional<float> closestPointOnAxis(const WorldRay& ray, const StudioVector3& origin,
                                                           const StudioVector3& axis);
+
+    /**
+     * @brief Returns where @p ray meets the plane through @p origin with normal @p normal.
+     *
+     * The plane counterpart of `closestPointOnAxis`, and the whole of a plane drag's mathematics:
+     * a plane drag asks where on this surface the user is pointing. Nothing when the ray is
+     * parallel to the plane -- the case of a plane seen exactly edge-on, where a pixel of cursor
+     * movement would otherwise fling the entity across the level, which is the same reason the axis
+     * form returns nothing for an arm pointing at the camera.
+     *
+     * Also nothing when the meeting point is behind the eye: a ray pointed away from a plane still
+     * meets it, mathematically, at a negative distance, and taking that answer would drag an object
+     * to a mirror image of where the cursor is.
+     */
+    [[nodiscard]] std::optional<StudioVector3> intersectRayWithPlane(const WorldRay& ray,
+                                                                     const StudioVector3& origin,
+                                                                     const StudioVector3& normal);
 
     /**
      * @brief Where the 3D rotate gizmo is: three rings, sampled and projected.
@@ -545,13 +628,21 @@ namespace CNA::Studio
         Uuid entityId_;
         GizmoAxis3D axis_ = GizmoAxis3D::None;
 
-        /** @brief The grabbed arm's world direction, fixed at the press. */
+        /** @brief The grabbed arm's world direction, fixed at the press. Unused for a plane. */
         StudioVector3 direction_;
+
+        /** @brief The grabbed plane's normal and its two in-plane axes. Unused for an arm. */
+        StudioVector3 normal_;
+        StudioVector3 planeU_;
+        StudioVector3 planeV_;
 
         StudioVector3 startWorld_;
         StudioVector3 startLocal_;
 
         /** @brief Where along the axis the press pointed, so the entity does not jump to the cursor. */
         float startParameter_ = 0.0f;
+
+        /** @brief Where on the plane the press pointed, for the same reason. */
+        StudioVector3 startHit_;
     };
 }

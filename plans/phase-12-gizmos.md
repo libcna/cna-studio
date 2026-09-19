@@ -6,11 +6,11 @@
 
 **Exit criteria.** Transforming objects feels precise and predictable, and every drag is exactly one undo entry.
 
-**Progress:** 1 of 11 complete `█░░░░░░░░░░░`
+**Progress:** 2 of 11 complete `██░░░░░░░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
-| `STUDIO-12001` | Translate gizmo | ⬜ | `STUDIO-11006` |
+| `STUDIO-12001` | Translate gizmo | ✅ | `STUDIO-11006` |
 | `STUDIO-12002` | Rotate gizmo | ⬜ | `STUDIO-11006` |
 | `STUDIO-12003` | Scale gizmo | ⬜ | `STUDIO-11006` |
 | `STUDIO-12004` | Local and world transform spaces | ⬜ | `STUDIO-12001` |
@@ -25,6 +25,51 @@
 ## Acceptance and verification
 
 Tasks whose completion condition is not obvious from the title.
+
+### `STUDIO-12001` — Translate gizmo
+
+**Acceptance.** An entity can be moved along one axis or in one plane, in either space, snapped or
+free, as one entity or as a selection — and where the manipulator is drawn is where it is grabbed.
+
+**Most of it was already there and one thing was not.** The 2D gizmo has had two arms and a `Both`
+centre handle since ED-401; the 3D one has had three arms, screen-space sizing, local and world
+spaces, a shared pivot for multi-selections and snapping since the prototype. What it did not have
+was **plane handles** — it was three bare lines — so sliding an object across a floor took two drags
+along two arms and landed wherever the second one stopped. That is the commonest 3D move there is,
+and the 2D gizmo's centre handle is the same idea with only one plane to choose from.
+
+**Three squares, not one.** A single "screen plane" handle is simpler and slides an object along
+whatever the camera happens to be looking at, which is not a direction anything in the scene is laid
+out along. Which plane the user wants is the question they answer by reaching for one of three.
+
+**Each square is drawn in the colour of the arm it leaves out** — the XY square is blue, for Z.
+That is the only labelling a square between two arms can carry, and it says the useful thing: which
+axis the drag will not touch.
+
+**The squares start a quarter of the way out**, and that is what stops the arms and the planes
+fighting over a press: every pixel of an arm's own length is still the arm's. The hit test tries the
+arms first as well, because an arm is a line and a plane is an area, so a press within a few pixels
+of an arm is far more likely to be aimed at it. The case that would catch getting this backwards
+asserts a press halfway along the X arm is still X.
+
+**The third axis is the assertion that matters for the drag.** A plane drag solved as "wherever the
+ray happens to be" moves the entity off the plane as soon as the cursor leaves the square — the
+failure that makes a plane handle worse than two axis drags rather than better. `intersectRayWithPlane`
+is the plane counterpart of `closestPointOnAxis` and refuses in the same two ways: a plane seen
+exactly edge-on has no answer, and a ray pointed away from a plane meets it at a negative distance,
+which would drag the object to a mirror image of where the cursor is.
+
+**Snapping rounds both in-plane axes and neither other.** The *result* rather than the movement, as
+the axis form already does, so the entity lands on the grid rather than a grid-sized distance from
+where it happened to start — and the axis the plane leaves out keeps whatever the entity had.
+
+**Verification.** `tests/SceneTests.cpp`: three visible squares whose normals are the arms they
+leave out; the middle of each is a grab on that plane; a press along an arm is still the arm and the
+origin belongs to no plane; the gizmo draws three arms and three squares. And the drag: two axes
+move, the third does not, snapping rounds the two and leaves the third, an edge-on plane and a ray
+pointed away both refuse, and the ordinary intersection is where the geometry says. Checked by
+causing both: planes tested before the arms makes the X drag unreachable, and a drag that leaves the
+plane fails three assertions including the one that names the third axis.
 
 ### `STUDIO-12009` — Box selection
 
