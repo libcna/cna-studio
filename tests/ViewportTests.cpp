@@ -1217,6 +1217,119 @@ CNA_STUDIO_TEST(APreviewLooksThroughTheCameraItIsAskedAboutRatherThanThePrimaryO
     CNA_STUDIO_EXPECT(nearlyEqual(missing.camera.getViewportSize().x, 800.0f));
 }
 
+/**
+ * A rubber band takes everything it overlaps, and nothing it does not (`plan.md` STUDIO-12009).
+ *
+ * **Overlap and not enclosure**, which is the decision worth a case rather than a comment. Requiring
+ * an entity to be wholly inside the band is the tidier rule and the wrong one: a level's backdrop is
+ * larger than the viewport, so nothing could ever band it, and a user would learn that the rubber
+ * band works on small things only. The cost is real -- that backdrop is caught by every band drawn
+ * over it -- and it is the lesser one, because a selection with something extra in it can be seen
+ * and corrected while one that silently cannot include an object cannot.
+ */
+CNA_STUDIO_TEST(ABandTakesEveryEntityItOverlapsInTheTwoDimensionalView)
+{
+    const ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+
+    StudioCamera2D camera;
+    camera.setViewportSize(StudioVector2{800.0f, 600.0f});
+
+    // Three sprites in a row at the origin's height, 100 apart and 40 across. At the default zoom
+    // and centre the origin is the middle of the panel, so they land around x = 400.
+    const Uuid left = addEntity(scene, registry, "Left", -100.0f, 0.0f);
+    addSprite(scene, registry, left, 40, 40);
+    const Uuid middle = addEntity(scene, registry, "Middle", 0.0f, 0.0f);
+    addSprite(scene, registry, middle, 40, 40);
+    const Uuid right = addEntity(scene, registry, "Right", 100.0f, 0.0f);
+    addSprite(scene, registry, right, 40, 40);
+
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{40.0f, 40.0f}; };
+
+    const auto screenOf = [&](const Uuid& id) {
+        const std::optional<WorldBounds2D> bounds = computeEntityBounds2D(scene, id, sizes);
+        return camera.worldToScreen(bounds->getCenter());
+    };
+    const StudioVector2 leftAt = screenOf(left);
+    const StudioVector2 rightAt = screenOf(right);
+
+    // A band across the middle two: from just left of the middle sprite to past the right one.
+    const std::vector<Uuid> two = pickEntitiesIn(
+        scene, camera, StudioVector2{(leftAt.x + screenOf(middle).x) * 0.5f, leftAt.y - 40.0f},
+        StudioVector2{rightAt.x + 40.0f, rightAt.y + 40.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(two.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(two.front() == middle);
+    CNA_STUDIO_EXPECT(two.back() == right);
+
+    // Dragged the other way round: the same answer. A band is dragged in whichever direction the
+    // user started in, and up-and-left is as ordinary as down-and-right.
+    const std::vector<Uuid> reversed = pickEntitiesIn(
+        scene, camera, StudioVector2{rightAt.x + 40.0f, rightAt.y + 40.0f},
+        StudioVector2{(leftAt.x + screenOf(middle).x) * 0.5f, leftAt.y - 40.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(reversed.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(reversed.front() == middle);
+
+    // A band that only clips a sprite's edge still takes it: overlap, not enclosure. Two pixels
+    // wide, over the right-hand sprite's left edge only.
+    const std::optional<WorldBounds2D> rightBounds = computeEntityBounds2D(scene, right, sizes);
+    const StudioVector2 rightEdge = camera.worldToScreen(rightBounds->min);
+    const std::vector<Uuid> clipped = pickEntitiesIn(
+        scene, camera, StudioVector2{rightEdge.x + 1.0f, rightAt.y - 1.0f},
+        StudioVector2{rightEdge.x + 3.0f, rightAt.y + 1.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(clipped.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(clipped.front() == right);
+
+    // A band over empty space takes nothing, which is what makes sweeping an empty area a way to
+    // clear the selection rather than a no-op.
+    CNA_STUDIO_EXPECT(pickEntitiesIn(scene, camera, StudioVector2{5.0f, 5.0f},
+                                     StudioVector2{20.0f, 20.0f}, sizes)
+                          .empty());
+
+    // A disabled entity is not part of the scene the user is looking at, so a band over where it
+    // would be must not take it -- the same rule the click picker has.
+    scene.findEntityForEdit(middle)->setEnabled(false);
+    const std::vector<Uuid> withoutDisabled = pickEntitiesIn(
+        scene, camera, StudioVector2{0.0f, 0.0f}, StudioVector2{800.0f, 600.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(withoutDisabled.size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(std::find(withoutDisabled.begin(), withoutDisabled.end(), middle)
+                      == withoutDisabled.end());
+}
+
+/**
+ * A band over a camera takes the camera (`plan.md` STUDIO-12009).
+ *
+ * An entity with no geometry has no world bounds at all, so a band written only against bounds
+ * would sweep straight past every camera, light and marker in the scene -- the entities a user most
+ * often wants to gather up, and the ones the click picker already finds by their icons. Boxed at the
+ * icon's own size, where it is drawn, so what is swept is what is seen.
+ */
+CNA_STUDIO_TEST(ABandOverAnIconTakesTheEntityItStandsFor)
+{
+    const ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+
+    StudioCamera2D camera;
+    camera.setViewportSize(StudioVector2{800.0f, 600.0f});
+
+    const Uuid cameraId = addEntity(scene, registry, "Main Camera", 0.0f, 0.0f);
+    addComponent(scene, registry, cameraId, BuiltinComponentIds::kCamera);
+
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{}; };
+    const StudioVector2 at = camera.worldToScreen(StudioVector2{});
+
+    const std::vector<Uuid> caught = pickEntitiesIn(scene, camera,
+                                                    StudioVector2{at.x - 4.0f, at.y - 4.0f},
+                                                    StudioVector2{at.x + 4.0f, at.y + 4.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(caught.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(caught.front() == cameraId);
+
+    // And a band well clear of it takes nothing: the icon is boxed at its own size rather than
+    // treated as covering the whole view.
+    CNA_STUDIO_EXPECT(pickEntitiesIn(scene, camera, StudioVector2{at.x + 60.0f, at.y + 60.0f},
+                                     StudioVector2{at.x + 120.0f, at.y + 120.0f}, sizes)
+                          .empty());
+}
+
 CNA_STUDIO_TEST(CamerasAndLightsGetIconsAndSpritesDoNot)
 {
     const ComponentRegistry registry = makeRegistry();

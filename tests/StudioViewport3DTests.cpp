@@ -818,3 +818,77 @@ CNA_STUDIO_TEST(TheManipulatorTheToolbarNamesIsTheOneThatDragsRatherThanOrbits)
     CNA_STUDIO_EXPECT(after == before);
     CNA_STUDIO_EXPECT(fixture.camera.getYaw() != yawBefore);
 }
+
+/**
+ * A band in 3D goes where a left drag already means "select" (`plan.md` STUDIO-12009).
+ *
+ * Maya's scheme and Blender's both leave the unmodified left button to selection -- Maya puts every
+ * gesture behind Alt and Blender puts them on the middle button -- so a drag there is a rubber band
+ * and nothing else has to move to make room for it. Studio's own scheme spends the plain left drag
+ * on the orbit, so the band goes on Ctrl+left there: consistent rather than invented, because Ctrl
+ * already means "add to what is selected" on a click, and Ctrl is no part of Studio's navigation
+ * vocabulary so nothing is taken away.
+ */
+CNA_STUDIO_TEST(ABandInThreeDGoesWhereALeftDragAlreadyMeansSelect)
+{
+    // Far enough back that both entities are on screen and neither fills it: the fixture's default
+    // framing puts one of them off the edge, and a band that caught one of two would pass for the
+    // wrong reason.
+    const auto standBack = [](Fixture& f) {
+        f.camera.setPivot(StudioVector3{20.0f, 0.0f, 0.0f});
+        f.camera.setDistance(120.0f);
+    };
+
+    Fixture fixture;
+    fixture.state.navigation = StudioNavigationStyle::Maya;
+    fixture.state.mode = GizmoMode::None;
+    standBack(fixture);
+    fixture.run(away());
+
+    const float yaw = fixture.camera.getYaw();
+
+    // A drag across the whole panel. Under Maya's scheme it turns nothing and sweeps everything.
+    fixture.dragTo(20.0f, 20.0f, kWidth - 20.0f, kHeight - 20.0f);
+
+    CNA_STUDIO_EXPECT_EQ(fixture.camera.getYaw(), yaw);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(fixture.last.selectionChanged);
+
+    // A drag over an empty corner clears, which is what makes sweeping nothing a deselect.
+    fixture.dragTo(2.0f, 2.0f, 30.0f, 30.0f);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+
+    // Under Studio's own scheme the same drag orbits and selects nothing: the band is not there,
+    // and that is the scheme the user chose rather than a hole.
+    Fixture studio;
+    studio.state.mode = GizmoMode::None;
+    standBack(studio);
+    studio.run(away());
+    const float studioYaw = studio.camera.getYaw();
+
+    studio.dragTo(20.0f, 20.0f, kWidth - 20.0f, kHeight - 20.0f);
+    CNA_STUDIO_EXPECT(std::abs(studio.camera.getYaw() - studioYaw) > 0.01f);
+    CNA_STUDIO_EXPECT(studio.context.getSelection().empty());
+
+    // Ctrl+left is the band there, and it adds rather than replacing.
+    studio.context.select(studio.nearEntity);
+    const float beforeBand = studio.camera.getYaw();
+    studio.dragTo(20.0f, 20.0f, kWidth - 20.0f, kHeight - 20.0f, /*shift=*/false,
+                  /*control=*/true);
+
+    CNA_STUDIO_EXPECT_EQ(studio.camera.getYaw(), beforeBand);
+    CNA_STUDIO_EXPECT_EQ(studio.context.getSelection().size(), std::size_t{2});
+
+    // And a Ctrl press that does not move is still the Ctrl-click it was: it toggles the entity
+    // under it rather than sweeping a band of no width.
+    studio.context.clearSelection();
+    const std::optional<StudioVector2> nearAt =
+        studio.camera.worldToScreen(StudioVector3{0.0f, 0.0f, 0.0f});
+    CNA_STUDIO_EXPECT(nearAt.has_value());
+    if (!nearAt) { return; }
+
+    studio.clickAt(nearAt->x, nearAt->y, /*control=*/true);
+    CNA_STUDIO_EXPECT_EQ(studio.context.getSelection().size(), std::size_t{1});
+    studio.clickAt(nearAt->x, nearAt->y, /*control=*/true);
+    CNA_STUDIO_EXPECT(studio.context.getSelection().empty());
+}

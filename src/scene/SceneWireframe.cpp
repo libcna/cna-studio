@@ -833,6 +833,71 @@ namespace CNA::Studio
         return result;
     }
 
+    std::vector<Uuid> pickEntitiesIn3D(const SceneDocument& scene, const StudioCamera3D& camera,
+                                       const StudioVector2& from, const StudioVector2& to,
+                                       const SpriteSizeProvider& sizeProvider,
+                                       const MeshProvider& meshProvider)
+    {
+        std::vector<Uuid> picked;
+
+        const float left = std::min(from.x, to.x);
+        const float right = std::max(from.x, to.x);
+        const float top = std::min(from.y, to.y);
+        const float bottom = std::max(from.y, to.y);
+
+        for (const StudioEntity& entity : scene.getEntities())
+        {
+            if (!entity.isEnabled()) { continue; }
+
+            const std::optional<WorldBounds3D> bounds =
+                computeEntityBounds3D(scene, entity.getId(), sizeProvider, meshProvider);
+            if (!bounds) { continue; }
+
+            const StudioVector3 corners[8] = {
+                {bounds->min.x, bounds->min.y, bounds->min.z},
+                {bounds->max.x, bounds->min.y, bounds->min.z},
+                {bounds->min.x, bounds->max.y, bounds->min.z},
+                {bounds->max.x, bounds->max.y, bounds->min.z},
+                {bounds->min.x, bounds->min.y, bounds->max.z},
+                {bounds->max.x, bounds->min.y, bounds->max.z},
+                {bounds->min.x, bounds->max.y, bounds->max.z},
+                {bounds->max.x, bounds->max.y, bounds->max.z}};
+
+            // Every corner, because a box in the world is not a box on the screen: under any view
+            // that is not straight down an axis, the projection of `min` and `max` alone misses the
+            // extent by however much the box is turned.
+            float entityLeft = std::numeric_limits<float>::max();
+            float entityRight = -std::numeric_limits<float>::max();
+            float entityTop = std::numeric_limits<float>::max();
+            float entityBottom = -std::numeric_limits<float>::max();
+            bool anyVisible = false;
+
+            for (const StudioVector3& corner : corners)
+            {
+                // A corner behind the eye has no screen position. Dropped rather than clamped: a
+                // clamped one would put the entity's extent wherever the clamp landed, which is a
+                // number with no meaning, and the corners in front are the part the user can see.
+                const std::optional<StudioVector2> projected = camera.worldToScreen(corner);
+                if (!projected) { continue; }
+
+                anyVisible = true;
+                entityLeft = std::min(entityLeft, projected->x);
+                entityRight = std::max(entityRight, projected->x);
+                entityTop = std::min(entityTop, projected->y);
+                entityBottom = std::max(entityBottom, projected->y);
+            }
+
+            if (!anyVisible) { continue; }
+
+            if (entityRight < left || entityLeft > right) { continue; }
+            if (entityBottom < top || entityTop > bottom) { continue; }
+
+            picked.push_back(entity.getId());
+        }
+
+        return picked;
+    }
+
     std::optional<float> intersectRayWithBounds(const WorldRay& ray, const WorldBounds3D& bounds)
     {
         // The slab test: clip the ray against each pair of parallel faces and keep the overlap.

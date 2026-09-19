@@ -395,6 +395,32 @@ namespace CNA::Studio
                                       const MeshProvider& meshProvider = {});
 
     /**
+     * @brief Returns every entity whose projected bounds overlap the band @p from -- @p to.
+     *
+     * `plan.md` STUDIO-12009, and the 3D counterpart of `pickEntitiesIn`. The two corners are in
+     * either order, and the rule is the same one: overlap rather than enclosure, because requiring
+     * an object to be wholly inside the band makes anything bigger than the viewport unselectable.
+     *
+     * **A box in the world is not a box on the screen**, so the answer is the screen extent of the
+     * eight projected corners rather than of two of them -- the same reason `transformBounds3D`
+     * re-bounds, one projection further along.
+     *
+     * **An entity partly behind the eye is measured by the part in front of it.** A corner behind
+     * the camera has no screen position at all, so it is left out and the remaining ones decide.
+     * That under-reports a wall the camera is standing inside, and it under-reports it in the safe
+     * direction: what the user can see of it is what they can band.
+     *
+     * @param meshProvider So a model is boxed at the size it is drawn, for the reason
+     *        `pickEntityAt3D` takes one (`plan.md` STUDIO-11008).
+     */
+    [[nodiscard]] std::vector<Uuid> pickEntitiesIn3D(const SceneDocument& scene,
+                                                     const StudioCamera3D& camera,
+                                                     const StudioVector2& from,
+                                                     const StudioVector2& to,
+                                                     const SpriteSizeProvider& sizeProvider,
+                                                     const MeshProvider& meshProvider = {});
+
+    /**
      * @brief Returns the distance along @p ray at which it enters @p bounds, if it does.
      *
      * The slab test. Exposed because picking is not its only caller -- framing a click and

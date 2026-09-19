@@ -725,6 +725,7 @@ namespace CNA::Studio
                 viewportState_.endDrag();
                 viewportState_.navigating = false;
                 viewportState_.fillStart.reset();
+                viewportState_.endBoxSelect();
 
                 // The first switch frames the scene, and only the first: the default camera looks
                 // straight down an axis, so an unframed 3D view opens on a grid with the level
@@ -793,6 +794,7 @@ namespace CNA::Studio
                 // the user reaches for Erase would otherwise commit as a fill on the next release.
                 viewportState_.fillStart.reset();
                 viewportState_.endDrag();
+                viewportState_.endBoxSelect();
             };
             shell.actions().add(std::move(action));
         }
@@ -1000,6 +1002,7 @@ namespace CNA::Studio
                     services_.spriteSize);
 
                 studioViewportToolbar(frame, bounds, shell_->actions());
+                studioViewportSelectionOverlay(frame, bounds, viewportState_);
 
                 forwardToPlayer(view3D.pointerInside);
 
@@ -1025,6 +1028,7 @@ namespace CNA::Studio
             // described for the same reason and in the same place.
             studioViewportToolbar(frame, bounds, shell_->actions());
             studioViewportToolOverlay(frame, bounds, viewportState_);
+            studioViewportSelectionOverlay(frame, bounds, viewportState_);
 
             forwardToPlayer(viewport.pointerInside);
 

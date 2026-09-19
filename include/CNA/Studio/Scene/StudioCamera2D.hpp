@@ -19,6 +19,8 @@
  * pixels within the viewport panel, origin at its top-left.
  */
 
+#include <vector>
+
 #include "CNA/Studio/Core/StudioMath.hpp"
 #include "CNA/Studio/Scene/SceneTransform.hpp"
 
@@ -118,6 +120,29 @@ namespace CNA::Studio
                                                const StudioCamera2D& camera,
                                                const StudioVector2& screenPoint,
                                                const SpriteSizeProvider& sizeProvider);
+
+    /**
+     * @brief Returns every entity whose bounds overlap the screen rectangle @p from -- @p to.
+     *
+     * `plan.md` STUDIO-12009. The two corners are in either order, because a rubber band is dragged
+     * in whichever direction the user started in and normalising at the call site would be the same
+     * two lines written at every call site.
+     *
+     * **Overlap, not enclosure.** Requiring an entity to be wholly inside the band is the tidier
+     * rule and the wrong one: a level's backdrop is larger than the viewport, so nothing could ever
+     * box it, and a user would learn that the rubber band works on small things only. The cost is
+     * real and worth naming -- that same backdrop is caught by every band drawn over it -- and it
+     * is the lesser of the two, because a selection with one thing too many in it can be seen and
+     * corrected while one that silently cannot include an object cannot.
+     *
+     * Disabled entities are skipped, matching `pickEntityAt` and everything that draws. Results are
+     * in document order, so a band over the same entities twice gives the same answer twice.
+     */
+    [[nodiscard]] std::vector<Uuid> pickEntitiesIn(const SceneDocument& scene,
+                                                   const StudioCamera2D& camera,
+                                                   const StudioVector2& from,
+                                                   const StudioVector2& to,
+                                                   const SpriteSizeProvider& sizeProvider);
 
     /**
      * @brief Returns a world-space grid spacing that keeps lines about @p targetPixels apart.

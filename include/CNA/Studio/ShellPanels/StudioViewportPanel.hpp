@@ -352,6 +352,38 @@ namespace CNA::Studio
         /** @brief Where a fill drag began, while one is in flight. */
         std::optional<TileCoordinate> fillStart;
 
+        /**
+         * @brief Where a rubber-band selection began, in panel pixels, while one is in flight.
+         *
+         * `plan.md` STUDIO-12009. Panel pixels rather than world coordinates because the band is
+         * drawn on the screen and *stays* on the screen: a band anchored in the world would stretch
+         * and slide if the camera moved under it, which is exactly what a wheel notch mid-drag
+         * would do.
+         */
+        std::optional<StudioVector2> boxSelectStart;
+
+        /** @brief Where the pointer is now, while a band is being dragged. */
+        StudioVector2 boxSelectCurrent;
+
+        /**
+         * @brief Whether the band adds to the selection rather than replacing it.
+         *
+         * Resolved at the press and kept, like the navigation gesture beside it: a user who let go
+         * of Ctrl halfway through a band would otherwise find the selection they were adding to
+         * replaced at the moment they released.
+         */
+        bool boxSelectAdds = false;
+
+        /** @brief True while a rubber band is being dragged. */
+        [[nodiscard]] bool boxSelecting() const { return boxSelectStart.has_value(); }
+
+        /** @brief Abandons any band in flight. */
+        void endBoxSelect()
+        {
+            boxSelectStart.reset();
+            boxSelectAdds = false;
+        }
+
         /** @brief Which manipulator the selection shows. */
         GizmoMode mode = GizmoMode::Translate;
 
@@ -598,6 +630,33 @@ namespace CNA::Studio
                                                StudioContext& context, StudioCamera3D& camera,
                                                StudioViewportState& state,
                                                const SpriteSizeProvider& sizeProvider = {});
+
+    /**
+     * @brief How far the pointer must travel before a press becomes a band rather than a click.
+     *
+     * `plan.md` STUDIO-12009. Without it every click is a band a fraction of a pixel wide, and a
+     * click on empty space -- which is how a user deselects -- would instead run a band that
+     * selected whatever happened to be under that pixel. Four is the usual figure: below a hand's
+     * own tremor on a press, above nothing.
+     */
+    inline constexpr float kStudioBoxSelectThreshold = 4.0f;
+
+    /** @brief Returns true when a press from @p from to @p to has become a band rather than a click. */
+    [[nodiscard]] bool studioIsBoxSelectDrag(const StudioVector2& from, const StudioVector2& to);
+
+    /**
+     * @brief Returns the band to draw over a viewport of @p bounds, or nothing.
+     *
+     * In window coordinates, because that is what the draw list takes; the state holds panel pixels
+     * so the band is unaffected by the panel moving. Nothing until the press has passed
+     * `kStudioBoxSelectThreshold`, so a click never flickers a one-pixel rectangle.
+     */
+    [[nodiscard]] std::optional<UiRect> studioBoxSelectRect(const StudioViewportState& state,
+                                                            const UiRect& bounds);
+
+    /** @brief Draws the rubber band over @p bounds, if one is in flight (`plan.md` STUDIO-12009). */
+    void studioViewportSelectionOverlay(StudioFrame& frame, const UiRect& bounds,
+                                        const StudioViewportState& state);
 
     /**
      * @brief Where the camera preview goes, and which camera it looks through (STUDIO-11012).

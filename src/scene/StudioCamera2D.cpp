@@ -134,6 +134,68 @@ namespace CNA::Studio
         return result;
     }
 
+    std::vector<Uuid> pickEntitiesIn(const SceneDocument& scene, const StudioCamera2D& camera,
+                                     const StudioVector2& from, const StudioVector2& to,
+                                     const SpriteSizeProvider& sizeProvider)
+    {
+        std::vector<Uuid> picked;
+
+        // Normalised here rather than at every call site: a band is dragged in whichever direction
+        // the user started in, and up-and-left is as ordinary as down-and-right.
+        const float left = std::min(from.x, to.x);
+        const float right = std::max(from.x, to.x);
+        const float top = std::min(from.y, to.y);
+        const float bottom = std::max(from.y, to.y);
+
+        for (const StudioEntity& entity : scene.getEntities())
+        {
+            // The same rule the click picker has: a disabled entity is not part of the scene the
+            // user is looking at, so a band drawn over where it would be must not take it.
+            if (!entity.isEnabled()) { continue; }
+
+            const std::optional<WorldBounds2D> bounds =
+                computeEntityBounds2D(scene, entity.getId(), sizeProvider);
+
+            // An entity with no bounds is one the click picker finds by its icon, and an icon is a
+            // fixed size on screen: boxed at the point it is drawn at, so a band over a camera
+            // takes the camera.
+            StudioVector2 low;
+            StudioVector2 high;
+            if (bounds)
+            {
+                low = camera.worldToScreen(bounds->min);
+                high = camera.worldToScreen(bounds->max);
+            }
+            else
+            {
+                const std::optional<WorldTransform> world =
+                    computeWorldTransform(scene, entity.getId());
+                if (!world) { continue; }
+                if (getStudioIconKind(entity) == StudioIconKind::None) { continue; }
+
+                const StudioVector2 center =
+                    camera.worldToScreen(StudioVector2{world->position.x, world->position.y});
+                low = StudioVector2{center.x - kStudioIconExtent, center.y - kStudioIconExtent};
+                high = StudioVector2{center.x + kStudioIconExtent, center.y + kStudioIconExtent};
+            }
+
+            // The camera can mirror either axis, so the projected corners are not sorted.
+            const float entityLeft = std::min(low.x, high.x);
+            const float entityRight = std::max(low.x, high.x);
+            const float entityTop = std::min(low.y, high.y);
+            const float entityBottom = std::max(low.y, high.y);
+
+            // Overlap, not enclosure, with touching edges counting: a band dragged exactly along an
+            // entity's edge is one the user meant to include it.
+            if (entityRight < left || entityLeft > right) { continue; }
+            if (entityBottom < top || entityTop > bottom) { continue; }
+
+            picked.push_back(entity.getId());
+        }
+
+        return picked;
+    }
+
     float chooseGridSpacing(float zoom, float targetPixels)
     {
         if (zoom <= 0.0f) { return 0.0f; }

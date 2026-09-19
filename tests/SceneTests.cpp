@@ -2148,6 +2148,107 @@ namespace
 }
 
 /**
+ * A band in 3D is the extent of eight projected corners, not of two (`plan.md` STUDIO-12009).
+ *
+ * A box in the world is not a box on the screen: under any view that is not straight down an axis,
+ * projecting `min` and `max` alone misses the extent by however much the box is turned. That is the
+ * same mistake `transformBounds3D` exists to avoid, one projection further along, and the case that
+ * catches it is a camera looking at a corner.
+ */
+CNA_STUDIO_TEST(ABandInThreeDimensionsSweepsWhatTheCameraCanSee)
+{
+    ComponentRegistry registry = makeRegistry();
+    SceneDocument scene;
+
+    const Uuid left = scene.addEntity(makeSpriteEntity(registry, "Left", -150.0f, 0.0f));
+    const Uuid middle = scene.addEntity(makeSpriteEntity(registry, "Middle", 0.0f, 0.0f));
+    const Uuid right = scene.addEntity(makeSpriteEntity(registry, "Right", 150.0f, 0.0f));
+
+    StudioCamera3D camera = makeCamera();
+    camera.setPivot(StudioVector3{});
+    camera.setDistance(700.0f);
+
+    const SpriteSizeProvider sizes = [](const Uuid&) { return StudioVector2{60.0f, 60.0f}; };
+
+    const auto screenOf = [&](const Uuid& id) {
+        const std::optional<WorldBounds3D> bounds = computeEntityBounds3D(scene, id, sizes);
+        return camera.worldToScreen(bounds->getCenter());
+    };
+
+    const std::optional<StudioVector2> leftAt = screenOf(left);
+    const std::optional<StudioVector2> rightAt = screenOf(right);
+    CNA_STUDIO_EXPECT(leftAt.has_value() && rightAt.has_value());
+    if (!leftAt || !rightAt) { return; }
+
+    // The whole panel: all three.
+    const std::vector<Uuid> everything = pickEntitiesIn3D(
+        scene, camera, StudioVector2{0.0f, 0.0f}, StudioVector2{1600.0f, 900.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(everything.size(), std::size_t{3});
+
+    // A band around the middle one alone, taken from where it is actually drawn.
+    const std::optional<StudioVector2> middleAt = screenOf(middle);
+    CNA_STUDIO_EXPECT(middleAt.has_value());
+    if (!middleAt) { return; }
+
+    const std::vector<Uuid> one = pickEntitiesIn3D(
+        scene, camera, StudioVector2{middleAt->x - 10.0f, middleAt->y - 10.0f},
+        StudioVector2{middleAt->x + 10.0f, middleAt->y + 10.0f}, sizes);
+    CNA_STUDIO_EXPECT_EQ(one.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(one.front() == middle);
+
+    // Empty space takes nothing, and a disabled entity is passed over.
+    CNA_STUDIO_EXPECT(pickEntitiesIn3D(scene, camera, StudioVector2{2.0f, 2.0f},
+                                       StudioVector2{6.0f, 6.0f}, sizes)
+                          .empty());
+
+    scene.findEntityForEdit(middle)->setEnabled(false);
+    CNA_STUDIO_EXPECT_EQ(pickEntitiesIn3D(scene, camera, StudioVector2{0.0f, 0.0f},
+                                          StudioVector2{1600.0f, 900.0f}, sizes)
+                             .size(),
+                         std::size_t{2});
+    scene.findEntityForEdit(middle)->setEnabled(true);
+
+    // Now the case about eight corners. A model turned to face a corner of the view projects wider
+    // than its `min` and `max` do, so a band placed just outside those two must still catch it.
+    SceneDocument boxed;
+    const Uuid modelId = Uuid::generate();
+    const Uuid crate = addModelEntity(boxed, modelId);
+    const MeshData cube = makeCubeMesh(100.0f);
+    const MeshProvider meshes = [&](const Uuid& which) -> const MeshData* {
+        return which == modelId ? &cube : nullptr;
+    };
+
+    StudioCamera3D corner = makeCamera();
+    corner.setPivot(StudioVector3{});
+    corner.setDistance(400.0f);
+    corner.setYaw(0.7853982f);    // 45 degrees
+    corner.setPitch(0.6154797f);  // atan(1 / sqrt(2)): the isometric corner
+
+    const std::optional<WorldBounds3D> bounds = computeEntityBounds3D(boxed, crate, sizes, meshes);
+    CNA_STUDIO_EXPECT(bounds.has_value());
+    if (!bounds) { return; }
+
+    const std::optional<StudioVector2> low = corner.worldToScreen(bounds->min);
+    const std::optional<StudioVector2> high = corner.worldToScreen(bounds->max);
+    CNA_STUDIO_EXPECT(low.has_value() && high.has_value());
+    if (!low || !high) { return; }
+
+    // A one-pixel band just outside the further of those two projected corners, on the side the
+    // cube's other corners reach. An implementation that projected only `min` and `max` would put
+    // the cube's screen extent inside that pair and find nothing here.
+    const float beyond = std::max(low->x, high->x) + 8.0f;
+    const std::optional<StudioVector2> center = corner.worldToScreen(bounds->getCenter());
+    CNA_STUDIO_EXPECT(center.has_value());
+    if (!center) { return; }
+
+    const std::vector<Uuid> caught =
+        pickEntitiesIn3D(boxed, corner, StudioVector2{beyond, center->y - 1.0f},
+                         StudioVector2{beyond + 1.0f, center->y + 1.0f}, sizes, meshes);
+    CNA_STUDIO_EXPECT_EQ(caught.size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(caught.front() == crate);
+}
+
+/**
  * An imported model is measured by its mesh, and was measured by an eight-unit box (STUDIO-11008).
  *
  * The defect this fixes is not subtle once it is named: `computeEntityBounds3D` had no way to ask

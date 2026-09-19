@@ -105,6 +105,26 @@ namespace
             return camera.worldToScreen(StudioVector2{position.x, position.y});
         }
 
+        /** @brief Presses at (@p x, @p y), moves to (@p toX, @p toY) and releases there. */
+        void drag(float x, float y, float toX, float toY, bool additive = false)
+        {
+            run(at(x, y));
+
+            UiInputState down = at(x, y);
+            down.setMouseDown(UiMouseButton::Left, true);
+            down.modifiers.control = additive;
+            run(down);
+
+            UiInputState moved = at(toX, toY);
+            moved.setMouseDown(UiMouseButton::Left, true);
+            moved.modifiers.control = additive;
+            run(moved);
+
+            UiInputState up = at(toX, toY);
+            up.modifiers.control = additive;
+            run(up);
+        }
+
         void click(float x, float y, bool additive = false)
         {
             run(at(x, y));
@@ -119,6 +139,115 @@ namespace
             run(up);
         }
     };
+}
+
+/**
+ * A drag over empty space sweeps a band; a press that does not move is still a click (STUDIO-12009).
+ *
+ * The threshold is the whole of the difference, and it is what makes the feature safe to add to a
+ * viewport that already treats a press as a selection. Without it every click becomes a band a
+ * fraction of a pixel wide, and the click on empty space that clears the selection -- the way a
+ * user deselects -- becomes a band that selects whatever sits under that pixel instead.
+ */
+CNA_STUDIO_TEST(ADragSweepsABandAndAPressThatDoesNotMoveIsStillAClick)
+{
+    Fixture fixture;
+    fixture.settle();
+
+    const StudioVector2 leftAt = fixture.screenOf(fixture.left);
+    const StudioVector2 rightAt = fixture.screenOf(fixture.right);
+
+    // A band across both sprites, begun on empty space above them.
+    fixture.drag(leftAt.x - 60.0f, leftAt.y - 60.0f, rightAt.x + 60.0f, rightAt.y + 60.0f);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{2});
+    CNA_STUDIO_EXPECT(fixture.last.selectionChanged);
+
+    // A band over one of them replaces rather than adds: the same rule a plain click has.
+    fixture.drag(leftAt.x - 20.0f, leftAt.y - 20.0f, leftAt.x + 20.0f, leftAt.y + 20.0f);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().front() == fixture.left);
+
+    // Ctrl adds, and adds as a union rather than a toggle -- a band that widened over something
+    // already selected and removed it would fight the user as they dragged.
+    fixture.drag(rightAt.x - 20.0f, rightAt.y - 20.0f, rightAt.x + 20.0f, rightAt.y + 20.0f,
+                 /*additive=*/true);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{2});
+
+    fixture.drag(leftAt.x - 60.0f, leftAt.y - 60.0f, rightAt.x + 60.0f, rightAt.y + 60.0f,
+                 /*additive=*/true);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{2});
+
+    // A band over nothing clears, which is what makes sweeping an empty area a deselect.
+    fixture.drag(4.0f, 4.0f, 40.0f, 40.0f);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+
+    // And the threshold. A press that moves one pixel is a click on what is under it, not a band
+    // of one pixel -- so this selects the sprite rather than sweeping past it.
+    fixture.drag(leftAt.x, leftAt.y, leftAt.x + 1.0f, leftAt.y);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{1});
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().front() == fixture.left);
+
+    // A press on empty space that moves one pixel still clears, for the same reason.
+    fixture.drag(4.0f, 4.0f, 5.0f, 4.0f);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+
+    // The sharpest difference between a click and a band, and so the one that says the threshold is
+    // doing its job: Ctrl on a *click* toggles, and toggling something already selected removes it,
+    // while Ctrl on a band adds as a union and never removes. A press with no movement that became
+    // a band would leave the sprite selected here instead of clearing it.
+    //
+    // With the manipulator off, because a press on a selected entity is a press on its gizmo and
+    // the gizmo takes it first -- which is correct, and is not the thing this case is about.
+    fixture.state.mode = GizmoMode::None;
+    fixture.click(leftAt.x, leftAt.y);
+    CNA_STUDIO_EXPECT_EQ(fixture.context.getSelection().size(), std::size_t{1});
+    fixture.click(leftAt.x, leftAt.y, /*additive=*/true);
+    CNA_STUDIO_EXPECT(fixture.context.getSelection().empty());
+    fixture.state.mode = GizmoMode::Translate;
+
+    CNA_STUDIO_EXPECT(studioIsBoxSelectDrag(StudioVector2{0.0f, 0.0f}, StudioVector2{0.0f, 4.0f}));
+    CNA_STUDIO_EXPECT(!studioIsBoxSelectDrag(StudioVector2{0.0f, 0.0f}, StudioVector2{3.0f, 3.0f}));
+}
+
+/**
+ * The band is drawn only once it is a band, and follows the drag (`plan.md` STUDIO-12009).
+ *
+ * A rubber band a user cannot see is one they are drawing blind, and a rectangle that flickered on
+ * every click would be worse than none at all -- which is what a band with no threshold looks like.
+ */
+CNA_STUDIO_TEST(TheBandIsDrawnOnlyOnceThePressHasBecomeOne)
+{
+    Fixture fixture;
+    fixture.settle();
+
+    CNA_STUDIO_EXPECT(!studioBoxSelectRect(fixture.state, fixture.body).has_value());
+
+    fixture.state.boxSelectStart = StudioVector2{100.0f, 80.0f};
+    fixture.state.boxSelectCurrent = StudioVector2{102.0f, 81.0f};
+    CNA_STUDIO_EXPECT(!studioBoxSelectRect(fixture.state, fixture.body).has_value());
+
+    // Dragged up and to the left, which is as ordinary as the other direction: the rectangle comes
+    // out the right way round rather than inside out.
+    fixture.state.boxSelectCurrent = StudioVector2{40.0f, 20.0f};
+    const std::optional<UiRect> band = studioBoxSelectRect(fixture.state, fixture.body);
+    CNA_STUDIO_EXPECT(band.has_value());
+    if (!band) { return; }
+
+    CNA_STUDIO_EXPECT(band->width > 0.0f && band->height > 0.0f);
+    CNA_STUDIO_EXPECT_EQ(band->left(), fixture.body.left() + 40.0f);
+    CNA_STUDIO_EXPECT_EQ(band->top(), fixture.body.top() + 20.0f);
+    CNA_STUDIO_EXPECT_EQ(band->right(), fixture.body.left() + 100.0f);
+    CNA_STUDIO_EXPECT_EQ(band->bottom(), fixture.body.top() + 80.0f);
+
+    // Panel pixels, not window pixels, so a panel that moves takes its band with it rather than
+    // leaving it behind on the screen.
+    fixture.body = UiRect{300.0f, 200.0f, kWidth, kHeight};
+    const std::optional<UiRect> moved = studioBoxSelectRect(fixture.state, fixture.body);
+    CNA_STUDIO_EXPECT(moved.has_value());
+    if (moved) { CNA_STUDIO_EXPECT_EQ(moved->left(), 340.0f); }
+
+    fixture.state.endBoxSelect();
+    CNA_STUDIO_EXPECT(!studioBoxSelectRect(fixture.state, fixture.body).has_value());
 }
 
 CNA_STUDIO_TEST(TheCameraIsToldTheSizeItIsDrawingInto)

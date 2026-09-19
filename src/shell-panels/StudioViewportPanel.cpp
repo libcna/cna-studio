@@ -729,6 +729,89 @@ namespace CNA::Studio
         }
     }
 
+    namespace
+    {
+        /**
+         * @brief Applies a band's @p caught entities to the selection, and returns a representative.
+         *
+         * Adding is a union rather than a toggle, which is the one place a band differs from a
+         * Ctrl-click: a band sweeps an area, and an area that happens to cover something already
+         * selected should not remove it -- a user widening a band would watch entities drop out as
+         * the band grew over them.
+         *
+         * An empty band *replaces*, so sweeping over nothing clears, which is the same thing a
+         * click on empty space does. An empty band that adds changes nothing, matching the
+         * Ctrl-click on empty space that deliberately leaves a half-assembled selection alone.
+         *
+         * @return The last entity caught, or the nil id -- what a caller reports as `picked`, and
+         *         the last rather than the first because document order puts the topmost last.
+         */
+        Uuid applyBoxSelection(StudioContext& context, const std::vector<Uuid>& caught, bool adds)
+        {
+            if (!adds)
+            {
+                context.setSelection(caught);
+                return caught.empty() ? Uuid{} : caught.back();
+            }
+
+            if (caught.empty()) { return Uuid{}; }
+
+            std::vector<Uuid> merged = context.getSelection();
+            for (const Uuid& id : caught)
+            {
+                if (std::find(merged.begin(), merged.end(), id) == merged.end())
+                {
+                    merged.push_back(id);
+                }
+            }
+            context.setSelection(std::move(merged));
+            return caught.back();
+        }
+    }
+
+    bool studioIsBoxSelectDrag(const StudioVector2& from, const StudioVector2& to)
+    {
+        // Either axis, not the diagonal distance: a band dragged straight across is a band, and
+        // asking for movement in both directions would refuse the thinnest useful one -- a sweep
+        // along a row of tiles.
+        return std::fabs(to.x - from.x) >= kStudioBoxSelectThreshold
+            || std::fabs(to.y - from.y) >= kStudioBoxSelectThreshold;
+    }
+
+    std::optional<UiRect> studioBoxSelectRect(const StudioViewportState& state, const UiRect& bounds)
+    {
+        if (!state.boxSelectStart) { return std::nullopt; }
+        if (!studioIsBoxSelectDrag(*state.boxSelectStart, state.boxSelectCurrent))
+        {
+            return std::nullopt;
+        }
+
+        const float left = std::min(state.boxSelectStart->x, state.boxSelectCurrent.x);
+        const float right = std::max(state.boxSelectStart->x, state.boxSelectCurrent.x);
+        const float top = std::min(state.boxSelectStart->y, state.boxSelectCurrent.y);
+        const float bottom = std::max(state.boxSelectStart->y, state.boxSelectCurrent.y);
+
+        return UiRect{bounds.left() + left, bounds.top() + top, right - left, bottom - top};
+    }
+
+    void studioViewportSelectionOverlay(StudioFrame& frame, const UiRect& bounds,
+                                        const StudioViewportState& state)
+    {
+        if (!frame.isDrawPass()) { return; }
+
+        const std::optional<UiRect> band = studioBoxSelectRect(state, bounds);
+        if (!band) { return; }
+
+        // A translucent wash and a solid edge, in the selection colour: the wash says what is being
+        // swept and the edge says exactly where the boundary is, which a wash alone leaves a user
+        // guessing about at the moment it matters.
+        const StudioTheme& theme = frame.theme();
+        StudioColor fill = theme.color(StudioColorRole::Selection);
+        fill.a = 48;
+        frame.drawList().fillRect(*band, fill);
+        frame.drawList().strokeRect(*band, theme.color(StudioColorRole::Selection), 1.0f);
+    }
+
     StudioCameraPreview studioCameraPreview(const UiRect& viewportBounds, const SceneDocument& scene,
                                             const std::vector<Uuid>& selection)
     {
@@ -879,6 +962,57 @@ namespace CNA::Studio
             && beginGizmoDrag(context, camera, state, selection, pointer))
         {
             return result;
+        }
+
+        // --- Band -------------------------------------------------------------------------------
+        //
+        // After the gizmo, so a press on a handle drags the handle rather than sweeping a band over
+        // it, and before the pan and the click, so a band in flight owns the pointer (`plan.md`
+        // STUDIO-12009). A plain left press is free here under all three navigation schemes: the 2D
+        // view pans on middle or right under Studio's own, on Alt under Maya's and on the middle
+        // button under Blender's.
+        if (state.boxSelecting())
+        {
+            state.boxSelectCurrent = pointer;
+
+            if (!router.mouseDown(UiMouseButton::Left))
+            {
+                const bool isBand = studioIsBoxSelectDrag(*state.boxSelectStart, pointer);
+                const StudioVector2 start = *state.boxSelectStart;
+                const bool adds = state.boxSelectAdds;
+                state.endBoxSelect();
+
+                // Under the threshold this was a click, so nothing is applied and the click path
+                // below runs as it always did -- including the click on empty space that clears the
+                // selection, which is how a user deselects and must not become a band of one pixel.
+                if (isBand)
+                {
+                    result.picked = applyBoxSelection(
+                        context, pickEntitiesIn(context.getScene(), camera, start, pointer,
+                                                sizeProvider),
+                        adds);
+                    result.selectionChanged = true;
+                    return result;
+                }
+            }
+            else
+            {
+                // A band in flight owns the pointer: it must not also pan, and it must not also
+                // select at the point it happens to be over this frame.
+                return result;
+            }
+        }
+        else if (surface.pressed && router.mouseDown(UiMouseButton::Left)
+                 && !frame.input().modifiers.alt)
+        {
+            state.boxSelectStart = pointer;
+            state.boxSelectCurrent = pointer;
+
+            // Ctrl or Shift adds, exactly as they do for a click, and resolved once at the press
+            // for the reason the navigation gesture is: a user who let go of Ctrl halfway through
+            // would find the selection they were adding to replaced when they released.
+            state.boxSelectAdds =
+                frame.input().modifiers.control || frame.input().modifiers.shift;
         }
 
         // --- Zoom -------------------------------------------------------------------------------
@@ -1058,6 +1192,9 @@ namespace CNA::Studio
             }
         }
 
+        // A band in flight follows the pointer, so the rectangle drawn is where the cursor is.
+        if (state.boxSelecting() && anyButton) { state.boxSelectCurrent = pointer; }
+
         if (state.navigating && !anyButton)
         {
             state.navigating = false;
@@ -1066,6 +1203,32 @@ namespace CNA::Studio
             // read from the interaction because a drag that left the panel and came back must not
             // count as one -- the same rule the 2D viewport applies to its gizmo.
             if (!state.navigationMoved && surface.hovered) { result.clicked3D = true; }
+        }
+
+        // The band ends on the release, wherever the pointer is, exactly as the gizmo drag does:
+        // one that only ended inside the panel would leave a rectangle stuck to the cursor.
+        if (state.boxSelecting() && !anyButton)
+        {
+            const StudioVector2 start = *state.boxSelectStart;
+            const bool isBand = studioIsBoxSelectDrag(start, pointer);
+            const bool adds = state.boxSelectAdds;
+            state.endBoxSelect();
+
+            if (isBand)
+            {
+                // Past the threshold this was a band and not a click, so the pending click is
+                // cancelled: a release that selected the entity under the cursor *and* everything
+                // the band swept would be two selections for one gesture.
+                result.clicked3D = false;
+
+                result.picked = applyBoxSelection(
+                    context,
+                    pickEntitiesIn3D(context.getScene(), camera, start, pointer, sizeProvider,
+                                     context.makeMeshProvider()),
+                    adds);
+                result.selectionChanged = true;
+                return result;
+            }
         }
         else if (!state.navigating && anyButton && pressedHere)
         {
@@ -1081,7 +1244,16 @@ namespace CNA::Studio
             // a user who released Shift halfway through a pan would find the camera orbiting from
             // wherever the pan had got to -- and the gesture a drag *started* as is the one the
             // user is still making.
-            const StudioViewportGesture gesture = grabbedGizmo
+            // Studio's own scheme spends the plain left drag on the orbit, so the band goes on
+            // Ctrl+left there (`plan.md` STUDIO-12009). Consistent rather than invented: Ctrl
+            // already means "add to what is selected" on a click, so Ctrl-dragging a band that adds
+            // what it sweeps is the same word twice. Ctrl is no part of Studio's navigation
+            // vocabulary, so nothing is taken away to make room for it.
+            const bool bandInsteadOfGesture =
+                !grabbedGizmo && chord.left && chord.control
+                && state.navigation == StudioNavigationStyle::Studio;
+
+            const StudioViewportGesture gesture = (grabbedGizmo || bandInsteadOfGesture)
                 ? StudioViewportGesture::None
                 : studioViewportGestureFor(state.navigation, chord);
             if (gesture != StudioViewportGesture::None)
@@ -1104,6 +1276,13 @@ namespace CNA::Studio
                 state.navigationMoved = false;
                 state.navigationX = pointer.x;
                 state.navigationY = pointer.y;
+
+                // And that same press is the band (`plan.md` STUDIO-12009): a left drag that is
+                // already a selection rather than a gesture is exactly the one a rubber band
+                // belongs on, and a left press that does not move is still the click it was.
+                state.boxSelectStart = pointer;
+                state.boxSelectCurrent = pointer;
+                state.boxSelectAdds = chord.control || chord.shift;
             }
         }
 
