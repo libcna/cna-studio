@@ -539,7 +539,8 @@ namespace CNA::Studio
             // in the 3D view that is neither a box nor a badge, and the whole point of ED-405
             // coming before ED-402: until there was a mesh to draw, every entity here was a
             // rectangle with a label on it.
-            if (const MeshData* mesh = findEntityMesh(entity, options.meshProvider);
+            if (const MeshData* mesh =
+                    options.drawMeshEdges ? findEntityMesh(entity, options.meshProvider) : nullptr;
                 mesh != nullptr && !mesh->isEmpty())
             {
                 const std::optional<WorldTransform> world =

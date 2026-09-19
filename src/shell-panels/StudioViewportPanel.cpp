@@ -1346,6 +1346,34 @@ namespace CNA::Studio
         return strip;
     }
 
+    const char* studioViewportShadingName(StudioViewportShading shading)
+    {
+        switch (shading)
+        {
+            case StudioViewportShading::Shaded:          return "Shaded";
+            case StudioViewportShading::Wireframe:       return "Wireframe";
+            case StudioViewportShading::ShadedWireframe: return "Shaded Wireframe";
+        }
+        return "Shaded";
+    }
+
+    StudioShadingPlan studioShadingPlan(StudioViewportShading shading)
+    {
+        switch (shading)
+        {
+            case StudioViewportShading::Shaded:
+                return StudioShadingPlan{true, true, false};
+            case StudioViewportShading::Wireframe:
+                // The sprites go with the solid meshes. A sprite has no edges of its own beyond
+                // the quad its bounds box already draws, so leaving them textured would make a
+                // wireframe that is half wireframe and half picture.
+                return StudioShadingPlan{false, false, true};
+            case StudioViewportShading::ShadedWireframe:
+                return StudioShadingPlan{true, true, true};
+        }
+        return StudioShadingPlan{};
+    }
+
     bool studioFrameSelection3D(const StudioContext& context, StudioCamera3D& camera,
                                 const SpriteSizeProvider& sizeProvider)
     {

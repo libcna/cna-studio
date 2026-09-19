@@ -6,7 +6,7 @@
 
 **Exit criteria.** A user can navigate a real scene comfortably and see what they are authoring, without regressing the existing 2D workflow.
 
-**Progress:** 9 of 15 complete `███████░░░░░`
+**Progress:** 10 of 15 complete `████████░░░░`
 
 | Id | Task | Status | Depends on |
 |----|------|:------:|------------|
@@ -19,7 +19,7 @@
 | `STUDIO-11007` | Selection outlines | ⬜ | `STUDIO-11006` |
 | `STUDIO-11008` | Bounds and collision debug visualisation | ⬜ | `STUDIO-11006` |
 | `STUDIO-11009` | Icons and billboards for entities with no geometry | ⬜ | `STUDIO-11006` |
-| `STUDIO-11010` | Wireframe mode | ⬜ | `STUDIO-11001` |
+| `STUDIO-11010` | Wireframe mode | ✅ | `STUDIO-11001` |
 | `STUDIO-11011` | Lighting modes, unlit mode, normal and material debug views | ⬜ | `STUDIO-19001` |
 | `STUDIO-11012` | Camera preview and game view | ⬜ | `STUDIO-11001` |
 | `STUDIO-11013` | Preserve the existing 2D viewport workflow without regression | ✅ | `STUDIO-07009` |
@@ -160,6 +160,44 @@ test passed against a wrong implementation: a fade measured from each *line* to 
 than from each *piece* of it, leaves the axis — which passes through the centre — at full strength
 end to end, and every other assertion still held. Checked by causing exactly that: the corrected
 case fails by name, the earlier one did not.
+
+### `STUDIO-11010` — Wireframe mode
+
+**Acceptance.** The 3D view can be shaded, wireframe, or both, and the user chooses.
+
+**The interesting part is what this task found rather than what it added.** The 3D view built three
+batches every frame — solid meshes, sprite quads and the wireframe — and the wireframe drew *every
+imported model's own edges* unconditionally. So the viewport was permanently in "shaded wireframe":
+any scene with real geometry in it was hatched over, and there was no way to get a clean shaded
+picture to judge lighting or materials by. The missing mode was not Wireframe, it was **Shaded**.
+
+**Three modes, because the third is not a toggle of either other.** Shaded draws the solid geometry
+with no edges; Wireframe draws the edges and no solid geometry; Shaded Wireframe is what the
+viewport did before there was a choice, kept so the old picture is still reachable rather than
+replaced. Shaded is the default, which is a change to what a user sees and the right one.
+
+**Wireframe drops the sprites as well as the solid meshes**, and that is the half worth stating. A
+sprite has no edges of its own beyond the quad its bounds box already draws, so leaving them
+textured would produce a "wireframe" that is half wireframe and half picture.
+
+**The decision is a CNA-free function and the device call is wiring.** `studioShadingPlan` turns a
+mode into three booleans; the host that owns the graphics device turns those into calls and does
+nothing else. That is what makes the choice testable in a headless build — the only half a headless
+build can reach — and it is the same division the rest of the 3D view already uses, where every
+batch is built by a tested function and handed over to be uploaded.
+
+**`WireframeOptions::drawMeshEdges` defaults to true**, so every existing caller and every test that
+pins the edge drawing keeps meaning what it meant. The viewport passes false in its shaded mode,
+which is where the new opinion belongs — a library default changed underneath its callers would
+have made this a behaviour change disguised as an option.
+
+**Verification.** `tests/StudioViewportPanelTests.cpp` pins each mode's plan, including Wireframe
+dropping the sprites, and drives the commands through the registry: exclusive, checked so a toolbar
+can show which picture is on screen, and disabled in the 2D view where there are no meshes and no
+choice to make. `tests/ModelImportTests.cpp` pins that `drawMeshEdges = false` really does fall back
+to the box — the same segment count as an entity with no mesh at all. Checked by causing both: a
+Wireframe plan that keeps textured sprites, and a wireframe that ignores `drawMeshEdges`, each fail
+by name.
 
 ### `STUDIO-11013` — Preserve the existing 2D viewport workflow without regression
 
@@ -349,6 +387,44 @@ test passed against a wrong implementation: a fade measured from each *line* to 
 than from each *piece* of it, leaves the axis — which passes through the centre — at full strength
 end to end, and every other assertion still held. Checked by causing exactly that: the corrected
 case fails by name, the earlier one did not.
+
+### `STUDIO-11010` — Wireframe mode
+
+**Acceptance.** The 3D view can be shaded, wireframe, or both, and the user chooses.
+
+**The interesting part is what this task found rather than what it added.** The 3D view built three
+batches every frame — solid meshes, sprite quads and the wireframe — and the wireframe drew *every
+imported model's own edges* unconditionally. So the viewport was permanently in "shaded wireframe":
+any scene with real geometry in it was hatched over, and there was no way to get a clean shaded
+picture to judge lighting or materials by. The missing mode was not Wireframe, it was **Shaded**.
+
+**Three modes, because the third is not a toggle of either other.** Shaded draws the solid geometry
+with no edges; Wireframe draws the edges and no solid geometry; Shaded Wireframe is what the
+viewport did before there was a choice, kept so the old picture is still reachable rather than
+replaced. Shaded is the default, which is a change to what a user sees and the right one.
+
+**Wireframe drops the sprites as well as the solid meshes**, and that is the half worth stating. A
+sprite has no edges of its own beyond the quad its bounds box already draws, so leaving them
+textured would produce a "wireframe" that is half wireframe and half picture.
+
+**The decision is a CNA-free function and the device call is wiring.** `studioShadingPlan` turns a
+mode into three booleans; the host that owns the graphics device turns those into calls and does
+nothing else. That is what makes the choice testable in a headless build — the only half a headless
+build can reach — and it is the same division the rest of the 3D view already uses, where every
+batch is built by a tested function and handed over to be uploaded.
+
+**`WireframeOptions::drawMeshEdges` defaults to true**, so every existing caller and every test that
+pins the edge drawing keeps meaning what it meant. The viewport passes false in its shaded mode,
+which is where the new opinion belongs — a library default changed underneath its callers would
+have made this a behaviour change disguised as an option.
+
+**Verification.** `tests/StudioViewportPanelTests.cpp` pins each mode's plan, including Wireframe
+dropping the sprites, and drives the commands through the registry: exclusive, checked so a toolbar
+can show which picture is on screen, and disabled in the 2D view where there are no meshes and no
+choice to make. `tests/ModelImportTests.cpp` pins that `drawMeshEdges = false` really does fall back
+to the box — the same segment count as an entity with no mesh at all. Checked by causing both: a
+Wireframe plan that keeps textured sprites, and a wireframe that ignores `drawMeshEdges`, each fail
+by name.
 
 ### `STUDIO-11013` — Preserve the existing 2D viewport workflow without regression
 

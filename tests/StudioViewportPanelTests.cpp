@@ -852,6 +852,87 @@ CNA_STUDIO_TEST(TheStandardViewCommandsTurnTheThreeDCameraAndOnlyInThreeD)
     }
 }
 
+/**
+ * The shading modes decide what the 3D view builds (`plan.md` STUDIO-11010).
+ *
+ * The decision is a CNA-free function on purpose: the host that owns the graphics device turns
+ * these three booleans into calls, and testing the booleans is testing the choice rather than the
+ * wiring -- which is the only half a headless build can reach.
+ */
+CNA_STUDIO_TEST(EachShadingModeAsksForADifferentCombinationOfBatches)
+{
+    // Shaded is solid geometry with no edges over it -- the mode that did not exist. The 3D view
+    // drew the meshes *and* every one of their edges, always, so a scene with real geometry was
+    // permanently hatched and there was no clean picture to judge lighting or materials by.
+    const StudioShadingPlan shaded = studioShadingPlan(StudioViewportShading::Shaded);
+    CNA_STUDIO_EXPECT(shaded.solidModels);
+    CNA_STUDIO_EXPECT(shaded.spriteQuads);
+    CNA_STUDIO_EXPECT(!shaded.meshEdges);
+
+    // Wireframe drops the sprites as well as the solid meshes, which is the part worth pinning: a
+    // sprite has no edges of its own beyond the quad its bounds box already draws, so leaving them
+    // textured would make a wireframe that is half wireframe and half picture.
+    const StudioShadingPlan wireframe = studioShadingPlan(StudioViewportShading::Wireframe);
+    CNA_STUDIO_EXPECT(!wireframe.solidModels);
+    CNA_STUDIO_EXPECT(!wireframe.spriteQuads);
+    CNA_STUDIO_EXPECT(wireframe.meshEdges);
+
+    // And the third is what the viewport did before there was a choice, kept so that the old
+    // picture is still reachable rather than replaced.
+    const StudioShadingPlan both = studioShadingPlan(StudioViewportShading::ShadedWireframe);
+    CNA_STUDIO_EXPECT(both.solidModels);
+    CNA_STUDIO_EXPECT(both.spriteQuads);
+    CNA_STUDIO_EXPECT(both.meshEdges);
+
+    CNA_STUDIO_EXPECT_EQ(std::string{studioViewportShadingName(StudioViewportShading::Wireframe)},
+                         std::string{"Wireframe"});
+}
+
+CNA_STUDIO_TEST(TheShadingCommandsAreExclusiveAndOnlyMeanSomethingInThreeD)
+{
+    StudioContext context;
+    StudioLog log;
+    StudioShell shell;
+    shell.resetLayout();
+
+    StudioCamera2D camera;
+    StudioCamera3D camera3D;
+    StudioShellPanels panels{shell, context, log};
+    panels.setViewportServices(camera, camera3D, {});
+
+    UiInputState input;
+    input.displayWidth = 1280.0f;
+    input.displayHeight = 720.0f;
+    shell.renderFrame(input);
+
+    // Shaded by default, which is the mode that was missing -- and it is the one checked, so a
+    // toolbar shows the user which picture they are looking at.
+    CNA_STUDIO_EXPECT(panels.viewportShading() == StudioViewportShading::Shaded);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.shading.shaded"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.shading.wireframe"));
+
+    // In the 2D view there are no meshes and no choice to make, so they refuse rather than vanish.
+    CNA_STUDIO_EXPECT(!shell.actions().isEnabled("studio.view.shading.wireframe"));
+
+    const StudioAction* toThreeD = shell.actions().find("studio.view.3d");
+    CNA_STUDIO_EXPECT(toThreeD != nullptr && toThreeD->run != nullptr);
+    if (toThreeD == nullptr || toThreeD->run == nullptr) { return; }
+    toThreeD->run();
+    shell.renderFrame(input);
+
+    CNA_STUDIO_EXPECT(shell.actions().isEnabled("studio.view.shading.wireframe"));
+
+    const StudioAction* wireframe = shell.actions().find("studio.view.shading.wireframe");
+    CNA_STUDIO_EXPECT(wireframe != nullptr && wireframe->run != nullptr);
+    if (wireframe == nullptr || wireframe->run == nullptr) { return; }
+    wireframe->run();
+
+    CNA_STUDIO_EXPECT(panels.viewportShading() == StudioViewportShading::Wireframe);
+    CNA_STUDIO_EXPECT(shell.actions().isChecked("studio.view.shading.wireframe"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.shading.shaded"));
+    CNA_STUDIO_EXPECT(!shell.actions().isChecked("studio.view.shading.shadedWireframe"));
+}
+
 CNA_STUDIO_TEST(TheTransformShortcutsReachTheGizmoThroughTheRegistry)
 {
     // W, E and R are declared on the actions and dispatched by the shell; binding the actions is

@@ -124,6 +124,17 @@ namespace CNA::Studio
         bool drawEntityBounds = true;
 
         /**
+         * @brief Draw an imported model's own edges, rather than only the box around it.
+         *
+         * `plan.md` STUDIO-11010. True here so that every existing caller and every test that
+         * pins the edge drawing keeps meaning what it meant; the *viewport* passes false in its
+         * shaded mode, which is where the new opinion belongs. Until there was a shading mode
+         * there was nowhere to put it, so the 3D view drew every mesh's edges over the solid
+         * render permanently and a user could not get a clean shaded picture at all.
+         */
+        bool drawMeshEdges = true;
+
+        /**
          * @brief Draw each light's direction and range (ED-404).
          *
          * On by default, and worth a switch because a scene lit by a dozen lamps is a dozen rings

@@ -468,6 +468,12 @@ namespace CNA::Studio
         /** @brief Which frame the translate manipulator's arms follow. */
         [[nodiscard]] GizmoSpace viewportSpace() const { return viewportState_.space; }
 
+        /** @brief How the 3D view draws geometry (`plan.md` STUDIO-11010). */
+        [[nodiscard]] StudioViewportShading viewportShading() const
+        {
+            return viewportState_.shading;
+        }
+
         /**
          * @brief Whether the 3D grid lies on the ground plane rather than the scene's own.
          *

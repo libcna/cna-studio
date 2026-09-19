@@ -827,6 +827,27 @@ namespace CNA::Studio
             shell.actions().add(std::move(focus));
         }
 
+        // How the 3D view draws geometry (`plan.md` STUDIO-11010). Checkable and exclusive, and
+        // enabled only in the 3D view where the choice means something.
+        for (const auto& [id, shading] :
+             {std::pair{"studio.view.shading.shaded", StudioViewportShading::Shaded},
+              std::pair{"studio.view.shading.wireframe", StudioViewportShading::Wireframe},
+              std::pair{"studio.view.shading.shadedWireframe",
+                        StudioViewportShading::ShadedWireframe}})
+        {
+            const StudioAction* existing = shell.actions().find(id);
+            if (existing == nullptr) { continue; }
+
+            StudioAction action = *existing;
+            action.checkable = true;
+            action.isChecked = [this, shading] { return viewportState_.shading == shading; };
+            action.isEnabled = [this] {
+                return viewportState_.view == StudioViewportView::ThreeD;
+            };
+            action.run = [this, shading] { viewportState_.shading = shading; };
+            shell.actions().add(std::move(action));
+        }
+
         // The six axis-aligned views (`plan.md` STUDIO-11004). Enabled only in the 3D view, where
         // they mean something: the 2D view has one axis to look along and no choice to make about
         // it. Disabled rather than hidden, for the reason the ground-plane toggle above is -- a

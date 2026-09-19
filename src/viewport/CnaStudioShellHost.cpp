@@ -895,20 +895,35 @@ namespace CNA::Studio
                     ? GridPlane::Ground
                     : GridPlane::SceneXY;
 
+                // What the shading mode asks for (`plan.md` STUDIO-11010). Worked out by a
+                // CNA-free function so the decision is testable without a device; all that is left
+                // here is turning three booleans into calls, and there is nothing in that to get
+                // wrong.
+                const StudioShadingPlan shading = studioShadingPlan(panels_->viewportShading());
+                wireframeOptions.drawMeshEdges = shading.meshEdges;
+
                 const WireframeResult wireframe = buildSceneWireframe(
                     context_->getScene(), camera, context_->getSelection(), sizes,
                     wireframeOptions);
 
-                const SceneModelBatch models = buildSceneModelBatch(
-                    context_->getScene(), camera, context_->makeMeshProvider(),
-                    context_->getSelection(), context_->makeMaterialProvider());
+                const SceneModelBatch models =
+                    shading.solidModels
+                        ? buildSceneModelBatch(context_->getScene(), camera,
+                                               context_->makeMeshProvider(),
+                                               context_->getSelection(),
+                                               context_->makeMaterialProvider())
+                        : SceneModelBatch{};
 
                 // Sprites as quads in the scene's own plane. `SpriteBatch` cannot draw the
                 // trapezoid a sprite becomes from an angle, which is why the 3D view has its own
                 // path for them rather than reusing the 2D one.
-                const SceneSpriteBatch3D sprites = buildSceneSpriteQuads(
-                    context_->getScene(), camera, sizes, panels_->animationPreview(),
-                    context_->getSelection(), &context_->getComponentRegistry());
+                const SceneSpriteBatch3D sprites =
+                    shading.spriteQuads
+                        ? buildSceneSpriteQuads(context_->getScene(), camera, sizes,
+                                                panels_->animationPreview(),
+                                                context_->getSelection(),
+                                                &context_->getComponentRegistry())
+                        : SceneSpriteBatch3D{};
 
                 return sceneViewport_->renderScene3D(models, sprites, wireframe.segments, width,
                                                      height);

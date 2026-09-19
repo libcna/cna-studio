@@ -368,6 +368,20 @@ namespace CNA::Studio
         command("studio.view.bottom", "Bottom View",
                 "Look straight up at the scene.", C::View, StudioShortcut{});
 
+        // How the 3D view draws geometry (`plan.md` STUDIO-11010). Checkable and exclusive, like
+        // the 2D/3D pair: a toolbar has to *show* which is on, because the difference between a
+        // clean shaded picture and a hatched one is exactly what a user is looking at when they
+        // reach for this.
+        command("studio.view.shading.shaded", "Shaded",
+                "Draw solid geometry without its edges.", C::View, StudioShortcut{},
+                /*checkable=*/true);
+        command("studio.view.shading.wireframe", "Wireframe",
+                "Draw only the edges: no solid meshes and no textured sprites.", C::View,
+                StudioShortcut{}, /*checkable=*/true);
+        command("studio.view.shading.shadedWireframe", "Shaded Wireframe",
+                "Draw solid geometry with its edges over it.", C::View, StudioShortcut{},
+                /*checkable=*/true);
+
         // The tilemap tools. Checkable, because a toolbar has to *show* which one is armed: a
         // press means something different under each of them, and a user who cannot see which is
         // active finds out by editing their level.

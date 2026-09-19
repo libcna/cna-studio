@@ -1242,6 +1242,20 @@ CNA_STUDIO_TEST(AnImportedMeshIsDrawnByThe3DViewInsteadOfABadge)
     CNA_STUDIO_EXPECT_EQ(withMesh.segments.size(), std::size_t{3});
     CNA_STUDIO_EXPECT(!withMesh.truncated);
 
+    // Turning the mesh edges off falls back to the box, which is what the shaded mode asks for
+    // (`plan.md` STUDIO-11010). Before there was a shading mode the 3D view drew these edges over
+    // the solid render permanently, so a scene with real geometry was always hatched.
+    options.meshProvider = [&](const Uuid& id) -> const MeshData* {
+        return id == modelId ? &imported.mesh : nullptr;
+    };
+    WireframeOptions boxesOnly = options;
+    boxesOnly.drawMeshEdges = false;
+    const WireframeResult shaded = buildSceneWireframe(scene, camera, {}, sizes, boxesOnly);
+
+    CNA_STUDIO_EXPECT_EQ(shaded.entitiesDrawn, std::size_t{1});
+    CNA_STUDIO_EXPECT(shaded.segments.size() != withMesh.segments.size());
+    CNA_STUDIO_EXPECT_EQ(shaded.segments.size(), withoutMesh.segments.size());
+
     // A provider that has nothing for this id must fall back rather than draw nothing at all: an
     // asset still importing is not the same as an entity that vanished.
     options.meshProvider = [](const Uuid&) -> const MeshData* { return nullptr; };

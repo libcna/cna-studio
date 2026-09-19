@@ -82,6 +82,58 @@ namespace CNA::Studio
     /** @brief The name of @p view, for a menu row or an overlay. */
     [[nodiscard]] const char* studioViewportViewName(StudioViewportView view);
 
+    /**
+     * @brief How the 3D view draws geometry.
+     *
+     * `plan.md` STUDIO-11010. There was no such choice: the viewport drew the solid meshes *and*
+     * every one of their edges, always, so a scene with any real geometry in it was permanently
+     * hatched and a user could not get a clean shaded picture to judge lighting or materials by.
+     * Three modes, because the third is the one people actually want most of the time and is not
+     * expressible as a toggle of either other.
+     */
+    enum class StudioViewportShading
+    {
+        /** @brief Solid geometry, no mesh edges. The default, and what was missing. */
+        Shaded,
+
+        /**
+         * @brief Mesh edges only: no solid models and no textured sprite quads.
+         *
+         * Sprites go too, and that is the part worth stating. A sprite has no edges of its own
+         * beyond the quad the bounds box already draws, so leaving them textured would make a
+         * "wireframe" that is half wireframe and half picture.
+         */
+        Wireframe,
+
+        /** @brief Both, which is what the viewport did before there was a choice. */
+        ShadedWireframe,
+    };
+
+    /** @brief The name of @p shading, for a menu row or an overlay. */
+    [[nodiscard]] const char* studioViewportShadingName(StudioViewportShading shading);
+
+    /**
+     * @brief What a shading mode means for the three batches the 3D view builds.
+     *
+     * Separated from the renderer so the *decision* is testable without a graphics device: the
+     * host that owns the device turns these three booleans into calls, and there is nothing else
+     * in that translation to get wrong.
+     */
+    struct StudioShadingPlan
+    {
+        /** @brief Build and draw the solid mesh batch. */
+        bool solidModels = true;
+
+        /** @brief Build and draw sprites as textured quads. */
+        bool spriteQuads = true;
+
+        /** @brief Ask the wireframe for each model's own edges rather than only its box. */
+        bool meshEdges = false;
+    };
+
+    /** @brief Returns what @p shading asks the 3D view to draw. */
+    [[nodiscard]] StudioShadingPlan studioShadingPlan(StudioViewportShading shading);
+
     enum class StudioViewportTool
     {
         /** @brief Pick entities and drag the gizmo. The default. */
@@ -173,6 +225,15 @@ namespace CNA::Studio
         StudioViewportView view = StudioViewportView::TwoD;
 
         StudioViewportTool tool = StudioViewportTool::Select;
+
+        /**
+         * @brief How the 3D view draws geometry (`plan.md` STUDIO-11010).
+         *
+         * Means nothing in the 2D view, which has no meshes and no choice to make about them --
+         * the commands that set it are disabled there rather than hidden, like the ground-plane
+         * toggle beside them.
+         */
+        StudioViewportShading shading = StudioViewportShading::Shaded;
 
         /**
          * @brief Multiplier on pan, orbit and fly speed, from the user's preferences.
